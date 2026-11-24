@@ -1,0 +1,4 @@
+OpenVolley 3.0.13
+- Rosters sent ahead: when a team sent its roster in the manager, Match Setup offers it, also without internet. Accept fills the roster, the team officials and the signatures made ahead.
+- An accepted roster is deleted from the server.
+- Neutral sample names in the test match.

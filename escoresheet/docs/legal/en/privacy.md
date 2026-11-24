@@ -1,0 +1,1147 @@
+# Privacy policy
+
+**OpenVolley and OpenBeach** · Version 1.28 · As of 23 November 2026
+
+This policy is available in German, English, French and Italian. The English
+version is binding.
+
+## In short
+
+- OpenVolley is a private, non-commercial open-source project. There are no
+  ads, no tracking, no analytics tools and no cookies of mine (section 3
+  names the scripts Cloudflare adds).
+- The apps work offline. Your matches are stored on your device, and in the
+  server's database only once you sign in. So that tablets receive a running
+  match, the browser and Android apps send it through my server even without
+  signing in, held in memory only.
+- The Global tool of OpenVolley needs no account. Its matches stay on your
+  device. Only a backup of the match and, at the end, the scoresheet as a PDF
+  are stored on the server, under a random backup code and without any
+  account, and deleted 180 days after the last change. If the scorer switches
+  on "Save in the cloud" for a match (off by default), it is also kept
+  readable on the server, without PINs or signature images, until 180 days
+  after the last save (section 7).
+- "New match" in the Swiss version (signed out) works the same way: no
+  account, the match on your device, its backup and PDF under its backup
+  code, and none of the saved teams, club lists or the referee directory.
+- Live screen (optional, in OpenVolley and OpenBeach): if the scorer devices
+  of an event switch it on, the score of each of their matches (team names,
+  points and sets, no players) also goes to the server, is kept in memory only
+  and can be seen by anyone who has the live screen code; that of Global
+  matches also by anyone on livescore.openvolley.app, unless it is switched
+  off (section 7).
+- An electronic scoresheet contains data about players, team staff and
+  officials: names, shirt numbers, licence numbers and signatures. A date of
+  birth is on a match's own scoresheet only where the scorer types one (in the
+  Global tool the organiser chooses what is printed beside a name). Only team
+  names, the score and shirt numbers are public, for beach volleyball also the
+  players' names, as well as the referees' names for official matches.
+  **Dates of birth, licence numbers and signatures are never public.**
+- No date of birth is kept anywhere else: not with accounts, club lists,
+  saved teams, rosters sent ahead, the referee directory or the schedule.
+  Those stored before 19 November 2026 were deleted, also from past
+  scoresheets (section 16).
+- The OpenVolley app keeps an activity log of each match, without PINs or
+  passwords. When you are signed in it goes to the server. What you click or
+  type stays on your device, except for a summary without the text you typed
+  when you include diagnostics with a support request (sections 5 and 13).
+- When something goes wrong, the apps, the web pages and the server send an
+  error report to my server, also without signing in: what went wrong and
+  where in the program, the steps just before it (never what you typed), the
+  app and its version, the operating system, the browser and the screen size.
+  You can switch this off in the options (section 5).
+- The server is in Switzerland: I rent it from Infomaniak in Geneva and run it
+  myself. Cloudflare (USA) delivers the websites and forwards the traffic to the
+  server.
+- When sending is switched on, the scorer, the referees, the clubs of both
+  teams and the contact address entered for each team receive the final
+  scoresheet of an official match by email (section 7).
+- A team's manager can send the roster of a game ahead. The scorer's device
+  keeps it for the match setup; once the scorer accepts it, the server deletes
+  it (section 10).
+- Match records (scoresheets, match events, scoresheet files) are kept for
+  their season and the two seasons after it, then deleted (section 16).
+- You can ask for access, correction or deletion at any time:
+  **support@openvolley.app**.
+
+## 1. Who is responsible
+
+The controller is:
+
+**Luca Canepa**, private person, Switzerland\
+Postal address: see the [legal notice](impressum.md)\
+Email: support@openvolley.app
+
+I run OpenVolley as a private person. I have not appointed a data protection
+officer; I am not required to. For all privacy questions, write to
+support@openvolley.app.
+
+This policy covers:
+
+- the website **openvolley.app** and the download page **get.openvolley.app**;
+- the scorer apps **OpenVolley** (indoor) and **OpenBeach** (beach) in the
+  browser, as a desktop app (Windows, Linux) and as an Android app;
+- the referee and bench tablet views, livescore, the roster and scoresheet
+  pages and the manager sites under `*.openvolley.app`;
+- the server `backend.openvolley.app` that the apps sync with.
+
+## 2. Which law applies
+
+I process personal data under the Swiss Federal Act on Data Protection (FADP,
+in force since 1 September 2023). Where people in the EU or EEA are concerned,
+for example foreign players at a beach tournament, I also follow the EU
+General Data Protection Regulation (GDPR). This policy contains the
+information both laws require.
+
+## 3. Principles
+
+- **No cookies.** The apps set no cookies. They store only what they need to
+  work in your browser's or device's storage (localStorage and IndexedDB):
+  match data for offline use, your settings and, when you are signed in, a
+  sign-in token.
+- **No tracking, no ads, no analytics.** There are no analytics tools, no
+  error reports to third parties (error reports go only to my own server,
+  section 5), no advertising, no profiling and no
+  automated individual decisions. I do not sell data.
+- **No third-party content.** Fonts and program code come from our own sites,
+  not from other servers. I name the exceptions explicitly (section 12, and
+  Cloudflare's scripts below).
+- **Cloudflare's scripts.** Cloudflare, which delivers the sites
+  (section 15), adds two small scripts of its own to the pages: a check
+  against automated access (bot detection) in every page, and on
+  openvolley.app and get.openvolley.app a script that shows the email
+  addresses written on the page. They come from the same address as the
+  page, do not track you and are not used for analytics. The bot check can
+  store its result in a Cloudflare cookie (`cf_clearance`); it is strictly
+  necessary to protect the service.
+- **Offline first.** What you record without signing in is stored only on
+  your device. For the transfer to the tablets, see section 9.
+
+## 4. Website and download page
+
+**openvolley.app** and **get.openvolley.app** are static pages; apart from
+Cloudflare's scripts (section 3) they load no scripts. The only form is the support form on
+openvolley.app/support (section 13). When you open them, Cloudflare processes the
+technically necessary data: IP address, requested address, time and browser
+identifier. My server keeps no access log for get.openvolley.app.
+
+Links to GitHub and F-Droid lead to services that are themselves responsible
+for their data processing.
+
+## 5. The scorer apps (browser, desktop, Android)
+
+**Without signing in**, the app stores everything only on your device:
+matches, teams, rosters (with licence numbers, and dates of birth where the
+scorer typed them), sets, match events, lists of officials, settings and the
+app's logs (see below). Matches stay stored until
+you delete them or clear the app data. Without signing in, only error
+reports go to my server (see below).
+
+**Live transfer, also without signing in.** As soon as a match is created,
+the browser and Android apps send it (teams, rosters, score, events) to my
+server's live relay, so that referee and bench tablets receive it (section 9).
+It is held there in memory only. The desktop app uses its own relay on the
+local network instead.
+
+**When signed in**, the app syncs your matches with the server (section 7).
+It also uploads:
+
+- **Backup copies** of a match (complete, with rosters and signatures). Only
+  your account can read them. They are deleted after
+  30 days.
+- **App logs** (technical messages from the app; they can contain names and
+  game numbers). Only your account can read them. They are deleted after
+  30 days, and with your account.
+- **Scoresheets** as files (PDF and data), see section 7.
+
+**Activity log (OpenVolley from version 2.4.0).** For the integrity of the
+scoresheet and for troubleshooting, the app records what happens on the
+device: points and other match events, undo and corrections (what was
+changed, when and why), sets and match status, signatures and approvals (only
+the role and that they happened), remarks (only their length), roster changes
+(only the shirt number), results of uploads to the server, app errors
+(message and place in the program), the app starting, updating and quitting,
+and signing in and out. Each entry carries a random identifier of the device
+(created by the app, not linked to the hardware), the app version, the
+platform and, when you are signed in, your account. **Never recorded** are
+PINs, passwords, sign-in tokens, signature images, dates of birth, email
+addresses, phone and licence numbers; when someone changes such a field by
+hand, the log only says that it was changed. In free text (error messages,
+values of changes) runs of six or more digits and numbers next to words such
+as "PIN", "code" or "password" are blanked out. The log therefore contains no
+more personal data than the scoresheet itself (shirt numbers, officials'
+names in a correction). You can view it in the app and save it as a file (CSV
+or JSON).
+
+**Where the activity log is kept:** on your device; in the desktop and
+Android apps also as daily files in the folder `OpenVolley/logs` (desktop: in
+your user folder next to the backup files, Android: in the app's own folder,
+see below). When you are signed in, the app uploads it to my server,
+including the entries made on this device without signing in. There, the
+entries of a match can be read by the account that recorded the match, the
+accounts that entered the game PIN and the administrators; entries without a
+match are seen only by the administrators. When a match is deleted on the
+server, its entries are deleted with it. How long entries are kept is in
+section 16; I delete them earlier on request (section 19).
+
+**Error reports (since November 2026).** When an error occurs, the app or
+web page sends a report to my server, signed in or not: the scorer app, the
+referee, bench, livescore, scoresheet, roster, dictation, manager and TV
+pages, and OpenBeach. A report contains the error message and the place in
+the program (file names and line numbers), the screen or page that was open,
+the last steps before the error (screens opened, which buttons were tapped
+(by their internal name, not their text), the server addresses called and
+their result; never what you typed or the content of an input field), the
+app (OpenVolley or OpenBeach), the tool and its version, the operating
+system and its version, the browser or web view and its version, how the app
+runs (browser tab, installed web app, desktop or mobile app), the device
+model where the system names it, the screen and window size, the language
+and time zone, whether the device was online, the random device identifier
+(the same as in the activity log), a random identifier of the visit, the
+external identifier of the open match, and, when you are signed in, your
+account. **Never contained** are PINs, passwords, sign-in tokens, text you
+typed, email addresses, dates of birth, phone numbers, signature images and
+your IP address; the server removes such values again, whatever a device
+sends. The server records its own errors the same way (the request and the
+place in the program, without content).
+Only the administrators with full rights see the reports, in the manager;
+there they also see the name, email address, roles and clubs of a signed-in
+account, and opening the reports is recorded in the change log (section 14).
+The administrators are told about new errors by email, naming the roles and
+clubs of the accounts concerned but never a name or an address, and by a
+push message to their phone through a notification service on my own
+computer (the tool, version, operating system and error message only).
+Reports are kept 90 days (section 16). You can switch them off in the
+options (Support & feedback: "Send error reports automatically"); reports
+already sent stay until they expire, or I delete them on request (give the
+device identifier shown there).
+
+**Event history (OpenVolley from version 2.4.0).** When a point or another
+event is undone or corrected, the app records the old event (for a change
+also the new one) with the reason, time, device identifier, app version and
+account. If the event was already on the server, the server does not delete
+it but marks it as void and keeps the change, so the course of the match
+stays traceable. The event history belongs to the match and is deleted with
+it. On the server only the administrators see it.
+
+**Interaction log: what you click or type stays on your device.** For
+troubleshooting, the app records on the device what you click and type (also
+text in input fields, for example names). This log is not uploaded on its own.
+Only when you include diagnostics with a support request does a summary of
+about the last two hours go with it, without the text you typed (section 13).
+You can download it yourself (in the settings, or at the end of a match in the
+ZIP file) and send it to support, for example. In OpenVolley from version
+2.4.0 it records no input in password and PIN fields and no PINs shown on
+screen, and it is deleted after 30 days or beyond 50,000 entries.
+
+**Desktop app.** The desktop app also keeps automatic backup files of matches
+in your user folder (Linux: `~/.local/share/OpenVolley/backups`, Windows:
+`%APPDATA%\OpenVolley\backups`). They contain names (and dates of birth where
+the scorer typed them), but no PINs, and are deleted after 30 days.
+From version 2.4.0 the OpenVolley
+desktop app also writes a technical log file (`desktop.log`) to the folder
+`OpenVolley/logs`: start and quit, update checks and downloads, links and
+downloads opened (address without parameters, save location), the number of
+connected tablets, and errors. It stays on your device, is never uploaded and
+contains no PINs, sign-in tokens or hotspot passwords. At most five older
+files of 5 MB each are kept.
+
+**Android app.** The Android app keeps its backup files (encrypted with the
+match's PINs; a test match has none), the scoresheet PDFs and the daily files of the activity log in
+its own app folder, which no other app can read and which is deleted when the
+app is uninstalled. Only when you choose "Export to Documents" does it copy
+files to the public "Documents" folder (`Documents/OpenVolley`). **These
+copies remain after the app is uninstalled, and on Android 10 and older other
+apps can read them too.** Delete them yourself when you no longer need them.
+Versions up to 3.1.4 kept their files in "Documents"; newer versions move them
+into the app folder at the first start. If you have turned on Google device
+backup, Android may also back up the app data (with rosters) to your Google
+account; Google's terms apply to that.
+
+On a shared device, sign out after the match. Signing out deletes from the
+app your sign-in token, your profile and clubs, today's games, the cached
+teams, rosters and club licence lists, and the email addresses officials
+approved with on this device; the same happens when your session expires or
+another account signs in. Without a connection, the sign-out also ends your
+session on the server as soon as the device is online again. The addresses
+officials approved with are kept for 7 days at most. Do not set up a passkey
+on a shared device (tick "Shared device" when signing in).
+
+## 6. Account and emails
+
+You need an account to sync matches, manage teams and tournaments, or approve
+match results as an official. Accounts are opened on
+`manager.openvolley.app` and `manager-beach.openvolley.app`.
+
+**Data:** email address, password (stored only as a hash, never in plain
+text), first and last name, country, licence number (your Swiss Volley
+licence number, 4 to 7 digits; needed for a new account since 23 November
+2026, accounts opened before are asked for it at their next sign-in), the language chosen at sign-up (for
+the account's emails), roles (for
+example scorer, referee, competition manager), the apps the account is for
+(indoor, beach), times of creation, last sign-in and email confirmation. What
+you enter at sign-up is also kept as a copy with the account.
+
+**Purpose:** signing in, unlocking the features of your role, and pre-filling
+your own details on the scoresheet (name, country, licence number).
+
+**No date of birth:** sign-up and the profile do not ask for one, and the
+server keeps none (since 19 November 2026; dates of birth entered before were
+deleted, section 16).
+
+**New accounts** start without a role. An administrator approves them, or you
+redeem an invite code. The system records who redeemed which code and when.
+
+**What you do (OpenVolley sign-up, optional):** at sign-up you can say what
+you do (scorer, referee, team manager or coach, club manager) and for which
+club and team. This request is stored only until it is approved or rejected,
+and is seen, with your name and email address, by the administrators and by
+the managers of that club or team.
+Approving it gives your account exactly that role, club or team (an
+administrator, or the club's or the team's managers for their own club or
+team); the system records who decided and when, but not your name or address
+in that entry.
+
+**Clubs (OpenVolley):** an administrator, or an invite code, can assign your
+account to one or more clubs. You then score the official home games of these
+clubs. The system stores which clubs your account belongs to, who assigned
+them and when, until the club or the assignment is removed or you delete the
+account. The scoring app keeps a copy of your clubs on your device, so it can
+check a game offline; the copy is removed when you sign out.
+
+**Club managers (OpenVolley):** an administrator can make accounts managers
+of a club. For the accounts that score for their club they see the name, email
+address, roles and the date of the assignment. They can create invite codes
+for their club and remove an account from the club; the account itself and
+its roles stay. A club can have a **contact address** (entered by the
+administrators or the club managers); it receives the final scoresheets of
+the club's games (section 7).
+
+The club managers can also give a link to the coach or manager of one of the
+club's teams, who then manages that team (section 10).
+
+**Sign-in:** after you sign in, your browser stores a sign-in token. The
+server holds only a hash of it. A session lasts 30 days from last use, at most
+90 days, and ends when you sign out, change your password or delete the
+account. To protect against attacks, the server counts failed attempts per IP
+address and per email address in its memory. Its database also keeps, for an
+email address with failed sign-ins, how many there were in the last 24 hours,
+under a one-way hash of the address (not the address itself), and, for each
+account, up to 20 networks it was used from (an IPv4 address, or the first
+half of an IPv6 address): a keyed hash of the email address and the network,
+which tells nothing without the server's secret key, written when you sign in
+with your password or a passkey or open a link from one of the account's
+emails there. After 100 failed attempts within 24 hours, those networks go on
+as usual, any other is let try only now and then, and the account gets an
+email notice (once in that time). The count is deleted after its 24 hours,
+with a new password and with the account; a network 60 days after its last
+use and with the account.
+
+**Emails:** I only send emails that belong to the account: confirming your
+email address, a link to reset your password, a notice that your password
+changed, a notice that someone keeps trying to sign in to your account
+(above), a notice that a result was approved with your approval PIN, and a
+notice that your PIN was locked. They contain no tracking pixels and no
+remote images. A confirmation link is valid for 24 hours, a reset link for
+60 minutes.
+
+**Scoresheets by email:** I send the final scoresheet of an official match
+and the scoresheet of your own test match as described in section 7.
+
+**Who sees your account data:** you and the OpenVolley administrators (me and
+people I appoint). In addition, as far as their task needs it:
+
+- the managers of a club you score for, or whose team you manage: your name,
+  email address, roles, and since when you belong to the club or manage the
+  team;
+- the managers of the club or team you asked for at sign-up (the approvers):
+  your name, email address, sign-up date and whether your address is
+  confirmed, until your request is decided;
+- the other managers of a beach tournament you manage, or to which you are
+  invited as co-manager: your email address;
+- the scorers who receive a roster you sent ahead: your name as its sender
+  (section 10);
+- the other scorers of an official game you already score: your name, so
+  that they know the game is taken;
+- the competition managers of the app: the name of the account that recorded
+  each match, in the list of scoresheets.
+
+**Deleting your account:** you can delete your account yourself in the app at
+any time. This deletes the account, profile, sessions, approval PIN, redeemed
+invite codes, your uploaded backup copies and app logs, and your activity log
+entries without a match. **What remains** are official records that others
+have an interest in: scoresheets you recorded, approvals you gave (with your
+name as it appears on the scoresheet), saved teams and tournaments, entries in
+the change log (section 14), and the activity log and event history of
+matches (section 5). Your account is unlinked from these entries. You can have what remains deleted
+under section 19, as far as the scoresheet does not need it.
+
+**Deletion by an administrator:** an administrator can also delete your
+account, when you ask for it (section 19), or when a sign-up is not
+approved (rejected). The same data is deleted and the same remains as when
+you delete it yourself.
+
+## 7. Match data and scoresheets
+
+**What a match contains:** game number, league, hall and town, teams (name,
+short name, colour), rosters with shirt number, first and last name, licence
+number and libero or captain flag, team staff (role, name, licence number),
+officials (referees, scorer, line judges with name, country and licence
+number; referees optionally with an email address), an optional contact email
+address per team,
+**signatures** (as images drawn on the device or on a phone), coin toss, the course of the
+match with all events, substitutions and sanctions, results and later
+corrections, and the **remarks** (the scoresheet's remarks box: what the
+scorer writes and the lines the app adds, for example for a forced
+substitution or a libero who becomes unable to play). The **technical
+remarks** are kept with the match too: what the app notes about how the match
+was recorded (corrections, a roster change after the coin toss, a reopened
+set, signatures cleared or signed again, a substitution because of an injury
+with a regular substitute, an injury on the bench) and what the scorer adds as
+one. They are not printed on the scoresheet.
+
+**Licence number or date of birth:** in the Swiss version the value beside a
+name is the licence number. The scorer may type a date of birth there
+instead; it is then on that match's scoresheet only. In the Global tool the
+organiser of the tournament chooses what is printed beside a name: the date of
+birth, an ID number or a text.
+
+**Health data in a match:** a substitution or a libero change because a
+player is injured or ill, and an injury the scorer notes, is information about
+health (sensitive personal data under the FADP, a special category under the
+GDPR). The app records the event with its reason, as the rules require, and
+writes in the remarks only the rules' words (for example "#4 substituted,
+cannot continue playing"), never a diagnosis. Remarks the scorer types can say
+more: write only what the match record needs. Remarks are seen by those who
+see everything (table below) and, during the match, by the referee tablet and
+the holders of the game PIN, never by the bench tablets or the public; they
+are printed on the scoresheet and so reach its recipients (below). A
+substitution because of an injury with a regular substitute and an injury on
+the bench are technical remarks instead: they are not printed on the
+scoresheet and not shown on the referee tablet; they stay with the match
+record and are listed in the final scoresheet email (below). Legal basis:
+section 20; kept with the match (section 16).
+
+**Who enters the data:** the scorer in the app, team managers on the roster
+page (`roster.openvolley.app`) and in the manager (section 10), competition managers through saved teams
+(section 10), and the official match assignments from Swiss Volley
+(section 11). Players do not enter their data themselves. An Einsatzliste
+imported in the match setup fills in names, shirt numbers and licence
+numbers; the dates of birth on it are not taken over.
+
+**Purpose:** an electronic scoresheet for official matches: recording during
+the match, the official match record, checking eligibility (licence number),
+livescore.
+
+**Who sees what:**
+
+| Who | What |
+|---|---|
+| The account that recorded or closed the match; administrators | Everything |
+| Accounts that entered the game PIN (for example a tablet that takes over the match) | Everything, until the match is closed |
+| Referee tablet with the referee PIN | Teams, both rosters with names and numbers, score, remarks (not the technical remarks). **No** dates of birth, signatures, officials or approvals |
+| Bench tablet with its team's PIN | Its own team's roster with names and numbers, the other team's shirt numbers, score. **No** remarks, dates of birth, signatures, officials or approvals |
+| Everyone (public) | See section 8 |
+
+Once a match is approved and closed, nobody can change it any more, not even
+the person who recorded it. Only an administrator can reopen it. From the
+close on, the game PIN no longer opens the match record: it shows only what
+is public (section 8), and the accounts that joined with it can no longer
+read the match. Each restore of a match with the game PIN is recorded in the
+change log. The creator of a match and the administrators can see and remove
+the accounts that joined with the game PIN.
+
+**Scoresheet files:** at the end of a match the app uploads the scoresheet as
+a PDF and as a file with the match data. Only the account that uploaded it can
+read it (through `scoresheet.openvolley.app`), plus the administrators and the
+competition managers of that app (OpenVolley or OpenBeach), who can open the
+PDF in the manager. Every time they open one, it is recorded in the audit log
+with their account. If the uploading account is deleted, the file stays stored
+as the match record; only the administrators and competition managers can
+still open the PDF.
+
+**Final scoresheet by email:** this feature is switched off at first; the
+OpenVolley administrators and competition managers switch it on. When it is
+on, the server sends the scoresheet of a closed official indoor match as a PDF
+to:
+
+- the account that closed the match and the scorer's account that approved
+  the result;
+- the referees who approved the result with their account or whose email
+  address was entered for the match;
+- the contact address of each team's club (section 6), so the club can pass
+  the scoresheet on to the coaches;
+- the contact address typed in for each team in the match setup or in "Edit
+  match info", like the referees' addresses.
+
+Each address gets its own email and does not see the others. If a match is
+reopened and closed again, the corrected scoresheet goes to the recipients
+once more. Only when and to how many addresses the scoresheet was sent is
+stored, not which ones. Matches closed before the feature was switched on are
+not sent. A referee's or a team's email address is optional, belongs to the match and is
+never public; only those who may read the whole match see it (table above).
+The email's text also lists the match's technical remarks (above); they are
+not in the PDF. Emails are sent through Migadu (section 15).
+
+**Scoresheet of a test match:** if you approve the result at the end of a
+test match while signed in, the app sends its scoresheet as a PDF to your
+account's email address and to no other. The server does not store it; on
+your device the test match is deleted when you close it.
+
+**Global tool (no account):** in the Global tool of OpenVolley (chosen when
+the app starts, changed in Options as long as no match is on the device) you
+score the matches of any tournament without an account. The rosters, officials
+and games you type in or load from an Excel or CSV file stay on your device;
+the app reads the file on the device and does not upload it. A Global match is
+never in the league's match, team or player records, nor in the manager or the
+league's public displays; only with "Save in the cloud" (below) is it kept, in
+a separate table of its own. Two files per match are stored on the
+server, without an account: the backup of the match (the content of a backup
+file: teams, rosters with names, shirt numbers and dates of birth, officials,
+signatures, the course of the match) and, once the match is approved, the
+scoresheet as a PDF. They lie under a random backup code (128 bits) that the
+app creates for the match and shows in Match Setup. The code is the only way
+to the files: there is no list and no search. The backup is encrypted like
+every backup file of the app (without the PINs in it): it opens only with the
+referee PIN of the match, or with the league's recovery key, which it keeps
+offline. Whoever knows the code and that PIN can restore the match, so keep
+both like a password. A new backup replaces the previous one. The
+files are deleted 180 days after the last change; the server backups
+(section 18) keep a copy for a while longer. If the server refuses the final
+backup and PDF for the moment (the day's share of your network is used up,
+the server is busy, no connection), they stay on your device and are sent
+again later, for at most 7 days; so does the final copy of "Save in the
+cloud" (below). The organiser of the tournament is
+responsible for being allowed to record the data and for informing the players
+and their parents (section 17).
+
+**New match without an account (Swiss version):** signed out, "New match"
+starts a match in the Swiss format without an account. It is handled like a
+Global match: it stays on your device, is never in the league's match, team or
+player records, and its backup and approved scoresheet PDF are stored under a
+random backup code in the same way (encrypted, deleted 180 days after the last
+change). It can use the public game information of the Swiss Volley schedule
+(teams, hall, league, game number, referees' names, without dates of birth)
+and an Einsatzliste read on the device. Saved teams, the clubs' licence lists,
+rosters sent by teams and the referee directory are not available in it, even
+if someone signs in on the device later.
+
+**Save in the cloud (Global tool, optional):** in Match Setup the scorer can
+switch on "Save in the cloud" for a Global match; it is off by default. Then,
+besides the backup and the PDF above, the match is also kept readable (not
+encrypted) in the server's database, without an account: the content of the
+scoresheet (teams, rosters with names, shirt numbers and dates of birth, team
+staff, officials, the course of the match, sets, remarks), without the PINs,
+the signature images, the backup code and the tournament code; a summary
+(team names, short names and colours, sets and points, status, hall, league,
+scheduled time, game number); and, once the match is approved, the scoresheet
+as a PDF, which shows the signatures and the dates of birth. The match is
+found by a hash of its backup code and guarded by a hash of its referee PIN;
+the server stores neither the code nor the PIN. Optionally:
+
+- **Share link:** a read-only link with a random token, which the scorer turns
+  on and off. Anyone with the link sees the result, the sets and the PDF
+  scoresheet on livescore.openvolley.app.
+- **Tournament code:** a code of 10 characters, entered on the scorer devices
+  of a tournament. Anyone with the code sees the list of all matches saved
+  with it, with their summaries and PDFs, on livescore.openvolley.app. The
+  server stores the code only as a hash.
+- **Another device:** to continue there, restore the match with the backup
+  code and the referee PIN, as above.
+
+The readable copy, the share link and the tournament code are deleted 180
+days after the last save, or at once when the scorer chooses "Delete from the
+cloud"; the server backups (section 18) keep a copy for a while longer.
+Without "Save in the cloud" none of this is stored. Here too the organiser of
+the tournament is responsible for being allowed to record the data and for
+informing the players and their parents (section 17).
+
+**Live screen for TVs (optional, any match, also OpenBeach):** the scorer
+devices of an event can switch on a live screen with a shared live screen code
+(Options, Live screen), for league, test, Easy and Global matches alike. While
+it is on, each live update of their matches also sends the code to my server
+with a summary of the score: the team names, short names and colours, the
+points, the sets won and the points of the finished sets, which team serves,
+the match status (for example timeout, set break, finished), the hall or court
+and the scheduled time. A scorer device that scores through a venue relay or
+the desktop app sends the same summary through it. Players, team staff,
+officials, line-ups, sanctions, remarks, signatures and PINs are not sent; in
+OpenBeach, however, a team's name is usually its players' names, and it then
+appears on the screen. The summary is kept in the server's memory only, never
+in a database or a file, and is removed 45 minutes after the match has ended,
+after 3 hours without an update (15 minutes for a summary that came only once
+and not through the relay), or when the server restarts. Anyone who knows the
+code can see the summaries of its matches on openvolley.app/tv, on
+livescore.openvolley.app or read them from the server's interface; a venue
+relay shows them on its own network too. The screens are no official record:
+a summary that reaches the server only through the desktop app or a venue
+relay, from OpenBeach up to 3.1.1 or OpenVolley up to 26.11.5, can be
+overwritten by someone who knows the code and the match's public id. A scorer
+device with a live screen
+code also lists the summaries of its Global matches on
+livescore.openvolley.app, for anyone and without the code, unless "Show Global
+matches on livescore.openvolley.app" is switched off on it in Options, Live
+screen (it is on by default). A code with a summary on that list shows only
+its listed summaries, on the TVs too; a match that is not to be listed needs a
+code of its own. League matches are on the livescore anyway; test and Easy
+matches are never listed. Switch the live screen off in Options to stop
+sending.
+
+**Approval with a PIN:** officials can confirm the result with a personal
+approval PIN in addition to their signature. Stored are: the PIN as a
+cryptographic hash (never in plain text), failed attempts and locks; for each
+approval the match, the role (1st or 2nd referee, scorer), your account, your
+name at the time of approval, the time, the approved result, and a
+pseudonymised hash of the IP address and of the device (to detect misuse).
+Approvals are part of the match record. You see your own approvals; the
+match's scorer and the administrators see them too.
+
+**Signing on a phone (OpenVolley from version 2.4.0):** instead of on the
+scorer's device, a person can sign on their own phone. The device shows a QR
+code with a link to my server (`backend.openvolley.app`) or, in venue mode, to
+the laptop on the local network. The link is valid for 10 minutes and for one
+signature only. The phone needs no account and no app. The page shows the
+game number, the teams, the date, the role and, if known, the name of the
+person signing. The phone sends only the lines of the signature (no image).
+The server or laptop holds this data in memory only, passes the signature on
+to the scorer's device and discards it at the latest 5 minutes after signing;
+nothing is stored in the database. The phone stores nothing: no cookies and
+no local storage; the link is kept only in the browser tab during the session
+and is deleted at the end. Only the scorer's device turns it into the
+signature image. Like a signature drawn there, it is part of the match, with a
+note that it was signed on a phone (route and time). Through the server this
+requires the scorer to be signed in with a scorer or referee role.
+
+**Sending match info by email:** a signed-in scorer can have the information
+of a match they recorded or edit (game number, teams, date and venue, no PIN)
+sent to the confirmed email address of their own account; the app does so when
+a match is created. No other address can be entered. The service Resend (USA)
+is used for sending (section 15).
+
+**Sending the game PIN by email:** right after a new official match is
+created, the app shows its game PIN once. A signed-in scorer can then have
+the game PIN of that match sent to the confirmed email address of their own
+account, with the game number, teams, league, date and time. Nothing is sent
+unless they ask for it, no other address can be entered, and the server sends
+it only if it is the PIN stored for that match. Its log records neither the
+PIN nor the address. The service Resend (USA) is used for sending
+(section 15). The app can also open the device's own email app with the PIN,
+for any address; that message is sent by the email app and does not pass
+through my server.
+
+## 8. Public displays: livescore, LED boards, public data
+
+Without an account and without a PIN, the following is visible:
+
+- **Livescore** (`livescore.openvolley.app`, `livescore-beach.openvolley.app`)
+  and live connections: team names, short names and colours, score, sets,
+  serve, line-up, substitutions and sanctions **by shirt number only**,
+  time-outs, league, hall, game number. **In beach volleyball the team names
+  are usually the players' surnames, so these are public.**
+- **LED boards** in the hall: team names and score.
+- **Match assignments** (section 11): match data with the names of referees
+  and line judges, without dates of birth.
+- **Public beach tournaments** (section 10): teams, players' first and last
+  names and countries, seeding, rank, schedule, courts.
+
+This data can also be retrieved through the server's programming interface
+(`backend.openvolley.app`). Any website can show the livescore of a match, or
+the day's games of a club, with the livescore widget (also as an `<iframe>`);
+it shows the same data without names of players.
+
+**Never public:** dates of birth, licence numbers, signatures, approvals,
+email addresses and PINs. Rosters with names are only visible to whoever
+knows the match's PIN or, for a Global match saved in the cloud, its share link
+or tournament code (section 7).
+
+## 9. Tablets and venue mode (LAN)
+
+**Referee and bench tablets** (`referee.`, `bench.`,
+`referee-beach.openvolley.app`) connect to the match with a PIN. The referee
+tablet receives both rosters with names and numbers, the score and the
+remarks; a bench tablet its own team's roster and the other team's shirt
+numbers only. None of them receives dates of birth, signatures or details of
+officials. The referee tablet stores the PIN and the
+match number in the browser; clear the browser data if several people use
+the tablet.
+
+**Through the server (cloud relay):** the live data passes through my server.
+It holds it in memory only and discards it 24 hours after the last activity.
+This also applies without signing in.
+
+**Venue mode (LAN):** the desktop app can serve the tablets directly on the
+hall's local network, also through the laptop's own Wi-Fi hotspot. The data
+then stays in the local network and in memory only. The hotspot's name and
+password are generated randomly on your device at every start. Only the sync
+with the server leaves the local network, and only when the scorer is signed
+in.
+
+**LED board (LedBox):** a scoreboard in the hall can show the score. It
+receives only team names, the score and set results, no player data.
+
+## 10. Manager sites: saved teams, team rosters and beach tournaments
+
+On `manager.openvolley.app` and `manager-beach.openvolley.app`, competition
+managers can prepare teams and tournaments.
+
+**Saved teams:** team name, club, players with number, first and last name,
+licence number, libero/captain and (beach) country; team staff with role,
+name and licence number; no dates of birth. Visible to the competition
+managers and the administrators of that sport. In OpenVolley a scorer account
+sees only the saved teams of its own matches of the current season (the teams
+of its clubs and their opponents, and the games of the matches it recorded or
+edits); a scorer without a club only while the game is near and for a few
+games a week, each recorded in the change log. In OpenBeach a scorer account
+sees only the saved pairs entered in its own published or running
+tournaments (a tournament of which it scores a match on a court tablet, or
+whose match it recorded or edits). A beach competition manager changes or
+deletes only the competitions it created. The scorer apps cache these
+teams and delete them on sign-out.
+
+**Filled from official matches (OpenVolley):** after the coin toss of an
+official indoor match (never a test or Easy match), the server adds everyone
+on each team's roster to that team's saved team of the season: the players
+with first and last name, shirt number and licence number, and the team
+officials (coaches, physiotherapist, medic) with role, first and last name
+and licence number. A person already there (the same licence number, else the
+same name) keeps their entry; the team's latest official match sets the
+players' shirt numbers and the officials' roles, and a player of the saved
+team who had that number loses it. Nobody is removed, and the libero and
+captain flags of the saved team stay. Only the players and the coaches (Coach,
+Assistant Coach 1 and Assistant Coach 2) with a licence number are also added
+to the club's licence lists (below), the players to the players list and the
+coaches to the coaches list, when the club's lists do not have that licence
+number yet; a physiotherapist or a medic stays in the saved team only.
+
+**Team managers (OpenVolley):** a club's managers can give a link to the coach
+or manager of one of the club's teams; whoever opens it and signs in manages
+that team. The server stores which account manages which team, who added it
+and when. A team manager edits the team's saved team and can send the roster
+of each of the team's games ahead: players with number, first and last name,
+licence number and libero/captain, and team staff with role, name and licence
+number; no dates of birth. If they want to, the coach and the
+captain can sign that roster ahead; the signatures are stored with it as
+images.
+
+**Rosters sent ahead:** visible to the team's managers, the managers of its
+club and the administrators, and to accounts with the scorer or competition
+manager role of OpenVolley. Scoring devices download the rosters of their
+clubs' coming home games so that the match setup works without internet. When
+the scorer accepts a roster in the match setup, it becomes part of the match
+(section 7) and the server deletes the players, staff and signatures at once;
+it keeps only that the roster was accepted, when and by which account. A
+roster that nobody accepts is deleted 14 days after the game. On a scoring
+device the copy is deleted once the server knows that it was accepted, when
+the account signs out, and at the latest 36 hours after the game.
+
+**Club licence lists (OpenVolley):** a club's managers can upload the
+club's lists of players, scorers and coaches from VolleyManager's club
+administration. The file is read in the browser: only the licence number, last
+name, first name and gender of each person are kept; the file's date of birth
+column is not read, and nothing else of the file is sent to the server. The
+lists are visible to the club's managers and the administrators. A team
+manager of the club sees the players of the team's gender and finds team
+officials (a coach can be anyone of the club's lists) with a name search that
+shows a few people at a time. The scoring devices of the club's scorers
+download the lists, so that the match setup can add players and team
+officials without internet. The gender is
+used so that a player is not put in a team of the other gender; it is not
+checked for team officials. Each upload replaces the people of the previous
+upload of that list; the lists are deleted with the club, and those of past
+seasons are deleted daily. The lists can also
+hold people that a team manager or a club manager added by hand from a team's
+roster, and the players and coaches of an official match's roster (above),
+with licence number, names and gender only; an upload keeps them, and they are deleted with their
+list or the club. On a scoring device
+the copy is replaced by each download and deleted when the account signs out.
+
+**Club API (OpenVolley):** a club's managers can make API tokens for the
+club's own software or website (for example its member administration). A
+token belongs to that club (or one of its teams), acts with the rights of the
+manager who made it and stops working when it is revoked, expires or that
+person no longer manages the club. With it the club's software reads and,
+if the token allows it, writes the club's teams, the rosters sent ahead of
+its games, its saved teams and its licence lists, with the data described
+above (names, shirt numbers, licence numbers), and the club's matches as the
+public interface shows them (section 8). Names and licence numbers are read
+only by a token that may also write them, and such a token
+needs the manager's password. The server stores only a fingerprint of the
+token, its name, rights, team, expiry and last use, and records who made or
+revoked it, each change made with it and each time it read those personal
+data in the change log. Whatever the club's software does with the data it
+reads is the club's responsibility.
+
+**Beach tournaments:** title, venue, dates, teams with the players' first and
+last names, licence numbers and countries, schedule, results, names of
+referees and scorers. If a tournament is marked **public**, the public
+tournament page shows teams, names and countries, never licence numbers or
+dates of birth. **Co-managers** are invited by email address: the
+invitation keeps the address that was typed, who sent it and when, and the
+managers of the tournament see that address. A competition manager with that
+address sees the invitation in the manager and becomes a co-manager only by
+accepting it. An invitation is deleted when it is accepted, declined or
+withdrawn; one left open can no longer be used after 30 days and is then
+deleted.
+
+**Purpose:** re-using rosters, preparing a game's roster ahead, adding a club's players and team officials
+to a roster and checking the players' gender against the team's, running tournaments, matching players by
+licence number when importing, filling in shirt numbers for the next game.
+
+This data is kept until a manager deletes it, even if the account that
+created it is deleted.
+
+## 11. Data about referees
+
+**Match assignments from Swiss Volley:** every day the server copies the
+official match assignments from Swiss Volley's VolleyManager, for the period
+from yesterday to 14 days ahead: teams, hall and address, league, 1st and 2nd
+referee with their names, line judges, call-ups. The server uses a
+VolleyManager account for this. Purpose: loading official matches with the
+correct officials. Names are public (section 8). VolleyManager also sends the
+referees' dates of birth; the server does not read or keep them (since
+19 November 2026; those kept before were deleted). The assignments are kept
+like the match records (section 16).
+
+**Referees' licence numbers:** since 20 November 2026 the server also keeps
+the licence number (the Swiss Volley number) that VolleyManager sends for the
+1st and 2nd referee. These numbers are not public: only the administrators
+and the accounts that score indoor matches can see them, so that the scorer
+app fills them in beside the referees when it loads an official match. They
+are deleted with the assignments (the season of the game and the 2 seasons
+after it, section 16), or earlier on request, together with the referee's
+name (section 19). Once on a scoresheet, they are part of the match record
+(section 7).
+
+**Referee directory:** a shared directory with first and last name, country
+and sport, so the scorer does not have to enter officials again each time; no
+dates of birth (those kept before 19 November 2026 were deleted). Accounts
+that score can add entries; administrators can change and delete them. Only the
+administrators and the accounts that score can see the directory, to fill in
+the officials of an official match; it is not public, and test and easy
+matches do not show it.
+
+If you do not want to be in the directory, write to support@openvolley.app.
+
+## 12. Downloads and updates
+
+- **Desktop app:** 60 seconds after start, then every 6 hours, at sign-in and
+  on request, it checks whether a new version exists, never during a live
+  match. It asks `get.openvolley.app`, or GitHub as a fallback. Only the
+  usual request is sent (IP address, program identifier).
+- **Android app from F-Droid:** the app does not look for updates itself;
+  your F-Droid app does that.
+- **Android app installed directly:** the app asks once whether it should
+  look for updates (default: no). Only if you agree does it query
+  `get.openvolley.app`, about once a day. You can turn this off again in the
+  settings.
+- **Home page of app.openvolley.app:** if you open it in a desktop browser,
+  your browser fetches the list of the newest versions from GitHub
+  (`api.github.com`, USA) to offer the right download. GitHub receives your
+  IP address.
+- **GitHub and F-Droid:** if you download there, their privacy policies
+  apply.
+
+## 13. Support and contact
+
+**Support form (in the apps and on openvolley.app/support):** it sends your
+email address, the type and area of your request, your message and, if you
+add them, up to five attachments (for example screenshots or backup files)
+to my server, together with the language, the page address without its
+query, the browser identifier, the time, the platform ("web" from the website)
+and, in the apps, the app version.
+
+**Diagnostics** are sent only if "Include diagnostics" is ticked. For a
+support request (a bug report or a question) the box is already ticked, for
+feedback and requests it is not; you can untick it before sending. "Show what
+is sent" shows you beforehand exactly the text that is sent. The app attaches
+it to the request as a text file (at most 2 MB). It contains:
+
+- technical details: app and version, platform, operating system, browser
+  identifier, screen and window size, language, time and time zone, online
+  and connection state, data not yet transferred and the last transfer
+  errors, storage used, the device's random identifier and, if you are
+  signed in, the identifier of your account;
+- the state of the open (or last open) match: game number, teams, status,
+  sets and score, line-ups (shirt numbers), time-outs and substitutions, the
+  last 30 match events, and whether the server has closed the match or
+  handed it to another device;
+- the history of about the last two hours (at least since the app was last
+  started) from the activity log and the interaction log (section 5): what
+  you tapped (with its label, which can contain names of teams or people),
+  keys, the screens you opened, which field you typed how many characters
+  into (not the text), points and other match events, corrections,
+  transfers, and the app starting, closing and going to the background;
+- the app's last error messages and warnings with their place in the
+  program.
+
+**Never included** are passwords, PINs, sign-in tokens, signatures, email
+addresses, phone numbers and text you typed into fields: the app removes
+such details from the whole text before sending. In the referee, bench and
+livescore apps the file contains only the technical details, the connection
+state and the error messages. If sending fails, "Download diagnostics" saves
+the file so that you can attach it to your email yourself. Older app
+versions send only the technical details, the game number and the last
+error messages. The website sends no diagnostics.
+
+The server forwards the request as one email to support@openvolley.app, with
+your address as the reply address. It keeps nothing of it except a log line
+with the type, the area and a shortened form of your email address
+(section 14). The mailbox is hosted by Migadu (section 15). My helpdesk
+(support.openvolley.app), which I run myself on my server at Infomaniak in Switzerland,
+reads it so that I can answer you and keep track of your request. I use your
+address only to answer you. **For requests about your data, please write
+directly to support@openvolley.app.**
+
+**Email to support@openvolley.app:** it is handled the same way, in the
+mailbox and in the helpdesk.
+
+**How long:** I keep support requests (mailbox and helpdesk, with the
+attachments and diagnostics) for 2 years after the last message, so that I can
+look up earlier answers; earlier on request.
+
+## 14. Logs and security on the server
+
+- **Server logs:** the server logs requests without content and **without IP
+  addresses** (status, error code, request identifier). Exception: a support
+  request is logged with a shortened form of your email address (section 13).
+  Slow and failed database queries are logged without their values. The logs
+  are overwritten by size (at most 10 files of 20 MB per service), usually
+  after days to a few weeks.
+- **Error reports:** the server's own errors are stored as error reports
+  (section 5), without content and without IP addresses. The IP address of a
+  device that sends reports is used only in memory, to limit how many it may
+  send.
+- **Cloudflare** processes the IP address, address and browser identifier of
+  every request and keeps them under its own rules.
+- **IP addresses in memory only:** to protect against misuse the server
+  limits requests and connections per IP address, and the live relay uses it
+  to recognise devices at the same venue. It keeps IP addresses in memory
+  only and neither stores nor logs them (except as a pseudonymised hash of an
+  approval, section 7, and the keyed hashes of the networks an account was
+  used from, section 6).
+- **Change log:** for accountability the server records who changed roles,
+  approved, closed or reopened matches, added co-editors or changed
+  tournament entries, and when. The entries can contain co-editors' email
+  addresses and beach team names. Only administrators see this log.
+- **Clubs and scoresheets by email:** the change log also records who made
+  accounts club managers, removed an account from a club, changed a club's
+  contact address or switched the sending of scoresheets on or off, and that
+  the scoresheet of a match was sent, with the number of recipients. It
+  contains no email addresses.
+- **Teams:** the change log also records who manages a team and who sent,
+  deleted or accepted a game roster, with the number of players and staff and
+  whether it was signed, never names or signatures, and when.
+- **Deleted accounts:** the change log records that an administrator deleted
+  an account or rejected a sign-up, with the account's roles and apps, when
+  it was created, how many official matches it leaves behind and a
+  pseudonymised hash of its email address, never the address or the name.
+- **Retention and redaction:** the change log records each daily deletion of
+  expired match records (only the cutoff and the numbers deleted) and each
+  correction or deletion of a person's data on request (only the kind, a
+  pseudonymised hash of the person and the numbers per table, never the
+  name).
+- **Signing on a phone:** the server logs only the steps (started, opened,
+  signed, closed) with the role and a short identifier, never the link, the
+  signature, names or teams.
+
+## 15. Recipients and processors
+
+I pass personal data only to service providers I need to run the service.
+They process the data on my behalf.
+
+| Provider | Task | Country |
+|---|---|---|
+| Infomaniak Network SA | Hosting the server: database, files, helpdesk and download page | Switzerland |
+| Cloudflare, Inc. | Delivering the websites, DNS, secure connection to the server | USA (global network) |
+| Migadu | Sending email (noreply@) and mailbox (support@) | Switzerland / Europe |
+| Resend, Inc. | Sending the match info and the game PIN by email (these functions only, if enabled) | USA |
+
+**Important about Cloudflare:** the encrypted connection from your device ends
+at Cloudflare; from there it continues encrypted to my server. Cloudflare can
+therefore technically see the content of requests, including rosters.
+Cloudflare may use the data only to provide its service.
+
+**Independently responsible** are: GitHub, Inc. (USA) for downloads and the
+version list, F-Droid for the app catalogue, Swiss Volley for the data in
+VolleyManager.
+
+**Backups** are kept encrypted on my server at Infomaniak and on my own
+storage device, both in Switzerland. They are encrypted before they leave the
+server, so nobody else can read them (section 18).
+
+**Transfers abroad:** according to the Swiss Federal Council, the EU and EEA
+states provide adequate data protection. For the USA I rely on the Swiss-U.S. Data
+Privacy Framework where the provider is certified, and otherwise on the
+standard contractual clauses in the providers' contracts. You can ask me for a
+copy of these safeguards.
+
+## 16. How long I keep data
+
+| Data | Kept |
+|---|---|
+| Account and profile | Until you delete the account, or an administrator deletes it (on request, or a rejected sign-up) |
+| Session | 30 days from last use, at most 90 days |
+| Failed sign-ins of an email address (a count, under a hash of the address) | 24 hours; deleted earlier with a new password or the account |
+| Networks an account was used from (keyed hashes, at most 20) | 60 days after the last use from there; deleted with the account |
+| Links in emails | Valid 60 minutes or 24 hours, deleted 7 days later |
+| Approval PIN | Until you remove it or delete your account |
+| Scoresheets, match events, event history, signatures, approvals, remarks (health data included), scoresheet files | As the official match record: the season of the match and the 2 seasons after it (a season runs from 1 July to 30 June), then deleted by a daily sweep; for example the records of the season 2024/25 go on 1 July 2027. Earlier on request where the record does not need the data (section 19) |
+| Saved teams, beach tournaments | Until a manager deletes them, or on request |
+| Referee directory | Until an administrator deletes the entry; deleted on request |
+| Match assignments from Swiss Volley | Like the match records: the season of the game and the 2 seasons after it |
+| Change log | As long as needed for accountability; deletion on request is considered |
+| A club's contact address | Until it is changed or removed, or the club is deleted |
+| Club managers | Until the administrators remove them, the club is deleted or you delete your account |
+| Team managers | Until a club manager or an administrator removes them, the team or the club is deleted, or you delete your account |
+| A roster sent ahead (players, staff, signatures) | Until a scorer accepts it, at the latest 14 days after the game; the note that it was accepted 14 days after the game |
+| A club's licence lists (licence number, names, gender) | Until the next upload of that list, its deletion by a club manager or the deletion of the club, at the latest until the end of the season; people added by hand or from a match roster: until the list or the club is deleted, at the latest until the end of the season; on a scoring device until the next download or sign-out |
+| A referee's or a team's email address for a match | With the match, as part of the scoresheet |
+| Sending of the final scoresheet (time, number of recipients, no addresses) | With the match |
+| Scoresheet of a test match by email | Not stored on the server |
+| Global tool: backup and scoresheet PDF of a match (under the backup code) | 180 days after the last change |
+| Global tool, "Save in the cloud": readable copy of a match, share link, tournament code (as a hash) | 180 days after the last save, or when deleted from the cloud |
+| Live screen: score summary of a match whose scorer switched it on (team names, points, sets; no players) | In the server's memory only; removed 45 minutes after the end of the match, after 3 hours without an update or at a server restart |
+| Uploaded backup copies | 30 days |
+| Uploaded app logs | 30 days; deleted with your account |
+| Activity log of a match (server) | 24 months, at the latest until the match is deleted; earlier on request |
+| Activity log without a match (server) | 90 days; entries recorded under your account are deleted with it |
+| Error reports (server) | 90 days; those sent while you were signed in are deleted with your account; earlier on request |
+| Event history (undone and corrected events) | With the match, as part of the match record |
+| Activity log on the device | Uploaded entries 180 days (at most 100,000); entries not yet uploaded until they are uploaded (at most 200,000); at most 30 daily files and 50 MB |
+| Interaction log (on the device only) | OpenVolley from 2.4.0: 30 days, at most 50,000 entries |
+| Desktop app log file (on the device only) | At most five older files of 5 MB each |
+| Signature on a phone (server or laptop) | In memory only; link valid 10 minutes, signature discarded at the latest 5 minutes after signing |
+| Support requests (mailbox and helpdesk, with attachments and diagnostics) | 2 years after the last message; earlier on request |
+| Server logs | Overwritten by size, at most 10 files of 20 MB per service (days to a few weeks) |
+| Live data (server and venue mode) | In memory only; on the server discarded 24 hours after the last activity |
+| Backups | Up to about 6 months (section 18) |
+| Data on your device | Until you delete it; backup files of the desktop and Android app 30 days |
+
+**Dates of birth deleted (19 November 2026).** Since then no date of birth is
+kept outside a match's own scoresheet, and there only where the scorer typed
+one (section 7). The dates of birth stored before were deleted on the server:
+from the accounts (profile and the copy kept of the sign-up), the club licence
+lists, the saved teams, the rosters sent ahead, the referee directory, the
+match assignments from Swiss Volley and the past match records (rosters, team
+staff, officials, rosters uploaded by teams, the entries and remarks of
+corrections, the event history). Licence numbers stay. The stored scoresheet
+PDFs are made anew from the corrected records; a file that cannot be made anew
+this way (for example a beach scoresheet) stays as it is until I have checked
+it, and is not deleted without that check. What I cannot reach: emails already
+sent (for example a final scoresheet); the encrypted backups, which keep older
+copies for up to about 6 months (section 18); and copies outside my server,
+such as data on devices and backup files on a computer, a USB stick or in
+Android's "Documents" folder, until they are overwritten or deleted (an
+updated scorer app removes the dates of birth of the Swiss matches on its
+device that are not in progress). Global matches are not affected: their
+organiser chooses what is printed beside a name, and their files and cloud
+copies are kept as described in section 7.
+
+## 17. Minors
+
+Many players are minors. Their data (name, number, licence number) is not
+entered by them but by clubs, team managers, scorers or organisers. These are
+responsible for being allowed to record the data and for informing the
+players and their parents. A player's date of birth is kept only on a match's
+own scoresheet where the scorer types one (in the Global tool where the
+organiser chose it), never with the club lists, saved teams or rosters sent
+ahead; it is never public, and neither is the licence number.
+
+In the Global tool the organiser of the tournament or the scorer who enters
+the data is responsible in the same way. Parents can ask for the backup or the
+cloud copy of a match to be deleted; for that I need the backup code or the match details
+(section 19).
+
+Parents or other legal representatives can exercise the rights in section 19
+for their child.
+
+## 18. Security and backups
+
+- Encrypted connections (HTTPS) for all sites and the server.
+- Passwords, PINs and sign-in tokens are stored on the server only as hashes.
+- The database and the stored files are kept on encrypted volumes on the
+  server (LUKS2, AES). The key is not stored on the server.
+- Access by role; tablets only with a PIN; closed matches are read-only.
+- Limits on sign-in attempts and locking after failed attempts.
+- Backups: the server backs up the database every hour and the files every
+  day, **encrypted**. The backups are copied every hour to my own storage device
+  in Switzerland and kept there in daily, weekly and monthly snapshots **for
+  up to about 6 months**. Deleted data can therefore remain in these encrypted backups for
+  up to about 6 months; they are used only to restore the service.
+- Backup and log files of the desktop app can only be read by your user
+  account and contain no PINs.
+
+No system is perfectly secure. If you find a security issue, please report it
+to support@openvolley.app.
+
+## 19. Your rights
+
+You have the right to:
+
+- **access**: learn which data I process about you;
+- **correction** of inaccurate data;
+- **deletion** or anonymisation of data;
+- **object** to the processing;
+- **restrict** the processing, for example while a correction is checked;
+- **receive** your data in a common format or have it transferred (the apps
+  also let you download backup copies, scoresheets and the activity log);
+- **withdraw consent** at any time (for example for the update check on
+  Android).
+
+Write to **support@openvolley.app**. I answer within 30 days. So that I do
+not give data to the wrong person, I may ask for proof of your identity.
+
+**Deletion from official scoresheets:** a closed scoresheet is the official
+record of a match, in which clubs, the association and officials have an
+interest. I delete or anonymise your data in it as far as the record does not
+need it, and I explain what remains and why. A correction (for example of a
+misspelt name) or a deletion is made in every copy on the server at
+once: the match records with their history and logs, the club lists and saved
+teams, the referee directory and the match assignments. The shirt number and
+the role stay where the record needs them, and the scoresheet PDF is made
+anew. Copies outside my server (on devices, in emails already sent) I cannot
+reach. The encrypted backups keep the old data for up to about 6 months
+(section 18); should one of them be restored, I apply your request again.
+
+**Complaints:** you can complain to the Swiss Federal Data Protection and
+Information Commissioner (FDPIC, www.edoeb.admin.ch). If you live in the EU
+or EEA, you can also complain to the data protection authority of your
+country.
+
+## 20. Legal bases (GDPR)
+
+Where the GDPR applies, I rely on:
+
+- **Contract** (Art. 6(1)(b) GDPR): account (with the optional licence
+  number), sync, account emails, support, the features you use, the online
+  backup and the cloud copy of the Global tool.
+- **Legitimate interests** (Art. 6(1)(f) GDPR): correct and verifiable
+  official match records for clubs, the association and officials (rosters,
+  licence numbers and, where the scorer types one on the sheet, the date of
+  birth to check eligibility, signatures, approvals, activity log and event
+  history, remarks), saved teams and club lists filled from official match
+  rosters, delivering the final scoresheet to officials and clubs,
+  livescore for the public, running tournaments,
+  troubleshooting (also the error reports of the apps,
+  which you can switch off), security and protection against misuse, backups.
+- **Consent** (Art. 6(1)(a) GDPR): the update check of the directly installed
+  Android app.
+- **Health data** (an injury or illness recorded in a match, section 7): the
+  Rules of the Game require the record of such a substitution and of a libero
+  who can no longer play. Under the GDPR I rely on Art. 9(2)(f) (establishing,
+  exercising or defending claims: protests and appeals in a competition are
+  decided on the match record), together with the legitimate interest above;
+  under the FADP on the overriding interest in a correct official record. The
+  app records only the rules' words automatically.
+
+Under the Swiss FADP I process data only for the purposes stated and to the
+extent needed.
+
+**No obligation to provide data:** you are not required by law or contract
+to give me any data. Without an email address and a password I cannot open an
+account, though, and without rosters there is no scoresheet.
+
+## 21. Changes
+
+I update this policy when the apps or the law change. The version published
+on this page, with the date at the top, applies.

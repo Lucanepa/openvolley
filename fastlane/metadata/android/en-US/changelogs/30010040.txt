@@ -1,0 +1,6 @@
+OpenVolley 3.1.4
+- Match Setup shows where the match is backed up: cloud, this device and removable drive.
+- Desktop: every backup is now also copied to each USB stick plugged in (switch in Match Setup).
+- Restore lists the backups saved on this device, on a USB stick or in the browser's backup folder.
+- Browser backup files are encrypted like the apps' (game or referee PIN opens them); a remembered browser folder asks one tap to reconnect.
+- Restoring with the referee PIN no longer overwrites the server's game PIN.

@@ -1,0 +1,1074 @@
+# Scoresheet field spec (indoor, Swiss Matchblatt layout)
+
+Status: reference for the `scoresheet_pdf` rewrite (branch `feat/scoresheet-pdf`).
+Date: 2026-10-07. Updated 2026-11-24: the column beside a name (sections 3, 10 and 13.3) holds
+the licence, not the date of birth, since the owner's decision of 2026-11-19 (db/048). Sections
+14, 16 and 17 are kept as written then.
+
+This file lists every area of the official paper scoresheet and how each one is filled in:
+what gets written, ticked, circled or crossed, when, and in which format. It also covers the
+special cases. The printed OpenVolley sheet must give a referee the same information as a
+correctly hand-filled Matchblatt, with the same marks in the same places.
+
+Sources (read in full for this spec):
+
+- **MB**: the official blank Swiss Volley Matchblatt, A3 landscape, one page (a scanned image
+  with an empty AcroForm, so it has no form fields). Local copy: `~/.cache/openvolley/sv-ref/matchblatt.pdf`.
+- **SC**: the Swiss Volley Scorekeeper Course 2025, English, 91 slides (19.8.2025).
+  Local copy: `~/.cache/openvolley/sv-ref/course.pdf`. Slide numbers are given as `SC p.N`.
+- **FIVB**: the FIVB Official Volleyball Rules 2025-2028, quoted by SC p.33, 38 and 63. This
+  source is used only where SC is silent. Those places are marked "(FIVB)".
+- Rules that OpenVolley decides itself (things paper cannot show, data formats, branding) are
+  marked **OV decision**.
+
+Notation:
+
+- `/` means a tick: a short diagonal stroke over a printed number.
+- `X` means a cross.
+- `( )` means a circle drawn around something.
+- `T` means a vertical stroke with a bar on top, drawn through the printed numbers that were
+  not used.
+- `⊥` means a reverse T: a vertical stroke with a bar at the bottom.
+- **Owner decision (2026-10-07):** the generated sheet draws **neither `T` nor `⊥`** in the
+  points columns (see section 16). Both are described below only as the paper convention.
+- A score written `a:b` always puts **the concerned team's points first**. The concerned team is
+  the team that asked for the time-out or substitution, or the team that was sanctioned or is
+  named in a remark (SC p.46, 51, 55, 69).
+
+---
+
+## 1. Sheet anatomy
+
+The sheet is A3 landscape. Its areas, from top to bottom:
+
+| Area | Position | Section |
+|---|---|---|
+| Logo (federation) | top left | 2.1 |
+| Competition category boxes, league designation, match no. | top centre | 2.2 |
+| Second logo (FIVB on paper) | top right | 2.1 |
+| Teams line (home : away with A/B circles), place, hall, date, time | under the header | 2.3 |
+| Set 1 (left half) and Set 2 (right half) | row 1 | 4 |
+| Set 3 (left half) and Set 4 (right half) | row 2 | 4 |
+| Set 5 (tie-break, three panels) | row 3, left two thirds | 6 |
+| Rosters, Team panel left = HOME, right = AWAY | row 3 to bottom, right third | 3 |
+| Sanctions, with the improper-request box | bottom left | 7 |
+| Remarks (4 lines) | bottom centre, top part | 8 |
+| Approval (officials and signatures) | bottom centre, lower part | 10 |
+| Final result, with start/end/duration and the winner | bottom centre-right | 9 |
+| Vertical side text (copyright notice) | right margin | 2.1 |
+
+Each set grid has a left legend column with these labels: "Aufgabenfolge" (service order),
+"Startaufstellung" (starting line-up), "Spielerauswechslung / Nr. Spieler" (substitution, player
+no.), "Spielstand" (score), and "Aufschlagrunde 1.-8." (service rounds; 1.-6. in set 5).
+
+---
+
+## 2. Header
+
+### 2.1 Branding
+
+- On paper: the Swiss Volley logo is top left and the FIVB logo is top right. The right margin
+  carries the vertical text "Copyright Swiss Volley ... Nachdruck verboten".
+- **OV decision.** The generated sheet and its PDF must contain **no Swiss Volley name or logo**.
+  This covers the visible text, the text layer, the PDF metadata (Title, Subject, Author,
+  Creator, Producer, Keywords) and the alt text.
+  - The top-left logo is the **OpenVolley logo** (logo A, from `frontend/brand/`, `lockup.svg`
+    or `mark.svg`). The same logo is used on every platform (web, desktop, Android), so the
+    `noFederationLogo.js` special case for Android goes away.
+  - The top right must **not repeat the OpenVolley logo**. To balance the header, put the match
+    identity block there (game no., date, league), or put nothing there.
+  - If a vertical side banner is kept, it reads exactly `OpenVolley eScoresheet` (capital O,
+    capital V) and must not duplicate the top-left logo.
+  - Ball graphics anywhere on the sheet use the **new flat ball A** (`frontend/brand/ball.svg`).
+    The old green 3D ball must not appear anywhere: not in the set grids, the serve indicators
+    or the PDF.
+
+### 2.2 Category boxes
+
+Each category is a square. The one that applies is marked with `X` (SC p.9). Choose exactly
+one box per group, or leave the group empty if the data is not known.
+
+| Group | Boxes on MB | Data |
+|---|---|---|
+| Competition | Meisterschaft (Championship), Cup, Freundschaftsspiel (Friendly), Turnier (Tournament) | `match.matchType` / `match_type_1` |
+| Level | National, Regional, International, plus a blank "......" box for anything else | `match.championshipType`, with `championshipTypeOther` written on the dotted line |
+| Gender / age | Männer (Men), Frauen (Women), U23, U19, U17, plus a blank "......" box | `match.gender` / `match_type_2`, and the age class |
+
+Two more fields sit here:
+
+- **League designation** ("Bezeichnung der Liga"): free text, for example `2 Liga`.
+- **Match no.** ("Spiel Nr."): the official game number, for example `382208`.
+
+### 2.3 Teams line and venue
+
+- **Teams line**: `(A|B) HOME_NAME : AWAY_NAME (A|B)`.
+  - The left name is **always the home team** and the right name is **always the away team**
+    (SC p.9).
+  - Each circle gets the letter that team drew in the coin toss (SC p.15).
+  - Full team names are written here. Short names are allowed in the rosters, the set grids and
+    the result table (SC p.15).
+- **Ort** (city), **Halle** (hall).
+- **Datum**: `DD.MM.YYYY`.
+- **Zeit**: the **scheduled** start time, `HH:MM`, 24-hour clock.
+
+---
+
+## 3. Team rosters (right third, "Mannschaften/Equipes/Squadre")
+
+There are two panels. The left panel is HOME and the right panel is AWAY (SC p.10). Each panel
+contains:
+
+1. **Panel header**: a circle with the letter A or B, and the team name (short name allowed).
+2. **14 player rows** with three columns:
+   - "Lizenz-Nr." column. On the paper Matchblatt it is **filled with the date of birth** (SC
+     p.10 and p.11: "It says Licence n. but actually it is DoB").
+     **OV decision (owner 2026-11-19, replaces the `DoB` header of 2026-10-07):** in a Swiss
+     match the header prints `Licence` and the cell holds the licence number, or a date of
+     birth (`DD.MM.YYYY`) when the scorer typed one there; a value with a `.` counts as a date.
+     A Global match prints the organiser's choice: `DoB`, `ID` or `Info` (`src/domain/idMode.js`,
+     `idHeadingOf` in `scoresheet_pdf/utils/sheetFormat.ts`). The value is still stored in the
+     person's `dob` field.
+   - "Spieler Nr.": the shirt number.
+   - "Name": `Lastname, F.` (last name, comma, first initial with a full stop, SC p.10).
+
+   Order rows by shirt number when possible (recommended, not mandatory). The **team captain's
+   number is circled** (SC p.10). Liberos also appear in these 14 rows.
+3. **LIBEROS («L»)**: 2 rows, with the same three columns. **A libero is written twice**: once in
+   the general roster and once here (SC p.10).
+4. **Officials (Offizielle)**: 5 rows labelled `C` (coach), `AC1`, `AC2` (assistant coaches),
+   `P` (physio) and `M` (medical doctor). Each row has the same value as the player rows
+   (licence, or a typed date of birth) to the left of the label and the name to the right.
+5. **Signatures ("Unterschrift")**: Kapitän (captain) and Trainer (coach). These are the
+   **pre-match** signatures, given right after the coin toss (SC p.14).
+
+Marks:
+
+- **Empty rows or cells**: once both pre-match signatures are in, every unused part of the
+  roster is struck off. Use a single line for one empty row and a "Z" for several (SC p.18).
+  This applies to player rows, libero rows and official rows.
+  - **OV decision:** print one horizontal stroke through a single empty row, and a Z across
+    a block of empty rows.
+- **Absent players**: a player who is not present at T-3 is struck through with a horizontal
+  line across the whole row, including the libero row if they are a libero (SC p.25).
+  - Data source: a player flagged absent or not checked in.
+  - If the app has no such flag, nothing is struck through.
+
+---
+
+## 4. Set grid, sets 1 to 4
+
+### 4.1 Which team is on which side
+
+| Set | Left block | Right block |
+|---|---|---|
+| 1 | Team A | Team B |
+| 2 | Team B | Team A |
+| 3 | Team A | Team B |
+| 4 | Team B | Team A |
+
+Teams change sides after every set except between set 4 and set 5 (SC p.20, 42). The order is
+pre-printed on MB as the A/B letters in the block headers.
+
+### 4.2 Block header (one per team)
+
+- **Mannschaft (team)**: the short team name, next to the pre-printed big letter A or B.
+- **(S) / (R) circles**: put `X` on **S** for the team that serves first and `X` on **R** for
+  the team that receives first (SC p.16).
+- **Beginn (start)**: this field exists **only on the left block**. It holds the set start time,
+  `HH:MM`.
+- **Ende (end)**: this field exists **only on the right block**. It holds the set end time,
+  `HH:MM`, which is the time of the last rally (SC p.39).
+
+**Which team serves first in each set** (FIVB 7.1, SC p.42):
+
+- Set 1: the coin-toss server.
+- Sets 2 and 4: the team that received first in set 1.
+- Set 3: the same team as set 1.
+- Set 5: decided by a new coin toss.
+
+### 4.3 Rows inside a team block
+
+Each team block has six columns, one per position I to VI.
+
+| Row | Content |
+|---|---|
+| Aufgabenfolge (service order) | Pre-printed `I II III IV V VI`. Nothing is written here. |
+| Startaufstellung (starting line-up) | The shirt numbers from the line-up sheet, positions I to VI. Position I is the first server. Write them large, one per column (SC p.24). |
+| Nr. Spieler (substitute no.) | The number of the substitute who entered **in this starting player's column** (SC p.51). |
+| Spielstand 1 | The score `subTeam:opp` when the substitute entered (SC p.51). |
+| Spielstand 2 | The score `subTeam:opp` when the starting player came back (SC p.52). |
+| Aufschlagrunde (service rounds) | 8 boxes per position: 4 rows × 2 sub-columns, with small round numbers 1-4 on the left and 5-8 on the right (MB). |
+
+Substitution rules for these rows:
+
+- **Columns follow the starting line-up, not the current court position.** A substitution for
+  starting player #9, who started at VI, goes under VI wherever #9 is on court at that moment.
+- **Closing a substitution**: when the starting player re-enters, the substitute's number in the
+  Nr. Spieler row is **circled** and the score goes into Spielstand 2. After that, the position is
+  closed for further regular substitutions in the set (FIVB 15.6).
+- **Several substitutions at once** (1 to 6 in one request): record each one in its own column
+  with the **same score** (SC p.67).
+- **Exceptional substitution, or any substitution that does not fit the column** (a third
+  movement, a re-entry): goes **only in the remarks** (SC p.68 and 69). The column is left as it
+  is.
+- **Forced substitution after expulsion or disqualification, if legal**: recorded in the column
+  like any other substitution (SC p.61: `4` under starter 12 with `24:18`).
+
+### 4.4 Points column ("Punkte", between and after the blocks)
+
+- In sets 1 to 4 each team has a column of **1-48**, printed as 4 sub-columns: 1-12, 13-24,
+  25-36 and 37-48.
+- **Every point won**: put `/` on that team's new running total (SC p.32).
+- **A point awarded by sanction** (a misconduct penalty or a delay penalty, given to the
+  opponent): the number is **circled, not ticked** (SC p.59 and 60).
+- **Points above 48**: not possible on paper.
+  - **OV decision:** keep printing the score correctly. Extend the column or wrap, and add the
+    remark `Set n continued beyond 48, final a:b`.
+  - Never drop or cap a point.
+
+### 4.5 Time-outs ("T")
+
+- Under each points column there are **2 lines**, each pre-printed with `:`. They hold the score
+  `requestingTeam:opp` at the moment the time-out was requested (SC p.46-48).
+- The limit is 2 per team per set. Swiss indoor has no technical time-outs.
+- A request beyond the limit is an **improper request** (see section 7).
+
+### 4.6 Service rounds: opening, closing and side-out
+
+**Before the first rally**
+
+- The receiving team's **box I, round 1 is crossed with `X`**. Its first server will be
+  position II, because the team rotates on winning the service (SC p.16).
+- When the 1st referee authorises the first service, **tick the small "1"** in box I of the
+  serving team (SC p.28).
+- **Never tick the receiving team's crossed box I.**
+
+**During play**
+
+| Event | Mark |
+|---|---|
+| Serving team wins a rally | Tick the point only. The same server continues and the service box is unchanged (SC p.32). |
+| Serving team loses a rally (side-out) | 1. Tick the opponent's point. 2. **Close** the server's box by writing the **team's total points** at that moment (the total score, not the points made on that service) in the box of the player who last served (SC p.33). 3. **Open** the next server box of the team that won the service by ticking its small round number (SC p.34). |
+| Point awarded by penalty to the receiving team | The same side-out logic as a lost rally: close the server's box, circle (do not tick) the point, open the opponent's next server box. |
+
+Service passes through the positions in this order: I → II → … → VI → I. Each new pass fills
+the next round box (1, 2, … 8).
+
+**Invariants, to check in tests**
+
+- Within a team, the closed service-box numbers **always increase** in service order (SC p.40).
+- The last ticked or circled point equals the circled final number in the service boxes
+  (SC p.40).
+
+### 4.7 End of set (SC p.39, 64)
+
+1. Write the **end time** in the right block's Ende field.
+2. Close the **winner's** service box with its final points:
+   - **If the winner was serving**: write the final points in the current server's box.
+   - **If the winner was receiving on set point**: write the final points in the box of the
+     player who would serve next (the rotation happened), and **do not tick** that box's round
+     number (SC p.64).
+3. **Circle the final points in the service boxes of BOTH teams.** For the loser, this is its
+   last closed box. **Do not circle in the points column.**
+4. In the points columns of **both** teams, draw a `T` from the first unused number to the
+   bottom of the column. **Not on the generated sheet (owner decisions 2026-10-07 and
+   2026-10-13, sections 16 and 17):** no `T`; once the set is over the numbers above the team's
+   final score are left blank.
+5. Check the box counts:
+   - The team that **served first** wins: both circled finals are at the **same** service count.
+   - The team that **received first** wins: the winner has **one service box more** than the
+     loser (SC p.40).
+
+**Winning a set** (FIVB 6.2): the first team to 25 with a lead of at least 2. At 24:24, play
+continues until one team leads by 2.
+
+- Example: 25:23 is won at 25.
+- Example: 30:28 is still won only after a 2-point lead. The set passes 24:24 → 25:25 → … →
+  28:28 → 29:28 → 30:28. The 48-number column covers this.
+
+---
+
+## 5. Set intervals and line-ups
+
+- The interval is 3 minutes. The next set's **Beginn** is the actual start. By default this is
+  the previous set's end plus 3 minutes, unless something delayed it (SC p.42).
+- **Set 1 Beginn** (SC p.17, 27):
+  - Do not copy the scheduled time automatically.
+  - If the match starts within a couple of minutes of the schedule, the scheduled time is
+    written.
+  - A real delay is written as is and explained in the remarks.
+  - **OV decision:** print the recorded start time, rounded to the minute. If it differs from
+    the schedule by more than 5 minutes and no remark exists, offer to add one. Never insert the
+    remark silently.
+  - **Owner decision (2026-10-07, section 16):** the recorded start is the **actual** start of the
+    set's first rally (the `rally_start` event), never the scheduled time.
+- **Line-ups**: each set gets the line-up from that set's line-up sheet. Check every number
+  against the roster, and check for disqualified players (SC p.23, 66).
+  - A player **expelled** in the previous set may play again.
+  - A **disqualified** player may not play for the rest of the match (SC p.66).
+
+---
+
+## 6. Set 5 (tie-break)
+
+Layout (MB, SC p.74-81). The set grid has **three team panels**. The team letters are **not
+pre-printed**: write A or B in each panel's empty circle.
+
+| Panel | Team | Header fields | Points column |
+|---|---|---|---|
+| 1 (left) | Team on the scorer's **left** at the start (from the set-5 coin toss) | Beginn, (S)/(R) | **1-8** |
+| 2 (middle) | Team on the **right** | (S)/(R), **Ende** | **1-30** (3 sub-columns: 1-10, 11-20, 21-30) |
+| 3 (far right) | The **left** team again, used after the change of courts | "Pte. beim Seitenwechsel" (points at the change) box | **1-30** |
+
+Other differences from sets 1 to 4:
+
+- Each panel has **6 service rounds** per position (rows 1/4, 2/5, 3/6) instead of 8.
+- Each panel has its own "T" time-out lines.
+- The vertical label between panels 2 and 3 reads "Seitenwechsel / Changement / Cambio"
+  (change of courts).
+
+**Preparation** (SC p.75):
+
+- Copy panel 1's line-up into panel 3 as well.
+- Panel 3 stays unused until the change of courts.
+
+**Change of courts at 8** (when either team reaches 8 points, FIVB 18.2.2). A Global match that
+plays the deciding set to another target (`match.setTargets.deciding`) changes courts at half of
+it, rounded up, as the Scoreboard does (`rules.courtSwitchPointOf`: 3 for a set to 5, 5 for 10,
+13 for 25); the generated sheet splits the panels there, and panel 1 then prints 1 to that point
+(never fewer than 1-8). See 17.15.
+
+1. Write the **left team's points at the change** (only the left team's points) in the
+   "Pte. beim Seitenwechsel" box of panel 3.
+2. In **panel 3's points column**, draw a **reverse T `⊥`** over numbers 1..N, the points
+   already scored. **Not on the generated sheet** (owner 2026-11-16, replacing the decision of
+   2026-10-13 in section 17): 1..N stay plain numbers, nothing over them.
+3. In **panel 1's points column**, draw a standard **T** over the numbers not ticked (N+1 to 8).
+   **Not on the generated sheet (sections 16 and 17):** no `T`; N+1..8 are left blank.
+4. Copy **all time-outs and substitutions**, with their scores and circles, from panel 1 to
+   panel 3.
+5. Service boxes:
+   - **Situation 1, left team serving at the change**: in panel 3, only **open** the current
+     server's box (tick its round number). Do not copy earlier service boxes (SC p.78).
+   - **Situation 2, left team receiving at the change**: in panel 3, copy **only the last closed
+     service box**, with its score, in the same position and round (SC p.79).
+6. Panel 1 is then out of use.
+7. **OV decision:** the generated PDF does not hide or grey out panel 1. It is printed as it was
+   at the moment of the change, so a reader can follow the record.
+
+**After the change**: the left team is recorded in panel 3 and the right team stays in panel 2.
+
+**Winning set 5** (FIVB 6.3.2): 15 points with a lead of at least 2, for example 15:13 or 17:15.
+
+**End of set 5**: same steps as section 4.7, applied to panels 2 and 3 (without the T, section
+16). The end time goes in panel 2's **Ende** field.
+
+**Best-of-3 formats**:
+
+- The deciding set is stored at index 5 and printed as "3" (`displaySetNumber`).
+- **OV decision:** the deciding set of a best-of-3 match is printed in the **set-5 grid**, with
+  the change of courts at 8. The grid is labelled with its played number (3). Sets 3 and 4 of
+  the standard grid stay empty (not struck off, owner 2026-10-20).
+
+---
+
+## 7. Sanctions box (bottom left)
+
+### 7.1 Improper requests ("Nicht ordnungsgemässer Antrag")
+
+- The header shows `Team (A)` and `Team (B)`. When the referee rejects a request as improper,
+  **cross that team's letter with `X`** (SC p.56).
+- Each team gets **one** improper request per match. Any further one is a **delay** (section
+  7.2).
+- No score, set or row entry is made for an improper request.
+
+### 7.2 Sanction rows
+
+There are **9 rows** with these columns:
+
+| Column | Content |
+|---|---|
+| Verwarnung (warning) | The member code, in the warning column |
+| Bestrafung (penalty) | The member code, in the penalty column |
+| Hinausstellung (expulsion) | The member code |
+| Disqualifikation (disqualification) | The member code |
+| (A) oder (B) | The letter of the sanctioned team |
+| Satz (set) | The set number |
+| Spielstand (score) | `sanctionedTeam:opp`, the score when the sanction was given |
+
+The member code goes into **exactly one** of the four sanction columns:
+
+- A **player**: the shirt number, for example `14`.
+  - If the player is **on the bench** (not on court), the number is **circled**, for example
+    `(6)` (SC p.62). **Not on the generated sheet (owner decision 2026-10-13, section 17):** the
+    number is written plain, in the box and in an overflow remark.
+- **C** (coach), **AC1** / **AC2** (assistant coaches), **P** (physio), **M** (doctor).
+- **D** for a delay:
+  - **Delay warning**: `D` in the **warning** column (SC p.57).
+  - **Delay penalty**: `D` in the **penalty** column (SC p.59).
+
+Examples taken from SC:
+
+- `D | | | | B | 2 | 16:18`: Team B, delay warning.
+- `C | | | | B | 2 | 16:18`: Team B coach, formal warning (yellow card).
+- `| D | | | B | 2 | 16:22`: Team B, delay penalty. Team A's point is circled in the points
+  column, and the score becomes A 23.
+- `| 14 | | | A | 2 | 24:16`: Team A player 14, penalty (red card). Team B's point is circled.
+- `| | 12 | | A | 2 | 24:18`: Team A player 12, expelled. If disqualified, the `12` goes in the
+  4th column instead.
+- `(6) | | | | A | 2 | 24:19`: Team A bench player 6, warning (printed `6` on the generated
+  sheet, section 17).
+- `7 | | | | A | 5 | 8:11`: Team A player 7, warning in set 5.
+
+Recording rules:
+
+- Only the stage-2 (yellow-card) **formal warning** is recorded. A stage-1 verbal warning is not
+  a sanction and is not written (SC p.63, FIVB 21.1).
+- Sanctions are recorded in the order they happened. If there are **more than 9**, the extra
+  rows continue in the remarks using the same format (OV decision, matching the current
+  `overflowSanctions`).
+
+**Consequences of each sanction** (FIVB 2025 table 9a/9b, SC p.63):
+
+| Sanction | Cards | Consequence on the sheet |
+|---|---|---|
+| Delay warning | Hand signal 25 with yellow | None |
+| Delay penalty | Hand signal 25 with red | Point **and service** to the opponent. The point is circled. Side-out marks follow section 4.6. |
+| Warning (misconduct) | Yellow | None |
+| Penalty | Red | Point **and service** to the opponent. The point is circled. |
+| Expulsion | Red and yellow together | No point. The member leaves for the rest of the **set**. A player must be substituted: legally if possible (column), otherwise exceptionally (remarks), otherwise the team is **incomplete** for the set (section 11). |
+| Disqualification | Red and yellow separately | No point. The member is out for the rest of the **match**. Substitution rules are the same as for expulsion. Later line-ups must not contain this player. |
+
+The scorer reminds the referee when the escalation scale is not followed (SC p.63, 80). The PDF
+records only what was imposed.
+
+---
+
+## 8. Remarks ("Bemerkungen/Remarques/Osservazioni")
+
+There are 4 ruled lines. If more space is needed, the text keeps flowing (OV decision: wrap, and
+continue on an overflow page if needed, never truncate).
+
+On the generated sheet the text shrinks to fit the box down to **6px** (about 1.6 mm, 4.5 pt on
+the A3 print; `FooterSection REMARKS_MIN_PX`, was 4px, about 3 pt, unreadable on paper). Text
+that does not fit at 6px starts with "Remarks continue on page 2." and the PDF prints the whole
+text after the sheet, on as many pages as it needs (`utils/remarksPages.ts`; each further page
+says "REMARKS (continued, page n of m)"). See 17.15.
+
+Every remark states **Team A/B, the set number and the result** (concerned team first). Time
+problems also state the times and the duration (SC p.71).
+
+Typical entries, worded as in SC:
+
+| Case | Text |
+|---|---|
+| Exceptional substitution (SC p.69) | `Team B, Set 3, Result 16:21: player no. 8 is exceptionally substituted by player no. 3 due to injury.` Other reasons: illness, expulsion, disqualification. |
+| Libero declared unable to play, and re-designation (SC p.70) | `Team A, Set 3, Result 21:24: Libero no. 4 is declared unable to play. Player no. 13 is designated as new Libero.` |
+| Delayed start (SC p.76) | `Set 5 start time 12:18 (5' delay) due to net replacement.` |
+| Delayed match start | The scheduled time, the actual time and the reason. |
+| Sanction overflow | The sanction rows beyond 9, in the section 7.2 format. |
+| Incomplete team / default (section 11) | What happened and the result that was awarded. |
+| Protest (FIVB 5.1.3.2) | The game captain's reservation, written as dictated. |
+| Free scorer remarks | Stored in `match.remarks` and printed verbatim after the generated ones. |
+
+### 8.1 Technical remarks (owner decision 2026-11-22)
+
+What the app notes about how the record was kept is a **technical remark**: never printed on the
+sheet (nor on its overflow pages), listed at the match end ("Technical remarks", "Add technical
+remark") and in Corrections (the correction log's card), kept with the match (`manual_changes` on
+the server) and listed in the text of the final scoresheet mail (`backend/lib/finalMail.js`
+`technicalRemarkLines`), never sent to the referee tablet (`lib/publicColumns.js`
+`relayBundleView`). `frontend/src/domain/technicalRemarks.js`.
+
+| On the sheet (REMARKS) | Technical remark |
+|---|---|
+| The scorer's own remarks (Remarks dialog, Match End, paired phone, Corrections "Add remark" by default) | Every correction (the correction log), including the changes after the match (no "Corrected after the match" line) |
+| Exceptional substitution (SC p.69, FIVB 15.7/15.8), also an injured player's | Injury substitution with a legal substitute ("#4 substituted, cannot continue playing") |
+| Libero unable, re-designated, able to play again (SC p.70, FIVB 19.4) | Bench injury ("#4 injured (bench)") |
+| Delayed start of the match or a set ("Actual game start", SC p.17/76) | Roster change after the coin toss (add, remove, edit a player or an official) |
+| Going back in the game (CB 2.3) | A set reopened (with its set and score) |
+| Protest, missing signature, the rule templates of "Add remark" | Signatures cleared by a roster change, a signature replaced (re-signed) |
+| Forfeit, default, incomplete team, a set past 48 points, sanctions beyond the 9 rows | A rebuilt sheet ("Rebuilt after the match", Rebuild PDF / render service) |
+
+**Where it is noted (Corrections).** A correction whose line the rules require is locked to the
+sheet ("The rules require this on the scoresheet."). Every other correction asks "Technical remark
+(not printed)" (default) or "Remark on the scoresheet" (an editable line, "Team B, Set 2: … (manual
+correction)."); the scorer's own "Other" remark defaults to the sheet and may be made technical.
+The correction board asks per change in its Save review. A roster change is never asked (owner).
+
+**Stored.** An event's line stays in `payload.autoRemark`, with `payload.remarkTo: 'technical'`;
+Undo, removals, renumbering and going back leave `match.remarks` alone for it. Match-wide lines are
+`match.manualChanges` entries (`category: 'technical'`, `action` `technicalRemark` /
+`signaturesCleared` / `resigned`, `text`). A correction put on the sheet too is logged with
+`remarkTo: 'sheet'` and its `sheetLine`.
+
+**Older matches.** Only a match created with this model (`match.remarksModel = 2`, set when the
+row is created; `match_info.remarks_model` on the server) does this. A match without it (created
+before, or restored from a backup or the server without it) writes and draws every line as before,
+"Corrected after the match" and "Rebuilt after the match" included.
+
+---
+
+## 9. Final result ("Endresultat/Résultat final/Risultato finale")
+
+The table always has **Team A on the left** and **Team B on the right**. Short team names go in
+the header.
+
+Columns: `"T" | S | W | Punkte || Satz (Dauer) || Punkte | W | S | "T"`. They mean:
+
+- `"T"`: the number of **time-outs** taken in the set (0 if none).
+- `S`: the number of **substitutions** in the set (0 if none). This **includes exceptional
+  substitutions**. SC p.71 counts "4 standard + 1 exceptional" as 5.
+- `W`: **1** if the team won the set, **0** if it lost.
+- `Punkte`: the points scored.
+- `Satz (Dauer)`: the set number, with the **set duration in minutes** (end − start) in brackets.
+
+Rows and footer:
+
+- One row per set (1 to 5). The rows of unplayed sets are left blank (**OV decision**, owner
+  2026-10-20: not struck off as on paper).
+- **Total** row: the sums of T, S, W and Punkte for each team, and the **sum of the set
+  durations** in the "Total ( )" bracket (SC p.86: 12+17+20+12+15 = 76).
+- **Beginn**: the match start (set 1 Beginn), written as `HH h MM min`.
+- **Ende**: the match end (the last set's Ende).
+- **Dauer**: Ende − Beginn, written as `H h MM min`. This includes the intervals. SC p.86 shows
+  76 + 3×3 + 8 = 93 min, i.e. `1 h 33 min`.
+- **Gewinner (winner)**: the winning team's **full name**, then `3:x`, where x is the loser's
+  sets (SC p.83).
+  - The "3:" is pre-printed on paper. In best-of-3 the print shows `2:x` (OV decision).
+  - The result is written as soon as the match ends, before the post-match signatures.
+
+---
+
+## 10. Approval ("Bestätigung/Approbation/Approvazione")
+
+Rows, from top to bottom:
+
+| Row | Name | Land | "Lizenz-Nr." → **Licence** | Signature |
+|---|---|---|---|---|
+| 1. (1st referee) | `Lastname, F.` | 3-letter country code, e.g. `CHE` | licence, or `DD.MM.YYYY` | yes |
+| 2. (2nd referee) | same | same | same | yes |
+| Schreiber (scorer) | same | same | same | yes |
+| Schreiber Ass. (assistant scorer) | same | same | same | yes |
+| Linienrichter (line judges) 1. 2. / 3. 4. | names only, two per row | none | none | none |
+| Unterschrift Kapitäne (captains' signatures) | captain A next to `(A)`, captain B next to `(B)` | none | none | post-match |
+
+- **Licence column.** The paper header says "Lizenz-Nr." and holds the date of birth (SC p.11).
+  **OV decision (owner 2026-11-19, replaces the `DoB` header of 2026-10-07):** the header is
+  the rosters' one (`Licence` in a Swiss match; a Global match: `DoB`, `ID` or `Info`, section
+  3). The value is the official's `match.officials[].dob`: a date is normalised to `DD.MM.YYYY`
+  (section 12.3), anything else (a licence) is printed as it is; an older match's
+  `officials[].licence` is the fallback (`FooterSection.tsx`). The column width stays the same,
+  so the row lines and the signature column stay aligned.
+- **Signing order** (SC p.84, 87):
+  1. The captains sign right after the result is written.
+  2. When the sheet is complete, the assistant scorer signs, then the scorer.
+  3. The referees check the sheet, then sign.
+  The scorer must **not** sign before the end (SC p.11).
+- Rows for officials who were not present are struck off. Line-judge rows are empty in most
+  Swiss matches and are struck off as well (OV decision).
+
+---
+
+## 11. Special cases
+
+| Case | What the sheet shows |
+|---|---|
+| Set won 25:23 | Points column ticked to 25 and 23. T marks from 26 and from 24. Circled finals in the service boxes. W = 1/0. |
+| Set won 30:28 | Same as above with 30 and 28. The 48-number column is enough. |
+| Tie-break 15:x | Section 6: change of courts at 8, finals circled in panels 2 and 3 (no ⊥ / T marks, section 16). |
+| Winner was receiving on set point | Final written in the next server's box, round number **not** ticked, circled (SC p.64). |
+| Time-out | `req:opp` on a T line (4.5). Counted in the result "T". |
+| Third time-out request | Improper request: cross the team letter (7.1). On a repeat: delay sanction. |
+| Regular substitution | Number under the starting player, score in Spielstand 1 (4.3). |
+| Starting player returns | Circle the substitute's number, score in Spielstand 2. |
+| Multiple substitutions at once | Each in its column, all with the same score (SC p.67). |
+| 5th or 6th substitution | Recorded normally. The scorer tells the referee. |
+| Injury, legal substitution possible | Regular substitution in the column (FIVB 15.7, legal first). |
+| Injury, no legal substitution | **Exceptional substitution** (FIVB 15.7): **remarks only**, counted in the result S. The replaced player may not play again in the match (SC p.68). |
+| Expulsion | E column (7.2). The player must be substituted at once: legal (column) → exceptional (remarks) → otherwise the team is incomplete **for that set**. Replaced legally, the player may return in the next set (SC p.66); replaced exceptionally, he takes no further part in the match (owner decision 22.11.2026, as every exceptional substitution). |
+| Disqualification | D column. Same substitution order as expulsion. Out for the match. If no player can replace them, the team is incomplete for the set, and for the match if the next set cannot be started with 6 players. |
+| Libero unable to play / re-designation (FIVB 19.4) | Remarks text (section 8). The new libero's number is **not** added to the printed libero rows, because those show the pre-match list. |
+| Penalty or delay penalty | Opponent's point **circled**. Side-out marks if the opponent was receiving (4.6). |
+| Sanction to a bench player | Number circled in the sanction row (SC p.62). |
+| Coach or staff sanction | C / AC1 / AC2 / P / M in the sanction row. |
+| Incomplete team during a set (FIVB 6.4.3) | The opponent is given the points (and sets) needed to win. The incomplete team keeps its points and sets. **OV decision:** the awarded points are **circled** in the points column (they were not won in a rally), then T marks and finals follow 4.7, plus a remark with team, set, score and reason. |
+| Default / forfeit (FIVB 6.4.1-2) | The team that defaults loses 0:3, each set 0:25. **OV decision** (owner 2026-10-21): set grids left empty, **not struck off** (no Z), the remark says what happened. Result rows filled with the awarded sets, printed as 25 / 0 with W 1/0, durations empty. Winner `3:0`. Remark: `Team X declared in default (reason), match result 3:0 (25:0, 25:0, 25:0).` |
+| Absent player | Roster row struck through (section 3). |
+| Delayed set or match start | Actual time in Beginn, plus a remark with the reason and the delay in minutes. |
+| Match ends 3:0 / 3:1 / 3:2 | **OV decision** (owner 2026-10-20): unused set grids and result rows are left blank, not struck off. Result, winner, captains' signatures as in sections 9 and 10. |
+
+---
+
+## 12. Derived values and checks
+
+The functions in `utils/scoresheetModel.ts` are pure, so all of these can be unit-tested.
+
+### 12.1 Calculations
+
+- `setStart[n]`, `setEnd[n]`: the actual set start (its first rally, `rally_start`; else the
+  confirmed start; else its first point) and the recorded set end (else its last point), both
+  to the minute (`utils/matchTimes.ts`, section 16).
+  Format `HH:MM`, local time in the match's time zone, Europe/Zurich by default.
+- `setDuration[n] = minutes(setEnd − setStart)`, rounded down to whole minutes.
+- `totalDuration = Σ setDuration`.
+- `matchDuration = lastSetEnd − set1Start`, printed as `H h MM min`.
+- `T[n][team]` = the number of time-out events. `S[n][team]` = the number of substitution events
+  **including** exceptional ones.
+  - Note: `countRegularSubstitutions` currently excludes exceptional substitutions. The
+    "regular" count is still needed for the 6-substitution limit, but the result "S" column must
+    use the total.
+- `W[n][team] ∈ {0,1}`. `Σ W` is the sets won. The winner line is `fullName  setsWon:setsLost`.
+
+### 12.2 Consistency checks
+
+These run before rendering. If one fails, the sheet shows a warning in the UI and the remarks
+are left unchanged.
+
+1. For each team and set, the ticked plus circled points equal the set score.
+2. Closed service-box values strictly increase in service order. The last one equals the
+   circled final.
+3. Service-box count parity with the first server (4.7, step 5).
+4. Every lineup, substitution and sanction number exists in that team's roster. Liberos never
+   appear in the starting lineup.
+5. No disqualified player appears in a later lineup or substitution.
+6. At most 2 time-outs per team per set, and at most 6 regular substitutions per team per set.
+7. Set 5: the "points at change" value is 8 for one of the teams.
+
+### 12.3 Formats
+
+- **Dates**: `DD.MM.YYYY`, zero-padded. Inputs are accepted as ISO `YYYY-MM-DD`, `D.M.YYYY` or
+  `DD.MM.YYYY`. Anything that cannot be parsed is printed verbatim, never as "Invalid Date".
+- **Times**: `HH:MM`, 24-hour clock.
+- **Names**: `Lastname, F.` for players and officials. Team names are full in the teams line and
+  the winner line, short everywhere else.
+- **Country**: 3 letters (`CHE`).
+
+---
+
+## 13. OpenVolley output requirements (owner request, 2026-10-07)
+
+1. **Branding**: see 2.1. No Swiss Volley name or logo anywhere, including the PDF text layer
+   and metadata.
+   - PDF metadata (owner 2026-10-13, section 17.10): `Title` = the file name without `.pdf`
+     (`game402397_1L-D_2026-10-10`), which a PDF viewer shows in its bar;
+     `Subject = "OpenVolley eScoresheet: <Home> vs <Away>, <DD.MM.YYYY>, game <no>"`,
+     `Creator = "OpenVolley eScoresheet"`.
+2. **Ball**: only the new flat ball A from `brand/ball.svg`, everywhere on the sheet.
+3. **Approval column**: the rosters' heading (`Licence` in a Swiss match), filled from the
+   officials' `dob` field (section 10). From 2026-10-07 to 2026-11-19 it printed `DoB`.
+4. **File name** (owner, 2026-10-13): `game<gameNo>_<league>_<YYYY-MM-DD>.pdf`, e.g.
+   `game382208_2L_2026-10-07.pdf`; the league left out when there is none. The manager's
+   download of a stored scoresheet has the same name. (Until 2.4.4:
+   `<YYYYMMDD>_<gameNo>_<Home>_vs_<Away>.pdf`.)
+   - Without a game number, `<Home>_vs_<Away>` takes its place, with the **real** team names.
+     Prefer the short name, but if a short name is empty or is a placeholder (`HOME`, `AWAY`,
+     `Home`, `Away`, `Team A`, `Team B`), use the full name.
+   - The date is the **local** match date. `toISOString()` is UTC and gives the wrong day near
+     midnight.
+   - Never use the literal `match` in place of a missing game number.
+   - Sanitising:
+     - transliterate `ä→ae, ö→oe, ü→ue, é/è/ê→e, à/â→a, ç→c`;
+     - replace every other character outside `[A-Za-z0-9-]` with `-`;
+     - collapse repeated `-` and trim them;
+     - at most 20 characters for the game number, 30 for the league and for each team;
+     - total length at most 120 characters, `.pdf` included (the part before it is cut at 116).
+   - Examples: `game382208_2L_2026-10-07.pdf`; without a game number
+     `MUST-H1_vs_Spatz-H1_2L_2026-10-07.pdf`; without a league `game382208_2026-10-07.pdf`.
+5. **Saving and reporting**: the save must produce a valid PDF (starts with `%PDF-`, ends with
+   `%%EOF`, opens in pdf.js and in the system viewer). The user must be told **exactly** where
+   the file went:
+   - **Desktop (Tauri)**: the full absolute path, plus **Open file** and **Show in folder**
+     actions run on the Tauri side.
+   - **Android**: the full path under `Documents/OpenVolley/scoresheets/`, plus **Open** and
+     **Share** through the platform intent, with no new proprietary dependency.
+   - **Web**: the browser download, with the file name shown in the notice.
+
+---
+
+## 14. Gaps seen in the current code
+
+These are pointers for the implementation phase, not a complete audit.
+
+- `App_Scoresheet.tsx` `handleSavePdf` builds the file name from
+  `match.gameNumber || externalId || game_n || 'match'`, from `homeShortName` / `awayShortName`,
+  and from a UTC date. This is how `match_HOME_AWAY_20261007.pdf` was produced. Fix per
+  section 13.4.
+- `FooterSection.tsx`:
+  - line ~497: the approval header is `Lic.`, and line ~520 prints `official.license`. Both
+    should become `DoB` and `official.dob` (formatted).
+  - lines ~729 and 749 (roster): there is an extra `Lic.` column beside `DoB`. The Matchblatt
+    roster has a single DoB column (section 3). Drop the licence column, or keep it only when
+    licence data exists, without misaligning the columns.
+- `scoresheetModel.countRegularSubstitutions` excludes exceptional substitutions. The result "S"
+  column needs the total (12.1).
+- `Header.tsx` and `components/swissvolleylogo.jpg`: these are the federation logo and naming to
+  remove (2.1).
+
+## 15. Open questions for the owner
+
+1. Right-hand header: show the match identity block (game no., date, league), or keep the FIVB
+   logo? The FIVB logo is on the paper sheet but is not part of the OpenVolley brand.
+2. Set 1 Beginn: print the recorded minute, or the scheduled time when the difference is within
+   2 minutes (paper practice, SC p.27)? This spec assumes the recorded minute.
+3. Best-of-3 deciding set: printed in the set-5 grid and labelled "3" (section 6). Is that
+   right for Swiss youth formats?
+
+---
+
+## 16. Owner decisions, 2026-10-07 (scoresheet review, round 2)
+
+These override the paper conventions above wherever they differ. The audit must not flag them.
+
+1. **No `T` / `⊥` in the points columns** (the `⊥` and the unused numbers changed on
+   2026-10-13, section 17). Owner: "here no need to do the inverse T. just write
+   the points actually scored". The generated sheet (preview and PDF, every set, set 5 included)
+   draws no `T` through the unused numbers at set end, no `T` in set-5 panel 1 at the change of
+   courts and no reverse `⊥` over the points already scored in panel 3. The points columns show
+   the pre-printed numbers, the ticks of the points won and the circles of the points awarded
+   (penalty, delay penalty, default); nothing else. This departs from SC p.39, 64 and 77-79
+   (sections 4.7 step 4 and 6 steps 2-3).
+2. **Actual times only.** Owner: "match start only written the actual match start". One source,
+   `scoresheet_pdf/utils/matchTimes.ts`, for the set headers, the RESULT table and the in-app
+   "Match complete" card (MatchEnd.jsx) and MatchEntry:
+   - set start = the real start of the set's first rally (`rally_start`, the device clock). The
+     "Set n start time" dialog value is used only for records without `rally_start`, then the
+     set's first point. A scorer who kept the scheduled 14:30 in that dialog for a match that
+     started at 16:05 no longer gets "Match Start 14:30" and a 104' first set. A start time
+     corrected afterwards in the Scoreboard's edit modal (set.startTime no longer equals the
+     time the `set_start` event recorded) is the scorer's deliberate word and wins;
+   - set end = the recorded set end, else the last point;
+   - set duration = end − start of that set; match start = set 1's actual start (empty until the
+     match has started); match end = the last set's end; match duration = end − start;
+   - all to the minute (rounded down), so every duration is the difference of the printed times.
+   This answers open question 15.2 (the recorded actual minute, never the schedule).
+3. **Signatures are saved the moment the pad is confirmed** and are on the sheet at once. The
+   coin-toss captain and coach signatures (CoinToss, also its roster dialog, and MatchSetup for
+   an existing match) and the post-match captains drawn on the scoreboard are written to the
+   match row and queued for the cloud as soon as the pad is confirmed (`utils/saveSignature.js`,
+   as MatchEnd already did for the approvals), not when the screen is confirmed. The sheet reads
+   them from the match row on every render: the captain / coach boxes of each roster, "CAPTAIN
+   SIGNATURE A/B" and the officials' column, identical in the live preview and the PDF.
+   Signatures made on a phone (QR signing) land in the same fields through the same handlers.
+4. **Automatic remarks in the sheet's convention.** Owner: the bench-injury remark read "Time
+   14h28m" (and that was UTC). The remarks the scoreboard writes (bench injury, injury and
+   exceptional substitution, libero unable / re-designated) now read
+   `Set 3, 14:28, B 15:5, #4 injured (bench)`: the set as printed, the local time `HH:MM`, the
+   team and the score with the concerned team first, then what happened
+   (`domain/remarks.js eventRemark`). The manual-edit and roster-change remarks use the same
+   local `HH:MM`.
+
+5. **Number circles fit their cell** (how owner item 7 is met; the owner should confirm it). Owner: "circle can be a little bigger", centred, inside the
+   cell without touching its borders, one size everywhere. The 5 mm cells leave ~4.74 mm between
+   the row rules and ~4.6 mm across a service box, so a ring can be at most ~4.0 mm (plus its
+   ~0.3 mm stroke) and still show a gap. The sheet draws every number circle at 4.0 mm
+   (`components/Marks.tsx NUMBER_CIRCLE_MM`). The number inside is set at 9.5 px
+   (`CIRCLED_NUMBER_PX`), so the ring sits well clear of the digits: it is bigger relative to the
+   number, as asked, though not in absolute size, which the cell does not allow.
+   Superseded for the substitution rows by section 17.4.
+
+## 17. Owner decisions, 2026-10-13 (scoresheet review, round 3)
+
+These override sections 4-7 and 16 wherever they differ.
+
+1. **Unused points are blank.** Owner: "the points not used just don't show ... in set 1 only
+   show up to 15, rest blank". Once a set is over, each points column shows the numbers up to
+   that team's final score and leaves the rest blank. Set 5: panel 1 ends at the left team's
+   points at the change of courts, panels 2 and 3 at the final scores. A set still running
+   keeps every pre-printed number (`components/PointsColumn.tsx`, `shownUpTo`).
+2. **Points columns breathe.** A 0.5 mm margin above the first and below the last number, so
+   none touches the column's rules; the circle round a number is 3.0 mm (was ~2.2 mm), clear of
+   its digits and of the numbers above and below (`POINTS_GRID_PAD_MM`, `POINT_CIRCLE_MM`).
+3. **The reverse T in set-5 panel 3.** Owner: "the points of the team left (then right) that
+   got assigned while they were left, on the right box they need to have an inverted T". A
+   line down through 1..N (N = the left team's points at the change) and a bar under N, over
+   the printed numbers, as on paper (SC p.77-79). Panel 1 still gets no `T`.
+   **Dropped 2026-11-16.** Owner: "can we not have the inverted T in set 5 ... just don't show
+   the points like they haven't been made. nothing". Panel 3 prints 1..N as plain numbers.
+4. **Line-up and substitution numbers: one size.** Owner: "increase the circle radius don't
+   decrease the number font. actually decrease by 1pt all number fonts in lineup-sub rows, so
+   it's the same". The starting line-up and the substitutes share one size, the circled
+   substitute too (`LINEUP_NUMBER_PT`), and the ring grows instead of the number shrinking. The
+   5 mm row (4.74 mm between its rules) decides the size: at 9.5 pt the ring that clears two
+   bold digits crosses the rules, at 9 pt it grazes them. Shown all three, the owner chose
+   **8.5 pt** (was 14 px = 10.5 pt) with a **4.3 mm** ring (`SUB_CIRCLE_MM`, was 4.0 mm): it
+   clears the digits (ink radius ~1.87 mm) by ~0.12 mm and the rules by ~0.06 mm. The final
+   points in a service box keep the box's 10.5 px; its ring stays 4.0 mm, the most the ~4.6 mm
+   wide box holds, and still clears them.
+5. **No circle round a bench player's number in SANCTIONS** (box and overflow remark).
+6. **APPROVAL aligned.** Header and officials' rows share one grid; every entry (name, country,
+   DoB, signature, approval stamp) is centred in its cell, vertically and horizontally; the role
+   labels stay left. The column rules are drawn once over the header and the rows, so they meet
+   every row line in the PDF too.
+7. **Names left in APPROVAL.** Owner: "the names can be left aligned, with a little margin".
+   The Name column (header and names) is left-aligned with the role labels' 2 mm margin;
+   country, DoB and signature stay centred.
+8. **No rules between the points columns' sub-columns.** Owner: "in point boxes: no need for
+   the column separators" (sets 1-4, set 5 panels 1-3).
+9. **Every vertical rule meets the one above and below it.** Owner: "the vertical lines not
+   being aligned with up and down ... review the WHOLE scoresheet setup". Measured on the
+   rendered page (every left/right border, rules stacked with up to 6 mm between them that
+   missed by 0.15-4 mm: 41 before, 0 after):
+   - one legend width (39.5 mm, `LeftInfoBox LEGEND_WIDTH`) and one 30px SET column in every
+     row: the rows of sets 1-4 were over-full and squeezed the legend to 39.52 mm, set 5's was
+     39.7 mm, so set 5 sat 0.17 mm right of sets 1-4;
+   - set headers: the rule after the left team's name is drawn by "Points" on its left, where
+     the points column below draws it (it was 1px left of it); in set 5 the same for "Points",
+     "End" and "Points at change", and panel 2 no longer draws a rule of its own (it started
+     1px late);
+   - set 5 on the set grid: panels 1-2 under set 3 (150 mm), the court-change strip as wide as
+     set 3's right border, the gap and set 4's SET column (48px, `SetFive COURT_CHANGE_W`), panel
+     3 (75 mm) exactly under set 4's left team; its header boxes over positions I-III and IV-VI,
+     the "points at change" box exactly over position IV (superseded by 12: inside its cell);
+   - the footer on set 5's lines: SANCTIONS under the legend and SET column (its right rule on
+     set 5's left one), REMARKS / APPROVAL under panels 1-2 (150 mm, ruled top and bottom only),
+     RESULT under the court change and panel 3 (75 mm + 48px), with no gaps (one rule between
+     boxes, not two 0.8 mm apart; superseded by 12: boxes 1 mm apart);
+   - the rosters start on set 4's line between its teams (overlapping the set-5 box's last
+     pixel, so one rule) and meet on set 4's V|VI line (50 mm + 1px and the rest; superseded
+     by 12: 1 mm from the left side and from each other, roster A still ending on that line);
+   - RESULT's Start / End / Duration row on the table's columns (Start under T, End under Set,
+     Duration under P W); BENCH OFFICIALS' DoB|No rule where the players' is;
+   - header: League and Date start where the sets' "End:" box starts, the Date|Time rule is the
+     sets' right edge (Date 35 mm + 1px, Time 16px + 93px: the gap and the side strip).
+10. **The PDF's title is the scoresheet's name**, and the manager's **View** opens it in the
+   browser's own viewer through a 10-minute view link (backend README "Who can read a
+   scoresheet"), so the viewer shows `game402397_1LD_2026-10-10` and saves
+   `game402397_1LD_2026-10-10.pdf` (a `blob:` URL saved `<uuid>`, without `.pdf`; the league
+   code without spaces since 12).
+11. **Saving on WebKit keeps the logo and the signatures.** Safari, the macOS desktop app
+   (WKWebView) and every browser on iPhone / iPad refuse the full capture (an ~87 MB data URL),
+   as WebKitGTK does; the lean retry did not draw the pictures, so their PDFs had no logo and no
+   signatures (found 2026-10-13 rendering in WebKit). Every WebKit engine (`isWebKitEngine`:
+   AppleWebKit 605+ or iOS) now takes the WebKitGTK path: lean capture, pictures drawn
+   afterwards; a failed full capture elsewhere retries the same way.
+12. **Boxes apart, one bottom line, a league code without spaces** (owner 2026-10-13, after
+   17.9; where the two differ, this item holds): REMARKS / APPROVAL and RESULT are boxes of
+   their own again, 1 mm apart (`FOOTER_GAP`), and so are the rosters from the left side and
+   from each other.
+   - The edges that sit under a line keep it: SANCTIONS' right edge under set 5's left one,
+     RESULT under the court change and panel 3, roster A ending on set 4's V|VI line.
+   - Every box below set 5 and both rosters end on one bottom line (the rosters take the left
+     side's height, APPROVAL fills its slot).
+   - The "points at change" box sits inside its cell again, with its own border.
+   - In RESULT, the winner's name and the sets ("3:2") are centred in the same band under
+     their labels.
+   - File names: an indoor league code loses its spaces, `1L D` → `1LD`
+     (`compactLeagueCode`: every word at most 3 characters; a name such as "Muster Volley
+     Cup" keeps its words apart). Beach leagues are unchanged.
+13. **The PDF draws the sheet as the screen shows it, wherever it is made** (2026-11-16,
+   after a Rebuild PDF made in Brave on a Linux laptop lost the rule under the LIBERO "No"
+   column and the bottom borders of the rosters and of every box on the bottom line).
+   - **Own base styles.** `scoresheet_pdf/sheet.css`, imported by `App_Scoresheet`
+     itself: the sheet's text is 10px, line height 1.5, letter spacing normal, Tailwind
+     gray-900, in one bundled font (Inter, variable weight, text cut, as the family
+     `OV Sheet Inter`, so it never replaces the app's Inter Display on the host page), and
+     Tailwind's preflight applies inside the sheet only (`.scoresheet-container`, the libero
+     control sheet `.ss-sheet`). The inner rules' grey hairline (`.ss-rule`, #6b6b6b) is
+     defined there too. Before, only the standalone page loaded these:
+     the manager's Rebuild PDF, the referee view and the scoresheet subdomain drew the
+     sheet in the app's 13px / line height 1.3 / Inter Display with near-black inner rules,
+     inline signature pictures and 0.2px letter spacing, so a rebuilt PDF did not look like
+     the approved one (the LIBERO block 7px higher). Every computed style of every element
+     of the sheet is now the same on the standalone page and in the manager.
+   - **One font on every device.** The standalone page asked for `Inter` but never loaded
+     it: each device printed its own system font (Segoe UI, Roboto, Helvetica, DejaVu), and
+     FitText fitted the names differently. FitText fits again once a font has loaded; the
+     capture waits for the fonts and that render. Sizes chosen by the owner (sections 16-17)
+     are unchanged.
+   - **Font sizes printed as set.** html-to-image copied every font size as
+     `floor(px) - 0.1` (8.5px DoB printed at 7.9px, a 5.5px FitText name at 4.9px). The Vite
+     plugin `vite-plugin-html-to-image-font-size.js` turns that off in every build (a
+     postinstall patch would not run in the F-Droid build, `npm ci --ignore-scripts`); a test
+     fails if an html-to-image update brings it back in another form.
+   - **Rules never covered.** In Chromium (Brave, Chrome) and WebKit at a fractional device
+     pixel ratio (page zoom, fractional display scaling) the capture rounds sub-pixel
+     borders up, children overflow their box by a fraction of a pixel and any child with a
+     background painted over the rule. Cells inside a box that is already white have no background of their own (the
+     LIBERO and BENCH OFFICIALS cells, the signatures, the roster headers, the winner band),
+     and every bordered box and row of the footer clips what overflows at its border
+     (`overflow-clip`: rosters, their rows and blocks, REMARKS, APPROVAL and its rows,
+     RESULT). The RESULT table keeps its white cells on the black grid (its rules are the
+     gaps). APPROVAL's role labels never wrap.
+   - **Checking it.** A Playwright context's `deviceScaleFactor` does not reproduce this in
+     Chromium or Firefox: the PDF comes out the same as at ratio 1, also with the old code.
+     Check Chromium launched with `--force-device-scale-factor=1.75` (a window size, viewport
+     `null`), which loses the LIBERO "No" rule and both roster bottoms on the old code as in
+     the Brave PDF, and WebKit with `deviceScaleFactor` 1.5, which loses rules there too.
+     The current sheet keeps every rule in both (ratios 1.1 to 2.625, standalone page and
+     manager).
+   - **In CI** (owner 2026-11-16, "fix the leftovers"): `scripts/sheet-pixels.mjs`
+     (workflow `sheet-pixels.yml`, on changes to the sheet's code or styles) draws a
+     synthetic best-of-3 (`scoresheet_pdf/pixel-check`), saves its PDF through the real
+     capture path and reads the picture back: the rule under every column of every roster,
+     LIBERO and BENCH OFFICIALS row, the bottom border of the rosters, SANCTIONS, REMARKS,
+     APPROVAL and RESULT, the deciding set's right rule on set 4's line (16) and the
+     descenders of the APPROVAL names (16). Chromium forced to 1, 1.25 and 1.75 and WebKit
+     at 1.5, standalone and under the manager's stylesheet. On the code before 13 it fails
+     (libero, officials and roster-bottom rules), before 16 too (the deciding set's rule 1 px
+     off at 1, names cut with line height 1).
+14. **Rebuild PDF keeps what the approved sheet had, and Cancel cancels** (2026-11-16, review
+   of the manager's Rebuild PDF). The rebuilt sheet is drawn from the server's record
+   (`src/utils/scoresheetFromCloud.js`), with nothing taken from the admin's device database.
+   - **Account approvals.** The owner's rule that a rebuilt PDF keeps the original signatures
+     holds for the PIN approvals too: the panel reads the match's non-revoked approvals
+     (`GET /api/approvals`, admins see every slot) and the sheet prints each stamp exactly as
+     at the approval (only while it matches the result, a drawn signature first). When they
+     cannot be read (a network or server error) nothing is drawn and the admin is told; a
+     server without the feature, or a beach match, has none.
+   - **Set starts as the scorer's device printed them.** The cloud's `sets.start_time` held
+     the row's creation time (coin toss for set 1, the previous set's end for set n+1) before
+     983fdb500 and still does when that update was lost, and item 16.2's "a start corrected
+     afterwards wins" rule would then print it. The cloud value counts only where it is the
+     confirmed start (same minute), a recorded correction (the log's `setTimes` entry, or the
+     `set_end` event Corrections rewrites) or later than the confirmed start (a creation time
+     never is); otherwise the `set_start` event's confirmed time. A start edited by hand on
+     the server to an earlier minute, with no log entry, therefore does not print: correct
+     set times through Corrections.
+   - **Cancel and limits.** The "Generating PDF" cover stays inside the sheet's view, so the
+     dialog's Cancel can be pressed while the PDF is made. After Cancel the capture stops at
+     its next step and nothing is uploaded, not even a late PDF; a failure after Cancel is not
+     reported. No PDF within 90 s (the approval's own limit) ends as "took too long", nothing
+     stored. A sheet that cannot be drawn (its code chunk gone after a deploy, or an error
+     while drawing an odd record) shows the error inside the dialog, with Reload for the
+     chunk case, instead of replacing the manager.
+   - **Cancel while the PDF uploads** (owner 2026-11-16, "fix the leftovers"): the request is
+     aborted and nothing says "rebuilt". The server may already have received it: a PDF
+     stored for a closed match is never removed (db/033), so there is no server-side undo.
+     The toast says so ("if the upload had already reached the server, the new PDF is
+     stored") and the list is read again, so the row shows whether it was stored.
+   - The LFP marks and the clock zone come with the match since item 17 (owner 2026-11-16),
+     so a rebuild prints them as the approved sheet did.
+   - The deciding set's change of courts (17.15) needs no set targets on the server: only a
+     Global match has its own points per set, and a Global match is a test match, never
+     sent to the server's `matches` table nor listed or rebuilt there (`m.test IS NOT
+     TRUE`). Every rebuilt match played the deciding set to 15, so its sheet changes at 8.
+15. **Text on the sheet, more pages, pictures** (2026-11-16, review of the PDF, group C).
+   - **The browser's minimum font size.** Android's WebView draws any font below 8px at 8px
+     (its default minimum), and so does a browser whose user set a minimum font size (Chrome,
+     Safari, Firefox). FitText shrank long names to 5-7px and only checked the text's width,
+     so on a scorer tablet those names were cut off, without a word (in Chromium with an 8px
+     minimum: every long roster name lost its initials, the bench officials, the RESULT
+     names, the league). FitText now reads the size the browser really used; when it is held
+     at a floor and the text does not fit there, the text is drawn at the floor size in an
+     inner box 1/k as large, scaled by k (a transform is not subject to the minimum), which is
+     what the smaller font would have drawn, in the PDF too. Where nothing holds the font up
+     there is no inner box: the sheet is unchanged.
+   - **Team names on two lines** in RESULT's head row and in the rosters' headers, when one
+     line is not enough. With no short name stored the full name is printed there, and the
+     single line cut its end: "Damen 1" against "Damen 2" and the sponsor mark (+) / (-).
+   - **REMARKS** shrinks to 6px at most, then goes to the pages after the sheet, as many as
+     the text needs (section 8). jsPDF does not paginate a text call: everything past about
+     58 lines was lost.
+   - **The deciding set follows the match's target** (section 6): the panels, the time-outs,
+     the substitutions, the service rounds, the libero entries and "points at change" split
+     where the Scoreboard changed courts, not always at 8.
+   - **Pictures before the capture.** The PDF waits until every logo and signature has loaded
+     and decoded (at most 3 s; it waited fixed delays only, so a picture still loading was
+     missing from the PDF), and the console names any picture that did not load
+     (`pdfCapture picturesReady`, `missingPictures`).
+16. **Owner notes on a rebuilt PDF** (2026-11-16).
+   - **The deciding set's right rule on set 4's line.** Panel 3's points column draws the set's
+     right border, on set 4's line between its teams. Laid out panel by panel (each 75 mm and
+     every header cell rounded to the layout grid on its own) the rule ended 0.02 px left of
+     set 4's, and the capture drew it 1 px left of it at 100 %. Panels 1-2 and their header now
+     sit in one 150 mm box and panel 3 and its header in one 75 mm box, as sets 3 and 4 do, so
+     both rows round the same widths the same way. Checked by pixel in the PDF: Chromium at a
+     display scaling of 1, 1.25, 1.5, 1.75 and 2 and at browser zoom 1.1, 1.25 and 1.5,
+     WebKit at 1.5, the standalone sheet and the manager's Rebuild PDF (`SetFive`).
+   - **IMPROPER REQUEST on one line.** It wrapped into the W P E D heading: 8 px, fitted
+     smaller when the box is narrow, never wrapped (`sanctions-improper-label`).
+   - **"Score" smaller** in the SANCTIONS heading: 7.5 px (the others 9 px).
+   - **Letters centred in their rings.** Every A / B ring (teams header, set headers, RESULT,
+     rosters, SANCTIONS, the captains' signature) is `CircleLetter`: the letter is SVG text with
+     its baseline half a cap height (Inter 0.727 em) below the ring's centre. As HTML text it sat
+     on a baseline rounded to whole pixels and the PDF put it up to 1.5 px high (the tiny A / B
+     of the SANCTIONS heading touched the top of the ring). The half-pixel lift of 2026-10-21 is
+     gone with it. The S / R rings of the set headers are unchanged.
+   - **APPROVAL names keep their descenders**: a one-line FitText never has line height 1.
+17. **Save PDF and Rebuild PDF take a few seconds** (2026-11-16, after a Rebuild PDF in Brave
+   on a Linux laptop took far longer than the "a few seconds" the cover promises). Not new
+   with 15: the capture had copied every computed property (~750 in the manager, 275 of
+   them the app's custom properties) onto each of the ~4,400 elements in Chromium (Brave,
+   Chrome, Edge, Android), a ~100 MB SVG to clone, serialise and decode: ~9.5 s from mount
+   to PDF on a fast desktop (before 13-15 too), more on a laptop.
+   - Every engine now copies only the properties the sheet uses (`usedStyleProperties`, as
+     WebKit already did), without the logical second names of physical properties
+     (margin-inline-start for margin-left: rewriting them cost WebKit ~3 s in the
+     manager). From mount to PDF in the manager: Chromium ~2.1 s (was ~9.5 s, also at a
+     forced ratio 1.5), Firefox ~2.5 s (was ~8 s), WebKit ~5.7 s (was ~9 s); standalone
+     page: Chromium ~2.1 s (was ~8.3 s), WebKit ~2.7 s (was ~3.5 s) (lenovoserver,
+     Playwright). A capture that fails in Chromium is tried once more the WebKit way (pictures drawn afterwards), never with the full copy.
+   - The sheet font is embedded from its own seven @font-face rules only, prepared once per
+     page; html-to-image read every stylesheet rule and walked the clone on each capture.
+   - Waits: two frames after the zoom reset and after `fonts.ready` instead of 250 ms and
+     50 ms (250 ms stays when coming back from the libero control sheet).
+   - The PDF is unchanged: pixel-identical to the full copy's in Chromium (ratio 1 and
+     forced 1.25, 1.5, 2.25), WebKit (1.5, 2) and Firefox, standalone page and manager, all
+     132 checked rules kept, the text in OV Sheet Inter.
+18. **LFP tracking, the clock zone and the API's minutes come with the match** (owner
+    2026-11-16, after the renderer audit: "yes" to all three proposals).
+   - **LFP tracking** is the scorer's setting when the coin toss is confirmed, kept with the
+     match (`lfp_tracking` in the server's `match_info`). Every device prints the match's
+     LFP marks, and its scoreboard and referee tablet track LFP, by that value, whatever its
+     own Options setting; switching LFP tracking in the scoreboard's Options during the
+     match changes the match's value too. Never in a Global match. A match without the value
+     (coin toss before 3.3.x) still follows the drawing device's setting.
+   - **The clock zone** is the tool's when the match is created (Europe/Zurich in the Swiss
+     tool, the device's own zone in the Global tool), kept with the match (`tz`). The sheet,
+     the Match complete card and the referee view print every time on that clock, on any
+     device. A match without one takes the restoring device's tool zone.
+   - **The public API's set times and minutes** are the sheet's: the confirmed start and the
+     recorded end, each to the minute, minutes = their difference (section 16's time rules), from one rule file the app and the server share (a byte-for-byte copy on
+     the server, checked by tests). Before, the API rounded the raw `start_time` /
+     `end_time`, so a set could differ by a minute, and a set row still holding its creation
+     time printed a wrong start.
+19. **"Out of date" sees every change to the sheet's data, and only those** (owner 2026-11-16,
+    "fix the leftovers"). The managers' Scoresheets tab marks a stored PDF out of date when
+    the data the sheet is drawn from changed more than 2 minutes after it (and after the
+    close). Since db/045 the server keeps one time per match (`match_sheet_changes`), moved
+    by triggers:
+   - any new, changed or removed event, set or account approval, and every event revision
+     (a correction, an undo). An event row edited in the SQL or Data tab now counts too
+     (before it moved nothing the list read);
+   - a match-row change of a column the sheet reads (rosters, officials, match info,
+     remarks, the after-match log, signatures, results, ...). The close, a game release, the
+     official season, connection and sync columns and `updated_at` do not count: releasing a
+     game no longer marks its PDF out of date;
+   - not: a rewrite that changes nothing (a resent job), and an account deletion clearing who
+     voided an event or approved (ON DELETE SET NULL).
+   Existing matches start from the value the list computed before, without a game
+   release's own write.
+20. **The official PDF as a vector PDF, made on the server** (owner 2026-11-16: "a true
+    vector PDF instead of a picture inside a PDF").
+   - **Design.** The stored scoresheet is printed by headless Chromium on the server
+     (`escoresheet/render`, compose `ov-render`) with `page.pdf()`: text, lines and the sheet's
+     font (OV Sheet Inter) in the file, selectable and searchable, exact at any zoom. The page
+     it prints is the web app's own scoresheet (`frontend/render`: `App_Scoresheet` fed by
+     `scoresheetDataFromCloud`, the builder Rebuild PDF uses, with `scoresheet.css` +
+     `sheet.css` as on the standalone page), printed under the SCREEN media, so the layout is
+     what the standalone `/scoresheet/` page shows; only its toolbar is hidden. A3 landscape,
+     5 mm margins: the 410 x 287 mm sheet fills the page box where the raster PDF placed its
+     picture. REMARKS that do not fit the box go on further pages as text
+     ("REMARKS (continued from the scoresheet)" and the sheet's title), as the raster PDF's
+     page 2. The match-level LFP tracking and clock zone (18.) make it print what the
+     scorer's sheet printed.
+   - **Not printed in the vector PDF:** the boxes' faint screen shadow (`shadow-sm`; Chromium's
+     PDF writer paints a shadow as a picture). Nothing else differs; a test requires every
+     word the page shows to be text in the PDF (`escoresheet/render/tests`).
+   - **Where it is used.** (a) After the approval's PDF of an indoor match is stored, the
+     server prints its own copy once the match is closed, its data has been quiet for 60 s and
+     10 min have passed since that PDF (the window in which a corrected approval PDF may still
+     replace it), and stores it as the match's newest: the view link, the manager and the final
+     mail serve the vector sheet; the device's raster PDF stays as a record. A record whose
+     finished sets do not end on their last point's score (points still on their way, a
+     correction the check cannot follow) keeps the device's PDF. The final mail waits for a
+     pending copy at most 25 min after the close. (b) The manager's Rebuild PDF asks the server
+     first (`POST /api/scoresheets/:id/rebuild-vector`); without the service, busy or failed,
+     the manager draws and captures the sheet itself as before. (c) The device's own offline
+     "Save PDF" stays the raster capture (it needs no network).
+   - **Fonts in the file.** Chromium embeds the variable Inter as Type 3 fonts (text extractable,
+     drawn exactly). A static Inter would embed as TrueType and make the file smaller; not
+     done (the sheet's font is the variable one everywhere else).
+   - **Off unless set up** (`OV_RENDER_URL` + `OV_RENDER_TOKEN` on the backend): every PDF is
+     then the raster capture, as before.

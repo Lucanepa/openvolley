@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-stick-mirror"
+description = "Enables the stick_mirror command without any pre-configured scope."
+commands.allow = ["stick_mirror"]
+
+[[permission]]
+identifier = "deny-stick-mirror"
+description = "Denies the stick_mirror command without any pre-configured scope."
+commands.deny = ["stick_mirror"]

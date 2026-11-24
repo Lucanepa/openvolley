@@ -1,0 +1,346 @@
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+import { VitePWA } from 'vite-plugin-pwa'
+import { readFileSync, existsSync } from 'fs'
+import { fileURLToPath } from 'url'
+import { dirname, resolve } from 'path'
+import { vitePluginApiRoutes } from './vite-plugin-api-routes.js'
+import { BUILD_TARGET } from './build-target.js'
+import { themeBoot } from './theme-boot.js'
+import { browserCheck } from './browser-check.js'
+import { buildChannelPlugin } from './build-channel.js'
+import { cspMeta } from './csp.js'
+import { htmlToImageFontSize } from './vite-plugin-html-to-image-font-size.js'
+import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, PRECACHE_MAX_FILE_BYTES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, API_NETWORK_ONLY_ROUTE, STATIC_ASSETS_ROUTE, PWA_INCLUDE_ASSETS, PWA_ICONS } from './pwa-workbox.js'
+
+// Valid HTML pages for the app (folder-based structure for clean URLs)
+const validPages = [
+  '/',
+  '/index.html',
+  '/referee',
+  '/referee/',
+  '/scoresheet',
+  '/scoresheet/',
+  '/bench',
+  '/bench/',
+  '/livescore',
+  '/livescore/',
+  '/upload_roster',
+  '/upload_roster/',
+  '/dictate',
+  '/dictate/'
+]
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+
+// Read version from package.json
+const packageJson = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8'))
+const appVersion = packageJson.version
+
+// Android app build (scripts/release-android.sh): the WebView loads the bundled
+// files, so no service worker — an old precache would otherwise keep serving
+// the previous version after an APK update until the user accepted the prompt.
+const isCapacitor = process.env.CAPACITOR === 'true'
+
+// HTTPS configuration for dev server
+const useHttps = process.env.VITE_HTTPS === 'true' || process.env.HTTPS === 'true'
+let httpsConfig = false
+
+if (useHttps) {
+  const certPath = resolve(__dirname, 'localhost.pem')
+  const keyPath = resolve(__dirname, 'localhost-key.pem')
+  
+  if (existsSync(certPath) && existsSync(keyPath)) {
+    httpsConfig = {
+      cert: readFileSync(certPath),
+      key: readFileSync(keyPath)
+    }
+    console.log('🔒 Using HTTPS with custom certificates')
+  } else {
+    // Vite will generate self-signed cert automatically
+    httpsConfig = true
+    console.log('🔒 Using HTTPS with auto-generated self-signed certificate')
+  }
+}
+
+export default defineConfig({
+  // Set base from env for GitHub Pages project site deployments.
+  // If deploying to a custom domain (CNAME), use '/'. Otherwise set to '/<repo-name>/'
+  base: process.env.VITE_BASE_PATH || '/',
+  // Android app: no .env files, only the variables given on the command line
+  // (scripts/release-android.sh, the F-Droid recipe). F-Droid builds the APK
+  // from source and checks it against the owner-signed one byte for byte, so
+  // a value from someone's local .env (e.g. a VITE_* backend URL) must
+  // not end up in the bundle.
+  envDir: isCapacitor ? false : undefined,
+  optimizeDeps: {
+    include: ['pdfjs-dist', 'react', 'react-dom', 'dexie', 'dexie-react-hooks'],
+    // served as is, so htmlToImageFontSize (below) reaches it in dev too
+    exclude: ['html-to-image']
+  },
+  resolve: {
+    dedupe: ['react', 'react-dom', 'dexie'],
+    alias: [
+      { find: '@', replacement: resolve(__dirname, 'src') },
+      // Android app: OpenBeach's tournament import (Excel/CSV) is
+      // manager-beach's, a web page. Its XLSX reader and writer resolve to a
+      // stub, so neither ships in the APK (the dialog is loaded on demand).
+      ...(isCapacitor
+        ? [{ find: /^(?:\.{1,2}\/)+lib\/xlsxCodec(?:\.js)?$/, replacement: resolve(__dirname, 'src/lib/xlsxCodec.stub.js') }]
+        : [])
+    ]
+  },
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion)
+  },
+  plugins: [
+    react(),
+    tailwindcss(),
+    // html-to-image copies every font-size as floor(px) - 0.1: the PDF printed
+    // the sheet's text smaller than it is (vite-plugin-html-to-image-font-size.js)
+    htmlToImageFontSize(),
+    // Colour theme (src/utils/theme.js): <html data-theme> set before the
+    // first paint on every page but the scoresheet and the manager consoles
+    themeBoot(),
+    // A browser too old for the app (Android 9's own WebView): a plain
+    // message instead of a white page, on every page (browser-check.js)
+    browserCheck(),
+    // The Android app's pages: the Content-Security-Policy as a <meta>
+    // (csp.js; the web builds send it in _headers). After themeBoot in this
+    // list, so its tag lands above the boot script and covers it too.
+    cspMeta({ enabled: isCapacitor }),
+    // A dev-branch build (Pages preview): its test backend, never the
+    // production one, noindex and the "Test build" badge (build-channel.js)
+    buildChannelPlugin(),
+    // Rewrite clean URLs to their index.html files
+    {
+      name: 'html-rewrite-handler',
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          const url = req.url?.split('?')[0] || '/'
+
+          // Rewrite folder routes to their index.html
+          const folderRoutes = ['referee', 'scoresheet', 'bench', 'livescore', 'upload_roster', 'dictate']
+          for (const route of folderRoutes) {
+            if (url === `/${route}` || url === `/${route}/`) {
+              req.url = `/${route}/index.html`
+              break
+            }
+          }
+          // The livescore's scoreboard page (/livescore/board): the livescore entry
+          // switches to it by the path (livescore-main.jsx); the query stays
+          if (url === '/livescore/board' || url === '/livescore/board/') {
+            const query = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''
+            req.url = `/livescore/index.html${query}`
+          }
+
+          next()
+        })
+      }
+    },
+    // Custom 404 handling for invalid routes
+    {
+      name: 'html-404-handler',
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          const url = req.url?.split('?')[0] || '/'
+
+          // Skip API routes, assets, and Vite internal routes
+          if (url.startsWith('/api/') ||
+              url.startsWith('/@') ||
+              url.startsWith('/node_modules/') ||
+              url.startsWith('/src/') ||
+              url.includes('.')) {
+            return next()
+          }
+
+          // Check if it's a valid page route
+          if (!validPages.includes(url)) {
+            res.statusCode = 404
+            res.setHeader('Content-Type', 'text/html')
+            res.end(`
+              <!DOCTYPE html>
+              <html>
+              <head>
+                <title>404 - Page Not Found</title>
+                <style>
+                  body {
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+                    color: #fff;
+                    min-height: 100vh;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin: 0;
+                  }
+                  .container {
+                    text-align: center;
+                    padding: 40px;
+                  }
+                  h1 { font-size: 72px; margin: 0; color: #ef4444; }
+                  p { font-size: 18px; color: rgba(255,255,255,0.7); margin: 20px 0; }
+                  a {
+                    display: inline-block;
+                    padding: 12px 24px;
+                    background: #3b82f6;
+                    color: #fff;
+                    text-decoration: none;
+                    border-radius: 8px;
+                    font-weight: 600;
+                    margin-top: 20px;
+                  }
+                  a:hover { background: #2563eb; }
+                  .valid-pages {
+                    margin-top: 30px;
+                    font-size: 14px;
+                    color: rgba(255,255,255,0.5);
+                  }
+                  .valid-pages a {
+                    background: transparent;
+                    border: 1px solid rgba(255,255,255,0.3);
+                    padding: 6px 12px;
+                    margin: 4px;
+                    font-size: 12px;
+                  }
+                </style>
+              </head>
+              <body>
+                <div class="container">
+                  <h1>404</h1>
+                  <p>Page not found: <code>${url}</code></p>
+                  <a href="/">Go to Home</a>
+                  <div class="valid-pages">
+                    <p>Valid pages:</p>
+                    <a href="/referee">Referee</a>
+                    <a href="/bench">Bench</a>
+                    <a href="/livescore">Livescore</a>
+                    <a href="/upload_roster">Upload Roster</a>
+                  </div>
+                </div>
+              </body>
+              </html>
+            `)
+            return
+          }
+
+          next()
+        })
+      }
+    },
+    VitePWA({
+      disable: isCapacitor,
+      registerType: 'prompt',
+      includeAssets: PWA_INCLUDE_ASSETS,
+      workbox: {
+        // Disable workbox console logs in production
+        mode: 'production',
+        // PRECACHE fonts + images + icons too (not just js/css/html). Without this
+        // they are only runtime-cached after a first ONLINE render, so a true cold
+        // offline start shows system fonts + missing logos/backgrounds.
+        // Also .mjs (pdf.js worker) and .jpg (scoresheet logo).
+        globPatterns: PRECACHE_GLOB_PATTERNS,
+        maximumFileSizeToCacheInBytes: PRECACHE_MAX_FILE_BYTES,
+        globIgnores: PRECACHE_GLOB_IGNORES,
+        // Match precache ignoring ALL query params: /scoresheet/?matchId=X,
+        // /referee/?match=..&team=.. must load the precached index.html offline
+        ignoreURLParametersMatching: IGNORE_URL_PARAMETERS,
+        // Don't skip waiting automatically - let user choose when to update
+        skipWaiting: false,
+        clientsClaim: true,
+        // IMPORTANT: Disable navigateFallback for multi-page app
+        // Without this, navigating to /scoresheet, /referee, etc. falls back to index.html
+        // (offlineNavigationRoute below maps each page URL to its own index.html instead)
+        navigateFallback: null,
+        // The API from the network only (never cached), cache-first for assets
+        runtimeCaching: [
+          // Extension-less page URLs (/referee?match=..) -> that entry's precached index.html
+          offlineNavigationRoute,
+          // API routes - network only: the answers are the signed-in account's
+          API_NETWORK_ONLY_ROUTE,
+          // Static assets - cache first, never an HTML answer (pwa-workbox.js)
+          STATIC_ASSETS_ROUTE,
+          {
+            // HTML pages - network first
+            urlPattern: /\.html$/,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'html-cache',
+              expiration: {
+                maxEntries: 20,
+                maxAgeSeconds: 60 * 60 * 24 // 24 hours
+              }
+            }
+          }
+        ],
+        // Don't cache these routes
+        navigateFallbackDenylist: NAVIGATE_FALLBACK_DENYLIST,
+        // Clean up old caches
+        cleanupOutdatedCaches: true
+      },
+      devOptions: {
+        enabled: true, // Enable PWA in development
+        type: 'module',
+        navigateFallback: undefined, // Explicitly disable - we handle multi-page routing ourselves
+        navigateFallbackAllowlist: [], // No fallback for any routes
+        disableDevLogs: true // Disable verbose workbox logging in dev console
+      },
+      manifest: {
+        name: process.env.VITE_APP_TITLE || 'Open eScoresheet',
+        short_name: 'eScoresheet',
+        start_url: '.',
+        display: 'standalone',
+        background_color: '#ffffff',
+        // Light only: white status bar (a red one would compete with red team
+        // colours and red cards courtside; RESTYLE-SPEC 5.3 / R4).
+        theme_color: '#ffffff',
+        icons: PWA_ICONS
+      }
+    }),
+    // Add API routes for dev server (same as production server.js)
+    vitePluginApiRoutes({ wsPort: process.env.WS_PORT || 8080 })
+  ],
+  server: { 
+    port: 5173,
+    host: '0.0.0.0', // Bind to all interfaces (IPv4 and IPv6)
+    strictPort: false,
+    https: httpsConfig
+    // API routes are now handled by vite-plugin-api-routes plugin
+    // WebSocket server runs on port 8080 (or WS_PORT env var)
+  },
+  build: {
+    target: BUILD_TARGET,
+    rolldownOptions: {
+      input: {
+        main: './index.html',
+        referee: './referee/index.html',
+        scoresheet: './scoresheet/index.html',
+        bench: './bench/index.html',
+        livescore: './livescore/index.html',
+        upload_roster: './upload_roster/index.html',
+        dictate: './dictate/index.html'
+      },
+      output: {
+        format: 'es',
+        // Split vendor libraries into separate cached chunks. The syntax
+        // helpers, Vite's preload helper and fflate (backups) get their own
+        // small chunks: inside pdf-vendor, as jsPDF's dependencies, they made
+        // every page load the PDF libraries.
+        codeSplitting: {
+          groups: [
+            { name: 'helpers', test: /vite[\\/]preload-helper|@oxc-project[+\\/]runtime[@\\/]|@babel[\\/]runtime[\\/]/, priority: 10 },
+            { name: 'fflate', test: /node_modules[\\/]fflate[\\/]/, priority: 10 },
+            { name: 'react-vendor', test: /node_modules[\\/]react(-dom)?[\\/]/ },
+            { name: 'dexie-vendor', test: /node_modules[\\/]dexie/ },
+            { name: 'pdf-vendor', test: /node_modules[\\/](jspdf|html-to-image)/ },
+            { name: 'i18n-vendor', test: /node_modules[\\/](react-)?i18next/ }
+          ]
+        }
+      }
+    }
+  }
+})
+
+

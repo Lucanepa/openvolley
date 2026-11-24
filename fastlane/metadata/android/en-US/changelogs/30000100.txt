@@ -1,0 +1,4 @@
+OpenVolley 3.0.10
+- Coaches and captains can sign during the warm-up: the coin toss no longer waits for their signatures.
+- Until they have signed, the scoring screen flashes "Missing signature" for the team. Tap it to check the roster and sign, on the screen or on a phone. The match starts once the coach and the captain of both teams have signed.
+- Swiss German texts reviewed.

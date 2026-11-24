@@ -1,0 +1,3294 @@
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
+import { useAlert } from '../contexts/AlertContext'
+import { getMatchData, subscribeToMatchData, listAvailableMatches, getWebSocketStatus, forceReconnect, buildLiveStateMatchData, isNewerLiveState, createLiveStateTracker, isLiveStateNewerThanBundle, matchAccessFor } from '../utils/serverDataSync'
+import { useRealtimeConnection, CONNECTION_TYPES, CONNECTION_STATUS } from '../hooks/useRealtimeConnection'
+import { useScorerAway } from '../hooks/useScorerAway'
+import { useScaledLayout } from '../hooks/useScaledLayout'
+import { setsToWin, isMatchFinished as isMatchFinishedUtil, displaySetNumber } from '../utils/matchFormat'
+import ConnectionStatus from './ConnectionStatus'
+import Modal from './Modal'
+import WsDebugOverlay from './WsDebugOverlay'
+import { diagnosticsSwitch } from '../diagnostics/switch'
+import { db } from '../db/db'
+import TestModeControls from './TestModeControls'
+import SimpleHeader from './SimpleHeader'
+import ContextualHelpPanel from './help/ContextualHelpPanel'
+import DonutCountdown from './DonutCountdown'
+import { supabase } from '../lib/supabaseClient'
+import { apiFrom } from '../lib/apiClient'
+import { useSyncQueue } from '../hooks/useSyncQueue'
+import { RefreshIcon, SunIcon, MoonIcon, DatabaseIcon, SatelliteDishIcon, WarningIcon, BellIcon } from './icons'
+import { FileText, House, Loader2, Users } from 'lucide-react'
+import { scorerReturnUrl, returnToScorer } from '../utils/scorerReturn'
+import { Button } from '../ui/Button.jsx'
+import { Card } from '../ui/Card.jsx'
+import { StatusPill } from '../ui/StatusPill.jsx'
+import { NarrowScreenOverlay } from './dashboards/EntryKit.jsx'
+import { nextLastEvent, refereeEventLabel } from '../utils/refereeLastEvent.js'
+import { backdropDismiss } from '../ui/backdropDismiss.js'
+import PlayerDisc from './referee/PlayerDisc.jsx'
+import { SUB_FLASH_MS, LIBERO_FLASH_MS, discFlashOf, liberoFlashKey, withoutLiberoFlashes } from './referee/discFlash.js'
+import ScoreServeRow from './referee/ScoreServeRow.jsx'
+import RecordedNoticePopup from './referee/RecordedNoticePopup.jsx'
+import BenchRequestIndicator from './referee/BenchRequestIndicator.jsx'
+import { lineupHiddenUntilBoth } from '../domain/lineupPrivacy'
+import { isFirstRallyOf } from '../domain/rally'
+import CountdownFlight from './referee/CountdownFlight.jsx'
+import TimeoutCountdown from './referee/TimeoutCountdown.jsx'
+import RefereeScoresheet from './referee/RefereeScoresheet.jsx'
+import RefereeRosters from './referee/RefereeRosters.jsx'
+import { TeamSanctionList, hasTeamSanctions } from './referee/SanctionCards.jsx'
+import { bundleHasFullAccess } from './referee/scoresheetInput.js'
+import { liveStateCounters, eventCounters, subCounterTone } from './referee/liveCounters.js'
+import { refereeSetBreak } from './referee/setBreak.js'
+import { createRecordedNoticeTracker, describeNotice, NOTICE_AUTO_DISMISS_MS } from '../utils/refereeRecordedNotices.js'
+import { matchDiscPaint, teamLiberoColour, teamBoxStyle, effectiveTeamColour } from '../utils/teamColours.js'
+import { compareBySeq } from '../domain/describe'
+import { useTheme } from '../utils/theme'
+import { useLook } from '../utils/lookSettings'
+import { privacyCoverFill } from '../utils/liteGraphics'
+import { themeMenuItems } from './themeMenuItems'
+import { discCapPx } from './referee/discSizing.js'
+import { isWideLayout, screenFit, mustTurnUpright, SIDE_PANEL_CSS, REFEREE_LAYOUT, PORTRAIT_COURT } from './referee/refereeLayout.js'
+import { useUprightOnlyDevice } from './referee/upright.js'
+import TurnUprightNotice from './referee/TurnUprightNotice.jsx'
+import { getSideAForSet, servingTeamFromLog } from '../domain/rules'
+import { liveRowTeamA } from '../domain/coinToss'
+import { BRAND } from '../brand'
+import { monotonicNow, elapsedWhenSent, countdownAnchor, secondsLeft, keepCountdown, elapsedAfterTheFact, liveStatePushedAt } from '../utils/countdownClock'
+import { matchLfpTracking } from '../domain/sheetInputs'
+import { breakSecondsAfter, endedSetBefore, hasLongIntervalAfterSet2, isLongInterval } from '../domain/setInterval'
+import { useMatchTz } from '../ui/useMatchTz'
+
+// A lineup position: the rich format's { number, ... } or the legacy plain number
+const lineupNumber = (pos) => (pos && typeof pos === 'object') ? pos.number : (pos || '')
+
+// The scorer's pushes that end the break between sets ahead of time (a row
+// with set_interval_active false): "End interval" and the set 5 setup's
+// confirmation (Scoreboard endSetInterval / syncSet5Setup)
+const BREAK_END_EVENTS = new Set(['end_interval', 'manual_set5_setup'])
+
+// Hook to compute synced font size for paired texts using off-screen measurement
+function useSyncedFontSize(texts, containerWidth, baseFontSize, minFontSize, isSingleLine = false, maxLines = 3) {
+  const [result, setResult] = useState({ fontSize: baseFontSize, maxLines: 1 })
+  const measureRef = useRef(null)
+
+  useEffect(() => {
+    if (containerWidth <= 0) return
+
+    // Create off-screen measurement element if needed
+    if (!measureRef.current) {
+      measureRef.current = document.createElement('div')
+      measureRef.current.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;top:-9999px;left:-9999px;'
+      document.body.appendChild(measureRef.current)
+    }
+
+    const measureEl = measureRef.current
+    if (!measureEl) return
+
+    if (isSingleLine) {
+      // Single line mode: find largest font that fits all texts
+      const fontSizes = []
+      for (let fs = baseFontSize; fs >= minFontSize; fs -= 2) {
+        fontSizes.push(fs)
+      }
+      if (fontSizes[fontSizes.length - 1] !== minFontSize) {
+        fontSizes.push(minFontSize)
+      }
+
+      for (const fs of fontSizes) {
+        let allFit = true
+        for (const text of texts) {
+          measureEl.style.cssText = `position:absolute;visibility:hidden;white-space:nowrap;font-size:${fs}px;font-weight:700;padding:4px 18px;top:-9999px;left:-9999px;`
+          measureEl.textContent = text
+          if (measureEl.scrollWidth > containerWidth) {
+            allFit = false
+            break
+          }
+        }
+        if (allFit) {
+          setResult({ fontSize: fs, maxLines: 1 })
+          return
+        }
+      }
+      // Nothing fits, use minimum (will truncate with ellipsis)
+      setResult({ fontSize: minFontSize, maxLines: 1 })
+    } else {
+      // Multi-line mode: try 1 line -> 2 lines -> 3 lines at each font size
+      const fontSizes = [baseFontSize, Math.round(baseFontSize * 0.75), minFontSize]
+
+      for (const fs of fontSizes) {
+        for (let lines = 1; lines <= maxLines; lines++) {
+          let allFit = true
+          for (const text of texts) {
+            measureEl.style.cssText = `position:absolute;visibility:hidden;font-size:${fs}px;font-weight:700;padding:4px 14px;line-height:1.2;word-break:break-word;width:${containerWidth}px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:${lines};overflow:hidden;top:-9999px;left:-9999px;`
+            measureEl.textContent = text
+            // Check if text overflows the line clamp
+            const maxHeight = lines * fs * 1.2 + 8 // +8 for padding
+            if (measureEl.scrollHeight > maxHeight + 2) {
+              allFit = false
+              break
+            }
+          }
+          if (allFit) {
+            setResult({ fontSize: fs, maxLines: lines })
+            return
+          }
+        }
+      }
+      // Nothing fits, use minimum with max lines
+      setResult({ fontSize: minFontSize, maxLines })
+    }
+  }, [texts.join('|'), containerWidth, baseFontSize, minFontSize, isSingleLine, maxLines])
+
+  // Cleanup measurement element on unmount
+  useEffect(() => {
+    return () => {
+      if (measureRef.current && measureRef.current.parentNode) {
+        measureRef.current.parentNode.removeChild(measureRef.current)
+        measureRef.current = null
+      }
+    }
+  }, [])
+
+  return result
+}
+
+// Newest first in the order the scorer recorded the events (seq), not by
+// their time: the scorer's clock set back mid-set made every event after the
+// change look older than the last one before it (stress test 2026-10-25)
+const newestFirst = (a, b) => compareBySeq(b, a)
+
+// The referee's line-up cover with the blur on (owner 15.11: more blurred,
+// the numbers were still readable)
+const REFEREE_COVER_FROSTED = Object.freeze({ background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' })
+
+export default function Referee({ matchId, onExit, isMasterMode }) {
+  const { t } = useTranslation()
+  const { showAlert } = useAlert()
+  const { vmin } = useScaledLayout()
+  const { syncStatus, retryErrors } = useSyncQueue()
+  const [refereeView, setRefereeView] = useState('2nd') // '1st' or '2nd'
+  const [attentionModalOpen, setAttentionModalOpen] = useState(false)
+  // The "?" of the referee view: the panel with the referee's help
+  const [helpOpen, setHelpOpen] = useState(false)
+  // The live scoresheet (read only), over the dashboard
+  const [scoresheetOpen, setScoresheetOpen] = useState(false)
+  // the teams' rosters, one after the other (owner 2026-11-09)
+  const [rostersOpen, setRostersOpen] = useState(false)
+  const wsDebugAllowed = useMemo(() => diagnosticsSwitch().on, [])
+  const toggleHelp = useCallback(() => setHelpOpen(prev => !prev), [])
+  const closeHelp = useCallback(() => setHelpOpen(false), [])
+  const lastAttentionTriggerRef = useRef(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const theme = useTheme()
+  // Options › Effects and speed (utils/lookSettings, initLook in
+  // referee-main): the line-up covers follow the blur switch
+  useLook()
+  // Score/countdown font from settings
+  const [scoreFont, setScoreFont] = useState(() => {
+    const saved = localStorage.getItem('scoreFont')
+    return saved || 'default'
+  })
+  // This device's LFP setting; the match's own (kept at the coin toss) wins
+  // below (domain/sheetInputs)
+  const [lfpTrackingDevice] = useState(() => {
+    return localStorage.getItem('lfpTrackingEnabled') === 'true'
+  })
+  const getScoreFont = () => {
+    const fonts = {
+      'default': 'inherit',
+      'orbitron': "'Orbitron', monospace",
+      'roboto-mono': "'Roboto Mono', monospace",
+      'jetbrains-mono': "'JetBrains Mono', monospace",
+      'space-mono': "'Space Mono', monospace",
+      'ibm-plex-mono': "'IBM Plex Mono', monospace"
+    }
+    return fonts[scoreFont] || 'inherit'
+  }
+  const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 400)
+  const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 700)
+  // A phone or tablet (not a computer): the dashboard is upright only there
+  const uprightOnly = useUprightOnlyDevice()
+
+  // Container width for adaptive team-name sizing. A callback ref (state), so
+  // the observer attaches when the row mounts after the match has loaded; a
+  // mount-time effect ran during the loading screen, never observed, and left
+  // the width at 150 px: on a phone the names were cut to "V…" / "K…".
+  const [section2AContainerEl, section2AContainerRef] = useState(null)
+  const [section2AWidth, setSection2AWidth] = useState(150)
+
+  // Modal states (from Scoreboard actions)
+  const [timeoutModal, setTimeoutModal] = useState(null) // { team, countdown, started }
+  const [showTimeoutModal, setShowTimeoutModal] = useState(false) // Modal visibility (separate from countdown state)
+  const timeoutActiveRef = useRef(false) // Track if timeout is active (for closure-safe checks)
+  // The scorer's start of the last time-out this tab showed: once it is over
+  // here, an older copy that still says it runs never opens it again
+  const shownTimeoutStartRef = useRef(null)
+
+  // Flashing substitution state (like Scoreboard)
+  // [{ team, playerNumber, timestamp, kind: 'sub' | 'libero' }]: a substitution
+  // pulses for SUB_FLASH_MS, a libero replacement once (referee/discFlash.js)
+  const [recentlySubstitutedPlayers, setRecentlySubstitutedPlayers] = useState([])
+  const recentSubFlashTimeoutRef = useRef(null)
+  const liberoFlashTimeoutRef = useRef(null)
+  // the libero event of the live-state row last flashed (the row keeps it)
+  const lastLiberoFlashKeyRef = useRef(null)
+  useEffect(() => () => {
+    clearTimeout(recentSubFlashTimeoutRef.current)
+    clearTimeout(liberoFlashTimeoutRef.current)
+  }, [])
+
+  // Connection type state (auto, supabase, websocket)
+  const [connectionType, setConnectionType] = useState(CONNECTION_TYPES.AUTO)
+
+  // The court box (size container of the discs), measured: the "screen too
+  // small" rule works from its real size.
+  const [courtBoxEl, setCourtBoxEl] = useState(null)
+  const [courtBox, setCourtBox] = useState(null) // { width, height } content box, px
+
+  // Connection state
+  const [connectionStatuses, setConnectionStatuses] = useState({
+    api: 'unknown',
+    server: 'unknown',
+    websocket: 'unknown',
+    scoreboard: 'unknown',
+    match: 'unknown',
+    db: 'unknown'
+  })
+  const [connectionDebugInfo, setConnectionDebugInfo] = useState({})
+
+  const wakeLockRef = useRef(null) // Wake lock to prevent screen sleep
+  const [wakeLockActive, setWakeLockActive] = useState(false) // Track wake lock status
+  const [betweenSetsCountdown, setBetweenSetsCountdown] = useState(null) // { countdown, started }
+  const [showIntervalModal, setShowIntervalModal] = useState(false) // Modal visibility (separate from countdown state)
+  const [lastEvent, setLastEvent] = useState(null) // { type, team, data, timestamp }
+  const intervalDismissedRef = useRef(false) // Track when interval was manually dismissed
+  // The newest match_live_state row read for the break (updated_at): an older
+  // row arriving late never closes or reopens the countdown
+  const intervalRowTsRef = useRef(null)
+  const setIntervalDuration = useMemo(() => {
+    const saved = localStorage.getItem('setIntervalDuration')
+    return saved ? parseInt(saved, 10) : 180 // default 3 minutes = 180 seconds
+  }, [])
+  const [peekingLineup, setPeekingLineup] = useState({ left: false, right: false }) // Track which team's lineup is being peeked
+
+  // Reset peeking state on any mouseup/touchend (since overlay disappears when peeking)
+  useEffect(() => {
+    const resetPeeking = () => setPeekingLineup({ left: false, right: false })
+    document.addEventListener('mouseup', resetPeeking)
+    document.addEventListener('touchend', resetPeeking)
+    return () => {
+      document.removeEventListener('mouseup', resetPeeking)
+      document.removeEventListener('touchend', resetPeeking)
+    }
+  }, [])
+
+  // Track viewport size for narrow screen blocking
+  useEffect(() => {
+    const handleResize = () => {
+      setViewportWidth(window.innerWidth)
+      setViewportHeight(window.innerHeight)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  // Measure the court box (content box, as the discs' cqw / cqh see it)
+  useEffect(() => {
+    if (!courtBoxEl || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect
+      setCourtBox(prev => (prev && Math.abs(prev.width - width) < 0.5 && Math.abs(prev.height - height) < 0.5) ? prev : { width, height })
+    })
+    ro.observe(courtBoxEl)
+    return () => ro.disconnect()
+  }, [courtBoxEl])
+
+  // Request wake lock to prevent screen from sleeping
+  useEffect(() => {
+    const enableNativeWakeLock = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          // Release existing lock first
+          if (wakeLockRef.current) {
+            try { await wakeLockRef.current.release() } catch (e) { }
+          }
+          wakeLockRef.current = await navigator.wakeLock.request('screen')
+          console.log('[WakeLock] Screen wake lock acquired (Referee)')
+          setWakeLockActive(true)
+          wakeLockRef.current.addEventListener('release', () => {
+            console.log('[WakeLock] Screen wake lock released (Referee)')
+            // Only set inactive if we're not re-acquiring
+            if (!wakeLockRef.current) {
+              setWakeLockActive(false)
+            }
+          })
+          return true
+        }
+      } catch (err) {
+        console.log('[WakeLock] Native wake lock failed:', err.message)
+      }
+      return false
+    }
+
+    const handleInteraction = async () => {
+      const success = await enableNativeWakeLock()
+      if (success) {
+        console.log('[WakeLock] Enabled on user interaction')
+      }
+    }
+
+    // Try to enable on mount
+    enableNativeWakeLock()
+
+    // Also try on user interaction (required by some browsers)
+    document.addEventListener('click', handleInteraction, { once: true })
+    document.addEventListener('touchstart', handleInteraction, { once: true })
+
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible') {
+        await enableNativeWakeLock()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      document.removeEventListener('click', handleInteraction)
+      document.removeEventListener('touchstart', handleInteraction)
+      if (wakeLockRef.current) {
+        wakeLockRef.current.release().catch(() => { })
+        wakeLockRef.current = null
+      }
+    }
+  }, [])
+
+  // Match data state
+  const [data, setData] = useState(null)
+  // LFP tracking and clocks of the match on this tablet: the match's own, as on
+  // the scorer's sheet (domain/sheetInputs)
+  const lfpTrackingEnabled = matchLfpTracking(data?.match, lfpTrackingDevice)
+  useMatchTz(data?.match?.tz)
+
+  // Debounce ref to prevent flickering from rapid updates
+  const lastDataUpdateRef = useRef(0)
+  const pendingDataRef = useRef(null)
+  const debounceTimerRef = useRef(null)
+  const DATA_UPDATE_DEBOUNCE_MS = 150 // Wait 150ms before applying new data
+
+  // Where the shown data came from: 'live_state' when it was built from the
+  // match_live_state row (the relay did not have the match), else a relay bundle.
+  const dataSourceRef = useRef(null)
+  // The matches row behind a 'live_state' view, to apply pushed rows directly
+  const liveStateBaseRef = useRef(null)
+  // updated_at of the newest live_state row shown (pushes can arrive out of order)
+  const lastLiveStateTsRef = useRef(null)
+  // When the last relay push was applied: a refetch started before it is older
+  const lastPushAtRef = useRef(0)
+  const fetchSeqRef = useRef(0)
+  // Newest live state seen from any source (relay push, relay copy, database
+  // row), and the last relay bundle as received: a newer live state wins over
+  // an older relay copy's score (createLiveStateTracker).
+  const liveTrackerRef = useRef(null)
+  if (liveTrackerRef.current === null) liveTrackerRef.current = createLiveStateTracker()
+  // The last relay bundle with 'full' access (the referee PIN proved: rosters
+  // and events) and when it arrived: the live scoresheet draws from it. Kept
+  // while the view falls back to a match_live_state row (no events there).
+  const sheetBundleRef = useRef({ bundle: null, at: null })
+  // The tablet's access ended (the scorer changed the PIN or switched the
+  // connection off): back to the PIN page, the kept copy dropped
+  const onExitRef = useRef(onExit)
+  onExitRef.current = onExit
+  const accessLost = useCallback(() => {
+    sheetBundleRef.current = { bundle: null, at: null }
+    if (onExitRef.current) onExitRef.current('access_lost')
+  }, [])
+  useEffect(() => {
+    liveTrackerRef.current.reset()
+    sheetBundleRef.current = { bundle: null, at: null }
+    setLastEvent(null)
+  }, [matchId])
+
+  // Helper function to update match data state (with debounce to reduce flickering)
+  const updateMatchDataState = useCallback((incoming) => {
+    let result = incoming
+    if (result && result.success) {
+      dataSourceRef.current = result.source || null
+      // A full relay bundle not older than the live state it is shown with:
+      // its events are the scorer's log as it is now (nextLastEvent)
+      let eventsAreCurrent = false
+      if (result.source === 'live_state') {
+        liveStateBaseRef.current = result.match || null
+        if (result.liveState?.updated_at && isNewerLiveState(result.liveState, lastLiveStateTsRef.current)) {
+          lastLiveStateTsRef.current = result.liveState.updated_at
+        }
+      } else {
+        // A summary after a full bundle: the relay no longer takes this
+        // tablet's PIN (changed, or the connection switched off)
+        if (incoming.access === 'summary' && sheetBundleRef.current.bundle && !isMasterMode) {
+          accessLost()
+          return
+        }
+        if (bundleHasFullAccess(incoming)) sheetBundleRef.current = { bundle: incoming, at: Date.now() }
+        result = liveTrackerRef.current.bundle(incoming)
+        eventsAreCurrent = bundleHasFullAccess(incoming) && Array.isArray(incoming.events) &&
+          !isLiveStateNewerThanBundle(result.liveState, incoming)
+      }
+      const sets = (result.sets || []).sort((a, b) => a.index - b.index)
+      const currentSet = sets.find(s => !s.finished) || null
+
+      const newData = {
+        match: result.match,
+        homeTeam: result.homeTeam,
+        awayTeam: result.awayTeam,
+        homePlayers: (result.homePlayers || []).sort((a, b) => (a.number || 0) - (b.number || 0)),
+        awayPlayers: (result.awayPlayers || []).sort((a, b) => (a.number || 0) - (b.number || 0)),
+        sets,
+        currentSet,
+        events: result.events || [],
+        liveState: result.liveState || null,
+        sheetBundle: sheetBundleRef.current.bundle,
+        sheetBundleAt: sheetBundleRef.current.at
+      }
+
+      // Last action from what was just loaded (reload, reconnect refetch,
+      // relay bundle), not only from realtime pushes. A current bundle's log
+      // decides, also after an Undo (an older action, or none: "–")
+      setLastEvent(prev => nextLastEvent(prev, { events: newData.events, liveState: newData.liveState, eventsAreCurrent }))
+
+      const now = Date.now()
+      const timeSinceLastUpdate = now - lastDataUpdateRef.current
+
+      // If it's been long enough since last update, apply immediately
+      if (timeSinceLastUpdate >= DATA_UPDATE_DEBOUNCE_MS) {
+        lastDataUpdateRef.current = now
+        setData(newData)
+      } else {
+        // Otherwise, queue the update and wait for debounce
+        pendingDataRef.current = newData
+        if (debounceTimerRef.current) {
+          clearTimeout(debounceTimerRef.current)
+        }
+        debounceTimerRef.current = setTimeout(() => {
+          if (pendingDataRef.current) {
+            lastDataUpdateRef.current = Date.now()
+            setData(pendingDataRef.current)
+            pendingDataRef.current = null
+          }
+        }, DATA_UPDATE_DEBOUNCE_MS - timeSinceLastUpdate)
+      }
+    }
+  }, [accessLost, isMasterMode])
+
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current)
+      }
+    }
+  }, [])
+
+  // Create mock data for master mode
+  useEffect(() => {
+    if (isMasterMode && !data) {
+      setData({
+        match: {
+          id: -1,
+          status: 'live',
+          homeShortName: 'HOM',
+          awayShortName: 'AWY',
+          coinTossTeamA: 'home',
+          firstServe: 'home'
+        },
+        homeTeam: { name: 'Home Team', color: '#ef4444' },
+        awayTeam: { name: 'Away Team', color: '#3b82f6' },
+        homePlayers: [
+          { number: 1 }, { number: 2 }, { number: 3 },
+          { number: 4 }, { number: 99 }, { number: 6 },
+          { number: 7, libero: 'libero1' }
+        ],
+        awayPlayers: [
+          { number: 11 }, { number: 12 }, { number: 13 },
+          { number: 54 }, { number: 15 }, { number: 16 },
+          { number: 17, libero: 'libero1' }
+        ],
+        sets: [{ index: 1, homePoints: 12, awayPoints: 10, finished: false }],
+        currentSet: { index: 1, homePoints: 12, awayPoints: 10, finished: false },
+        events: [
+          { type: 'lineup', setIndex: 1, payload: { team: 'home', lineup: { I: 1, II: 2, III: 3, IV: 4, V: 99, VI: 6 } } },
+          { type: 'lineup', setIndex: 1, payload: { team: 'away', lineup: { I: 11, II: 12, III: 13, IV: 54, V: 15, VI: 16 } } }
+        ]
+      })
+    }
+  }, [isMasterMode, data])
+
+  // No heartbeat needed - Referee just listens for WebSocket updates from Scoreboard
+
+  // Check connection statuses: on mount, every 60 s and when the match's
+  // status changes. Only primitives as deps: every relay bundle (two per
+  // rally) builds a new data.match, and with the object as a dep the effect
+  // below ran again, and called GET /api/match/list, on every bundle. That
+  // list holds every published match of the relay and spends the venue's
+  // shared relay-read budget.
+  const hasMatchData = !!data?.match
+  const matchStatus = data?.match?.status
+  const checkConnectionStatuses = useCallback(async () => {
+    const statuses = { api: 'unknown', server: 'unknown', websocket: 'unknown', scoreboard: 'unknown', match: 'unknown', db: 'unknown' }
+    const debugInfo = {}
+
+    try {
+      const result = await listAvailableMatches()
+      if (result.success) {
+        statuses.api = 'connected'
+        statuses.server = 'connected'
+      } else {
+        statuses.api = 'disconnected'
+        statuses.server = 'disconnected'
+      }
+    } catch (err) {
+      statuses.api = 'disconnected'
+      statuses.server = 'disconnected'
+    }
+
+    statuses.scoreboard = statuses.server
+
+    // Get WebSocket status
+    if (isMasterMode) {
+      statuses.websocket = 'test_mode'
+    } else if (matchId) {
+      statuses.websocket = getWebSocketStatus(matchId)
+    } else {
+      statuses.websocket = 'disconnected'
+    }
+
+    if (isMasterMode) {
+      statuses.match = 'test_mode'
+      debugInfo.match = { status: 'test_mode', message: 'Running in test mode' }
+    } else if (matchId && hasMatchData) {
+      statuses.match = matchStatus === 'live' ? 'live' : matchStatus === 'scheduled' ? 'scheduled' : 'final'
+    } else {
+      statuses.match = 'no_match'
+    }
+
+    try {
+      await db.matches.count()
+      statuses.db = 'connected'
+    } catch (err) {
+      statuses.db = 'error'
+    }
+
+    setConnectionStatuses(statuses)
+    setConnectionDebugInfo(debugInfo)
+  }, [matchId, hasMatchData, matchStatus, isMasterMode])
+
+  useEffect(() => {
+    checkConnectionStatuses()
+    const interval = setInterval(checkConnectionStatuses, 60000) // 60s to reduce console spam
+    return () => clearInterval(interval)
+  }, [checkConnectionStatuses])
+
+  // Track consecutive fetch failures to detect deleted matches
+  const fetchFailureCountRef = useRef(0)
+  const MAX_FETCH_FAILURES = 3 // After 3 not-found answers in a row (relay and database), the match is deleted
+
+  // Force fetch fresh data from server
+  const fetchFreshData = useCallback(async () => {
+    console.log('[Referee] fetchFreshData called', { isMasterMode, matchId })
+    if (isMasterMode) {
+      console.log('[Referee] fetchFreshData: Skipping - in test/master mode (data is local)')
+      return
+    }
+    if (!matchId) {
+      console.log('[Referee] fetchFreshData: Skipping - no matchId')
+      return
+    }
+    const seq = ++fetchSeqRef.current
+    const startedAt = Date.now()
+    try {
+      console.log('[Referee] Fetching fresh data from server...')
+      const result = await getMatchData(matchId)
+      // A newer fetch was started, or a relay push landed while this one was in
+      // flight: this answer may be older than what is shown.
+      if (seq !== fetchSeqRef.current || lastPushAtRef.current > startedAt) return
+      // An older live_state row than the one already shown (the DB read raced
+      // the scorer's write): keep the newer view.
+      if (result?.success && result.source === 'live_state' && dataSourceRef.current === 'live_state' &&
+          !isNewerLiveState(result.liveState, lastLiveStateTsRef.current, { allowEqual: true })) {
+        return
+      }
+      if (result && result.success) {
+        fetchFailureCountRef.current = 0 // Reset on success
+        updateMatchDataState(result)
+        console.log('[Referee] Fresh data received:', {
+          currentSet: result.sets?.find(s => !s.finished)?.index,
+          homePoints: result.sets?.find(s => !s.finished)?.homePoints,
+          awayPoints: result.sets?.find(s => !s.finished)?.awayPoints
+        })
+      } else if (result?.notFound) {
+        // The relay and the database both say the match is gone. A network
+        // or relay outage (no notFound) keeps the view, the PIN and the
+        // offline banner: only a positive answer counts.
+        fetchFailureCountRef.current++
+        console.warn(`[Referee] Match not found (${fetchFailureCountRef.current}/${MAX_FETCH_FAILURES})`)
+        if (fetchFailureCountRef.current >= MAX_FETCH_FAILURES) {
+          console.log('[Referee] Match appears to be deleted, navigating to home')
+          if (onExit) onExit()
+        }
+      } else {
+        console.warn('[Referee] Fetch failed, keeping the match:', result?.error)
+      }
+    } catch (err) {
+      console.error('[Referee] Error fetching fresh data, keeping the match:', err)
+    }
+  }, [matchId, updateMatchDataState, isMasterMode, onExit])
+
+  // "Recorded by the scorer": time-outs, substitutions and sanctions new in
+  // the loaded events open one popup on every referee tablet (OK, or it closes
+  // 10 s after its last entry); more recorded meanwhile join it. An undo
+  // removes its entry. Nothing recorded before this tablet loaded the match.
+  const [recordedNotices, setRecordedNotices] = useState([])
+  const [recordedDeadline, setRecordedDeadline] = useState(null)
+  const recordedTrackerRef = useRef(null)
+  if (recordedTrackerRef.current === null) recordedTrackerRef.current = createRecordedNoticeTracker()
+  // A running time-out shows its ring in the popup; closing the popup (OK or
+  // the 10 s) moves the ring to its place on the court (countdownFlight).
+  const mainCountdownRef = useRef(null)
+  const [countdownFlight, setCountdownFlight] = useState(null) // { from, to } DOMRects
+  const closeRecordedNotices = useCallback(() => {
+    const from = document.querySelector('[data-recorded-countdown]')?.getBoundingClientRect()
+    const to = mainCountdownRef.current?.getBoundingClientRect()
+    const reduceMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+    if (from && to && from.width > 0 && to.width > 0 && !reduceMotion) setCountdownFlight({ from, to })
+    setRecordedNotices([])
+    setRecordedDeadline(null)
+  }, [])
+  const endCountdownFlight = useCallback(() => setCountdownFlight(null), [])
+  useEffect(() => {
+    recordedTrackerRef.current.reset()
+    setRecordedNotices([])
+    setRecordedDeadline(null)
+    setCountdownFlight(null)
+  }, [matchId])
+  useEffect(() => {
+    if (!data?.events) return
+    const { added, removed } = recordedTrackerRef.current.update(data.events, {
+      scope: `${matchId}|${dataSourceRef.current === 'live_state' ? 'live_state' : 'relay'}`,
+      setIndex: data.currentSet?.index ?? null
+    })
+    if (removed.length) {
+      const gone = new Set(removed)
+      setRecordedNotices(prev => prev.filter(n => !gone.has(n.key)))
+    }
+    if (!added.length) return
+    const ctx = {
+      t,
+      match: data.match,
+      homeTeam: data.homeTeam,
+      awayTeam: data.awayTeam,
+      score: data.currentSet ? { home: data.currentSet.homePoints || 0, away: data.currentSet.awayPoints || 0 } : null
+    }
+    const notices = added.map(({ key, event }) => describeNotice(key, event, data.events, ctx)).filter(Boolean)
+    if (!notices.length) return
+    const keys = new Set(notices.map(n => n.key))
+    setRecordedNotices(prev => [...prev.filter(n => !keys.has(n.key)), ...notices])
+    setRecordedDeadline(Date.now() + NOTICE_AUTO_DISMISS_MS)
+    try {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(150)
+    } catch (e) { /* ignore */ }
+    // not t: a language change re-describes nothing already shown
+  }, [data, matchId])
+
+  // Handle realtime data updates
+  const handleRealtimeData = useCallback((result) => {
+    if (!result || !result.success) return
+
+    const receiveTimestamp = Date.now()
+    console.log(`[Referee] 📥 Received match-data-update at ${new Date(receiveTimestamp).toISOString()}:`, {
+      hasHomeTeam: !!result.homeTeam,
+      hasAwayTeam: !!result.awayTeam,
+      setsCount: result.sets?.length,
+      eventsCount: result.events?.length
+    })
+
+    // Only update if data is complete (has teams and sets)
+    if (result.homeTeam && result.awayTeam && result.sets?.length > 0) {
+      lastPushAtRef.current = receiveTimestamp
+      updateMatchDataState(result)
+    } else {
+      console.debug('[Referee] Received partial data (missing teams/sets), skipping UI update')
+    }
+  }, [updateMatchDataState])
+
+  // Latest values for handlers that are memoised / subscribed without them as
+  // deps (handleRealtimeAction has [], the Supabase channel effect omits the
+  // modal state): reading `data` / state there returned the mount-time value.
+  const bestOfRef = useRef(5)
+  const timeoutModalRef = useRef(null)
+  const betweenSetsCountdownRef = useRef(null)
+  // The data shown now, for the Supabase channel's handler: its effect runs
+  // again only when its deps change (the coin toss), so `data` in it was the
+  // copy from then (a referee that joined before the toss: set 1 only, and
+  // the 10-minute switch as it was; domain/setInterval)
+  const dataRef = useRef(null)
+  dataRef.current = data
+  useEffect(() => {
+    bestOfRef.current = data?.match?.bestOf ?? data?.liveState?.best_of ?? 5
+  }, [data?.match?.bestOf, data?.liveState?.best_of])
+  useEffect(() => { timeoutModalRef.current = timeoutModal }, [timeoutModal])
+  useEffect(() => { betweenSetsCountdownRef.current = betweenSetsCountdown }, [betweenSetsCountdown])
+
+  // Handle realtime actions (timeout, substitution, set_end). The countdowns
+  // they start run on this tablet's own clock (utils/countdownClock): their
+  // start is the scorer's clock, as is the action's send time (meta.sentAt,
+  // the relay's _scoreboardTimestamp), and the difference of the two is how
+  // long the countdown had run when it was sent. Counted against this
+  // tablet's Date.now(), a tablet 2 minutes slow showed 150, one fast none.
+  const handleRealtimeAction = useCallback((action, actionData, meta = {}) => {
+    const receiveTimestamp = Date.now()
+    console.log(`[Referee] 📥 Received action '${action}' at ${new Date(receiveTimestamp).toISOString()}:`, actionData)
+
+    if (action === 'timeout') {
+      console.log('[REF_TO_DEBUG] Received timeout action', {
+        team: actionData.team,
+        countdown: actionData.countdown,
+        startTimestamp: actionData.startTimestamp,
+        receiveTimestamp
+      })
+      timeoutActiveRef.current = true
+      const duration = actionData.countdown || 30
+      const newTimeoutModal = {
+        team: actionData.team,
+        countdown: duration,
+        // the scorer's clock: which time-out this is (the database row's is compared)
+        startTimestamp: actionData.startTimestamp || Date.now(), // Fallback for backward compat
+        anchor: countdownAnchor(elapsedWhenSent(actionData.startTimestamp, meta?.sentAt, duration * 1000)),
+        initialCountdown: duration,
+        started: true
+      }
+      console.log('[REF_TO_DEBUG] Setting timeoutModal state', newTimeoutModal)
+      setTimeoutModal(newTimeoutModal)
+      setShowTimeoutModal(true) // Show the modal overlay
+    } else if (action === 'substitution') {
+      // Add player to recently substituted list for flashing effect (no modal, just flash)
+      setRecentlySubstitutedPlayers(prev => [...prev, { team: actionData.team, playerNumber: actionData.playerIn, timestamp: Date.now(), kind: 'sub' }])
+
+      // Clear the flash after 5 seconds
+      if (recentSubFlashTimeoutRef.current) {
+        clearTimeout(recentSubFlashTimeoutRef.current)
+      }
+      recentSubFlashTimeoutRef.current = setTimeout(() => {
+        setRecentlySubstitutedPlayers([])
+      }, SUB_FLASH_MS)
+    } else if (action === 'set_end') {
+      console.log('═══════════════════════════════════════════════════════════════')
+      console.log('[Referee] 🏁 SET_END Action Received (WebSocket):')
+      console.log('═══════════════════════════════════════════════════════════════')
+      console.log('[Referee] 📊 Action Data:', {
+        setIndex: actionData.setIndex,
+        winner: actionData.winner,
+        homePoints: actionData.homePoints,
+        awayPoints: actionData.awayPoints,
+        countdown: actionData.countdown,
+        homeSetsWon: actionData.homeSetsWon,
+        awaySetsWon: actionData.awaySetsWon
+      })
+
+      // Check if match is finished - don't show interval
+      const bestOf = bestOfRef.current
+      const isMatchFinishedNow = isMatchFinishedUtil(actionData.homeSetsWon, actionData.awaySetsWon, bestOf)
+      if (isMatchFinishedNow) {
+        console.log('[Referee] 🏆 Match is finished! Not showing interval countdown.')
+        // Clear any existing interval state - full-screen match ended view will show
+        setBetweenSetsCountdown(null)
+        setShowIntervalModal(false)
+      } else {
+        // The scorer's break runs (again: an undo of the set 5 setup's
+        // confirmation reopens it): no longer dismissed
+        intervalDismissedRef.current = false
+        const duration = actionData.countdown || 180
+        setBetweenSetsCountdown({
+          countdown: duration,
+          startTimestamp: actionData.startTimestamp || Date.now(), // Fallback for backward compat
+          anchor: countdownAnchor(elapsedWhenSent(actionData.startTimestamp, meta?.sentAt, duration * 1000)),
+          initialCountdown: duration,
+          started: true,
+          setIndex: actionData.setIndex,
+          // the set that ended (the 10-minute switch follows it, below)
+          endedSet: actionData.setIndex,
+          winner: actionData.winner
+        })
+        setShowIntervalModal(true) // Show the modal overlay
+      }
+    } else if (action === 'end_timeout') {
+      // Scoreboard ended the timeout - clear countdown and modal
+      timeoutActiveRef.current = false
+      setTimeoutModal(null)
+      setShowTimeoutModal(false)
+    } else if (action === 'end_interval') {
+      // Scoreboard ended the set interval - clear countdown and modal
+      intervalDismissedRef.current = true
+      setBetweenSetsCountdown(null)
+      setShowIntervalModal(false)
+    }
+  }, [])
+
+  // Handle match deletion - navigate back to home
+  const handleMatchDeleted = useCallback(() => {
+    console.log('[Referee] Match deleted, navigating to home')
+    if (onExit) {
+      onExit()
+    }
+  }, [onExit])
+
+  // Use realtime connection hook (handles Supabase + WebSocket with fallback)
+  const {
+    status: realtimeStatus,
+    activeConnection: realtimeConnection,
+    error: realtimeError,
+    lastUpdate: realtimeLastUpdate,
+    scorerPresent,
+    forceReconnect: realtimeReconnect
+  } = useRealtimeConnection({
+    matchId,
+    preferredConnection: connectionType,
+    onData: handleRealtimeData,
+    onAction: handleRealtimeAction,
+    onDeleted: handleMatchDeleted,
+    onAccessLost: accessLost,
+    enabled: !isMasterMode && !!matchId,
+    // This component runs its own match_live_state channel (below)
+    watchDbChanges: false
+  })
+
+  // No link to the scoresheet: the device is offline, or no transport of the
+  // realtime connection has been up for a few seconds (a quick reconnect is
+  // not worth a warning). The dashboard then shows a warning: what it shows
+  // may be out of date. The connection's own state decides, not the relay
+  // socket: in AUTO mode the database fallback still brings the updates while
+  // the relay is down.
+  const [linkDown, setLinkDown] = useState(false)
+  // The relay reports the scorer device gone for a while (its laptop closed,
+  // the app crashed): the score stops changing, which looked like a quiet match
+  const scorerAway = useScorerAway(scorerPresent, { enabled: !isMasterMode && !!matchId })
+  const realtimeLinkRef = useRef({ status: realtimeStatus, connection: realtimeConnection })
+  realtimeLinkRef.current = { status: realtimeStatus, connection: realtimeConnection }
+  // This component's own match_live_state channel (below) is subscribed
+  const dbChannelUpRef = useRef(false)
+  useEffect(() => {
+    if (isMasterMode || !matchId) {
+      setLinkDown(false)
+      return
+    }
+    let downSince = null
+    const transportUp = () => {
+      // The live-state channel brings the score even while the relay is down
+      if (dbChannelUpRef.current) return true
+      const { status, connection } = realtimeLinkRef.current
+      if (status !== CONNECTION_STATUS.CONNECTED && status !== CONNECTION_STATUS.FALLBACK) return false
+      // The relay as the active transport: its socket must be open right now
+      if (connection === 'websocket') return getWebSocketStatus(matchId) === 'connected'
+      return true
+    }
+    const check = () => {
+      const offline = typeof navigator !== 'undefined' && navigator.onLine === false
+      if (offline || !transportUp()) {
+        if (downSince === null) downSince = Date.now()
+      } else {
+        downSince = null
+      }
+      setLinkDown(offline || (downSince !== null && Date.now() - downSince >= 5000))
+    }
+    check()
+    const timer = setInterval(check, 2000)
+    window.addEventListener('online', check)
+    window.addEventListener('offline', check)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('online', check)
+      window.removeEventListener('offline', check)
+    }
+  }, [matchId, isMasterMode])
+
+  // Initial data fetch when connection changes or component mounts
+  useEffect(() => {
+    if (!isMasterMode && matchId && realtimeStatus === CONNECTION_STATUS.CONNECTED) {
+      fetchFreshData()
+    }
+  }, [isMasterMode, matchId, realtimeStatus, fetchFreshData])
+
+  // Refetch data when page becomes visible (handles screen wake from sleep)
+  useEffect(() => {
+    if (isMasterMode || !matchId) return
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('[Referee] Page became visible, fetching fresh data...')
+        fetchFreshData()
+      }
+    }
+
+    // Back on the network (Wi-Fi drop, airplane mode): catch up now instead of
+    // waiting for the next scoring action
+    const handleOnline = () => {
+      console.log('[Referee] Network is back, fetching fresh data...')
+      fetchFreshData()
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('online', handleOnline)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('online', handleOnline)
+    }
+  }, [matchId, isMasterMode, fetchFreshData])
+
+  // Track last processed event to avoid duplicates from Supabase realtime
+  const lastProcessedEventRef = useRef(null)
+
+  // Store Supabase UUID for realtime subscription (match_live_state.match_id is UUID, not seed_key)
+  const [supabaseMatchUuid, setSupabaseMatchUuid] = useState(null)
+
+  // Look up Supabase UUID from seed_key when matchId changes
+  useEffect(() => {
+    if (!supabase || !matchId) return
+
+    const lookupUuid = async () => {
+      const { data, error } = await apiFrom('matches')
+        .select('id')
+        .eq('external_id', matchId)
+        .eq('sport_type', 'indoor')
+        .maybeSingle()
+
+      if (!error && data?.id) {
+        console.log('[Referee] Found Supabase UUID:', data.id, 'for matchId:', matchId)
+        setSupabaseMatchUuid(data.id)
+      } else {
+        console.warn('[Referee] Could not find Supabase UUID for matchId:', matchId, error)
+      }
+    }
+
+    lookupUuid()
+  }, [matchId])
+
+  // Supabase realtime subscription for live state updates (backup/alternative to WebSocket)
+  useEffect(() => {
+    if (!supabase || !supabaseMatchUuid || isMasterMode) return
+
+    console.log('[Referee] Setting up realtime subscription for UUID:', supabaseMatchUuid)
+
+    // Add unique ID to prevent StrictMode double-mount conflicts
+    const channelId = `match_live_state:${supabaseMatchUuid}-${Date.now()}`
+    const channel = supabase
+      // the match token of the PIN check: the live state whole (the scorer's
+      // alarm, the last action's numbers)
+      .channel(channelId, { token: () => matchAccessFor(matchId)?.token || null })
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'match_live_state',
+          filter: `match_id=eq.${supabaseMatchUuid}`
+        },
+        (payload) => {
+          const state = payload.new
+          if (!state) return
+
+          // Simple deduplication - only skip if exact same updated_at within 50ms
+          const now = Date.now()
+          const lastProcessed = lastProcessedEventRef.current
+          if (lastProcessed && state.updated_at === lastProcessed.updatedAt && (now - lastProcessed.time) < 50) {
+            console.log('[Referee] 📡 Skipping duplicate (same updated_at within 50ms)')
+            return
+          }
+          lastProcessedEventRef.current = { time: now, updatedAt: state.updated_at }
+
+          // Check for scorer attention trigger
+          if (state.scorer_attention_trigger && state.scorer_attention_trigger !== lastAttentionTriggerRef.current) {
+            console.log('[Referee] 🔔 Scorer attention triggered!', state.scorer_attention_trigger)
+            setAttentionModalOpen(true)
+            lastAttentionTriggerRef.current = state.scorer_attention_trigger
+            try {
+              // Try to vibrate if supported
+              if (typeof navigator !== 'undefined' && navigator.vibrate) {
+                navigator.vibrate([200, 100, 200])
+              }
+            } catch (e) { /* ignore */ }
+          }
+
+          console.log(`[Referee] 📡 Supabase realtime: ${state.last_event_type || 'update'}`, {
+            event: state.last_event_type,
+            points: `${state.points_a || 0}-${state.points_b || 0}`,
+            set: state.current_set,
+            lineup_a: !!state.lineup_a,
+            lineup_b: !!state.lineup_b
+          })
+
+          // A/B Model: Convert left/right to home/away using side_a (for modal handling)
+          // side_a = 'left' or 'right' indicates which side Team A is on
+          // (the row's own Team A: a "Swap A/B" since leaves the row as it was)
+          const localTeamAKey = liveRowTeamA(state, data?.match?.homeName || data?.homeTeam?.name, data?.match?.awayName || data?.awayTeam?.name) || data?.match?.coinTossTeamA || 'home'
+          const sideA = state.side_a || 'left'
+          const homeTeamOnLeft = (sideA === 'left') === (localTeamAKey === 'home')
+          const getTeamFromSide = (side) => {
+            if (side === 'left') return homeTeamOnLeft ? 'home' : 'away'
+            return homeTeamOnLeft ? 'away' : 'home'
+          }
+
+          // Handle timeout start/stop based on timeout_active flag
+          if (state.timeout_active) {
+            // Timeout is active - show/update modal if not already active or if it's a new timeout
+            const serverStartTs = state.timeout_started_at ? new Date(state.timeout_started_at).getTime() : Date.now()
+
+            // Only update/start if not already tracking THIS timeout (compare
+            // start timestamps), and never one this tab showed and saw end
+            // (a late copy or a partial update of the row still says it
+            // runs). The row's start is the scorer's own clock, as the relay
+            // action's is.
+            const currentTimeout = timeoutModalRef.current
+            const shownStart = shownTimeoutStartRef.current
+            const seenEnd = !currentTimeout && shownStart != null && Math.abs(shownStart - serverStartTs) <= 2000
+            if (!seenEnd && (!currentTimeout || Math.abs(currentTimeout.startTimestamp - serverStartTs) > 2000)) {
+              const team = getTeamFromSide(state.last_event_team)
+              const duration = state.last_event_data?.duration || 30
+              timeoutActiveRef.current = true
+              setTimeoutModal({
+                team,
+                countdown: duration,
+                startTimestamp: serverStartTs,
+                // on this tablet's clock: the row's start and its push time
+                // are both read on the scorer's own clock (liveStatePushedAt:
+                // last_event_ts; updated_at is the live-state clock, which
+                // orders the rows and runs ahead on a continued match)
+                anchor: countdownAnchor(elapsedWhenSent(state.timeout_started_at, liveStatePushedAt(state), duration * 1000)),
+                initialCountdown: duration,
+                started: true
+              })
+              setShowTimeoutModal(true)
+            }
+          } else if (timeoutActiveRef.current) {
+            // Timeout was active but is now not active - clear modal
+            console.log('[Referee] 📡 Timeout ended via timeout_active=false, clearing modal')
+            timeoutActiveRef.current = false
+            setTimeoutModal(null)
+            setShowTimeoutModal(false)
+          }
+
+          // Handle substitution - flash effect only (no modal)
+          // Note: last_event_team is 'home'/'away', not 'left'/'right', so use directly
+          if (state.last_event_type === 'substitution') {
+            const team = state.last_event_team // Already 'home' or 'away'
+            setRecentlySubstitutedPlayers(prev => [
+              ...prev,
+              { team, playerNumber: state.last_event_data?.playerIn, timestamp: Date.now(), kind: 'sub' }
+            ])
+            if (recentSubFlashTimeoutRef.current) clearTimeout(recentSubFlashTimeoutRef.current)
+            recentSubFlashTimeoutRef.current = setTimeout(() => setRecentlySubstitutedPlayers([]), SUB_FLASH_MS)
+          }
+
+          // Handle libero entry/exit/exchange: one short pulse, not the
+          // substitution's flash (owner 15.11.2026), and once per event (a
+          // row written again keeps its last event)
+          // Note: last_event_team is 'home'/'away', not 'left'/'right', so use directly
+          const liberoKey = liberoFlashKey(state)
+          if (liberoKey && liberoKey !== lastLiberoFlashKeyRef.current) {
+            lastLiberoFlashKeyRef.current = liberoKey
+            const team = state.last_event_team // Already 'home' or 'away'
+            const playerNumber = state.last_event_data?.liberoNumber || state.last_event_data?.playerIn
+            setRecentlySubstitutedPlayers(prev => [
+              ...withoutLiberoFlashes(prev),
+              { team, playerNumber, timestamp: Date.now(), kind: 'libero' }
+            ])
+            if (liberoFlashTimeoutRef.current) clearTimeout(liberoFlashTimeoutRef.current)
+            liberoFlashTimeoutRef.current = setTimeout(() => setRecentlySubstitutedPlayers(withoutLiberoFlashes), LIBERO_FLASH_MS)
+          }
+
+          // The scorer's break, from the row as from the relay's actions (a
+          // referee on the database alone had only the opening): ended
+          // (end_interval, the set 5 setup's confirmation) it closes here as
+          // on end_interval, and a row in the break after that (an undo of the
+          // confirmation) opens it again. Rows older than the newest one read
+          // change nothing.
+          const intervalRowCurrent = isNewerLiveState(state, intervalRowTsRef.current, { allowEqual: true })
+          if (intervalRowCurrent && state.updated_at) intervalRowTsRef.current = state.updated_at
+          // An undo row with no break (the set end undone) closes it too.
+          if (intervalRowCurrent && state.set_interval_active === false && (BREAK_END_EVENTS.has(state.last_event_type) || state.last_event_type === 'undo')) {
+            intervalDismissedRef.current = true
+            setBetweenSetsCountdown(null)
+            setShowIntervalModal(false)
+          } else if (intervalRowCurrent && state.set_interval_active === true) {
+            intervalDismissedRef.current = false
+          }
+
+          // Handle set end (3-minute interval)
+          if (state.last_event_type === 'set_end' || state.set_interval_active) {
+            console.log('═══════════════════════════════════════════════════════════════')
+            console.log('[Referee] 🏁 SET_END Received from Supabase Realtime:')
+            console.log('═══════════════════════════════════════════════════════════════')
+            console.log('[Referee] 📊 Live State Data:', {
+              current_set: state.current_set,
+              sets_won_a: state.sets_won_a,
+              sets_won_b: state.sets_won_b,
+              points_a: state.points_a,
+              points_b: state.points_b,
+              side_a: state.side_a,
+              serving_team: state.serving_team,
+              match_status: state.match_status,
+              set_interval_active: state.set_interval_active,
+              last_event_type: state.last_event_type,
+              last_event_data: state.last_event_data
+            })
+
+            // Check if match is finished - don't show interval
+            const bestOfVal = data?.match?.bestOf ?? state.best_of ?? 5
+            const isMatchFinishedNow = isMatchFinishedUtil(state.sets_won_a, state.sets_won_b, bestOfVal)
+            if (isMatchFinishedNow) {
+              console.log('[Referee] 🏆 Match is finished! Not showing interval countdown.')
+              // Clear any existing interval state - full-screen match ended view will show
+              setBetweenSetsCountdown(null)
+              setShowIntervalModal(false)
+            } else {
+              const serverStartTs = state.set_interval_started_at ? new Date(state.set_interval_started_at).getTime() : Date.now()
+
+              // Only update if not already tracking this interval, and never revive
+              // one the scorer already ended (end_interval sets intervalDismissedRef)
+              const currentInterval = betweenSetsCountdownRef.current
+              if (!intervalDismissedRef.current &&
+                  (!currentInterval || Math.abs(currentInterval.startTimestamp - serverStartTs) > 2000)) {
+                // 10 minutes after set 2 when the match says so
+                // (domain/setInterval), from the data shown NOW (dataRef: this
+                // handler's `data` is the copy from the coin toss). The same
+                // break already counted from a relay set_end keeps the
+                // scorer's length: never shortened here (the scorer's value
+                // wins over a copy of the match that may be older).
+                const latest = dataRef.current
+                const endedSet = endedSetBefore(state.current_set, latest?.sets, state.last_event_data?.setIndex, latest?.match?.bestOf ?? state.best_of)
+                let breakSeconds = breakSecondsAfter(latest?.match, endedSet, 180)
+                if (currentInterval && currentInterval.endedSet === endedSet && currentInterval.initialCountdown > breakSeconds) {
+                  breakSeconds = currentInterval.initialCountdown
+                }
+                setBetweenSetsCountdown({
+                  countdown: breakSeconds,
+                  startTimestamp: serverStartTs,
+                  // (the push time on the scorer's own clock, as the time-out's)
+                  anchor: countdownAnchor(elapsedWhenSent(state.set_interval_started_at, liveStatePushedAt(state), breakSeconds * 1000)),
+                  initialCountdown: breakSeconds,
+                  started: true,
+                  setIndex: state.last_event_data?.setIndex || state.current_set,
+                  endedSet,
+                  winner: state.last_event_data?.winner
+                })
+                setShowIntervalModal(true)
+              }
+            }
+          }
+
+          // Store last event for footer display (only specific event types),
+          // stamped with the scorer's time of the action; an undo's row names
+          // the action now last (nextLastEvent)
+          const pushedAt = Date.now()
+          const showPushedLastEvent = () => {
+            setLastEvent(prev => nextLastEvent(prev, { liveState: state, fallbackTs: pushedAt }))
+          }
+
+          // Shown data was built from match_live_state (no relay bundle): apply
+          // the pushed row itself. Re-reading the database here raced the
+          // scorer's write and could show the row from before this push (a
+          // side-out showed the wrong server and the old rotation).
+          if (dataSourceRef.current === 'live_state' && liveStateBaseRef.current) {
+            if (!isNewerLiveState(state, lastLiveStateTsRef.current, { allowEqual: true })) {
+              console.log('[Referee] 📡 Skipping older live state row')
+              return
+            }
+            showPushedLastEvent()
+            updateMatchDataState(buildLiveStateMatchData(liveStateBaseRef.current, state, matchId))
+            return
+          }
+
+          // Relay data: refetch the relay's bundle (points, lineups, subs,
+          // libero, sanctions, undoes, replays, ...). This row's score, when it
+          // is newer than the relay copy shown (that copy may lag: the
+          // scorer's sync can land after its live state), and its last action
+          // are held for that bundle (tracker.hold): shown alone, the score
+          // changed first and the server and the rotation ~200 ms later. An
+          // older copy read back never rolls the score back (updateMatchDataState).
+          const tracker = liveTrackerRef.current
+          if (tracker.liveState(state) && tracker.lastBundle) {
+            tracker.hold(() => {
+              showPushedLastEvent()
+              updateMatchDataState(tracker.lastBundle)
+            })
+          } else {
+            showPushedLastEvent()
+          }
+          console.log('[Referee] 📡 Realtime change detected, refetching data...')
+          fetchFreshData()
+        }
+      )
+      // The shim reports SUBSCRIBED again after every reconnect: catch up on
+      // whatever changed while the socket was down.
+      .subscribe((status) => {
+        // A transport of its own: the offline warning counts it (linkDown)
+        dbChannelUpRef.current = status === 'SUBSCRIBED'
+        if (status === 'SUBSCRIBED') fetchFreshData()
+      })
+
+    return () => {
+      dbChannelUpRef.current = false
+      supabase.removeChannel(channel)
+    }
+  }, [supabaseMatchUuid, isMasterMode, data?.match?.coinTossTeamA, fetchFreshData, matchId, updateMatchDataState])
+
+  // Handle timeout countdown timer
+  useEffect(() => {
+    if (!timeoutModal || !timeoutModal.started) return
+
+    const startTimestamp = timeoutModal.startTimestamp
+    const initialCountdown = timeoutModal.initialCountdown || 30
+    // On this tablet's monotonic clock (the anchor set on receipt; without
+    // one, from the start as this tablet's clock sees it, within the length)
+    const anchor = timeoutModal.anchor ?? countdownAnchor(Math.min(Math.max(0, Date.now() - startTimestamp), initialCountdown * 1000))
+
+    if (timeoutModal.countdown <= 0) {
+      // Don't auto-clear here, wait for tick to hit 0 to avoid rapid state flickering
+      // if (timeoutModal.countdown < 0) setTimeoutModal(null)
+      // return
+    }
+
+    // Update every 100ms for smooth visuals
+    const timer = setInterval(() => {
+      const remaining = secondsLeft(anchor, initialCountdown)
+
+      if (remaining <= 0) {
+        // If it was already 0 for a bit, clear it
+        setTimeoutModal(prev => {
+          if (prev && prev.countdown === 0 && (monotonicNow() - (anchor + initialCountdown * 1000)) > 2000) {
+            return null
+          }
+          if (!prev) return null
+          return { ...prev, countdown: 0 }
+        })
+      } else {
+        setTimeoutModal(prev => {
+          if (!prev || !prev.started) return null
+          // Only update if the value actually changed to reduce re-renders
+          if (prev.countdown === remaining) return prev
+          return { ...prev, countdown: remaining }
+        })
+      }
+    }, 100)
+
+    return () => clearInterval(timer)
+  }, [timeoutModal?.started, timeoutModal?.startTimestamp, timeoutModal?.anchor, timeoutModal?.initialCountdown])
+
+  // Calculate statistics
+  const stats = useMemo(() => {
+    // First, try to get stats from liveState (most accurate for Supabase-sourced data)
+    if (data?.liveState) {
+      const liveState = data.liveState
+      const teamAIsHome = (liveRowTeamA(liveState, data?.match?.homeName || data?.homeTeam?.name, data?.match?.awayName || data?.awayTeam?.name) || data.match?.coinTossTeamA || 'home') === 'home'
+
+      // SUB: every substitution, exceptional ones included (owner
+      // 22.11.2026), as on the scorer and the bench; its colour from the
+      // regular ones (referee/liveCounters.js)
+      return liveStateCounters(liveState, teamAIsHome)
+    }
+
+    // Fallback: count from events (when data comes from local IndexedDB or WebSocket)
+    if (!data || !data.events || !data.currentSet) {
+      return {
+        home: { timeouts: 0, substitutions: 0, regularSubstitutions: 0 },
+        away: { timeouts: 0, substitutions: 0, regularSubstitutions: 0 }
+      }
+    }
+
+    const currentSetEvents = data.events.filter(
+      e => (e.setIndex || 1) === (data.currentSet?.index || 1)
+    )
+
+    // SUB: every substitution, exceptional ones included; colour from the regular ones
+    return eventCounters(currentSetEvents)
+  }, [data])
+
+  // Get lineup for current set - returns null for team if no lineup exists
+  // Rich format: lineup positions contain { number, isServing, isLibero, replacedNumber, isSubstituted, substitutedFor, hasSanction, sanctions, isCaptain, isCourtCaptain }
+  // Legacy format: lineup positions just contain player number
+  const lineup = useMemo(() => {
+    if (!data || !data.events || !data.currentSet) {
+      return { home: null, away: null, isRichFormat: false }
+    }
+
+    const currentSetIndex = data.currentSet?.index || 1
+    const currentSetEvents = data.events.filter(
+      e => (e.setIndex || 1) === currentSetIndex
+    )
+
+    // seq order, not the bundle's storage order: a correction at a past score
+    // adds rows with the highest ids but a mid-set seq
+    const homeLineupEvents = currentSetEvents.filter(e => e.type === 'lineup' && e.payload?.team === 'home').sort(compareBySeq)
+    const awayLineupEvents = currentSetEvents.filter(e => e.type === 'lineup' && e.payload?.team === 'away').sort(compareBySeq)
+
+    const latestHomeLineup = homeLineupEvents[homeLineupEvents.length - 1]
+    const latestAwayLineup = awayLineupEvents[awayLineupEvents.length - 1]
+
+    // Check if using rich format (position I has isServing field)
+    const homeLineupData = latestHomeLineup?.payload?.lineup || null
+    const awayLineupData = latestAwayLineup?.payload?.lineup || null
+    const isRichFormat = latestHomeLineup?.payload?.isRichFormat ||
+      latestAwayLineup?.payload?.isRichFormat ||
+      homeLineupData?.I?.isServing !== undefined ||
+      awayLineupData?.I?.isServing !== undefined
+
+    // Check if we're between sets (previous set finished, current set not started)
+    // During set interval, only show lineup if we have lineup events for the NEW set
+    const previousSetIndex = currentSetIndex - 1
+    if (previousSetIndex >= 1) {
+      const previousSet = data.sets?.find(s => s.index === previousSetIndex)
+      // a penalty point before the first serve does not start the set (domain/rally isFirstRallyOf)
+      const currentSetHasPoints = !isFirstRallyOf(data.events, currentSetIndex)
+
+      // If previous set is finished and current set has no points yet (between sets)
+      // Only show lineups if we have lineup events specifically for the new set
+      if (previousSet?.finished && !currentSetHasPoints) {
+        const hasHomeLineupForNewSet = homeLineupEvents.length > 0
+        const hasAwayLineupForNewSet = awayLineupEvents.length > 0
+
+        // If no lineup events exist for the new set, return null for both
+        if (!hasHomeLineupForNewSet && !hasAwayLineupForNewSet) {
+          return { home: null, away: null, isRichFormat: false, isBetweenSets: true }
+        }
+      }
+    }
+
+    return {
+      home: homeLineupData,
+      away: awayLineupData,
+      isRichFormat
+    }
+  }, [data])
+
+  // Calculate sets won by each team (from finished sets)
+  const setsWon = useMemo(() => {
+    if (!data) return { home: 0, away: 0 }
+
+    const finishedSets = data.sets?.filter(s => s.finished) || []
+    return {
+      home: finishedSets.filter(s => s.homePoints > s.awayPoints).length,
+      away: finishedSets.filter(s => s.awayPoints > s.homePoints).length
+    }
+  }, [data])
+
+  // Between two sets: the set that comes next, its sides and its first
+  // server (referee/setBreak.js). Also while the next set's row is not in the
+  // bundle yet (data.currentSet null for the whole break): the defaults below
+  // put home on the left and gave set 1's server the SERVE box. null while a
+  // set is under way.
+  const setBreak = useMemo(() => {
+    const matchTeamA = data?.match?.coinTossTeamA || 'home'
+    return refereeSetBreak({
+      sets: data?.sets,
+      currentSet: data?.currentSet,
+      liveState: data?.liveState,
+      events: data?.events,
+      match: data?.match,
+      bestOf: data?.match?.bestOf ?? data?.liveState?.best_of ?? 5,
+      teamAKey: matchTeamA,
+      liveTeamAKey: liveRowTeamA(data?.liveState, data?.match?.homeName || data?.homeTeam?.name, data?.match?.awayName || data?.awayTeam?.name) || matchTeamA,
+      liveStateOnly: dataSourceRef.current === 'live_state'
+    })
+  }, [data])
+
+  // Determine who has serve
+  const getCurrentServe = useMemo(() => {
+    console.log('[Referee] getCurrentServe - data:', {
+      currentSetServingTeam: data?.currentSet?.servingTeam,
+      matchFirstServe: data?.match?.firstServe,
+      setIndex: data?.currentSet?.index
+    })
+    // Between sets: the next set's first server; none while it is not known
+    // (the deciding set before its coin toss): no SERVE box then
+    if (setBreak) return setBreak.servingTeam
+
+    // First priority: use servingTeam from Supabase live state (most accurate)
+    if (data?.currentSet?.servingTeam) {
+      console.log('[Referee] Using currentSet.servingTeam:', data.currentSet.servingTeam)
+      return data.currentSet.servingTeam
+    }
+
+    if (!data?.currentSet || !data?.match) {
+      return data?.match?.firstServe || 'home'
+    }
+
+    const setIndex = data.currentSet.index
+    const set1FirstServe = data.match.firstServe || 'home'
+    const teamAKey = data.match.coinTossTeamA || 'home'
+    const teamBKey = data.match.coinTossTeamB || 'away'
+
+    // Calculate first serve for current set based on alternation pattern
+    let currentSetFirstServe
+    if (setIndex === 5 && data.match?.set5FirstServe) {
+      currentSetFirstServe = data.match.set5FirstServe === 'A' ? teamAKey : teamBKey
+    } else if (setIndex === 5) {
+      currentSetFirstServe = set1FirstServe
+    } else {
+      // Sets 1-4: odd sets (1, 3) same as Set 1, even sets (2, 4) opposite
+      currentSetFirstServe = setIndex % 2 === 1 ? set1FirstServe : (set1FirstServe === 'home' ? 'away' : 'home')
+    }
+
+    if (!data?.events || data.events.length === 0) {
+      return currentSetFirstServe
+    }
+
+    // the last rally's winner, or the team a going back gave the serve to
+    return servingTeamFromLog(data.events, data.currentSet.index, data.match) || currentSetFirstServe
+  }, [data?.events, data?.currentSet, data?.match, setBreak])
+
+  // Determine team labels
+  const teamAKey = data?.match?.coinTossTeamA || 'home'
+  // The Team A the live row names its A/B fields by (side_a, sets_won_a):
+  // its own, by its team names. A "Swap A/B" at the match end corrects the
+  // coin toss and leaves the row as it was, so the match's Team A put each
+  // team on the other side
+  const liveTeamAKey = liveRowTeamA(data?.liveState, data?.match?.homeName || data?.homeTeam?.name, data?.match?.awayName || data?.awayTeam?.name) || teamAKey
+  const homeLabel = teamAKey === 'home' ? 'A' : 'B'
+  const awayLabel = teamAKey === 'away' ? 'A' : 'B'
+
+  // Which team is on the left for the 2nd referee (the scorer's side): the
+  // scorer's live state, else the scorer's own rule (getSideAForSet)
+  const homeOnLeftFor2ndRef = useMemo(() => {
+    // Between sets: the next set's sides (the teams change sides after every
+    // set; the deciding set after its coin toss), not the set that ended
+    if (setBreak) return setBreak.homeLeft
+    if (!data?.currentSet) return true
+
+    // PRIORITY 1: Live state from server (Scoreboard source of truth)
+    // side_a indicates which side Team A is on ('left' or 'right')
+    if (data?.liveState?.side_a) {
+      const sideA = data.liveState.side_a
+      return sideA === 'left' ? (liveTeamAKey === 'home') : (liveTeamAKey !== 'home')
+    }
+
+    // No live state: the scorer's court's own rule (the overrides and
+    // set5LeftTeam store the LEFT team as 'A'/'B'; a set 5 without its coin
+    // toss keeps set 4's sides; the change of courts at 8)
+    const sideA = getSideAForSet(data.currentSet.index, data?.match || {})
+
+    // Convert sideA to homeOnLeft:
+    // If sideA='left' (Team A on left), then home is on left only if teamAKey='home'
+    // If sideA='right' (Team A on right), then home is on left only if teamAKey!='home' (i.e., Team B is on left)
+    return sideA === 'left' ? (teamAKey === 'home') : (teamAKey !== 'home')
+  }, [data?.currentSet, data?.match, teamAKey, liveTeamAKey, data?.liveState?.side_a, setBreak])
+
+  const homeTeamOnLeft = refereeView === '1st' ? !homeOnLeftFor2ndRef : homeOnLeftFor2ndRef
+
+  const leftTeam = homeTeamOnLeft ? 'home' : 'away'
+  const rightTeam = homeTeamOnLeft ? 'away' : 'home'
+  const leftTeamData = leftTeam === 'home' ? data?.homeTeam : data?.awayTeam
+  const rightTeamData = rightTeam === 'home' ? data?.homeTeam : data?.awayTeam
+  const leftLabel = leftTeam === 'home' ? homeLabel : awayLabel
+  const rightLabel = rightTeam === 'home' ? homeLabel : awayLabel
+  const leftServing = getCurrentServe === leftTeam
+  const rightServing = getCurrentServe === rightTeam
+  const leftColor = leftTeamData?.color || (leftTeam === 'home' ? '#ef4444' : '#3b82f6')
+  const rightColor = rightTeamData?.color || (rightTeam === 'home' ? '#ef4444' : '#3b82f6')
+  // Player discs in the shirt colours (null when the match has no colour for
+  // a team: those discs keep the neutral grey / navy look)
+  // (the two liberos picked together, so they never match)
+  const discPaintByTeam = matchDiscPaint(data?.homeTeam?.color, data?.awayTeam?.color, {
+    homeLibero: teamLiberoColour(data?.homeTeam),
+    awayLibero: teamLiberoColour(data?.awayTeam)
+  })
+
+  // Compute team name texts for adaptive sizing
+  const leftShortName = (leftTeam === 'home' ? data?.match?.homeShortName : data?.match?.awayShortName) || leftTeamData?.name || 'Team'
+  const rightShortName = (rightTeam === 'home' ? data?.match?.homeShortName : data?.match?.awayShortName) || rightTeamData?.name || 'Team'
+
+  // Resize observer for adaptive text container widths
+  useEffect(() => {
+    if (!section2AContainerEl) return
+    const updateWidths = () => setSection2AWidth(section2AContainerEl.clientWidth)
+    updateWidths()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(updateWidths)
+    observer.observe(section2AContainerEl)
+    return () => observer.disconnect()
+  }, [section2AContainerEl])
+
+  // Synced font sizes for paired team names (SECTION 2A)
+  const section2AFontSize = useSyncedFontSize([leftShortName, rightShortName], section2AWidth, 28, 14, true)
+
+  // Get team-level sanctions (formal warning, improper request, delay warning, bench sanctions)
+  // Also returns player-level sanctions (warnings, penalties, expulsions, disqualifications)
+  const getTeamSanctions = useCallback((teamKey) => {
+    if (!data?.events) return {
+      formalWarning: false, improperRequest: false, delayWarning: false, delayPenalty: false,
+      benchSanctions: [], warnings: [], penalties: [], expulsions: [], disqualifications: []
+    }
+
+    const teamSanctions = data.events.filter(e =>
+      e.type === 'sanction' && e.payload?.team === teamKey
+    )
+
+    // Helper to get display identifier (number or function abbreviation)
+    const getIdentifier = (s) => {
+      const playerNum = s.payload?.playerNumber || s.payload?.player
+      const playerType = s.payload?.playerType
+      const role = s.payload?.role || s.payload?.function
+
+      // For bench/official sanctions, show role abbreviation
+      if (playerType === 'bench' || playerType === 'official') {
+        if (role) {
+          // Map common roles to abbreviations (lowercase keys for case-insensitive lookup)
+          const roleMap = {
+            'coach': 'C',
+            'assistant coach 1': 'AC1',
+            'assistant coach 2': 'AC2',
+            'physiotherapist': 'PH',
+            'medic': 'M'
+          }
+          // Fallback: first 2 letters of role if not in map
+          return roleMap[role.toLowerCase()] || role.substring(0, 2).toUpperCase()
+        }
+        return playerNum || 'B' // B for bench if no specific identifier
+      }
+      return playerNum
+    }
+
+    // Warnings (player or bench/official, excluding team/formal warnings and delay warnings)
+    const warnings = teamSanctions.filter(s => {
+      const type = s.payload?.type || s.payload?.sanctionType
+      const playerNum = s.payload?.playerNumber || s.payload?.player
+      const playerType = s.payload?.playerType
+      const isBenchOrOfficial = playerType === 'bench' || playerType === 'official'
+      // For players: require a number. For bench/officials: don't require number
+      const hasValidTarget = isBenchOrOfficial || (playerNum && String(playerNum) !== 'D')
+      return type === 'warning' &&
+        hasValidTarget &&
+        playerType !== 'team' && !s.payload?.isTeamWarning
+    }).map(s => ({
+      id: getIdentifier(s),
+      isBench: s.payload?.playerType === 'bench' || s.payload?.playerType === 'official'
+    }))
+
+    // Penalties (player or bench/official, excluding delay penalties)
+    const penalties = teamSanctions.filter(s => {
+      const type = s.payload?.type || s.payload?.sanctionType
+      const playerNum = s.payload?.playerNumber || s.payload?.player
+      const playerType = s.payload?.playerType
+      const isBenchOrOfficial = playerType === 'bench' || playerType === 'official'
+      // For players: require a number. For bench/officials: don't require number
+      const hasValidTarget = isBenchOrOfficial || (playerNum && String(playerNum) !== 'D')
+      return type === 'penalty' && hasValidTarget
+    }).map(s => ({
+      id: getIdentifier(s),
+      isBench: s.payload?.playerType === 'bench' || s.payload?.playerType === 'official'
+    }))
+
+    // Expulsions (any - player or bench)
+    const expulsions = teamSanctions.filter(s => {
+      const type = s.payload?.type || s.payload?.sanctionType
+      return type === 'expulsion'
+    }).map(s => ({
+      id: getIdentifier(s),
+      isBench: s.payload?.playerType === 'bench' || s.payload?.playerType === 'official'
+    }))
+
+    // Disqualifications (any - player or bench)
+    const disqualifications = teamSanctions.filter(s => {
+      const type = s.payload?.type || s.payload?.sanctionType
+      return type === 'disqualification'
+    }).map(s => ({
+      id: getIdentifier(s),
+      isBench: s.payload?.playerType === 'bench' || s.payload?.playerType === 'official'
+    }))
+
+    return {
+      // Formal warning: ANY warning to ANY team member (player, bench, official) triggers this
+      formalWarning: teamSanctions.some(s => {
+        const type = s.payload?.type || s.payload?.sanctionType
+        return type === 'warning'
+      }),
+      improperRequest: teamSanctions.some(s =>
+        s.payload?.type === 'improper_request' || s.payload?.sanctionType === 'improper_request'
+      ),
+      delayWarning: teamSanctions.some(s =>
+        (s.payload?.type === 'delay_warning' || s.payload?.sanctionType === 'delay_warning') ||
+        ((s.payload?.type === 'warning' || s.payload?.sanctionType === 'warning') &&
+          (String(s.payload?.playerNumber) === 'D' || String(s.payload?.player) === 'D'))
+      ),
+      delayPenalty: teamSanctions.some(s =>
+        (s.payload?.type === 'delay_penalty' || s.payload?.sanctionType === 'delay_penalty') ||
+        ((s.payload?.type === 'penalty' || s.payload?.sanctionType === 'penalty') &&
+          (String(s.payload?.playerNumber) === 'D' || String(s.payload?.player) === 'D'))
+      ),
+      benchSanctions: teamSanctions.filter(s =>
+        s.payload?.playerType === 'bench' || s.payload?.playerType === 'official'
+      ),
+      warnings,
+      penalties,
+      expulsions,
+      disqualifications
+    }
+  }, [data?.events])
+
+  const leftTeamSanctions = getTeamSanctions(leftTeam)
+  const rightTeamSanctions = getTeamSanctions(rightTeam)
+
+  // Get libero on court for a team - returns { position, liberoNumber, liberoType, playerNumber } or null
+  const getLiberoOnCourt = useCallback((teamKey) => {
+    if (!data?.events || !data?.currentSet) return null
+
+    const currentSetEvents = data.events.filter(e => e.setIndex === data.currentSet.index)
+    const lineupEvents = currentSetEvents
+      .filter(e => e.type === 'lineup' && e.payload?.team === teamKey)
+      .sort((a, b) => (a.seq || 0) - (b.seq || 0))
+
+    if (lineupEvents.length === 0) return null
+
+    const latestLineup = lineupEvents[lineupEvents.length - 1]
+    const currentLineup = latestLineup?.payload?.lineup || {}
+    const liberoSub = latestLineup?.payload?.liberoSubstitution
+
+    // Get initial lineup (marked with isInitial: true)
+    const initialLineupEvent = lineupEvents.find(e => e.payload?.isInitial === true)
+    const initialLineup = initialLineupEvent?.payload?.lineup || {}
+
+    const teamPlayers = teamKey === 'home' ? data.homePlayers : data.awayPlayers
+
+    // Check each position to find if a libero is there
+    for (const [position, posData] of Object.entries(currentLineup)) {
+      // Handle both rich format (posData is object with number) and legacy format (posData is number)
+      const playerNum = typeof posData === 'object' && posData?.number !== undefined ? posData.number : posData
+      const player = teamPlayers?.find(p => String(p.number) === String(playerNum))
+      if (player && (player.libero === 'libero1' || player.libero === 'libero2')) {
+        // Found a libero on court - try to find which player they replaced
+        let replacedPlayer = liberoSub?.playerNumber
+
+        if (!replacedPlayer) {
+          // Look through lineup history to find the original player at this position
+          for (let i = lineupEvents.length - 2; i >= 0; i--) {
+            const prevLineup = lineupEvents[i]?.payload?.lineup
+            if (prevLineup && prevLineup[position]) {
+              const prevPosData = prevLineup[position]
+              const prevNum = typeof prevPosData === 'object' && prevPosData?.number !== undefined ? prevPosData.number : prevPosData
+              const prevPlayer = teamPlayers?.find(p => String(p.number) === String(prevNum))
+              if (prevPlayer && prevPlayer.libero !== 'libero1' && prevPlayer.libero !== 'libero2') {
+                replacedPlayer = prevPlayer.number
+                break
+              }
+            }
+          }
+        }
+
+        // Fallback: Check initial lineup for who was at this position
+        if (!replacedPlayer && initialLineup[position]) {
+          const initPosData = initialLineup[position]
+          const initNum = typeof initPosData === 'object' && initPosData?.number !== undefined ? initPosData.number : initPosData
+          const initialPlayer = teamPlayers?.find(p => String(p.number) === String(initNum))
+          if (initialPlayer && initialPlayer.libero !== 'libero1' && initialPlayer.libero !== 'libero2') {
+            replacedPlayer = initialPlayer.number
+          }
+        }
+
+        return {
+          position,
+          liberoNumber: player.number,
+          liberoType: player.libero,
+          playerNumber: replacedPlayer
+        }
+      }
+    }
+
+    return null
+  }, [data?.events, data?.currentSet, data?.homePlayers, data?.awayPlayers])
+
+  // Get substitution info for a player on court - returns { replacedNumber } or null
+  const getSubstitutionInfo = useCallback((teamKey, playerNumber) => {
+    if (!data?.events || !data?.currentSet) return null
+
+    const currentSetSubs = data.events
+      .filter(e => e.type === 'substitution' && e.payload?.team === teamKey && e.setIndex === data.currentSet.index)
+      .sort(newestFirst)
+
+    // Find if this player came in as a substitute
+    const subIn = currentSetSubs.find(s => String(s.payload?.playerIn) === String(playerNumber))
+    if (subIn) {
+      return { replacedNumber: subIn.payload?.playerOut }
+    }
+
+    return null
+  }, [data?.events, data?.currentSet])
+
+  // Get sanctions for a player
+  const getPlayerSanctions = useCallback((teamKey, playerNumber) => {
+    if (!data?.events || !playerNumber) return []
+
+    return data.events.filter(e =>
+      e.type === 'sanction' &&
+      e.payload?.team === teamKey &&
+      (String(e.payload?.player) === String(playerNumber) || String(e.payload?.playerNumber) === String(playerNumber))
+    )
+  }, [data?.events])
+
+  // Re-enable wake lock (call this when entering fullscreen or on user interaction)
+  const reEnableWakeLock = useCallback(async () => {
+    // Try native Wake Lock API
+    try {
+      if ('wakeLock' in navigator) {
+        if (wakeLockRef.current) {
+          try { await wakeLockRef.current.release() } catch (e) { }
+        }
+        wakeLockRef.current = await navigator.wakeLock.request('screen')
+        console.log('[WakeLock] Re-acquired wake lock')
+        setWakeLockActive(true)
+        wakeLockRef.current.addEventListener('release', () => {
+          console.log('[WakeLock] Released')
+        })
+        return true
+      }
+    } catch (err) {
+      console.log('[WakeLock] Failed to re-acquire:', err.message)
+    }
+    return false
+  }, [])
+
+  // Toggle wake lock manually
+  const toggleWakeLock = useCallback(async () => {
+    if (wakeLockActive) {
+      // Disable wake lock
+      if (wakeLockRef.current) {
+        try {
+          await wakeLockRef.current.release()
+          wakeLockRef.current = null
+        } catch (e) { }
+      }
+      setWakeLockActive(false)
+      console.log('[WakeLock] Manually disabled')
+    } else {
+      // Enable wake lock
+      const success = await reEnableWakeLock()
+      if (success) {
+        console.log('[WakeLock] Manually enabled')
+      } else {
+        console.log('[WakeLock] Failed to enable manually - Wake Lock API may not be supported')
+        // Show visual feedback that it's "on" even if API failed
+        setWakeLockActive(true)
+      }
+    }
+  }, [wakeLockActive, reEnableWakeLock])
+
+  // Detect iOS (Fullscreen API doesn't work on iOS Safari/Chrome)
+  const isIOS = useMemo(() => {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  }, [])
+
+  // Fullscreen handlers
+  const toggleFullscreen = useCallback(async () => {
+    // iOS doesn't support Fullscreen API
+    if (isIOS) {
+      if (!isFullscreen) {
+        // Simulate fullscreen with CSS class
+        document.body.classList.add('ios-fullscreen')
+        setIsFullscreen(true)
+        reEnableWakeLock()
+        // Show a helpful tip
+        showAlert(t('refereeDashboard.iosFullscreenTip', 'Tip: For true fullscreen on iOS, tap Share → Add to Home Screen, then open from there.'), 'info')
+      } else {
+        document.body.classList.remove('ios-fullscreen')
+        setIsFullscreen(false)
+      }
+      return
+    }
+
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen()
+        setIsFullscreen(true)
+        // Re-enable wake lock when entering fullscreen
+        setTimeout(() => reEnableWakeLock(), 500)
+      } else {
+        await document.exitFullscreen()
+        setIsFullscreen(false)
+      }
+    } catch (error) {
+      console.error('Error toggling fullscreen:', error)
+      // Fallback: try simulated fullscreen
+      if (!isFullscreen) {
+        document.body.classList.add('ios-fullscreen')
+        setIsFullscreen(true)
+      }
+    }
+  }, [reEnableWakeLock, isIOS, isFullscreen])
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const isFs = !!document.fullscreenElement
+      setIsFullscreen(isFs)
+      // Re-enable wake lock when entering fullscreen
+      if (isFs) {
+        reEnableWakeLock()
+      }
+    }
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  }, [reEnableWakeLock])
+
+  // Periodically re-enable wake lock in fullscreen mode (every 2 minutes)
+  useEffect(() => {
+    if (!isFullscreen) return
+
+    const interval = setInterval(() => {
+      reEnableWakeLock()
+    }, 120000) // Every 2 minutes
+
+    return () => clearInterval(interval)
+  }, [isFullscreen, reEnableWakeLock])
+
+  // Format countdown
+  // Between sets: the set before finished and the next one not started
+  // (referee/setBreak.js). Also while the next set's row is not in the bundle
+  // yet: with no unfinished set this was false, and a live state without the
+  // break flag then showed "SET 1 · 0:0" (full-match test 21.11.2026). Has
+  // the next set started? A set_start, a rally start or a rally point; a
+  // penalty point awarded before the first serve (a sanction at the end of
+  // the set before) does not start it (domain/rally isFirstRallyOf, as the
+  // scorer): it ended the interval and showed an empty court (owner 15.11,
+  // start of set 2 at 0:1)
+  const isBetweenSets = !!setBreak?.betweenSets
+
+  // Check if match has ended (from liveState status or sets won)
+  const refBestOf = data?.match?.bestOf ?? data?.liveState?.best_of ?? 5
+  const isMatchEnded = data?.liveState?.match_status === 'ended' ||
+    isMatchFinishedUtil(data?.liveState?.sets_won_a || 0, data?.liveState?.sets_won_b || 0, refBestOf) ||
+    isMatchFinishedUtil(setsWon.home, setsWon.away, refBestOf)
+
+  // Check if we're in set interval (from liveState or local detection)
+  // But NOT if match is already finished
+  const isInSetInterval = !isMatchEnded && (data?.liveState?.set_interval_active || isBetweenSets)
+  // The set the header shows when none is known (a bundle without an
+  // unfinished set outside the break): the last one shown, never set 1
+  const lastShownSetRef = useRef(null)
+  const lastShownSet = lastShownSetRef.current?.matchId === matchId ? lastShownSetRef.current.index : null
+  // During the interval: the set that comes next (setBreak: the next set's
+  // row, else the set after the last finished one, else the live state's
+  // current_set, which the set end's push already moves on)
+  const nextSetIndex = isInSetInterval
+    ? (setBreak?.setIndex || data?.liveState?.current_set || data?.currentSet?.index || lastShownSet || 1)
+    : null
+
+  // Match ended: cleared. In the set interval the NEW set's line-ups show
+  // as soon as the scorer enters them (the referees check them before the
+  // set; the "Line-up set" cover hides the first until the other is in):
+  // they were cleared for the whole interval, so the court stayed empty at
+  // 15:37 with both line-ups of set 2 entered (owner 15.11, match 424849).
+  // Still cleared while the current set is the finished one (an interval
+  // before the scorer has created the next set).
+  const intervalClearsLineups = isInSetInterval && (data?.currentSet?.finished === true || lineup.isBetweenSets === true)
+  const leftLineup = (isMatchEnded || intervalClearsLineups) ? null : (leftTeam === 'home' ? lineup.home : lineup.away)
+  const rightLineup = (isMatchEnded || intervalClearsLineups) ? null : (rightTeam === 'home' ? lineup.home : lineup.away)
+  const leftStats = (isInSetInterval || isMatchEnded)
+    ? { timeouts: 0, substitutions: 0, regularSubstitutions: 0 }
+    : (leftTeam === 'home' ? stats.home : stats.away)
+  const rightStats = (isInSetInterval || isMatchEnded)
+    ? { timeouts: 0, substitutions: 0, regularSubstitutions: 0 }
+    : (rightTeam === 'home' ? stats.home : stats.away)
+
+  // Get the last finished set's final score for display when match ends
+  const lastFinishedSet = useMemo(() => {
+    if (!data?.sets) return null
+    const finishedSets = data.sets.filter(s => s.finished).sort((a, b) => b.index - a.index)
+    return finishedSets[0] || null
+  }, [data?.sets])
+
+  // Current set points - when match ended, show last set's final score
+  const leftPoints = isMatchEnded && lastFinishedSet
+    ? (leftTeam === 'home' ? lastFinishedSet.homePoints : lastFinishedSet.awayPoints)
+    : (leftTeam === 'home' ? data?.currentSet?.homePoints || 0 : data?.currentSet?.awayPoints || 0)
+  const rightPoints = isMatchEnded && lastFinishedSet
+    ? (rightTeam === 'home' ? lastFinishedSet.homePoints : lastFinishedSet.awayPoints)
+    : (rightTeam === 'home' ? data?.currentSet?.homePoints || 0 : data?.currentSet?.awayPoints || 0)
+
+  // Sets won by each side - use liveState if available (from Supabase), otherwise fall back to setsWon.
+  // Every set row finished (the next set's not in the bundle yet): the rows,
+  // which hold the set just ended; a live state can be from before its end
+  const setsWonFromRows = isBetweenSets && !data?.currentSet
+  const liveStateSetsWonHome = setsWonFromRows ? setsWon.home : liveTeamAKey === 'home'
+    ? (data?.liveState?.sets_won_a ?? setsWon.home)
+    : (data?.liveState?.sets_won_b ?? setsWon.home)
+  const liveStateSetsWonAway = setsWonFromRows ? setsWon.away : liveTeamAKey === 'home'
+    ? (data?.liveState?.sets_won_b ?? setsWon.away)
+    : (data?.liveState?.sets_won_a ?? setsWon.away)
+  const leftSetsWon = leftTeam === 'home' ? liveStateSetsWonHome : liveStateSetsWonAway
+  const rightSetsWon = rightTeam === 'home' ? liveStateSetsWonHome : liveStateSetsWonAway
+
+  // During interval, show sets won; during play, show current set points
+  const leftDisplayScore = isInSetInterval ? leftSetsWon : leftPoints
+  const rightDisplayScore = isInSetInterval ? rightSetsWon : rightPoints
+  // Display set index - during interval show the NEXT set, but never show more than Set 5
+  // (a best-of-3 decider is stored as set 5 and shown as set 3)
+  const shownSetIndex = Math.min(
+    isInSetInterval ? nextSetIndex : (data?.currentSet?.index || lastShownSet || 1),
+    5
+  )
+  if (data?.currentSet?.index || isInSetInterval) lastShownSetRef.current = { matchId, index: shownSetIndex }
+  const displaySetIndex = displaySetNumber(shownSetIndex, refBestOf)
+
+  // Check if this is the first rally of the set (no points scored yet)
+  const isFirstRally = useMemo(() => {
+    if (!data?.events || !data?.currentSet) return true
+    // a penalty point before the first serve does not end it (domain/rally)
+    return isFirstRallyOf(data.events, data.currentSet.index)
+  }, [data?.events, data?.currentSet])
+  // The first line-up of a set stays hidden until the other is in
+  // (domain/lineupPrivacy.js): the court's "Line-up set" cover, and its
+  // server's number is not shown either
+  const leftLineupHidden = lineupHiddenUntilBoth({ setStarted: !isFirstRally, ownEntered: !!leftLineup, otherEntered: !!rightLineup })
+  const rightLineupHidden = lineupHiddenUntilBoth({ setStarted: !isFirstRally, ownEntered: !!rightLineup, otherEntered: !!leftLineup })
+
+  // Start between-sets countdown when we detect we're between sets: on the
+  // next set's row, as before. Without it (the set just ended) the set end's
+  // action and the live state start it: started here, a reload after the
+  // break had run out or been ended showed a new full countdown
+  const nextSetRowBetweenSets = isBetweenSets && !!data?.currentSet
+  useEffect(() => {
+    // Only start countdown if between sets AND countdown hasn't been started yet (null means never started)
+    // AND it wasn't manually dismissed
+    if (nextSetRowBetweenSets && betweenSetsCountdown === null && !intervalDismissedRef.current) {
+      const endedSet = endedSetBefore(data?.currentSet?.index, data?.sets, null, data?.match?.bestOf)
+      const breakSeconds = breakSecondsAfter(data?.match, endedSet, 180)
+      setBetweenSetsCountdown({
+        countdown: breakSeconds,
+        started: true,
+        startTimestamp: Date.now(),
+        anchor: countdownAnchor(0),
+        initialCountdown: breakSeconds,
+        endedSet
+      })
+      setShowIntervalModal(true)
+    } else if (!nextSetRowBetweenSets) {
+      // Reset to null only when no longer between sets (new set started)
+      setBetweenSetsCountdown(null)
+      setShowIntervalModal(false) // Hide the modal when set starts
+      intervalDismissedRef.current = false // Reset dismissal flag when set starts
+    }
+  }, [nextSetRowBetweenSets]) // Remove betweenSetsCountdown from deps to prevent restart loop
+
+  // Handle between-sets countdown timer
+  useEffect(() => {
+    if (!betweenSetsCountdown || !betweenSetsCountdown.started) return
+
+    const startTimestamp = betweenSetsCountdown.startTimestamp || Date.now()
+    const initialCountdown = betweenSetsCountdown.initialCountdown || 180
+    // On this tablet's monotonic clock, as the time-out's
+    const anchor = betweenSetsCountdown.anchor ?? countdownAnchor(Math.min(Math.max(0, Date.now() - startTimestamp), initialCountdown * 1000))
+
+    // Update every 100ms for smooth visuals
+    const timer = setInterval(() => {
+      const remaining = secondsLeft(anchor, initialCountdown)
+
+      if (remaining <= 0) {
+        setBetweenSetsCountdown(prev => {
+          if (prev && prev.countdown === 0 && (monotonicNow() - (anchor + initialCountdown * 1000)) > 2000) {
+            return prev // Keep it at 0
+          }
+          if (!prev) return null
+          return { ...prev, countdown: 0, started: false }
+        })
+      } else {
+        setBetweenSetsCountdown(prev => {
+          if (!prev || !prev.started) return prev
+          if (prev.countdown === remaining) return prev
+          return { ...prev, countdown: remaining }
+        })
+      }
+    }, 100)
+
+    return () => clearInterval(timer)
+  }, [betweenSetsCountdown?.started, betweenSetsCountdown?.startTimestamp, betweenSetsCountdown?.anchor, betweenSetsCountdown?.initialCountdown])
+
+  // The countdowns this tab shows, kept for its reload (keepCountdown)
+  useEffect(() => {
+    if (!matchId || !timeoutModal?.started) return
+    shownTimeoutStartRef.current = timeoutModal.startTimestamp
+    if (timeoutModal.anchor == null) return
+    keepCountdown(`${matchId}:timeout`, timeoutModal.startTimestamp, timeoutModal.anchor, timeoutModal.initialCountdown || 30)
+  }, [matchId, timeoutModal?.started, timeoutModal?.startTimestamp, timeoutModal?.anchor, timeoutModal?.initialCountdown])
+  useEffect(() => {
+    if (!matchId || !betweenSetsCountdown?.started || betweenSetsCountdown.anchor == null) return
+    keepCountdown(`${matchId}:interval`, betweenSetsCountdown.startTimestamp, betweenSetsCountdown.anchor, betweenSetsCountdown.initialCountdown || 180)
+  }, [matchId, betweenSetsCountdown?.started, betweenSetsCountdown?.startTimestamp, betweenSetsCountdown?.anchor, betweenSetsCountdown?.initialCountdown])
+
+  // A referee that reloads, or joins, during a time-out or the break: the
+  // countdowns above start from pushes and relay actions, and the scorer
+  // sends none while one runs, so the live state loaded said a time-out or
+  // the break ran and no countdown showed until it ended. It shows with the
+  // time it has left (elapsedAfterTheFact: this tab's own countdown from
+  // before its reload, else this tablet's clock against the scorer's start).
+  // Never one this tab shows or showed (over here: an older copy may still say
+  // it runs), one over by now, nor a break the scorer ended.
+  useEffect(() => {
+    const state = data?.liveState
+    if (isMasterMode || !matchId || !state) return
+    if (state.timeout_active && !timeoutModalRef.current) {
+      const start = Date.parse(state.timeout_started_at ?? '')
+      const shown = shownTimeoutStartRef.current
+      const duration = state.last_event_data?.duration || 30
+      const elapsed = elapsedAfterTheFact(`${matchId}:timeout`, start, duration)
+      if (Number.isFinite(start) && !(shown != null && Math.abs(shown - start) <= 2000) && elapsed < duration * 1000) {
+        // the row's team on its sides, as for a pushed time-out
+        const teamAKey = liveRowTeamA(state, data?.match?.homeName || data?.homeTeam?.name, data?.match?.awayName || data?.awayTeam?.name) || data?.match?.coinTossTeamA || 'home'
+        const homeOnLeft = ((state.side_a || 'left') === 'left') === (teamAKey === 'home')
+        const anchor = countdownAnchor(elapsed)
+        timeoutActiveRef.current = true
+        setTimeoutModal({
+          team: (state.last_event_team === 'left') === homeOnLeft ? 'home' : 'away',
+          countdown: secondsLeft(anchor, duration),
+          startTimestamp: start,
+          anchor,
+          initialCountdown: duration,
+          started: true
+        })
+        setShowTimeoutModal(true)
+      }
+    }
+    if (state.set_interval_active && !isMatchEnded && !betweenSetsCountdownRef.current && !intervalDismissedRef.current) {
+      const start = Date.parse(state.set_interval_started_at ?? '')
+      const endedSet = endedSetBefore(state.current_set, data?.sets, state.last_event_data?.setIndex, data?.match?.bestOf ?? state.best_of)
+      const breakSeconds = breakSecondsAfter(data?.match, endedSet, 180)
+      const elapsed = elapsedAfterTheFact(`${matchId}:interval`, start, breakSeconds)
+      if (Number.isFinite(start) && elapsed < breakSeconds * 1000) {
+        const anchor = countdownAnchor(elapsed)
+        setBetweenSetsCountdown({
+          countdown: secondsLeft(anchor, breakSeconds),
+          startTimestamp: start,
+          anchor,
+          initialCountdown: breakSeconds,
+          started: true,
+          setIndex: state.last_event_data?.setIndex || state.current_set,
+          endedSet,
+          winner: state.last_event_data?.winner
+        })
+        setShowIntervalModal(true)
+      }
+    }
+  }, [data?.liveState, isMatchEnded, isMasterMode, matchId])
+
+  // The 10-minute switch changed (Edit match info on the scorer) while the
+  // break after set 2 runs: the countdown keeps its start and ends at the
+  // start + the new length (domain/setInterval). Switched off, the length is
+  // this tablet's 3 minutes (the scorer's own setting is not sent); a break
+  // over by then ends. A break that ran out or was ended stays so.
+  const longIntervalSeenRef = useRef(null)
+  const longIntervalOn = data?.match ? hasLongIntervalAfterSet2(data.match) : null
+  useEffect(() => {
+    if (longIntervalOn === null) return
+    const before = longIntervalSeenRef.current
+    longIntervalSeenRef.current = longIntervalOn
+    if (before === null || before === longIntervalOn) return
+    setBetweenSetsCountdown(prev => {
+      if (!prev || !prev.started || prev.anchor == null) return prev
+      const ended = prev.endedSet ?? prev.setIndex
+      if (!isLongInterval({ longIntervalAfterSet2: true }, ended)) return prev
+      const length = breakSecondsAfter({ longIntervalAfterSet2: longIntervalOn }, ended, 180)
+      if (length === prev.initialCountdown) return prev
+      const left = secondsLeft(prev.anchor, length)
+      return { ...prev, initialCountdown: length, countdown: left, started: left > 0 }
+    })
+  }, [longIntervalOn])
+  useEffect(() => { longIntervalSeenRef.current = null }, [matchId])
+
+  // Check if match is waiting for coin toss (status is 'setup' or no data yet)
+  // This must be checked BEFORE the !data return to show awaiting screen
+  // A match is awaiting coin toss if: no data, status is 'setup', OR (no firstServe AND no coinTossTeamA AND not master mode AND no currentSet)
+  const coinTossConfirmed = data?.match?.firstServe || data?.match?.coinTossTeamA || data?.match?.coin_toss_confirmed
+  const isAwaitingCoinToss = !data || data?.match?.status === 'setup' || (!coinTossConfirmed && !isMasterMode && !data?.currentSet)
+
+  // The live scoresheet: only with a 'full' relay bundle (the referee PIN
+  // proved: rosters, events). Never from a summary, never in test mode.
+  // Before the coin toss (rosters) and after the match (the whole sheet) too.
+  const canShowScoresheet = !isMasterMode && bundleHasFullAccess(data?.sheetBundle)
+  const scoresheetLayer = (scoresheetOpen && canShowScoresheet
+    ? <RefereeScoresheet bundle={data.sheetBundle} receivedAt={data.sheetBundleAt} onClose={() => setScoresheetOpen(false)} />
+    : null) || (rostersOpen && canShowScoresheet
+    ? <RefereeRosters bundle={data.sheetBundle} onClose={() => setRostersOpen(false)} />
+    : null)
+  const scoresheetButton = (className) => canShowScoresheet ? (
+    <div className={`grid grid-cols-2 gap-2 ${className || ''}`}>
+      <Button variant="dark" size="xl" block icon={FileText} onClick={() => setScoresheetOpen(true)} data-testid="referee-open-scoresheet">
+        {t('refereeDashboard.scoresheet.open', 'Scoresheet')}
+      </Button>
+      <Button variant="secondary" size="xl" block icon={Users} onClick={() => setRostersOpen(true)} data-testid="referee-open-rosters">
+        {t('refereeDashboard.rosters.open', 'Rosters')}
+      </Button>
+    </div>
+  ) : null
+
+  // The header menu, in the match and before the coin toss (SimpleHeader adds
+  // the language, the version and Clear cache)
+  const refereeMenuItems = [
+    // The live scoresheet (also in the bar; here with its name on a phone)
+    ...(canShowScoresheet ? [
+      { icon: <FileText size={13} aria-hidden="true" />, label: t('refereeDashboard.scoresheet.open', 'Scoresheet'), onClick: () => setScoresheetOpen(true) },
+      { icon: <Users size={13} aria-hidden="true" />, label: t('refereeDashboard.rosters.open', 'Rosters'), onClick: () => setRostersOpen(true) },
+      { divider: true }
+    ] : []),
+    // Screen options
+    { header: t('refereeDashboard.screenOptions') },
+    {
+      icon: wakeLockActive ? <SunIcon size={13} /> : <MoonIcon size={13} />,
+      label: t('refereeDashboard.keepScreenOn'),
+      onClick: toggleWakeLock,
+      toggle: wakeLockActive,
+      keepOpen: true
+    },
+    // Colour theme: one row per choice, the chosen one inverted
+    ...themeMenuItems(t, theme),
+    { divider: true },
+    // Connection (only if not master mode)
+    ...(!isMasterMode ? [
+      { header: t('refereeDashboard.connection.title') },
+      {
+        icon: <RefreshIcon size={13} />,
+        label: t('refereeDashboard.connection.auto'),
+        onClick: () => setConnectionType(CONNECTION_TYPES.AUTO),
+        active: connectionType === CONNECTION_TYPES.AUTO
+      },
+      {
+        icon: <DatabaseIcon size={13} />,
+        label: t('refereeDashboard.connection.dbOnly'),
+        onClick: () => setConnectionType(CONNECTION_TYPES.SUPABASE),
+        active: connectionType === CONNECTION_TYPES.SUPABASE,
+        color: '#22c55e'
+      },
+      {
+        icon: <SatelliteDishIcon size={13} />,
+        label: t('refereeDashboard.connection.directOnly'),
+        onClick: () => setConnectionType(CONNECTION_TYPES.WEBSOCKET),
+        active: connectionType === CONNECTION_TYPES.WEBSOCKET,
+        color: '#3b82f6'
+      },
+      { divider: true }
+    ] : []),
+    // Test mode indicator
+    ...(isMasterMode ? [
+      {
+        icon: <WarningIcon size={13} />,
+        label: t('refereeDashboard.testMode'),
+        disabled: true,
+        color: '#fbbf24'
+      },
+      { divider: true }
+    ] : []),
+    // Refresh (always visible)
+    {
+      icon: <RefreshIcon size={13} />,
+      label: t('refereeDashboard.refresh'),
+      onClick: fetchFreshData,
+      color: '#3b82f6'
+    },
+    { divider: true },
+    // Exit
+    {
+      icon: '✕',
+      label: t('refereeDashboard.exit'),
+      onClick: onExit,
+      color: '#ef4444'
+    },
+    // Opened from the scorer's Home menu on this device: back to it
+    // (utils/scorerReturn.js)
+    ...(scorerReturnUrl() ? [
+      {
+        icon: <House size={14} aria-hidden="true" />,
+        label: t('dashboards.backToScorer', 'Back to scorer'),
+        onClick: () => returnToScorer(),
+        testId: 'dashboard-back-to-scorer'
+      }
+    ] : [])
+  ]
+
+  // A phone or tablet held sideways: the dashboard is upright only (owner,
+  // 2026-11-09), the mirror of the scorer's landscape-only scoreboard. The
+  // notice stands in for every dashboard screen; the state above keeps
+  // running, so turning the device back shows the match as it is. Where the
+  // screen is locked upright (RefereeApp: the Android app, an installed web
+  // app, fullscreen) the viewport never gets wider than high. A computer
+  // keeps the landscape layout.
+  if (mustTurnUpright({ uprightOnly, viewportWidth, viewportHeight })) {
+    return <TurnUprightNotice t={t} />
+  }
+
+  // Show awaiting coin toss screen when connected but no match data yet
+  if (isAwaitingCoinToss && !isMasterMode && realtimeStatus === CONNECTION_STATUS.CONNECTED) {
+    return (
+      <div style={{
+        height: 'var(--ov-vh100, 100vh)', // the visible height: dvh where the browser has it (respects iOS browser chrome)
+        maxHeight: 'var(--ov-vh100, 100vh)',
+        width: '100vw',
+        maxWidth: `${REFEREE_LAYOUT.maxWidth}px`,
+        margin: '0 auto',
+        background: 'var(--bg)',
+        color: 'var(--text)',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden'
+      }}>
+        <ContextualHelpPanel open={helpOpen} onClose={closeHelp} screen="referee" />
+        {/* Header: the bar of the match view (SimpleHeader). The row of its
+            own (fullscreen, screen on, connection, refresh, ?, language,
+            version, exit) was wider than a 360 px phone and its last button
+            sat off the screen (full-match test 21.11.2026): screen on,
+            refresh and exit are in the menu now, with the language and the
+            version */}
+        <SimpleHeader
+          leading={
+            <ConnectionStatus
+              connectionStatuses={connectionStatuses}
+              connectionDebugInfo={{
+                ...connectionDebugInfo,
+                match: {
+                  ...connectionDebugInfo?.match,
+                  matchId: matchId,
+                  homeTeam: data?.homeTeam?.name,
+                  awayTeam: data?.awayTeam?.name
+                }
+              }}
+              queueStats={syncStatus}
+              onRetryErrors={retryErrors}
+              position="left"
+              size="small"
+            />
+          }
+          onFullscreen={toggleFullscreen}
+          isFullscreen={isFullscreen}
+          onHelp={toggleHelp}
+          helpOpen={helpOpen}
+          menuItems={refereeMenuItems}
+        />
+
+        {/* Content */}
+        <div className="ov-kit flex flex-1 flex-col items-center overflow-y-auto bg-gradient-to-b from-stone-50 to-stone-100 px-4 py-6">
+          <Card stack={false} className="my-auto w-full max-w-md rounded-3xl p-6 text-center shadow-card-lg sm:p-8">
+            {/* Team names if available */}
+            {data?.homeTeam?.name && data?.awayTeam?.name && (
+              <p className="mb-5 text-lg font-bold tracking-tight text-stone-900 sm:text-xl">
+                {data.homeTeam.name} <span className="font-medium text-stone-400">vs</span> {data.awayTeam.name}
+              </p>
+            )}
+
+            {/* Awaiting Coin Toss Message */}
+            <div className="flex justify-center">
+              <StatusPill tone="todo" className="px-3 py-1 text-xs">
+                {t('refereeDashboard.awaitingCoinToss', 'Awaiting coin toss')}
+              </StatusPill>
+            </div>
+
+            <p className="mx-auto mt-4 max-w-sm text-sm text-stone-600">
+              {t('refereeDashboard.awaitingCoinTossDesc', 'The match will begin once the coin toss has been confirmed on the scoresheet.')}
+            </p>
+
+            {/* Loading indicator */}
+            <Loader2 size={28} className="mx-auto mt-6 animate-spin text-stone-400" aria-hidden />
+
+            {/* The rosters and the header as the scorer entered them */}
+            {scoresheetButton('mt-6')}
+          </Card>
+        </div>
+        {scoresheetLayer}
+
+        <style>{`
+          @keyframes awaiting-spin {
+            to { transform: rotate(360deg); }
+          }
+        `}</style>
+      </div>
+    )
+  }
+
+  if (!data) return null
+
+  // One player on the court: works out the marks from the lineup data;
+  // PlayerDisc draws them, sized from the court box (referee/discSizing.js)
+  // positionData: for rich format this is { number, isServing, isLibero, replacedNumber, isSubstituted, substitutedFor, hasSanction, sanctions, isCaptain, isCourtCaptain }
+  //               for legacy format this is just a number
+  const PlayerCircle = ({ number: legacyNumber, positionData, position, team, isServing: legacyIsServing }) => {
+    // Support both rich format (positionData) and legacy format (number)
+    // Rich format: positionData is { number, isServing, isLibero, ... }
+    // Legacy format: positionData is just a number (or undefined, using legacyNumber)
+    let isRichFormat = positionData && typeof positionData === 'object' && positionData.number !== undefined
+
+    // Extract number - ensure it's always a primitive, never an object
+    let number = isRichFormat ? positionData.number : (positionData || legacyNumber)
+
+    // Extra safety: if positionData was passed as a number but we're in legacy mode,
+    // but that "number" is actually an object (edge case from malformed data), handle it
+    if (number && typeof number === 'object' && number.number !== undefined) {
+      // The "number" is actually rich format data that wasn't detected
+      isRichFormat = true
+      positionData = number
+      number = number.number
+    }
+
+    if (!number) return null
+
+    const teamPlayers = team === 'home' ? data.homePlayers : data.awayPlayers
+    const player = teamPlayers?.find(p => String(p.number) === String(number))
+
+    // For rich format, use embedded data; for legacy, compute from player lookup and functions
+    let isLibero, shouldShowBall, liberoReplacedPlayer, isSubstituted, substitutedFor
+    let hasWarning, hasPenalty, hasExpulsion, hasDisqualification
+    let isCaptain, isCourtCaptain
+    let isLfp
+
+    if (isRichFormat) {
+      // Rich format - all data is embedded in positionData
+      isLibero = positionData.isLibero || false
+      shouldShowBall = position === 'I' && positionData.isServing
+      liberoReplacedPlayer = isLibero ? positionData.replacedNumber : null
+      isSubstituted = positionData.isSubstituted || false
+      substitutedFor = positionData.substitutedFor || null
+      isCaptain = positionData.isCaptain || false
+      isCourtCaptain = positionData.isCourtCaptain || false
+      isLfp = positionData.isLfp || false
+
+      // Sanctions from rich format
+      const sanctions = positionData.sanctions || []
+      hasWarning = sanctions.some(s => s.type === 'warning')
+      hasPenalty = sanctions.some(s => s.type === 'penalty')
+      hasExpulsion = sanctions.some(s => s.type === 'expulsion')
+      hasDisqualification = sanctions.some(s => s.type === 'disqualification')
+    } else {
+      // Legacy format - compute from player data and helper functions
+      isLibero = player?.libero === 'libero1' || player?.libero === 'libero2'
+      shouldShowBall = position === 'I' && legacyIsServing
+
+      // Get libero info - if this is a libero, show which player they replaced
+      const liberoOnCourt = getLiberoOnCourt(team)
+      liberoReplacedPlayer = isLibero && liberoOnCourt?.playerNumber ? liberoOnCourt.playerNumber : null
+
+      // Get substitution info - if this player came in as a substitute
+      const subInfo = !isLibero ? getSubstitutionInfo(team, number) : null
+      isSubstituted = !!subInfo
+      substitutedFor = subInfo?.replacedNumber || null
+
+      // Get sanctions for this player
+      const sanctions = getPlayerSanctions(team, number)
+      hasWarning = sanctions.some(s => s.payload?.type === 'warning')
+      hasPenalty = sanctions.some(s => s.payload?.type === 'penalty')
+      hasExpulsion = sanctions.some(s => s.payload?.type === 'expulsion')
+      hasDisqualification = sanctions.some(s => s.payload?.type === 'disqualification')
+
+      // Check if this player is captain or court captain
+      const teamCaptain = team === 'home' ? data.match?.homeCaptain : data.match?.awayCaptain
+      const teamCourtCaptain = team === 'home' ? data.match?.homeCourtCaptain : data.match?.awayCourtCaptain
+      isCaptain = player?.isCaptain || player?.captain || (teamCaptain && String(teamCaptain) === String(number))
+      isCourtCaptain = !isCaptain && teamCourtCaptain && String(teamCourtCaptain) === String(number)
+      isLfp = player?.isLfp || player?.is_lfp || false
+    }
+
+    // Recently substituted in (pulsing) or a libero replacement (one pulse)
+    const discFlash = discFlashOf(recentlySubstitutedPlayers, team, number)
+    const isRecentlySub = discFlash !== false
+
+    // Determine what to show in top-right badge
+    // Ensure badge values are primitives (not objects)
+    const safeBadgeValue = (val) => {
+      if (val && typeof val === 'object' && val.number !== undefined) return val.number
+      return val
+    }
+    const topRightBadge = safeBadgeValue(liberoReplacedPlayer) || safeBadgeValue(substitutedFor) || null
+    const isLiberoReplacementBadge = !!liberoReplacedPlayer
+
+    // Libero label for bottom-left (L, or L1 / L2 with two liberos)
+    const liberoType = player?.libero
+    const liberoCount = teamPlayers?.filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated').length || 0
+    const liberoLabel = !isLibero ? null
+      : liberoCount === 1 ? 'L'
+        : liberoType === 'libero1' ? 'L1'
+          : liberoType === 'libero2' ? 'L2'
+            : 'L'
+
+    // Liberos can be captains too: LC (libero captain), LGC (libero game captain)
+    const captain = isLibero
+      ? (isCaptain ? 'LC' : isCourtCaptain ? 'LGC' : null)
+      : (isCaptain ? 'C' : isCourtCaptain ? 'GC' : null)
+
+    // Shirt colours: the team's for players, the most contrasting one for
+    // the libero (utils/teamColours.js); the orange flash wins while it runs
+    const paint = discPaintByTeam[team]?.[isLibero ? 'libero' : 'player'] || null
+    const background = isRecentlySub ? '#fdba74'
+      : paint ? paint.background
+        : isLibero ? '#FFF8E7' : (team === leftTeam ? 'rgba(65, 66, 68, 0.9)' : 'rgba(12, 14, 100, 0.7)')
+
+    return (
+      <PlayerDisc
+        number={number}
+        position={position}
+        capPx={discCapPx(vmin, { portrait: !isWideLayout(viewportWidth, viewportHeight) })}
+        side={team === leftTeam ? 'left' : 'right'}
+        background={background}
+        color={isRecentlySub ? '#000' : paint ? paint.color : isLibero ? '#000' : '#fff'}
+        textShadow={!isRecentlySub ? paint?.textShadow : undefined}
+        ring={!isRecentlySub ? paint?.ring : null}
+        flash={discFlash}
+        showBall={!!shouldShowBall}
+        replacedNumber={topRightBadge}
+        replacedByLibero={isLiberoReplacementBadge}
+        liberoLabel={liberoLabel}
+        liberoRedesignated={liberoType === 'redesignated'}
+        liberoUnable={liberoType === 'unable'}
+        captain={captain}
+        sanctions={{ warning: hasWarning, penalty: hasPenalty, expulsion: hasExpulsion, disqualification: hasDisqualification }}
+        lfp={lfpTrackingEnabled ? !!isLfp : null}
+      />
+    )
+  }
+
+  // Check if match is finished - use isMatchEnded which includes liveState check
+  const isMatchFinished = isMatchEnded
+
+  // Match finished info - use liveState sets won for accurate data
+  const matchWinner = isMatchFinished && data
+    ? (liveStateSetsWonHome > liveStateSetsWonAway
+      ? (data.homeTeam?.name || t('common.home'))
+      : (data.awayTeam?.name || t('common.away')))
+    : ''
+
+  const matchResult = isMatchFinished
+    ? `${Math.max(liveStateSetsWonHome, liveStateSetsWonAway)}:${Math.min(liveStateSetsWonHome, liveStateSetsWonAway)}`
+    : ''
+
+  // Show results when match is finished
+  if (isMatchFinished) {
+    return (
+      <div style={{
+        height: 'var(--ov-vh100, 100vh)', // the visible height: dvh where the browser has it (respects iOS browser chrome)
+        maxHeight: 'var(--ov-vh100, 100vh)',
+        width: '100vw',
+        maxWidth: `${REFEREE_LAYOUT.maxWidth}px`,
+        margin: '0 auto',
+        background: 'var(--bg)',
+        color: 'var(--text)',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '24px',
+        padding: '20px',
+        overflow: 'hidden'
+      }}>
+        <div className="ov-kit w-full max-w-sm">
+          <Card stack={false} className="rounded-3xl p-6 text-center shadow-card-lg sm:p-8">
+            {/* Match Ended Banner */}
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-400">
+              {t('refereeDashboard.matchHasEnded', 'The match has ended')}
+            </p>
+
+            {/* Winner and Result */}
+            <div className="mt-4 text-center">
+              <div className="text-2xl font-bold tracking-tight text-stone-900 sm:text-3xl" style={{ marginBottom: '8px' }}>
+                {matchWinner}
+              </div>
+              <div style={{
+                fontSize: '48px',
+                fontWeight: 800,
+                color: 'var(--accent)'
+              }} className="tabular-nums">
+                {matchResult}
+              </div>
+            </div>
+
+            {/* The finished sheet, before the referee signs it on the scorer's device */}
+            {scoresheetButton('mt-6')}
+            <Button variant="secondary" size="xl" block className={canShowScoresheet ? 'mt-2' : 'mt-6'} onClick={onExit}>
+              {t('refereeDashboard.exit')}
+            </Button>
+          </Card>
+        </div>
+        {scoresheetLayer}
+      </div>
+    )
+  }
+
+  // Landscape screens: TO / SUB and sanctions beside the court, so the court
+  // gets the height (refereeLayout.js). Portrait keeps the stacked column.
+  const wide = isWideLayout(viewportWidth, viewportHeight)
+  const fit = screenFit({ viewportWidth, courtWidth: courtBox?.width, courtHeight: courtBox?.height })
+  // side panels sit on the court's page colour, like the court slot between them
+  const sideCell = { alignSelf: 'stretch', minHeight: 0 }
+
+  // The running time-out, shown in the "Recorded" popup when it lists one
+  const popupTimeout = timeoutModal && timeoutModal.countdown > 0 && recordedNotices.some(n => n.kind === 'timeout') ? timeoutModal : null
+
+  return (
+    <div style={{
+      height: 'var(--ov-vh100, 100vh)', // the visible height: dvh where the browser has it (respects iOS browser chrome)
+      maxHeight: 'var(--ov-vh100, 100vh)',
+      width: '100vw',
+      maxWidth: `${REFEREE_LAYOUT.maxWidth}px`,
+      margin: '0 auto',
+      background: 'var(--bg)',
+      color: 'var(--text)',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden'
+    }}>
+      {linkDown && (
+        // Below the 40 px header (it covered the centred menu button) and
+        // click-through, like the kit's ConnectionBanner.
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 text-red-800 font-medium leading-snug shadow-lg" style={{
+          position: 'fixed',
+          top: 48,
+          pointerEvents: 'none',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 9999,
+          maxWidth: 'min(560px, calc(100vw - 32px))',
+          padding: '8px 14px',
+          fontSize: 13
+        }}>
+          {t('refereeDashboard.linkDown', 'Offline: no connection to the scoresheet. Score and server may be out of date.')}
+        </div>
+      )}
+      {!linkDown && scorerAway && (
+        <div role="alert" data-testid="scorer-away" className="rounded-xl border border-amber-200 bg-amber-50 text-amber-900 font-medium leading-snug shadow-lg" style={{
+          position: 'fixed',
+          top: 48,
+          pointerEvents: 'none',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 9999,
+          maxWidth: 'min(560px, calc(100vw - 32px))',
+          padding: '8px 14px',
+          fontSize: 13
+        }}>
+          {t('refereeDashboard.scorerAway', "The scorer's device is not connected: the score may be out of date. Check that it is on and online.")}
+        </div>
+      )}
+      {/* Narrow screen blocking overlay (a phone or tablet is upright only:
+          its message never says to rotate) */}
+      {!fit.fits && <NarrowScreenOverlay t={t} reason={uprightOnly ? 'upright' : fit.reason} />}
+
+      {/* Debug overlay - triple-tap to show */}
+      {/* The connection console: diagnostics only (?diag=1). On for everyone,
+          any three quick taps anywhere opened it in a match (Rosters, switch
+          team, Close) */}
+      {!isMasterMode && wsDebugAllowed && <WsDebugOverlay matchId={matchId} />}
+
+
+
+      {/* SECTION 1: Header - 40px */}
+      <SimpleHeader
+        actions={canShowScoresheet ? [{
+          key: 'scoresheet',
+          testId: 'referee-open-scoresheet',
+          icon: <FileText size={15} aria-hidden="true" />,
+          label: t('refereeDashboard.scoresheet.open', 'Scoresheet'),
+          onClick: () => setScoresheetOpen(true)
+        }, {
+          key: 'rosters',
+          testId: 'referee-open-rosters',
+          icon: <Users size={15} aria-hidden="true" />,
+          label: t('refereeDashboard.rosters.open', 'Rosters'),
+          onClick: () => setRostersOpen(true)
+        }] : []}
+        toggleOptions={[
+          { label: `1 ${t('refereeDashboard.refAbbr')}`, active: refereeView === '1st', onClick: () => setRefereeView('1st') },
+          { label: `2 ${t('refereeDashboard.refAbbr')}`, active: refereeView === '2nd', onClick: () => setRefereeView('2nd') }
+        ]}
+        onFullscreen={toggleFullscreen}
+        isFullscreen={isFullscreen}
+        onHelp={toggleHelp}
+        helpOpen={helpOpen}
+        menuItems={refereeMenuItems}
+      />
+      <ContextualHelpPanel open={helpOpen} onClose={closeHelp} screen="referee" />
+
+      {/* Main content wrapper - percentage-based heights. `.referee-court` pins
+          the pre-restyle palette for the whole scoring view (styles.css, RESTYLE-SPEC 4). */}
+      <div className="referee-court" style={{
+        // The court floor is a translucent tint: paint the (pinned) page colour
+        // behind it here, so it does not show the stone page of the root.
+        // Deliberately only this scoring view: the header and the page gutters
+        // outside the 800px column stay on the stone page. The faint
+        // slate-on-stone edge at the column sides is accepted, since pinning the
+        // root would carry the old palette into the restyled header.
+        background: 'var(--bg)',
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        minHeight: 0,
+        ...(wide ? {
+          display: 'grid',
+          gridTemplateColumns: `${SIDE_PANEL_CSS} minmax(0, 1fr) ${SIDE_PANEL_CSS}`,
+          gridTemplateRows: 'minmax(10%, auto) minmax(15%, auto) auto minmax(0, 1fr) auto 40px',
+          gridTemplateAreas: '"set set set" "score score score" "lcnt court rcnt" "lsan court rsan" "lsan center rsan" "foot foot foot"'
+        } : {})
+      }}>
+
+        {/* SECTION 2A: Set Counter Row - 8% */}
+        <div style={{ gridArea: 'set', flex: '0 0 10%', padding: 'clamp(4px, 1vw, 8px) clamp(8px, 2vw, 16px)', background: 'var(--panel-2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', width: '100%', minHeight: 0, overflow: 'hidden' }}>
+          {/* Left: Team Name (centered in its space) + A/B */}
+          <div style={{ flex: '1 1 0', display: 'flex', alignItems: 'center', gap: 'clamp(6px, 1.5vw, 12px)', minWidth: 0 }}>
+            <div ref={section2AContainerRef} style={{ flex: '1 1 0', display: 'flex', justifyContent: 'center', minWidth: 0, overflow: 'hidden' }}>
+              <div style={{
+                fontSize: `${section2AFontSize.fontSize}px`,
+                fontWeight: 700,
+                ...teamBoxStyle(leftColor),
+                padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)',
+                borderRadius: '6px',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                maxWidth: '100%'
+              }}>
+                {leftShortName}
+              </div>
+            </div>
+            <div style={{ padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)', ...teamBoxStyle(leftColor), borderRadius: '6px', fontSize: 'clamp(18px, 4.5vw, 32px)', fontWeight: 800, flexShrink: 0 }}>{leftLabel}</div>
+          </div>
+
+          {/* Center: Set scores + SET n */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(6px, 1vw, 12px)', flexShrink: 0, marginLeft: '8px', marginRight: '8px' }}>
+            <div style={{
+              padding: 'clamp(4px, 1vw, 8px) clamp(12px, 3vw, 20px)', background: 'var(--panel)', borderRadius: '8px',
+              fontSize: 'clamp(12px, 3vw, 36px)', fontWeight: 800
+            }}>
+              {leftSetsWon}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <span style={{ fontSize: vmin(3), color: 'var(--muted)', textTransform: 'uppercase', fontWeight: 600 }}>SET</span>
+              <span style={{ fontSize: vmin(4), fontWeight: 800 }}>{displaySetIndex}</span>
+            </div>
+            <div style={{
+              padding: 'clamp(4px, 1vw, 8px) clamp(12px, 3vw, 20px)', background: 'var(--panel)',
+              borderRadius: '8px', fontSize: 'clamp(12px, 3vw, 36px)', fontWeight: 800
+            }}>{rightSetsWon}</div>
+          </div>
+
+          {/* Right: A/B + Team Name (centered in its space) */}
+          <div style={{ flex: '1 1 0', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 'clamp(6px, 1.5vw, 12px)', minWidth: 0 }}>
+            <div style={{ padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)', ...teamBoxStyle(rightColor), borderRadius: '6px', fontSize: 'clamp(18px, 4.5vw, 32px)', fontWeight: 800, flexShrink: 0 }}>{rightLabel}</div>
+            <div style={{ flex: '1 1 0', display: 'flex', justifyContent: 'center', minWidth: 0, overflow: 'hidden' }}>
+              <div
+                style={{
+                  fontSize: `${section2AFontSize.fontSize}px`,
+                  fontWeight: 700,
+                  ...teamBoxStyle(rightColor),
+                  padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)',
+                  borderRadius: '6px',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  maxWidth: '100%',
+                  minWidth: 0,
+                }}
+              >
+                <span
+                  style={{
+                    display: 'inline-block',
+                    minWidth: 0,
+                    maxWidth: '100%',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    verticalAlign: 'bottom',
+                    fontSize: 'inherit',
+                    fontWeight: 'inherit',
+                  }}
+                >
+                  {rightShortName}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* SECTION 2B: Score & Serve - 12% */}
+        <div style={{
+          gridArea: 'score',
+          // Stacked (portrait): at least 15 %, more when the score needs it
+          // (display scale 150 % on a portrait tablet cut the digits and ran
+          // them into the court); the panel below gives the room.
+          flex: wide ? '0 0 15%' : '0 0 auto',
+          padding: '4px 0',
+          background: 'var(--panel-2)',
+          display: 'flex',
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: '100%',
+          maxWidth: '100%',
+          overflow: 'hidden',
+          minHeight: wide ? 0 : '15%',
+          height: wide ? '100%' : 'auto'
+        }}>
+          {/* Score row: SERVE block on the serving side | left : right | (room for it on the other side) */}
+          <ScoreServeRow
+            leftScore={leftDisplayScore}
+            rightScore={rightDisplayScore}
+            servingSide={leftServing ? 'left' : rightServing ? 'right' : null}
+            serverNumber={leftServing ? (leftLineupHidden ? null : lineupNumber(leftLineup?.I)) : rightServing ? (rightLineupHidden ? null : lineupNumber(rightLineup?.I)) : null}
+            serveLabel={t('scoreboard.labels.serveLabel', 'SERVE')}
+            vmin={vmin}
+            scoreFont={getScoreFont()}
+            // the interval shows the sets won: say so (they read as points, UI tour 14.11)
+            caption={isInSetInterval ? t('scoreboard.labels.sets', 'SETS') : null}
+            // upright: the row has the height, the score and the serve grow
+            large={!wide}
+          />
+        </div>
+
+        {/* SECTION 3: Court Area. Upright: it
+            grows first (up to the court's own height, PORTRAIT_COURT), the
+            strip below takes the rest; landscape: its grid area. */}
+        <div style={{
+          gridArea: 'court',
+          ...(wide ? {} : { flex: '1000 1 0', maxHeight: PORTRAIT_COURT.sectionMaxHeight }),
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          minHeight: 0
+        }}>
+          {/* Court visualization - takes the rest of the section */}
+          <div style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+            minHeight: 0,
+            // upright: the court box sizes from this slot (container units)
+            ...(wide ? {} : { containerType: 'size' })
+          }}>
+            <div ref={setCourtBoxEl} style={{
+              ...(wide ? {
+                // 98 % of the slot, but never wider than courtMaxAspect x its
+                // height (a landscape court stays court-shaped, refereeLayout.js)
+                height: `${REFEREE_LAYOUT.courtFill * 100}%`,
+                width: 'auto',
+                aspectRatio: `${REFEREE_LAYOUT.courtMaxAspect} / 1`,
+                maxWidth: `${REFEREE_LAYOUT.courtFill * 100}%`
+              } : {
+                // upright: the slot's width, and as tall as it allows up to
+                // width / portraitMinAspect (portraitCourtBox)
+                width: PORTRAIT_COURT.width,
+                height: PORTRAIT_COURT.height
+              }),
+              minWidth: 0,
+              flexShrink: 1,
+              position: 'relative',
+              // The player discs size themselves from this box (cqh / cqw).
+              containerType: 'size',
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              background: 'linear-gradient(90deg, rgba(234, 179, 8, 0.12), rgba(234, 179, 8, 0.08))',
+              border: '2px solid var(--border)',
+              overflow: 'hidden'
+            }}>
+              {/* Net */}
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                bottom: 0,
+                left: '50%',
+                width: '6px',
+                transform: 'translateX(-50%)',
+                background: 'repeating-linear-gradient(to bottom, rgba(248, 250, 252, 0.85), rgba(248, 250, 252, 0.85) 4px, rgba(148, 163, 184, 0.45) 4px, rgba(148, 163, 184, 0.45) 8px)',
+                borderRadius: '3px',
+                boxShadow: '0 0 10px rgba(241, 245, 249, 0.15)',
+                zIndex: 2
+              }} />
+
+              {/* Attack lines */}
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                bottom: 0,
+                left: 'calc(50% - 22.667%)',
+                width: '2px',
+                background: 'var(--panel)',
+                zIndex: 1
+              }} />
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                bottom: 0,
+                left: 'calc(50% + 22.667%)',
+                width: '2px',
+                background: 'var(--panel)',
+                zIndex: 1
+              }} />
+
+              {/* Left side */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  position: 'relative',
+                  height: '100%'
+                }}
+              >
+
+                {/* The six positions in a grid */}
+                <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1.5fr 1fr',
+                    gap: 'clamp(4px, 2vw, 12px)',
+                    width: '100%',
+                    height: '100%',
+                    padding: 'clamp(4px, 2vw, 12px)'
+                  }}>
+                    {/* Back row (V, VI, I) - left side of left court */}
+                    <div style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-around',
+                      alignItems: 'center'
+                    }}>
+                      <PlayerCircle positionData={leftLineup?.V} position="V" team={leftTeam} isServing={leftServing} />
+                      <PlayerCircle positionData={leftLineup?.VI} position="VI" team={leftTeam} isServing={leftServing} />
+                      <PlayerCircle positionData={leftLineup?.I} position="I" team={leftTeam} isServing={leftServing} />
+                    </div>
+                    {/* Front row (IV, III, II) - right side of left court (near net) */}
+                    <div style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-around',
+                      alignItems: 'center'
+                    }}>
+                      <PlayerCircle positionData={leftLineup?.IV} position="IV" team={leftTeam} isServing={leftServing} />
+                      <PlayerCircle positionData={leftLineup?.III} position="III" team={leftTeam} isServing={leftServing} />
+                      <PlayerCircle positionData={leftLineup?.II} position="II" team={leftTeam} isServing={leftServing} />
+                    </div>
+                  </div>
+                {/* Blur overlay when lineup is set but other team hasn't set theirs yet */}
+                {leftLineup && !rightLineup && isFirstRally && !peekingLineup.left && (
+                  <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    // owner 15.11: more blurred (the numbers were still readable);
+                    // the blur switch off: the opaque panel (privacyCoverFill)
+                    ...privacyCoverFill(undefined, REFEREE_COVER_FROSTED),
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '12px',
+                    zIndex: 50,
+                    borderRadius: '8px'
+                  }}>
+                    <div style={{
+                      fontSize: 'clamp(14px, 3vw, 20px)',
+                      fontWeight: 700,
+                      color: '#22c55e',
+                      textAlign: 'center'
+                    }}>
+                      {t('refereeDashboard.lineupSet', 'Line-up set')}
+                    </div>
+                    <button
+                      onMouseDown={() => setPeekingLineup(prev => ({ ...prev, left: true }))}
+                      onMouseUp={() => setPeekingLineup(prev => ({ ...prev, left: false }))}
+                      onMouseLeave={() => setPeekingLineup(prev => ({ ...prev, left: false }))}
+                      onTouchStart={() => setPeekingLineup(prev => ({ ...prev, left: true }))}
+                      onTouchEnd={() => setPeekingLineup(prev => ({ ...prev, left: false }))}
+                      style={{
+                        padding: '8px 16px',
+                        fontSize: 'clamp(10px, 2vw, 13px)',
+                        fontWeight: 600,
+                        background: 'rgba(59, 130, 246, 0.3)',
+                        color: '#fff',
+                        border: '1px solid rgba(59, 130, 246, 0.5)',
+                        borderRadius: '6px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {t('refereeDashboard.showLineup', 'Show line-up')}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Right side */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  position: 'relative',
+                  height: '100%'
+                }}
+              >
+
+                {/* The six positions in a grid */}
+                <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1.5fr',
+                    gap: 'clamp(4px, 2vw, 12px)',
+                    width: '100%',
+                    height: '100%',
+                    padding: 'clamp(4px, 2vw, 12px)'
+                  }}>
+                    {/* Front row (II, III, IV) - left side of right court (near net) */}
+                    <div style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-around',
+                      alignItems: 'center'
+                    }}>
+                      <PlayerCircle positionData={rightLineup?.II} position="II" team={rightTeam} isServing={rightServing} />
+                      <PlayerCircle positionData={rightLineup?.III} position="III" team={rightTeam} isServing={rightServing} />
+                      <PlayerCircle positionData={rightLineup?.IV} position="IV" team={rightTeam} isServing={rightServing} />
+                    </div>
+                    {/* Back row (I, VI, V) - right side of right court */}
+                    <div style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-around',
+                      alignItems: 'center'
+                    }}>
+                      <PlayerCircle positionData={rightLineup?.I} position="I" team={rightTeam} isServing={rightServing} />
+                      <PlayerCircle positionData={rightLineup?.VI} position="VI" team={rightTeam} isServing={rightServing} />
+                      <PlayerCircle positionData={rightLineup?.V} position="V" team={rightTeam} isServing={rightServing} />
+                    </div>
+                  </div>
+                {/* Blur overlay when lineup is set but other team hasn't set theirs yet */}
+                {rightLineup && !leftLineup && isFirstRally && !peekingLineup.right && (
+                  <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    // owner 15.11: more blurred (the numbers were still readable);
+                    // the blur switch off: the opaque panel (privacyCoverFill)
+                    ...privacyCoverFill(undefined, REFEREE_COVER_FROSTED),
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '12px',
+                    zIndex: 50,
+                    borderRadius: '8px'
+                  }}>
+                    <div style={{
+                      fontSize: vmin(6),
+                      fontWeight: 700,
+                      color: '#22c55e',
+                      textAlign: 'center'
+                    }}>
+                      {t('refereeDashboard.lineupSet', 'Line-up set')}
+                    </div>
+                    <button
+                      onMouseDown={() => setPeekingLineup(prev => ({ ...prev, right: true }))}
+                      onMouseUp={() => setPeekingLineup(prev => ({ ...prev, right: false }))}
+                      onMouseLeave={() => setPeekingLineup(prev => ({ ...prev, right: false }))}
+                      onTouchStart={() => setPeekingLineup(prev => ({ ...prev, right: true }))}
+                      onTouchEnd={() => setPeekingLineup(prev => ({ ...prev, right: false }))}
+                      style={{
+                        padding: '8px 16px',
+                        fontSize: 'clamp(10px, 2vw, 13px)',
+                        fontWeight: 600,
+                        background: 'rgba(59, 130, 246, 0.3)',
+                        color: '#fff',
+                        border: '1px solid rgba(59, 130, 246, 0.5)',
+                        borderRadius: '6px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {t('refereeDashboard.showLineup', 'Show line-up')}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>{/* End SECTION 3: Court Area - 40% */}
+
+        {/* SECTION 4: TO / SUB counters and sanctions. Upright (portrait, the
+            referee tablet's normal way): one strip under the court, each
+            team's counters and cards on its own side, the countdown (or the
+            logo) between them; it takes what the court leaves. Landscape: the
+            side columns beside the court (grid areas). */}
+        {(() => {
+          const counter = (label, value, tone) => (
+            <div data-counter={label} data-tone={tone || undefined} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+              <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: '0.6em' }}>{label}</span>
+              <span style={{
+                background: tone === 'max' ? 'rgba(239, 68, 68, 0.3)' : tone === 'near' ? 'rgba(234, 179, 8, 0.3)' : 'var(--panel)',
+                padding: '7px 14px',
+                borderRadius: '6px',
+                border: tone === 'max' ? '1px solid rgba(239, 68, 68, 0.6)' : tone === 'near' ? '1px solid rgba(234, 179, 8, 0.6)' : '1px solid var(--border)',
+                minWidth: '42px',
+                aspectRatio: '1',
+                textAlign: 'center',
+                fontVariantNumeric: 'tabular-nums',
+                color: tone === 'max' ? '#ef4444' : tone === 'near' ? '#eab308' : 'var(--text)'
+              }}>{value}</span>
+            </div>
+          )
+          // TO SUB | SUB TO upright: the right team's counters mirror the
+          // left's, time-outs at the outer edges (owner 15.11)
+          const counters = (stats, area, row, mirrored = false) => (
+            <div data-team-counters={area} style={{
+              ...(wide ? { gridArea: area, ...sideCell, justifyContent: 'flex-start', padding: '10px 6px 6px' } : {}),
+              display: 'flex',
+              flexDirection: row ? 'row' : 'column',
+              alignItems: 'center',
+              justifyContent: row ? 'center' : undefined,
+              gap: row ? 'clamp(8px, 2vw, 16px)' : '10px',
+              fontSize: row ? 'clamp(18px, 3.6vw, 34px)' : vmin(4),
+              fontWeight: 700
+            }}>
+              {mirrored && counter('SUB', stats.substitutions, subCounterTone(stats))}
+              {counter('TO', stats.timeouts, stats.timeouts >= 2 ? 'max' : null)}
+              {!mirrored && counter('SUB', stats.substitutions, subCounterTone(stats))}
+            </div>
+          )
+          const sanctionsTitle = t('refereeDashboard.sanctions.title', 'Sanctions')
+          // only when the team has a sanction (owner 15.11: "sanctions hidden
+          // unless there are any"); landscape keeps its grid cell, empty
+          const sanctions = (teamSanctions, area) => !hasTeamSanctions(teamSanctions)
+            ? (wide ? <div data-team-sanctions-panel={area} style={{ gridArea: area }} /> : null)
+            : (
+            <div data-team-sanctions-panel={area} style={{
+              ...(wide ? { gridArea: area, ...sideCell, overflowY: 'auto', boxSizing: 'border-box', margin: '0 6px 6px', padding: '6px' } : { minWidth: 0, overflowY: 'auto', minHeight: 0 }),
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: wide ? 'center' : 'stretch',
+              gap: '6px'
+            }}>
+              <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: wide ? 'center' : 'start' }}>{sanctionsTitle}</div>
+              <TeamSanctionList sanctions={teamSanctions} t={t} flow={wide ? 'column' : 'row'} cardHeight={wide ? '22px' : 'clamp(20px, 3.4vw, 30px)'} />
+            </div>
+          )
+          const countdown = timeoutModal ? (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '20px', color: 'var(--muted)', fontWeight: 600, marginBottom: '4px' }}>TIMEOUT</div>
+              {/* hidden (its place kept) while the popup shows it and while it moves here */}
+              <div ref={mainCountdownRef} data-main-countdown="" style={{ visibility: (popupTimeout || countdownFlight) ? 'hidden' : 'visible' }}>
+                <TimeoutCountdown countdown={timeoutModal.countdown} fontFamily={getScoreFont()} />
+              </div>
+            </div>
+          ) : betweenSetsCountdown && betweenSetsCountdown.countdown > 0 ? (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 600, marginBottom: '4px' }}>INTERVAL</div>
+              <DonutCountdown current={betweenSetsCountdown.countdown} total={betweenSetsCountdown.initialCountdown || setIntervalDuration} size={90} strokeWidth={5}>
+                <div style={{ fontSize: 'clamp(24px, 6vw, 36px)', fontFamily: getScoreFont(), fontWeight: 800, color: betweenSetsCountdown.countdown <= 30 ? '#ef4444' : '#22c55e', lineHeight: 1 }}>
+                  {Math.floor(betweenSetsCountdown.countdown / 60)}:{String(betweenSetsCountdown.countdown % 60).padStart(2, '0')}
+                </div>
+              </DonutCountdown>
+            </div>
+          ) : null
+
+          if (wide) {
+            return (
+              <>
+                {counters(leftStats, 'lcnt', false)}
+                {sanctions(leftTeamSanctions, 'lsan')}
+                {/* Countdown under the court, only while one runs */}
+                <div style={{ gridArea: 'center', padding: countdown ? '6px 0' : 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', alignSelf: 'center' }}>
+                  {countdown}
+                </div>
+                {sanctions(rightTeamSanctions, 'rsan')}
+                {counters(rightStats, 'rcnt', false)}
+              </>
+            )
+          }
+          const teamPanel = (stats, teamSanctions, side) => (
+            <div data-team-panel={side} style={{
+              display: 'flex',
+              flexDirection: 'column',
+              // without sanctions the counters alone, centred in the panel
+              justifyContent: hasTeamSanctions(teamSanctions) ? 'flex-start' : 'center',
+              gap: '10px',
+              minWidth: 0,
+              minHeight: 0,
+              padding: '10px 12px',
+              background: 'var(--panel)',
+              border: '1px solid var(--border)',
+              borderRadius: '10px',
+              overflow: 'hidden'
+            }}>
+              {counters(stats, side, true, side === 'right')}
+              {hasTeamSanctions(teamSanctions) && (
+                <>
+                  <div style={{ borderTop: '1px solid var(--border)' }} />
+                  {sanctions(teamSanctions, side)}
+                </>
+              )}
+            </div>
+          )
+          return (
+            <div data-referee-strip="" style={{
+              flex: '1 0 auto',
+              minHeight: 0,
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
+              alignItems: 'stretch',
+              gap: 'clamp(8px, 2vw, 16px)',
+              padding: 'clamp(6px, 1.5vw, 12px)',
+              background: 'var(--panel-2)',
+              borderTop: '1px solid var(--border)',
+              overflow: 'hidden'
+            }}>
+              {teamPanel(leftStats, leftTeamSanctions, 'left')}
+              {/* Countdown when one runs, otherwise the logo; a fixed width, so the panels never move */}
+              <div style={{ minWidth: 'clamp(64px, 16vw, 140px)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+                {countdown || (
+                  <img
+                    src={BRAND.lockupStacked}
+                    alt="OpenVolley"
+                    className="ov-ink"
+                    style={{ width: '100%', maxWidth: vmin(16), aspectRatio: '1', objectFit: 'contain', opacity: 0.6 }}
+                  />
+                )}
+              </div>
+              {teamPanel(rightStats, rightTeamSanctions, 'right')}
+            </div>
+          )
+        })()}
+
+        {/* SECTION 5: Footer - Last Action - 40px */}
+        <div style={{
+          gridArea: 'foot',
+          flex: '0 0 40px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '0 12px',
+          background: 'var(--panel-2)',
+          borderTop: '1px solid var(--border)',
+          fontSize: 'clamp(11px, 2.5vw, 14px)',
+          color: 'var(--muted)',
+          overflow: 'hidden',
+          minHeight: 0
+        }}>
+          <span style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis'
+          }}>
+            <span style={{ opacity: 0.6, fontWeight: 500 }}>{t('refereeDashboard.lastAction')}:</span>
+            {lastEvent ? (
+              <>
+                <span style={{ opacity: 0.5 }}>
+                  {new Date(lastEvent.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </span>
+                <span style={{ fontWeight: 600 }}>
+                  {/* the score in court order with the letters ("B 20 : 16 A") */}
+                  {refereeEventLabel(lastEvent, {
+                    homeLabel,
+                    awayLabel,
+                    homeShort: data?.match?.homeShortName || data?.homeTeam?.name || t('common.home'),
+                    awayShort: data?.match?.awayShortName || data?.awayTeam?.name || t('common.away'),
+                    leftLabel,
+                    rightLabel,
+                    leftPoints: leftDisplayScore,
+                    rightPoints: rightDisplayScore,
+                    setLabel: (setIndex) => displaySetNumber(setIndex, refBestOf),
+                    t
+                  })}
+                </span>
+              </>
+            ) : (
+              <span style={{ opacity: 0.4 }}>{t('refereeDashboard.events.noAction')}</span>
+            )}
+          </span>
+          {/* Test Mode Controls - only shown in test mode. The badge at the
+              footer's end, beside the last action: floating over the corner
+              it covered the last action on a 360 px phone */}
+          {(matchId === -1 || data?.match?.test === true) && (
+            <TestModeControls
+              matchId={matchId}
+              inline
+              style={{ marginLeft: '8px' }}
+              onRefresh={async () => {
+                console.log('[TestModeControls] onRefresh called', { matchId, isMasterMode })
+                // In test mode, reload from local IndexedDB
+                try {
+                  const match = await db.matches.get(matchId)
+                  const sets = await db.sets.where('matchId').equals(matchId).sortBy('index')
+                  const events = await db.events.where('matchId').equals(matchId).sortBy('seq')
+                  const homeTeam = await db.teams.get(match?.homeTeamId)
+                  const awayTeam = await db.teams.get(match?.awayTeamId)
+
+                  console.log('[TestModeControls] Reloaded from IndexedDB:', {
+                    matchId,
+                    sets: sets.length,
+                    events: events.length,
+                    currentSet: sets.find(s => !s.finished)?.index
+                  })
+
+                  // Update state with fresh local data
+                  setData({
+                    success: true,
+                    match,
+                    homeTeam,
+                    awayTeam,
+                    sets,
+                    events
+                  })
+                } catch (err) {
+                  console.error('[TestModeControls] Error reloading from IndexedDB:', err)
+                }
+              }}
+            />
+          )}
+        </div>
+
+      </div>{/* End main content wrapper */}
+
+      {/* The live scoresheet: read only, from the last full relay bundle */}
+      {scoresheetLayer}
+      {/* What the scorer just recorded (time-outs, substitutions, sanctions) */}
+      <RecordedNoticePopup notices={recordedNotices} deadline={recordedDeadline} onClose={closeRecordedNotices} timeout={popupTimeout} scoreFont={getScoreFont()} />
+      {/* A bench asked for a time-out or prepared a substitution on its tablet */}
+      {!isMasterMode && (
+        <BenchRequestIndicator
+          matchId={matchId}
+          teams={{
+            home: { name: data?.match?.homeShortName || data?.homeTeam?.shortName || data?.homeTeam?.name, colour: effectiveTeamColour('home', data?.homeTeam, data?.match) },
+            away: { name: data?.match?.awayShortName || data?.awayTeam?.shortName || data?.awayTeam?.name, colour: effectiveTeamColour('away', data?.awayTeam, data?.match) }
+          }}
+        />
+      )}
+      {countdownFlight && timeoutModal && (
+        <CountdownFlight from={countdownFlight.from} to={countdownFlight.to} countdown={timeoutModal.countdown} fontFamily={getScoreFont()} onDone={endCountdownFlight} />
+      )}
+      {/* Scorer Attention Modal */}
+      {
+        attentionModalOpen && (
+          <Modal
+            open={true}
+            onClose={() => setAttentionModalOpen(false)}
+            width={400}
+            hideCloseButton={true}
+          >
+            <div className="ov-kit p-2 text-center sm:p-4">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-50 text-red-600"><BellIcon size={36} /></div>
+              <p role="alert" className="mb-5 font-bold text-red-700" style={{ fontSize: vmin(3) }}>
+                {t('refereeDashboard.scorerAttention', 'Scorer needs attention')}
+              </p>
+              <Button variant="dark" size="xl" block className="h-14 text-base" onClick={() => setAttentionModalOpen(false)}>
+                {t('refereeDashboard.acknowledge', 'Acknowledge')}
+              </Button>
+            </div>
+          </Modal>
+        )
+      }
+    </div >
+  )
+}

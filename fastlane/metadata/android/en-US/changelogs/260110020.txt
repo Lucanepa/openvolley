@@ -1,0 +1,6 @@
+OpenVolley 26.11.2
+- Correction board on tablets and computers: fix the score (or type it), line-ups, time-outs and substitutions on a scoreboard; Save writes it all at once and shows the set as it will print.
+- History: every rally with both line-ups. Set preview: the set as on the paper sheet.
+- Match info: clearer layout; championship type is a list.
+- Match setup finds newer rosters on the server.
+- Fixes for older Android tablets.

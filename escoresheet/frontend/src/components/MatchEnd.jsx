@@ -1,0 +1,2866 @@
+import { useState, useMemo, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { db } from '../db/db'
+import { clearSetupDraft } from '../db/setupDrafts'
+import { remarksSnapshotJob } from '../db/remarksSync'
+import { withActivityContext, wipeMatchEvents } from '../db/eventHistory'
+import { useAlert } from '../contexts/AlertContext'
+import { useScaledLayout } from '../hooks/useScaledLayout'
+import SignaturePad from './SignaturePad'
+import MenuList from './MenuList'
+import Modal from './Modal'
+import ballFallback from '../ball_fallback.png'
+import JSZip from 'jszip'
+import { apiFrom } from '../lib/apiClient'
+import { admin as adminApi, approvalsApi, errorKeyOf, isApprovalUnavailable, sendTestScoresheet } from '../lib/accountApi'
+import { useAuth } from '../contexts/AuthContext'
+import { planReopen, isKnownClosedOnServer } from '../utils/matchReopen'
+import { requeueClosedJobs } from '../utils/matchHandover'
+import KitModal from './manage/KitModal'
+import CloudBlockNotice from './CloudBlockNotice'
+import { Textarea } from '../ui/Textarea.jsx'
+import { scoresheetUploadPath, scoresheetUploadJob, scoresheetJsonBlob, uploadQueuedScoresheet, supersedeUnsentScoresheetUploads, supersedeUnsentScoresheetUploadsOf } from '../utils/scoresheetUploader'
+import { matchEndExportData, exportMatchData } from '../utils/backupManager'
+import { uploadGlobalFinal } from '../utils/globalCloud'
+import { publishMatchEndLiveState } from '../utils/matchEndLiveState'
+import { isoOf, matchTimes, setDurationMinutes } from '../../scoresheet_pdf/utils/matchTimes'
+import { displaySetNumber, getScoreBeforeEvent, isDefaultSet, consistencyWarnings } from '../../scoresheet_pdf/utils/scoresheetModel'
+import { sheetAutoRemarks } from '../../scoresheet_pdf/utils/sheetRemarks'
+import { SANCTION_ROWS } from '../../scoresheet_pdf/components/FooterSection'
+import { useComponentLogging } from '../contexts/LoggingContext'
+import { exportLogsAsNDJSON } from '../utils/comprehensiveLogger'
+import { diagnosticLogQuery } from '../utils/activity/logQuery'
+import { listActivity } from '../utils/activity'
+import { preload, usePreloaded } from '../utils/preload'
+import { isLocalOnly, usesKeyStore } from '../domain/matchKind'
+
+// Primary ball image (with a bundled copy as fallback)
+// The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
+// stay cached (old green ball) after an update
+const ballImage = ballFallback
+import { sanitizeForFilename } from '../utils/stringUtils'
+import { formatTimeLocal } from '../utils/timeUtils'
+import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
+import { prefersShare, shareFile } from '../utils/shareFile'
+import { waitForScoresheetPdf, PDF_FAIL, PDF_REQUEST_PARAM } from '../utils/scoresheetPdfRequest'
+import { logScoresheetPdf, measuredTextZoom, pdfTimingText } from '../utils/scoresheetPdfLog'
+import { getMatchWinner, clearedPostMatchSignatures, planForfeitReversal, matchForfeitOf, restoredSetWrites, resultIssues } from '../domain/matchEnd'
+import {
+  ROLE_TO_SLOT, approvalFor, isApprovalValid, slotComplete, approvalLine, approvalsBySlot, approvalSummary,
+  resultKey, namesDiffer, approvalsCompletingSlots, approvalsStillValid, pinApprovalState,
+  optionalSignatureSlots, approvalIdsBeingUndone
+} from '../domain/accountApproval'
+import { issueText } from '../domain/recompute'
+import { signedAfterMatch, writeSignedSheetChange, writeTechnicalRemark } from '../services/corrections/applyCorrectionPlan'
+import { technicalRemarks, technicalRemarksOn, oneLine } from '../domain/technicalRemarks'
+import TechnicalRemarksList from './TechnicalRemarksList.jsx'
+import { APPROVAL_RESOURCE } from '../utils/syncIds'
+import { signatureEditLocked, signaturesPayload, signaturesSyncJob } from '../domain/signatureEdits'
+import { MAX_REMARKS_SIGNATURES, REMARKS_NAME_MAX, REMARKS_ROLE_MAX, remarksSignatureCaption, remarksSignaturesOf, withRemarksSignature, withoutRemarksSignature } from '../domain/remarksSignatures'
+import { saveMatchSignature } from '../utils/saveSignature'
+import { Field } from '../ui/Field.jsx'
+import { Input } from '../ui/Input.jsx'
+import AccountApprovalDialog from './AccountApprovalDialog'
+import { askConfirm } from '../utils/askConfirm.js'
+import { getCloudApiUrl } from '../utils/backendConfig'
+import { syncJobsForEvents } from '../domain/corrections'
+import { queueSetDeletes, setUpdateJob } from '../utils/eventSync'
+import { FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, ShareIcon, ChartIcon } from './icons'
+import { X, Check, AlertTriangle, ShieldCheck, PenLine, Eraser, Info, Smartphone } from 'lucide-react'
+import { approvalSignatureSources, phoneSignContext, signatureUpdate, signedOnPhone, SLOT_OF_ROLE } from '../domain/phoneSignature'
+import { Button } from '../ui/Button.jsx'
+import { RowTool } from '../ui/Row.jsx'
+import { toast } from '../ui/uiStore.js'
+import { NOTICE } from '../ui/tones.js'
+import { backdropDismiss } from '../ui/backdropDismiss.js'
+import { Checkbox } from '../ui/Checkbox.jsx'
+import { showsSponsorBoxes, sponsorsOf, sponsorsPatch, withSponsorMark, SPONSOR_MARK_NO, SPONSOR_MARK_YES } from '../domain/sponsors'
+import { useSponsorsOption } from '../hooks/useSponsorsOption'
+import { matchInfoFromLocal, queueMatchUpdate } from '../db/matchRepository'
+import { useMatchTz } from '../ui/useMatchTz'
+import { courtCaptainsRestored } from '../domain/gameCaptainKeep'
+
+// volleyui recipes for this page (RESTYLE-SPEC P3b). The paper-sheet blocks
+// (ResultsTable, SanctionsTable, RemarksBox and their black frames), the
+// winner bar and the big set score are frozen and keep their inline styles.
+// Section head: a name on the dark 1.5px rule (kit SectionHeader).
+const SECTION_HEAD = 'flex items-center justify-between gap-2 border-b-[1.5px] border-stone-800 pb-1.5 mb-3'
+const SECTION_TITLE = 'm-0 text-[11px] font-bold uppercase tracking-wider text-stone-800'
+// The Scoresheet menu trigger: kit toolbar button, courtside height.
+const TOOLBAR_TRIGGER = 'inline-flex items-center justify-center gap-2 h-11 px-4 rounded-lg border border-stone-200 bg-white text-sm font-medium text-stone-700 shadow-sm hover:bg-stone-50 transition-colors'
+// Decision dialogs: stone-900/60 + blur, white rounded-2xl panel, shadow-2xl.
+const DIALOG_OVERLAY = 'bg-stone-900/60 backdrop-blur-sm'
+const DIALOG_PANEL = 'ov-kit bg-white rounded-2xl shadow-2xl border border-stone-200/70'
+const DIALOG_TITLE = 'text-lg font-bold text-stone-900'
+
+// Helper to format duration as hh:mm
+const formatDurationHHMM = (durationStr) => {
+  if (!durationStr) return ''
+  // If already in format like "176'" (minutes), convert to hh:mm
+  const match = durationStr.match(/^(\d+)'?$/)
+  if (match) {
+    const totalMinutes = parseInt(match[1], 10)
+    const hours = Math.floor(totalMinutes / 60)
+    const minutes = totalMinutes % 60
+    return `${hours}:${String(minutes).padStart(2, '0')}`
+  }
+  return durationStr
+}
+
+// Standard Results component for MatchEnd page. `winnerLabel` ('A' | 'B' |
+// null) is the match winner (getMatchWinner): a match stopped without the
+// sets needed has none, and no result, as the winner card and the PDF
+const ResultsTable = ({ teamAName, teamBName, setResults, matchStart, matchEnd, matchDuration, winnerLabel = null }) => {
+  const { t } = useTranslation()
+
+  const teamAWins = setResults?.reduce((sum, r) => sum + (r.teamAWon ?? 0), 0) || 0
+  const teamBWins = setResults?.reduce((sum, r) => sum + (r.teamBWon ?? 0), 0) || 0
+  const winnerName = winnerLabel === 'A' ? teamAName : winnerLabel === 'B' ? teamBName : null
+
+  return (
+    <div style={{ padding: '12px', fontSize: '12px', background: '#fff', color: '#000', height: '100%', display: 'flex', flexDirection: 'column' }}>
+      {/* Team Labels Row - flex: 1 to fill available vertical space */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', marginBottom: '4px', flex: 1, minHeight: '40px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px', background: '#f0f0f0', borderRadius: '4px' }}>
+          <div style={{ width: '24px', height: '24px', borderRadius: '50%', border: '2px solid #000', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, color: '#000', flexShrink: 0 }}>A</div>
+          <span style={{ fontWeight: 600, fontSize: '14px', color: '#000' }}>{teamAName}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px', padding: '8px', background: '#f0f0f0', borderRadius: '4px' }}>
+          <span style={{ fontWeight: 600, fontSize: '14px', color: '#000', textAlign: 'right' }}>{teamBName}</span>
+          <div style={{ width: '24px', height: '24px', borderRadius: '50%', border: '2px solid #000', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, color: '#000', flexShrink: 0 }}>B</div>
+        </div>
+      </div>
+
+      {/* Column Headers */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 60px 1fr', gap: '4px', marginBottom: '2px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', fontSize: '9px', textAlign: 'center', color: '#333', fontWeight: 600 }}>
+          <span>T</span><span>S</span><span>W</span><span>P</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', fontSize: '9px', textAlign: 'center', color: '#333', fontWeight: 600 }}>
+          <span>{t('matchEnd.set', 'Set')}</span><span>{t('matchEnd.time', 'Time')}</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', fontSize: '9px', textAlign: 'center', color: '#333', fontWeight: 600 }}>
+          <span>P</span><span>W</span><span>S</span><span>T</span>
+        </div>
+      </div>
+
+      {/* Set Rows */}
+      <div>
+        {[1, 2, 3, 4, 5].map(setNum => {
+          const setData = setResults?.find(r => r.setNumber === setNum)
+          const isFinished = setData && setData.teamAPoints !== null
+          if (!isFinished) return null
+          return (
+            <div key={setNum} style={{ display: 'grid', gridTemplateColumns: '1fr 60px 1fr', gap: '4px', borderBottom: '1px solid #ccc', padding: '2px 0' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', fontSize: '11px', textAlign: 'center', fontWeight: 500, color: '#000' }}>
+                <span>{setData.teamATimeouts ?? ''}</span>
+                <span>{setData.teamASubstitutions ?? ''}</span>
+                <span>{setData.teamAWon ?? ''}</span>
+                <span style={{ fontWeight: 700 }}>{setData.teamAPoints ?? ''}</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', fontSize: '11px', textAlign: 'center', color: '#000' }}>
+                <span style={{ fontWeight: 600 }}>{setData.label ?? setNum}</span>
+                <span>{setData?.duration || ''}</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', fontSize: '11px', textAlign: 'center', fontWeight: 500, color: '#000' }}>
+                <span style={{ fontWeight: 700 }}>{setData.teamBPoints ?? ''}</span>
+                <span>{setData.teamBWon ?? ''}</span>
+                <span>{setData.teamBSubstitutions ?? ''}</span>
+                <span>{setData.teamBTimeouts ?? ''}</span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Totals Row */}
+      {(() => {
+        // Sum of set durations (parse "21'" format)
+        const totalSetMinutes = setResults?.reduce((sum, r) => {
+          if (!r.duration) return sum
+          const match = r.duration.match(/^(\d+)'?$/)
+          return sum + (match ? parseInt(match[1], 10) : 0)
+        }, 0) || 0
+        const totalSetDuration = totalSetMinutes > 0 ? `${totalSetMinutes}'` : ''
+
+        return (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 60px 1fr', gap: '4px', padding: '4px 0', background: '#e8e8e8', marginTop: '2px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', fontSize: '11px', textAlign: 'center', fontWeight: 600, color: '#000' }}>
+              <span>{setResults?.reduce((sum, r) => sum + (r.teamATimeouts ?? 0), 0) || 0}</span>
+              <span>{setResults?.reduce((sum, r) => sum + (r.teamASubstitutions ?? 0), 0) || 0}</span>
+              <span>{setResults?.reduce((sum, r) => sum + (r.teamAWon ?? 0), 0) || 0}</span>
+              <span style={{ fontWeight: 700 }}>{setResults?.reduce((sum, r) => sum + (r.teamAPoints ?? 0), 0) || 0}</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', fontSize: '11px', textAlign: 'center', fontWeight: 600, color: '#000' }}>
+              <span>{t('matchEnd.tot', 'Tot')}</span>
+              <span>{totalSetDuration}</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', fontSize: '11px', textAlign: 'center', fontWeight: 600, color: '#000' }}>
+              <span style={{ fontWeight: 700 }}>{setResults?.reduce((sum, r) => sum + (r.teamBPoints ?? 0), 0) || 0}</span>
+              <span>{setResults?.reduce((sum, r) => sum + (r.teamBWon ?? 0), 0) || 0}</span>
+              <span>{setResults?.reduce((sum, r) => sum + (r.teamBSubstitutions ?? 0), 0) || 0}</span>
+              <span>{setResults?.reduce((sum, r) => sum + (r.teamBTimeouts ?? 0), 0) || 0}</span>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Winner Row */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '16px', padding: '6px 8px', background: '#e8e8e8', borderRadius: '0 0 4px 4px', borderTop: '1px solid #ccc' }}>
+        <div>
+          <span style={{ fontSize: '9px', color: '#666', textTransform: 'uppercase' }}>{t('matchEnd.winner', 'Winner')}</span>
+          <div style={{ fontWeight: 700, fontSize: '14px', color: '#000' }}>{winnerName || '-'}</div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <span style={{ fontSize: '9px', color: '#666', textTransform: 'uppercase' }}>{t('matchEnd.result', 'Result')}</span>
+          <div style={{ fontWeight: 700, fontSize: '14px', color: '#000' }}>{winnerName ? `${Math.max(teamAWins, teamBWins)}:${Math.min(teamAWins, teamBWins)}` : '-'}</div>
+        </div>
+      </div>
+
+      {/* Match Time Info */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#000', marginTop: '8px', padding: '6px', background: '#f0f0f0', borderRadius: '4px' }}>
+        <span>{t('matchEnd.start', 'Start')}: <strong>{matchStart}</strong></span>
+        <span>{t('matchEnd.end', 'End')}: <strong>{matchEnd}</strong></span>
+        <span>{t('matchEnd.duration', 'Duration')}: <strong>{formatDurationHHMM(matchDuration)}</strong></span>
+      </div>
+    </div>
+  )
+}
+
+// Standard Sanctions component for MatchEnd page
+const SanctionsTable = ({ items = [], improperRequests = { teamA: false, teamB: false } }) => {
+  const { t } = useTranslation()
+  return (
+    <div style={{ padding: '12px', fontSize: '12px', background: '#fff', color: '#000', height: '100%', display: 'flex', flexDirection: 'column' }}>
+      {/* Improper Request Row */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', background: '#f0f0f0', borderRadius: '4px', marginBottom: '8px' }}>
+        <span style={{ fontSize: '11px', fontWeight: 600, color: '#000' }}>{t('matchEnd.improperRequest', 'Improper request')}</span>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ width: '24px', height: '24px', borderRadius: '50%', border: '2px solid #000', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, position: 'relative', color: '#000' }}>
+            A
+            {improperRequests.teamA && (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                <X size={20} strokeWidth={3} aria-hidden="true" style={{ display: 'block' }} />
+              </div>
+            )}
+          </div>
+          <div style={{ width: '24px', height: '24px', borderRadius: '50%', border: '2px solid #000', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, position: 'relative', color: '#000' }}>
+            B
+            {improperRequests.teamB && (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                <X size={20} strokeWidth={3} aria-hidden="true" style={{ display: 'block' }} />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Header */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', fontSize: '10px', fontWeight: 600, textAlign: 'center', color: '#333', padding: '4px 0', borderBottom: '2px solid #000' }}>
+        <span>W</span><span>P</span><span>E</span><span>D</span><span>Team</span><span>{t('matchEnd.set', 'Set')}</span><span>Score</span>
+      </div>
+
+      {/* Sanction Rows */}
+      <div style={{ flex: 1 }}>
+        {items.length > 0 ? (
+          items.map((item, idx) => (
+            <div key={idx} style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', fontSize: '11px', textAlign: 'center', padding: '4px 0', borderBottom: '1px solid #ccc', color: '#000' }}>
+              <span style={{ fontWeight: 600 }}>{item.type === 'warning' ? item.playerNr : ''}</span>
+              <span style={{ fontWeight: 600 }}>{item.type === 'penalty' ? item.playerNr : ''}</span>
+              <span style={{ fontWeight: 600 }}>{item.type === 'expulsion' ? item.playerNr : ''}</span>
+              <span style={{ fontWeight: 600 }}>{item.type === 'disqualification' ? item.playerNr : ''}</span>
+              <span style={{ fontWeight: 600 }}>{item.team}</span>
+              <span>{item.set}</span>
+              <span>{item.score}</span>
+            </div>
+          ))
+        ) : (
+          <div style={{ textAlign: 'center', color: '#666', padding: '16px', fontSize: '11px' }}>{t('matchEnd.noSanctions', 'No sanctions')}</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Standard Remarks component for MatchEnd page
+const RemarksBox = ({ overflowSanctions = [], remarks = '', generated = [] }) => {
+  const { t } = useTranslation()
+
+  const formatSanction = (sanction) => {
+    const isDelay = sanction.playerNr === 'D'
+    const typeLabel = sanction.type === 'warning'
+      ? (isDelay ? t('matchEnd.sanctionTypes.delayWarning', 'Delay warning') : t('matchEnd.sanctionTypes.warning', 'Warning'))
+      : sanction.type === 'penalty'
+        ? (isDelay ? t('matchEnd.sanctionTypes.delayPenalty', 'Delay penalty') : t('matchEnd.sanctionTypes.penalty', 'Penalty'))
+        : sanction.type === 'expulsion'
+          ? t('matchEnd.sanctionTypes.expulsion', 'Expulsion')
+          : sanction.type === 'disqualification'
+            ? t('matchEnd.sanctionTypes.disqualification', 'Disqualification')
+            : ''
+    const playerInfo = !isDelay && sanction.playerNr ? `, #${sanction.playerNr}` : ''
+    return `${t('scoreboard.sanctionsResults.team', 'Team')} ${sanction.team}, ${t('matchEnd.set', 'Set')} ${sanction.set}, ${sanction.score}, ${typeLabel}${playerInfo}`
+  }
+
+  const generatedLines = generated.filter(line => line.trim())
+  const hasContent = remarks?.trim() || overflowSanctions.length > 0 || generatedLines.length > 0
+
+  // As the PDF's REMARKS: the remarks the sheet writes itself (a default, an
+  // incomplete team), the sanctions beyond the box, then the scorer's own
+  return (
+    <div style={{ padding: '12px', fontSize: '12px', minHeight: '60px', background: '#fff', color: '#000' }}>
+      {hasContent ? (
+        <>
+          {generatedLines.map((line, idx) => (
+            <div key={idx} data-testid="matchend-generated-remark" style={{ marginBottom: '4px', color: '#000' }}>{line.trim()}</div>
+          ))}
+          {overflowSanctions.length > 0 && (
+            <>
+              <div style={{ fontWeight: 600, marginBottom: '4px', fontSize: '11px', color: '#000' }}>{t('matchEnd.sanctionsOverflow', 'Sanctions (overflow):')}</div>
+              {overflowSanctions.map((sanction, idx) => (
+                <div key={idx} style={{ fontSize: '11px', color: '#000', marginBottom: '2px' }}>{formatSanction(sanction)}</div>
+              ))}
+            </>
+          )}
+          {remarks?.trim() && <div style={{ marginTop: overflowSanctions.length > 0 || generatedLines.length > 0 ? '8px' : 0, whiteSpace: 'pre-wrap', color: '#000' }}>{remarks.trim()}</div>}
+        </>
+      ) : (
+        <div style={{ color: '#666', fontSize: '11px' }}>{t('matchEnd.noRemarks', 'No remarks')}</div>
+      )}
+    </div>
+  )
+}
+
+// Page wrapper - matches MatchSetup styling, expand width unless compact
+const setupViewStyle = {
+  maxWidth: '1400px',
+  width: '100%'
+}
+
+function MatchEndPageView({ children }) {
+  return <div className="setup" style={setupViewStyle}>{children}</div>
+}
+
+// Everything Match End shows of a match
+async function readMatchEnd(matchId) {
+    const match = await db.matches.get(matchId)
+    if (!match) return null
+
+    const [homeTeam, awayTeam] = await Promise.all([
+      match?.homeTeamId ? db.teams.get(match.homeTeamId) : null,
+      match?.awayTeamId ? db.teams.get(match.awayTeamId) : null
+    ])
+
+    const [homePlayers, awayPlayers] = await Promise.all([
+      match?.homeTeamId
+        ? db.players.where('teamId').equals(match.homeTeamId).sortBy('number')
+        : [],
+      match?.awayTeamId
+        ? db.players.where('teamId').equals(match.awayTeamId).sortBy('number')
+        : []
+    ])
+
+    const sets = await db.sets
+      .where('matchId')
+      .equals(matchId)
+      .sortBy('index')
+
+    const events = await db.events
+      .where('matchId')
+      .equals(matchId)
+      .sortBy('seq')
+
+    return {
+      match,
+      homeTeam,
+      awayTeam,
+      homePlayers,
+      awayPlayers,
+      sets,
+      events
+    }
+}
+
+const matchEndKey = (matchId) => `matchEnd:${matchId}`
+
+/**
+ * Read by App before it opens Match End: the page then shows filled in its
+ * first paint, never empty first (laptop run 2026-10-08, OV-14), and the
+ * scoreboard's set-end screen stays until then.
+ */
+export const preloadMatchEnd = (matchId) => preload(matchEndKey(matchId), () => readMatchEnd(matchId))
+
+export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualAdjustments }) {
+  const cLogger = useComponentLogging('MatchEnd')
+  const { vmin } = useScaledLayout()
+  const preloaded = usePreloaded(matchId != null ? matchEndKey(matchId) : null)
+  const data = useLiveQuery(() => readMatchEnd(matchId), [matchId], preloaded)
+  // the Match complete card prints the match's own clock (domain/sheetInputs)
+  useMatchTz(data?.match?.tz)
+  const { t, i18n } = useTranslation()
+  // Sponsors on clothing (domain/sponsors.js): this device's option shows the boxes
+  const [sponsorsOption] = useSponsorsOption()
+
+  const { showAlert } = useAlert()
+  const [openSignature, setOpenSignature] = useState(null)
+  // a signature in the REMARKS box (referee coach, ...): the form, then its pad
+  const [remarksSigForm, setRemarksSigForm] = useState(null) // { role, name } | null
+  const [remarksSigPad, setRemarksSigPad] = useState(false)
+  // A saved signature's pad closes in the render that shows it in its box
+  // ({ role, field, value }: the pad's slot, the match field and the saved
+  // image; only that slot's pad is closed). The pad went a
+  // frame before the signature (laptop run OV-16). A layout effect, so the
+  // close is in the same paint; a write that never shows closes it anyway.
+  const [closePadWhenShown, setClosePadWhenShown] = useState(null)
+  useLayoutEffect(() => {
+    if (!closePadWhenShown) return undefined
+    if ((data?.match?.[closePadWhenShown.field] ?? null) === closePadWhenShown.value) {
+      setOpenSignature(cur => (cur === closePadWhenShown.role ? null : cur))
+      setClosePadWhenShown(null)
+      return undefined
+    }
+    const timer = setTimeout(() => {
+      setOpenSignature(cur => (cur === closePadWhenShown.role ? null : cur))
+      setClosePadWhenShown(null)
+    }, 1500)
+    return () => clearTimeout(timer)
+  }, [data, closePadWhenShown])
+  // The approval is in the match row: a remount of this page (or a reload)
+  // keeps the approved view instead of falling back to "Confirm and approve"
+  // (OpenBeach video 2026-10-08). The local flag covers the moment between
+  // the write and the live query's next answer.
+  const [approvedHere, setIsApproved] = useState(false)
+  const isApproved = approvedHere || data?.match?.approved === true
+  // The server has closed the match (a closed match restored here, approved
+  // on another device: the server refuses every change). Its actions are the
+  // approved ones (Close match, Reopen match: an admin, spec 6.8) with the
+  // reason; no Reopen last set, Corrections, Approve or remarks edit, the
+  // signatures stay locked. 2026-10-20 23:32: Reopen last set on such a match
+  // reopened it here and cleared its signatures while the server refused
+  // every change.
+  const [serverClosed, setServerClosed] = useState(false)
+  const closedOnServer = serverClosed || isKnownClosedOnServer(data?.match)
+  const finalActions = isApproved || closedOnServer
+  const [isSaving, setIsSaving] = useState(false)
+  // iOS / iPadOS: the approval's files wait here for the Scoresheet menu's Share items (a hidden download is not usable there)
+  const [exportFiles, setExportFiles] = useState(null)
+  // showCloseConfirm modal removed - now using direct post-approval buttons
+  const [showReopenConfirm, setShowReopenConfirm] = useState(false)
+  const [downloadProgress, setDownloadProgress] = useState(null) // { json: boolean, pdf: boolean }
+  const [zoomedSection, setZoomedSection] = useState(null) // 'results' | 'sanctions' | null
+  const [showRemarksModal, setShowRemarksModal] = useState(false)
+  const [remarksText, setRemarksText] = useState('')
+  // "Add technical remark" (owner 22.11.2026): null while closed, else the text
+  const [technicalText, setTechnicalText] = useState(null)
+  const [technicalBusy, setTechnicalBusy] = useState(false)
+  const remarksTextareaRef = useRef(null)
+  // The approval's PDF: Cancel during the wait, and the scorer's choice when
+  // no PDF came (Retry / Approve without PDF / Cancel)
+  const exportAbortRef = useRef(null)
+  const pdfChoiceRef = useRef(null)
+  const [pdfFailure, setPdfFailure] = useState(null) // { reason }
+  const [isClosing, setIsClosing] = useState(false)
+  // The missing PDF of an approved match being made again (pdfMissing)
+  const [creatingPdf, setCreatingPdf] = useState(false)
+  // canSkip: "Approve without PDF" is offered (the approval; not when the
+  // missing PDF of an approved match is made again)
+  const askPdfFailure = (err, { canSkip = true } = {}) => new Promise((resolve) => {
+    pdfChoiceRef.current = resolve
+    setPdfFailure({ reason: err?.reason || PDF_FAIL.FAILED, canSkip })
+  })
+  const choosePdfFailure = (choice) => {
+    const resolve = pdfChoiceRef.current
+    pdfChoiceRef.current = null
+    setPdfFailure(null)
+    resolve?.(choice)
+  }
+
+  // Reopen after approval: closing is locked on the server, so a match the
+  // server has closed is reopened by an admin (spec 6.8). null | { kind:
+  // 'admin', row } | { kind: 'adminOnly' }
+  let authCtx = null
+  try { authCtx = useAuth() } catch { authCtx = null }
+  const access = authCtx?.access
+  const [reopenDialog, setReopenDialog] = useState(null)
+  const [reopenReason, setReopenReason] = useState('')
+  const [reopenBusy, setReopenBusy] = useState(false)
+  const [reopenError, setReopenError] = useState('')
+
+  // Approval with an account (scorer, referees; docs/account-approval-spec.md
+  // 4.5). The server row is the truth: the local copy on the match row
+  // (accountApprovals) is replaced by the server's on mount and when the
+  // connection comes back.
+  const [approvalRole, setApprovalRole] = useState(null) // 'scorer' | 'ref2' | 'ref1' | null
+  const [approvalFeature, setApprovalFeature] = useState('unknown') // 'unknown' | 'available' | 'unavailable'
+  const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine !== false)
+  const signedIn = !!authCtx?.user
+  const seedKey = data?.match?.seed_key || null
+  const cloudApi = !!getCloudApiUrl('/api/approvals')
+
+  const refreshAccountApprovals = useCallback(async () => {
+    if (!seedKey || !signedIn || !cloudApi) return null
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return null
+    const res = await approvalsApi.list(seedKey)
+    if (res.error) {
+      if (isApprovalUnavailable(res.error)) setApprovalFeature('unavailable')
+      // 404/403 and network errors: keep the local copy
+      return null
+    }
+    setApprovalFeature('available')
+    if (res.data?.match?.closed_at) setServerClosed(true)
+    // An approval this device undoes (the sheet changed after it, the undo
+    // still queued) is not taken back: it would complete its slot again
+    let undoing = new Set()
+    try {
+      undoing = approvalIdsBeingUndone(await db.sync_queue.where('resource').equals(APPROVAL_RESOURCE).toArray())
+    } catch { /* no queue: nothing is being undone */ }
+    const bySlot = approvalsBySlot((res.data?.approvals || []).filter(r => !undoing.has(r?.id)))
+    try {
+      await db.matches.update(matchId, { accountApprovals: Object.keys(bySlot).length ? bySlot : null })
+    } catch (err) {
+      console.warn('[MatchEnd] Could not store the account approvals:', err?.message)
+    }
+    return { bySlot, server: res.data?.match || null }
+  }, [seedKey, signedIn, cloudApi, matchId])
+
+  useEffect(() => {
+    if (isApproved) return undefined
+    refreshAccountApprovals()
+    const on = () => { setOnline(true); refreshAccountApprovals() }
+    const off = () => setOnline(false)
+    window.addEventListener('online', on)
+    window.addEventListener('offline', off)
+    return () => {
+      window.removeEventListener('online', on)
+      window.removeEventListener('offline', off)
+    }
+  }, [refreshAccountApprovals, isApproved])
+
+  // The cloud live state says the match ended (utils/matchEndLiveState): an
+  // app killed between the last rally and the scoreboard's 'match_end' push
+  // comes back here (since 2026-10-27 through Home's Continue: a restart
+  // opens Home, and App makes the same repair at start-up,
+  // publishEndedLiveStates), and the livescore kept the game running for
+  // good. Tried once a Match End shows, again when the queue drains or the
+  // device comes back online, until it is done.
+  const officialSeedKey = data?.match && !isLocalOnly(data.match) ? seedKey : null
+  useEffect(() => {
+    if (!officialSeedKey) return undefined
+    let done = false
+    let running = false
+    const attempt = async () => {
+      if (done || running) return
+      running = true
+      try {
+        const current = await db.matches.get(matchId)
+        const matchSets = await db.sets.where('matchId').equals(matchId).toArray()
+        if (await publishMatchEndLiveState(current, matchSets)) done = true
+      } catch (err) {
+        console.warn('[MatchEnd] Could not publish the match end to the live state:', err?.message)
+      } finally {
+        running = false
+      }
+    }
+    attempt()
+    window.addEventListener('online', attempt)
+    window.addEventListener('sync-queue-drained', attempt)
+    return () => {
+      done = true
+      window.removeEventListener('online', attempt)
+      window.removeEventListener('sync-queue-drained', attempt)
+    }
+  }, [officialSeedKey, matchId])
+
+  // Prevent accidental navigation away before approval
+  // Skip warning during save process (isSaving) to avoid dialog during PDF generation
+  useEffect(() => {
+    if (finalActions || isSaving) return // Allow navigation after approval (or closed on the server) or during save
+
+    const handleBeforeUnload = (e) => {
+      e.preventDefault()
+      e.returnValue = t('matchEnd.matchDataNotApproved', 'Match data has not been approved. Are you sure you want to leave?')
+      return e.returnValue
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [finalActions, isSaving])
+
+  // Calculate set results for Results component - must be before early return to maintain hook order
+  const calculateSetResults = useMemo(() => {
+    if (!data) return []
+
+    const { match, sets, events } = data
+    const teamAKey = match?.coinTossTeamA || 'home'
+    const teamBKey = teamAKey === 'home' ? 'away' : 'home'
+
+    const results = []
+    for (let setNum = 1; setNum <= 5; setNum++) {
+      const setInfo = sets?.find(s => s.index === setNum)
+      const setEvents = events?.filter(e => e.setIndex === setNum) || []
+
+      const isSetFinished = setInfo?.finished === true
+
+      const teamAPoints = isSetFinished
+        ? (teamAKey === 'home' ? (setInfo?.homePoints || 0) : (setInfo?.awayPoints || 0))
+        : null
+      const teamBPoints = isSetFinished
+        ? (teamBKey === 'home' ? (setInfo?.homePoints || 0) : (setInfo?.awayPoints || 0))
+        : null
+
+      const teamATimeouts = isSetFinished
+        ? setEvents.filter(e => e.type === 'timeout' && e.payload?.team === teamAKey).length
+        : null
+      const teamBTimeouts = isSetFinished
+        ? setEvents.filter(e => e.type === 'timeout' && e.payload?.team === teamBKey).length
+        : null
+
+      const teamASubstitutions = isSetFinished
+        ? setEvents.filter(e => e.type === 'substitution' && e.payload?.team === teamAKey).length
+        : null
+      const teamBSubstitutions = isSetFinished
+        ? setEvents.filter(e => e.type === 'substitution' && e.payload?.team === teamBKey).length
+        : null
+
+      const teamAWon = isSetFinished && teamAPoints !== null && teamBPoints !== null
+        ? (teamAPoints > teamBPoints ? 1 : 0)
+        : null
+      const teamBWon = isSetFinished && teamAPoints !== null && teamBPoints !== null
+        ? (teamBPoints > teamAPoints ? 1 : 0)
+        : null
+
+      // end - the set's ACTUAL start (its first rally), as on the PDF
+      // (scoresheet_pdf/utils/matchTimes): never the schedule
+      // (a set awarded by default has none, as on the PDF)
+      const minutes = isSetFinished && !isDefaultSet(sets, events, setNum) ? setDurationMinutes(setInfo, setEvents) : null
+      const duration = minutes !== null ? `${minutes}'` : ''
+
+      results.push({
+        setNumber: setNum,
+        // the printed set number (best of 3: the deciding set, index 5, is set 3)
+        label: displaySetNumber(setNum, match?.bestOf),
+        teamATimeouts,
+        teamASubstitutions,
+        teamAWon,
+        teamAPoints,
+        teamBTimeouts,
+        teamBSubstitutions,
+        teamBWon,
+        teamBPoints,
+        duration
+      })
+    }
+    return results
+  }, [data])
+
+  // Process sanctions - must be before early return
+  const { sanctions: processedSanctions, improperRequests } = useMemo(() => {
+    if (!data) return { sanctions: [], improperRequests: { teamA: false, teamB: false } }
+
+    const { match, events } = data
+    const teamAKey = match?.coinTossTeamA || 'home'
+    const teamBKey = teamAKey === 'home' ? 'away' : 'home'
+
+    const sanctionRecords = []
+    const improperReqs = { teamA: false, teamB: false }
+
+    if (!events) return { sanctions: sanctionRecords, improperRequests: improperReqs }
+
+    const sanctionEvents = events
+      .filter(e => e.type === 'sanction')
+      .sort((a, b) => {
+        const aSeq = a.seq || 0
+        const bSeq = b.seq || 0
+        if (aSeq !== 0 || bSeq !== 0) return aSeq - bSeq
+        return new Date(a.ts).getTime() - new Date(b.ts).getTime()
+      })
+
+    // Points before it in event order (seq), as on the PDF (a timestamp
+    // comparison counted a point logged in the same millisecond)
+    const getScoreAtEvent = (sanctionEvent) => {
+      const { home: homeScore, away: awayScore } = getScoreBeforeEvent(events, sanctionEvent)
+      const teamAScore = teamAKey === 'home' ? homeScore : awayScore
+      const teamBScore = teamBKey === 'home' ? homeScore : awayScore
+      return `${teamAScore}:${teamBScore}`
+    }
+
+    for (const event of sanctionEvents) {
+      const payload = event.payload || {}
+      const sanctionType = payload.type
+      const eventTeam = payload.team
+      const setIndex = event.setIndex
+
+      const teamLabel = (eventTeam === teamAKey) ? 'A' : 'B'
+
+      const rawScore = getScoreAtEvent(event)
+
+      const [teamAScoreStr, teamBScoreStr] = rawScore.split(':')
+      const sanctionedTeamScore = teamLabel === 'A' ? teamAScoreStr : teamBScoreStr
+      const otherTeamScore = teamLabel === 'A' ? teamBScoreStr : teamAScoreStr
+      const score = `${sanctionedTeamScore}:${otherTeamScore}`
+
+      if (sanctionType === 'improper_request') {
+        if (teamLabel === 'A') improperReqs.teamA = true
+        else improperReqs.teamB = true
+        continue
+      }
+
+      if (sanctionType === 'delay_warning' || sanctionType === 'delay_penalty') {
+        sanctionRecords.push({
+          team: teamLabel,
+          playerNr: 'D',
+          type: sanctionType === 'delay_warning' ? 'warning' : 'penalty',
+          set: displaySetNumber(setIndex, match?.bestOf),
+          score: score
+        })
+        continue
+      }
+
+      if (['warning', 'penalty', 'expulsion', 'disqualification'].includes(sanctionType)) {
+        let playerNr = ''
+
+        if (payload.playerNumber) {
+          playerNr = String(payload.playerNumber)
+        } else if (payload.role) {
+          const roleMap = {
+            'Coach': 'C',
+            'Assistant Coach 1': 'AC1',
+            'Assistant Coach 2': 'AC2',
+            'Physiotherapist': 'P',
+            'Medic': 'M'
+          }
+          playerNr = roleMap[payload.role] || payload.role.charAt(0).toUpperCase()
+        } else if (payload.playerType === 'official') {
+          playerNr = 'C'
+        }
+
+        if (playerNr) {
+          sanctionRecords.push({
+            team: teamLabel,
+            playerNr: playerNr,
+            type: sanctionType,
+            set: displaySetNumber(setIndex, match?.bestOf),
+            score: score
+          })
+        }
+      }
+    }
+
+    return { sanctions: sanctionRecords, improperRequests: improperReqs }
+  }, [data])
+
+  if (!data) return null
+
+  const { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events } = data
+
+  // Calculate set scores
+  const finishedSets = sets.filter(s => s.finished)
+  const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
+  const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
+
+  // Find captains (rosters store isCaptain; older data used captain)
+  const homeCaptain = homePlayers.find(p => p.isCaptain || p.captain)
+  const awayCaptain = awayPlayers.find(p => p.isCaptain || p.captain)
+
+  // Determine team labels (A or B)
+  const teamAKey = match.coinTossTeamA || 'home'
+  const homeLabel = teamAKey === 'home' ? 'A' : 'B'
+
+  // Sponsors on clothing: a marked match shows " (+)" / " (-)" after the team
+  // names here, as the PDF prints them (the match decides, not the option)
+  const sponsors = sponsorsOf(match)
+  const markedName = (team, name) => withSponsorMark(name, team === 'away' ? sponsors.away : sponsors.home, sponsors.marked)
+  const homeName = markedName('home', homeTeam?.name || t('common.home'))
+  const awayName = markedName('away', awayTeam?.name || t('common.away'))
+  const resultsTeamAName = homeLabel === 'A' ? markedName('home', homeTeam?.name || 'Team A') : markedName('away', awayTeam?.name || 'Team A')
+  const resultsTeamBName = homeLabel === 'B' ? markedName('home', homeTeam?.name || 'Team B') : markedName('away', awayTeam?.name || 'Team B')
+  const showSponsorBoxes = match?.easy !== true && showsSponsorBoxes(sponsorsOption, match)
+
+  // Winner info: forfeit gives the match to the opponent; a stopped match with
+  // level sets has no winner
+  const winnerKey = getMatchWinner(sets, match?.bestOf, { forfeitTeam: match?.forfeitTeam })
+  const winner = winnerKey === 'home'
+    ? homeName
+    : winnerKey === 'away'
+      ? awayName
+      : t('matchEnd.noWinner', 'No winner (match stopped)')
+  const winnerLabel = winnerKey === 'home' ? homeLabel : winnerKey === 'away' ? (homeLabel === 'A' ? 'B' : 'A') : null
+
+  // Match start = set 1's actual start (its first rally), end = the last set's
+  // end, duration = end - start: the PDF's values (scoresheet_pdf/utils/matchTimes),
+  // never the scheduled time (owner 2026-10-07)
+  // As on the PDF, a set awarded by default has no start of its own; the match
+  // ends with the last set, one the forfeit created included. A match decided
+  // by default before any rally has no times.
+  const defaultSet = s => isDefaultSet(sets, events, s.index)
+  const startMs = matchTimes(sets, events, { skip: defaultSet }).startMs
+  const endMs = startMs !== null ? matchTimes(sets, events, { skip: s => defaultSet(s) && !s.forfeitCreated }).endMs : null
+  const durationMinutes = startMs !== null && endMs !== null && endMs >= startMs ? Math.floor((endMs - startMs) / 60000) : null
+  const matchStart = startMs !== null ? formatTimeLocal(isoOf(startMs)) : ''
+  const matchEndTime = endMs !== null ? formatTimeLocal(isoOf(endMs)) : ''
+  const matchDuration = durationMinutes !== null && durationMinutes > 0 ? `${durationMinutes}'` : ''
+
+  // Split sanctions: the PDF's 9 rows, the rest in REMARKS
+  const sanctionsInBox = processedSanctions.slice(0, SANCTION_ROWS)
+  const overflowSanctions = processedSanctions.slice(SANCTION_ROWS)
+  // ... with every change made after the match, as the PDF prints them
+  // (in a match with technical remarks, those are listed below instead: never printed)
+  const autoRemarks = sheetAutoRemarks({ sets, events, teamAKey, bestOf: match?.bestOf, match })
+  const technicalOn = technicalRemarksOn(match)
+  const technicalList = technicalOn ? technicalRemarks({ match, events, t }) : []
+
+  // A result no set or match ends with (a correction can leave a finished set
+  // at 24:19): an official match is not approved with it. The sheet's own
+  // consistency checks (the PDF window's warnings): the approval asks first.
+  const resultProblems = resultIssues({ sets, events, match })
+  // a Global match (test: true, global: true) makes a real scoresheet too:
+  // its result is checked like an official one's, against its own set targets
+  const resultBlocked = (!match.test || match.global === true) && resultProblems.length > 0
+  const sheetWarnings = consistencyWarnings({ sets, events, teamAKey, homePlayers, awayPlayers, bestOf: match?.bestOf })
+  // Approved here without the official PDF on its way to the server
+  // ("Approve without PDF", or the queue refused the file): made again from
+  // the approved view, and Close match warns while it is missing
+  const pdfMissing = !isLocalOnly(match) && !!match.seed_key && match.approved === true && match.scoresheetPdfMissing === true
+
+  // The assistant scorer and the 2nd referee sign only when the match has
+  // them: a named official, or a slot already signed (or approved). A null
+  // field after Reopen last set, a correction or a cloud import is no official.
+  const { asstScorer: hasAsstScorer, ref2: hasRef2 } = optionalSignatureSlots(match)
+
+  // Signature status checks - use POST-GAME captain signatures (not pre-match)
+  const captainASigned = homeLabel === 'A' ? !!match.homePostGameCaptainSignature : !!match.awayPostGameCaptainSignature
+  const captainBSigned = homeLabel === 'B' ? !!match.homePostGameCaptainSignature : !!match.awayPostGameCaptainSignature
+  const captainsDone = captainASigned && captainBSigned
+
+  // The scorer and the referees: a drawn signature OR a valid account
+  // approval (one that still matches the finished sets)
+  const asstScorerSigned = !hasAsstScorer || !!match.asstScorerSignature
+  const scorerSigned = slotComplete(match, 'scorer', sets)
+  const ref2Signed = !hasRef2 || slotComplete(match, 'ref2', sets)
+  const ref1Signed = slotComplete(match, 'ref1', sets)
+
+  // "Approve with account" is offered when the match is in the cloud, this
+  // device is signed in and the server has the feature (indoor only)
+  const isBeach = match.sport_type === 'beach' || match.sportType === 'beach'
+  // Only a scorer or referee account (or an admin) may send approvals (the server checks the same)
+  const callerMayApprove = !!access?.isAdmin || !!access?.roles?.some(r => r === 'scorer' || r === 'referee')
+  // Re-sign and Clear close once the result is approved or the match closed
+  const signaturesLocked = signatureEditLocked(match, { isApproved: finalActions })
+  const remarksSignatures = remarksSignaturesOf(match?.remarksSignatures)
+  // The PIN-approval line of an official's box: approved, offered, or why not
+  const pinStateOf = (role) => pinApprovalState({
+    role, approval: approvalFor(match, role), sets, locked: signaturesLocked, isBeach, hasSeedKey: !!match.seed_key,
+    cloudApi, feature: approvalFeature, signedIn, callerMayApprove, online
+  })
+
+  // Determine current signature step
+  const getCurrentStep = () => {
+    if (!captainsDone) return 'captains'
+    if (hasAsstScorer && !asstScorerSigned) return 'asst-scorer'
+    if (!scorerSigned) return 'scorer'
+    if (hasRef2 && !ref2Signed) return 'ref2'
+    if (!ref1Signed) return 'ref1'
+    return 'complete'
+  }
+  const currentStep = getCurrentStep()
+  const allSignaturesDone = currentStep === 'complete'
+
+  // The match field of a slot (A / B follow the coin toss)
+  const signatureFieldOf = (role) => ({
+    'captain-a': homeLabel === 'A' ? 'homePostGameCaptainSignature' : 'awayPostGameCaptainSignature',
+    'captain-b': homeLabel === 'B' ? 'homePostGameCaptainSignature' : 'awayPostGameCaptainSignature',
+    'asst-scorer': 'asstScorerSignature',
+    'scorer': 'scorerSignature',
+    'ref2': 'ref2Signature',
+    'ref1': 'ref1Signature'
+  })[role] || null
+
+  // Every signature change is written at once and queued for the cloud: the
+  // match's whole `signatures` object (domain/signatureEdits.js). An account
+  // approval is bound to the result, not to the image, so it stays.
+  // The single writer of a slot: the image and its "signed on phone" record
+  // go in one update (domain/phoneSignature signatureUpdate), so a Clear or a
+  // signature drawn here sets the record to null and one from a phone sets it.
+  // meta: { source: 'device' } or { source: 'phone', transport } (SignaturePad)
+  const writeSignature = async (role, signatureData, meta) => {
+    const field = signatureFieldOf(role)
+    if (!field) return false
+    try {
+      await db.matches.update(matchId, signatureUpdate(field, signatureData, meta))
+      const job = signaturesSyncJob(await db.matches.get(matchId))
+      if (job) {
+        await db.sync_queue.add(job)
+        try { window.dispatchEvent(new Event('sync-queue-write')) } catch { /* no window */ }
+      }
+      return true
+    } catch (err) {
+      console.error('[MatchEnd] Could not save the signature:', err?.message)
+      toast.error(t('matchEnd.signatureSaveFailed'))
+      return false
+    }
+  }
+
+  // A signature drawn here or received from a phone (the pad's onSave)
+  const handleSaveSignature = async (role, signatureData, meta) => {
+    cLogger.logHandler('handleSaveSignature', { role, source: meta?.source || 'device' })
+    if (signaturesLocked) {
+      setOpenSignature(null)
+      return
+    }
+    // The pad closes with the signature on screen (closePadWhenShown). Armed
+    // before the write: the screen can show the signature before the write
+    // returns (an official match queues its upload after it), and the pad then
+    // stayed open a change longer
+    const field = signatureFieldOf(role)
+    if (field) setClosePadWhenShown({ role, field, value: signatureData ?? null })
+    const written = await writeSignature(role, signatureData, meta)
+    if (!written) setClosePadWhenShown(cur => (cur?.role === role ? null : cur))
+    // A new signature (drawn here or from a phone) completes the slot: a stale
+    // account approval of it (the result changed since) is dropped from the local copy
+    const slot = ROLE_TO_SLOT[role]
+    if (slot && signatureData) {
+      const stale = approvalFor(match, role)
+      if (stale && !isApprovalValid(stale, sets)) await removeLocalApproval(slot, stale.id)
+    }
+    // A failed save closes this slot's pad only: the image can be on the match
+    // row (the next box open) when queueing its upload fails, and a pad tapped
+    // open for the next box in between stays open (OpenBeach f573c46, 2026-10-08)
+    if (!written) setOpenSignature(cur => (cur === role ? null : cur))
+  }
+
+  // "Clear": the signature goes at once (saved and synced), then the pad opens
+  // empty. "Re-sign" only opens the pad: Cancel keeps the old signature.
+  const handleClearSignature = async (role) => {
+    cLogger.logHandler('handleClearSignature', { role })
+    if (signaturesLocked) return
+    if (await writeSignature(role, null)) setOpenSignature(role)
+  }
+
+  const getSignatureData = (role) => {
+    if (role === 'captain-a') return homeLabel === 'A' ? match.homePostGameCaptainSignature : match.awayPostGameCaptainSignature
+    if (role === 'captain-b') return homeLabel === 'B' ? match.homePostGameCaptainSignature : match.awayPostGameCaptainSignature
+    if (role === 'asst-scorer') return match.asstScorerSignature
+    if (role === 'scorer') return match.scorerSignature
+    if (role === 'ref2') return match.ref2Signature
+    if (role === 'ref1') return match.ref1Signature
+    return null
+  }
+
+  const getSignatureLabel = (role) => {
+    if (role === 'captain-a') {
+      const team = homeLabel === 'A' ? homeTeam : awayTeam
+      const captain = homeLabel === 'A' ? homeCaptain : awayCaptain
+      // return `Captain A - ${team?.shortName || team?.name || 'Team A'}${captain ? ` (#${captain.number})` : ''}`
+      return t('matchEnd.captainA', { team: team?.shortName || team?.name || 'Team A' }) + (captain ? ` (#${captain.number})` : '')
+    }
+    if (role === 'captain-b') {
+      const team = homeLabel === 'B' ? homeTeam : awayTeam
+      const captain = homeLabel === 'B' ? homeCaptain : awayCaptain
+      // return `Captain B - ${team?.shortName || team?.name || 'Team B'}${captain ? ` (#${captain.number})` : ''}`
+      return t('matchEnd.captainB', { team: team?.shortName || team?.name || 'Team B' }) + (captain ? ` (#${captain.number})` : '')
+    }
+    if (role === 'asst-scorer') return t('matchEnd.assistantScorer', 'Assistant scorer')
+    if (role === 'scorer') return t('matchEnd.scorer', 'Scorer')
+    if (role === 'ref2') return t('matchEnd.referee2', '2nd referee')
+    if (role === 'ref1') return t('matchEnd.referee1', '1st referee')
+    return ''
+  }
+
+  const SignatureBox = ({ role, disabled = false }) => {
+    const signatureData = getSignatureData(role)
+    const isSigned = !!signatureData
+    const viaPhone = isSigned && signedOnPhone(match, signatureFieldOf(role))
+    const canApprove = !!ROLE_TO_SLOT[role]
+    const approval = canApprove ? approvalFor(match, role) : null
+    // The PIN line of an official (null for the captains); a drawn signature no longer hides it
+    const pin = pinStateOf(role)
+    const approved = pin?.state === 'approved'
+    // Without a drawn signature, a valid approval fills the well
+    const approvalValid = !isSigned && approved
+    const approvalStale = !isSigned && !!approval && !approved
+
+    return (
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '6px',
+        flex: 1,
+        minWidth: '140px',
+        opacity: disabled ? 0.5 : 1
+      }} data-testid={`signature-slot-${role}`}>
+        <div className="text-xs font-medium text-stone-500">
+          {getSignatureLabel(role)}
+        </div>
+        {approvalValid ? (
+          // Approved with an account: the emerald done state, no image
+          <div
+            className="rounded-xl border-2 border-solid border-emerald-300 bg-emerald-50 px-3 text-emerald-800"
+            style={{ height: '60px', minHeight: '60px', maxHeight: '60px', display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}
+            data-testid={`account-approval-${role}`}
+          >
+            <Check size={18} strokeWidth={2.5} aria-hidden="true" className="shrink-0 text-emerald-700" />
+            <div className="min-w-0">
+              <div className="text-sm font-semibold leading-tight">{t('approval.done')}</div>
+              <div className="truncate text-xs leading-tight text-emerald-700 tabular-nums" title={approvalLine(approval)}>{approvalLine(approval)}</div>
+            </div>
+          </div>
+        ) : (
+          /* Unsigned: the kit's dashed "tap to sign" well. Signed: emerald done
+             state with the signature image. A stale account approval: amber,
+             and the slot can be signed or approved again. */
+          <div
+            onClick={() => !disabled && !isSigned && !signaturesLocked && setOpenSignature(role)}
+            className={isSigned
+              ? 'rounded-xl border-2 border-solid border-emerald-300 bg-emerald-50'
+              : approvalStale
+                ? `rounded-xl border-2 border-dashed border-amber-300 bg-amber-50 text-amber-800${disabled ? '' : ' hover:bg-amber-100'} transition-colors`
+                : `rounded-xl border-2 border-dashed border-stone-300 bg-stone-50 text-stone-500${disabled ? '' : ' hover:bg-stone-100 hover:border-stone-400'} transition-colors`}
+            style={{
+              height: '60px',
+              minHeight: '60px',
+              maxHeight: '60px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: (disabled || isSigned) ? 'default' : 'pointer',
+              position: 'relative',
+              overflow: 'hidden'
+            }}
+            data-testid={approvalStale ? `account-approval-stale-${role}` : undefined}
+          >
+            {signatureData ? (
+              <>
+                <img
+                  src={signatureData}
+                  alt={t('common.signature')}
+                  className="ov-ink"
+                  style={{
+                    maxWidth: '100%',
+                    maxHeight: '56px',
+                    objectFit: 'contain'
+                  }}
+                />
+                {viaPhone && (
+                  <span
+                    className="absolute right-1.5 top-1.5 text-emerald-700"
+                    title={t('phoneSign.signedOnPhone')}
+                    aria-label={t('phoneSign.signedOnPhone')}
+                    data-testid={`signed-on-phone-${role}`}
+                  >
+                    <Smartphone size={12} aria-hidden="true" />
+                  </span>
+                )}
+              </>
+            ) : approvalStale ? (
+              <div className="flex items-center gap-1.5 px-2 text-center text-sm font-medium">
+                <AlertTriangle size={15} aria-hidden="true" className="shrink-0" />
+                {t('approval.stale')}
+              </div>
+            ) : (
+              <div className="text-sm font-medium text-stone-500">
+                {disabled ? t('matchEnd.waiting', 'Waiting...') : t('matchEnd.tapToSign', 'Tap to sign')}
+              </div>
+            )}
+          </div>
+        )}
+        {isSigned && (
+          // Change a collected signature. Both buttons open the pad, which
+          // offers "Sign on phone" too (closed with them once locked).
+          <div className="ov-kit flex gap-2" data-testid={`signature-actions-${role}`}>
+            <RowTool
+              className="h-11 flex-1 disabled:cursor-not-allowed disabled:opacity-50 sm:h-11 sm:flex-1"
+              disabled={signaturesLocked}
+              title={signaturesLocked ? t('matchEnd.signatureLocked') : undefined}
+              onClick={() => setOpenSignature(role)}
+              data-testid={`signature-resign-${role}`}
+            >
+              <PenLine size={14} aria-hidden="true" />
+              {t('matchEnd.resign')}
+            </RowTool>
+            <RowTool
+              className="h-11 flex-1 disabled:cursor-not-allowed disabled:opacity-50 sm:h-11 sm:flex-1"
+              disabled={signaturesLocked}
+              title={signaturesLocked ? t('matchEnd.signatureLocked') : undefined}
+              onClick={() => handleClearSignature(role)}
+              data-testid={`signature-clear-${role}`}
+            >
+              <Eraser size={14} aria-hidden="true" />
+              {t('matchEnd.clearSignature')}
+            </RowTool>
+          </div>
+        )}
+        {pin && renderPinLine(role, pin, approval, { isSigned, disabled })}
+      </div>
+    )
+  }
+
+  // The PIN-approval line under an official's signature: approved (with
+  // Undo), "Approve with PIN", or one line saying why not. Never empty.
+  const renderPinLine = (role, pin, approval, { isSigned, disabled }) => {
+    if (pin.state === 'approved') {
+      return (
+        <div className="ov-kit flex flex-col gap-1.5">
+          {isSigned && (
+            // Signed by hand AND approved: the approval as a compact line
+            <div
+              className="flex min-h-[2.75rem] items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-3 text-emerald-800"
+              data-testid={`account-approval-${role}`}
+            >
+              <Check size={16} strokeWidth={2.5} aria-hidden="true" className="shrink-0 text-emerald-700" />
+              <div className="min-w-0">
+                <div className="text-sm font-semibold leading-tight">{t('approval.done')}</div>
+                <div className="truncate text-xs leading-tight text-emerald-700 tabular-nums" title={approvalLine(approval)}>{approvalLine(approval)}</div>
+              </div>
+            </div>
+          )}
+          <RowTool
+            className="h-11 w-full flex-1 disabled:cursor-not-allowed disabled:opacity-50 sm:h-11"
+            disabled={!online || signaturesLocked}
+            title={online ? undefined : t('approval.needsInternet')}
+            onClick={() => handleUndoAccountApproval(role, approval)}
+            data-testid={`account-approval-undo-${role}`}
+          >
+            {t('approval.undo')}
+          </RowTool>
+        </div>
+      )
+    }
+    if (pin.state === 'offer') {
+      return (
+        <div className="ov-kit flex">
+          <Button
+            variant="secondary"
+            size="xl"
+            icon={ShieldCheck}
+            className="w-full font-medium"
+            disabled={disabled}
+            onClick={() => setApprovalRole(role)}
+            data-testid={`account-approval-open-${role}`}
+          >
+            {t('approval.approveWithPin')}
+          </Button>
+        </div>
+      )
+    }
+    return (
+      <p
+        className="flex min-h-[2.75rem] items-center gap-1.5 text-xs leading-snug text-stone-500"
+        data-testid={`account-approval-why-${role}`}
+        data-reason={pin.reason}
+      >
+        <Info size={14} aria-hidden="true" className="shrink-0" />
+        <span>{t(`approval.why.${pin.reason}`)}</span>
+      </p>
+    )
+  }
+
+  // Undo an account approval (the approver, the owner or an editor; online)
+  const handleUndoAccountApproval = async (role, approval) => {
+    if (!approval?.id) return
+    cLogger.logHandler('handleUndoAccountApproval', { role })
+    const ok = await askConfirm({
+      title: t('approval.undoConfirm'),
+      message: t('approval.undoConfirmBody'),
+      confirmLabel: t('approval.undo'),
+      tone: 'danger'
+    })
+    if (!ok) return
+    const res = await approvalsApi.undo(approval.id)
+    if (res.error && res.error.status !== 404) {
+      toast.error(t(errorKeyOf(res.error, { context: 'approval' })))
+      return
+    }
+    await removeLocalApproval(ROLE_TO_SLOT[role], approval.id)
+    toast.success(t('approval.undone'))
+  }
+
+  // Drop one slot from the local copy (only if it still holds that record)
+  const removeLocalApproval = async (slot, id) => {
+    const row = await db.matches.get(matchId)
+    const current = { ...(row?.accountApprovals || {}) }
+    if (current[slot] && (!id || current[slot].id === id)) delete current[slot]
+    await db.matches.update(matchId, { accountApprovals: Object.keys(current).length ? current : null })
+  }
+
+  // After a 200 from POST /api/approvals: keep the record on the match row.
+  // The official's address is not kept on this shared device: a referee
+  // approves only with the one the match setup stored (spec R11).
+  const handleAccountApproved = async (record, { entered }) => {
+    const row = await db.matches.get(matchId)
+    const current = { ...(row?.accountApprovals || {}) }
+    current[record.slot] = record
+    await db.matches.update(matchId, { accountApprovals: current })
+    setApprovalRole(null)
+    toast.success(t('approval.approved'))
+    if (entered && namesDiffer(record.name, entered)) {
+      toast.info(t('approval.nameDiffers', { account: record.name, entered }), { duration: 8000 })
+    }
+  }
+
+  // Reopening the last set voids the approvals on the server (db/011
+  // trigger) once the status change syncs; online and not closed, undo them
+  // now as well, and wait for it so no later read brings them back.
+  const undoAccountApprovalsBestEffort = async (current) => {
+    const records = Object.values(current?.accountApprovals || {}).filter(r => r?.id)
+    if (!records.length || current?.closed_at) return
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return
+    await Promise.allSettled(records.map(r => approvalsApi.undo(r.id)))
+  }
+
+  // A change of what the officials signed (the remarks, a remarks signature
+  // removed) after the first post-match signature or account approval: asked
+  // first, then written together with the cleared signatures and approvals,
+  // here and on the server, and logged as a change after the match (as a
+  // correction in Corrections does). Resolves to false when declined.
+  const confirmSignedSheetChange = async (message) => await askConfirm({
+    title: t('matchEnd.signedSheetChange.title'),
+    message,
+    confirmLabel: t('matchEnd.signedSheetChange.confirm'),
+    tone: 'danger'
+  })
+
+  const handleSaveRemarks = async () => {
+    const current = await db.matches.get(matchId)
+    const before = current?.remarks || ''
+    const next = remarksText.trim()
+    if (next !== before.trim()) {
+      if (signedAfterMatch(current)) {
+        if (!(await confirmSignedSheetChange(t('matchEnd.signedSheetChange.remarks')))) return
+        try {
+          await writeSignedSheetChange(db, matchId, { remarks: next }, {
+            action: 'editRemarks', before, after: next, text: t('matchEnd.signedSheetChange.logRemarks')
+          })
+        } catch (err) {
+          console.error('[MatchEnd] Could not save the remarks:', err?.message)
+          toast.error(t('matchEnd.signedSheetChange.saveFailed'))
+          return
+        }
+      } else {
+        await db.matches.update(matchId, { remarks: next })
+      }
+    }
+    setShowRemarksModal(false)
+    setRemarksText('')
+  }
+
+  // A technical remark: the change log only; nothing signed changes, so no
+  // signature or approval is cleared (writeTechnicalRemark)
+  const handleSaveTechnicalRemark = async () => {
+    const text = oneLine(technicalText)
+    if (!text || technicalBusy) return
+    setTechnicalBusy(true)
+    try {
+      await writeTechnicalRemark(db, matchId, text)
+      setTechnicalText(null)
+    } catch (err) {
+      console.error('[MatchEnd] Could not save the technical remark:', err?.message)
+      toast.error(t('matchEnd.technicalRemarks.saveFailed', 'The technical remark could not be saved.'))
+    } finally {
+      setTechnicalBusy(false)
+    }
+  }
+
+  const handleRemoveRemarksSignature = async (index) => {
+    if (signaturesLocked) return
+    const current = await db.matches.get(matchId)
+    const next = withoutRemarksSignature(current?.remarksSignatures, index)
+    if (!signedAfterMatch(current)) {
+      await saveMatchSignature(db, matchId, 'remarksSignatures', next)
+      return
+    }
+    if (!(await confirmSignedSheetChange(t('matchEnd.signedSheetChange.remarksSignature')))) return
+    const removed = remarksSignaturesOf(current?.remarksSignatures)[index]
+    const caption = removed ? remarksSignatureCaption(removed) : ''
+    try {
+      await writeSignedSheetChange(db, matchId, { remarksSignatures: next }, {
+        action: 'removeRemarksSignature', before: caption, after: null, text: t('matchEnd.signedSheetChange.logRemarksSignature', { caption })
+      })
+    } catch (err) {
+      console.error('[MatchEnd] Could not remove the remarks signature:', err?.message)
+      toast.error(t('matchEnd.signedSheetChange.saveFailed'))
+    }
+  }
+
+  // A team's Sponsors on clothing box (domain/sponsors.js): the first tick marks
+  // the match. After a post-match signature or account approval it is a change
+  // of the sheet: asked first, then written with the cleared signatures and
+  // logged (as an edit of the remarks). The server gets the whole match_info.
+  const handleSponsorsChange = async (team, ticked) => {
+    if (finalActions) return
+    const current = await db.matches.get(matchId)
+    if (!current) return
+    const patch = sponsorsPatch(current, team, ticked)
+    try {
+      if (signedAfterMatch(current)) {
+        if (!(await confirmSignedSheetChange(t('matchEnd.signedSheetChange.sponsors')))) return
+        const before = sponsorsOf(current)[team] ? SPONSOR_MARK_YES : SPONSOR_MARK_NO
+        const after = ticked ? SPONSOR_MARK_YES : SPONSOR_MARK_NO
+        const teamName = (team === 'home' ? homeTeam?.name : awayTeam?.name) || t(team === 'home' ? 'common.home' : 'common.away')
+        await writeSignedSheetChange(db, matchId, patch, {
+          action: 'editSponsors', before, after, text: t('matchEnd.signedSheetChange.logSponsors', { team: teamName, mark: after })
+        })
+      } else {
+        await db.matches.update(matchId, patch)
+      }
+      const updated = await db.matches.get(matchId)
+      if (updated?.seed_key) {
+        await queueMatchUpdate(db, updated.seed_key, { match_info: matchInfoFromLocal(updated) }, { test: isLocalOnly(updated) })
+        try { window.dispatchEvent(new Event('sync-queue-write')) } catch { /* no window */ }
+      }
+    } catch (err) {
+      console.error('[MatchEnd] Could not save the sponsors on clothing:', err?.message)
+      toast.error(t('matchEnd.signedSheetChange.saveFailed'))
+    }
+  }
+
+  const handleShowScoresheet = (action = 'preview') => {
+    cLogger.logHandler('handleShowScoresheet', { action })
+    // the page reads the match from this device's database (?matchId=)
+    const url = action === 'preview' ? `/scoresheet/?matchId=${matchId}` : `/scoresheet/?matchId=${matchId}&action=${action}`
+    const opened = openAppWindow(url, { features: 'width=1600,height=1200', title: t('header.scoresheet') })
+    if (!opened.ok) showAlert(t(openFailedMessageKey(opened, 'header.allowPopups')), 'warning')
+  }
+
+  // iOS / iPadOS: the share sheet (Mail, AirDrop, Save to Files) for a file made at approval
+  const handleShareFile = async (file) => {
+    cLogger.logHandler('handleShareFile', { matchId, filename: file?.filename })
+    try {
+      await shareFile(file.blob, file.filename)
+    } catch (err) {
+      console.error('[MatchEnd] Share failed:', err)
+      showAlert(t('matchEnd.shareFailed', 'The file could not be shared: {{error}}', { error: err?.message || String(err) }), 'error')
+    }
+  }
+
+  // Handle downloading comprehensive interaction logs
+  const handleDownloadLogs = async () => {
+    cLogger.logHandler('handleDownloadLogs', { matchId })
+    try {
+      const { downloadLogs } = await import('../utils/comprehensiveLogger')
+      await downloadLogs(diagnosticLogQuery(matchId, match), 'ndjson')
+      showAlert(t('matchEnd.logsDownloaded', 'Interaction logs downloaded successfully'), 'success')
+    } catch (err) {
+      console.error('[MatchEnd] Failed to download logs:', err)
+      showAlert(t('matchEnd.logsDownloadFailed', 'Failed to download logs'), 'error')
+    }
+  }
+
+  // The approval's PDF and final JSON for the 'scoresheets' bucket, queued
+  // as sync jobs that carry the files (see handleApprove). json: false, the
+  // PDF alone (the approval went without it: handleCreateMissingPdf).
+  // Resolves to true when a PDF job was queued.
+  const queueApprovalFiles = async ({ pdfResult, sets: allSets, events: allEvents, match: approvedMatch = match, json = true }) => {
+    const jobs = []
+    // Same name scheme as the JSON (random part: only this scorer
+    // account can read it, nobody can claim the name first)
+    const pdfStoragePath = scoresheetUploadPath(match, { ext: 'pdf' })
+    // (only if generation succeeded)
+    if (pdfResult && pdfStoragePath) jobs.push(scoresheetUploadJob(match, pdfStoragePath, pdfResult.blob, 'application/pdf'))
+    // The final JSON (with _final suffix for approved matches)
+    const jsonStoragePath = json ? scoresheetUploadPath(match, { final: true }) : null
+    if (jsonStoragePath) {
+      jobs.push(scoresheetUploadJob(match, jsonStoragePath, scoresheetJsonBlob({
+        match: approvedMatch,
+        homeTeam,
+        awayTeam,
+        homePlayers,
+        awayPlayers,
+        sets: allSets,
+        events: allEvents
+      }), 'application/json'))
+    }
+    if (!jobs.length) return false
+    const isPdf = (job) => job.payload?.contentType === 'application/pdf'
+    // an earlier approval's files still unsent (a reopen and a new
+    // approval): only this approval's go. The PDF alone replaces an unsent
+    // file of its own name only (the approval's JSON stays queued).
+    const supersede = () => supersedeUnsentScoresheetUploads(db.sync_queue, json ? jobs : jobs.map(j => ({ payload: { path: j.payload.path } })))
+    try {
+      await db.transaction('rw', db.sync_queue, async () => {
+        await supersede()
+        for (const job of jobs) await db.sync_queue.add(job)
+      })
+      return jobs.some(isPdf)
+    } catch (queueErr) {
+      // IndexedDB refused the files (storage full): one try now, in the
+      // background, as before the queue took them. The PDF stays missing
+      // (pdfMissing) until that try has stored it.
+      console.warn('[MatchEnd] Could not queue the scoresheet uploads, uploading them once now:', queueErr?.message)
+      await supersede().catch(() => {})
+      for (const job of jobs) {
+        uploadQueuedScoresheet(job.payload)
+          .then(({ error }) => {
+            if (error) console.warn('Failed to upload scoresheet to cloud:', error)
+            else if (isPdf(job)) db.matches.update(matchId, { scoresheetPdfMissing: false }).catch(() => {})
+          })
+          .catch(uploadErr => console.warn('Error uploading scoresheet:', uploadErr))
+      }
+      return false
+    }
+  }
+
+  // The scoresheet window's PDF (scoresheetPdfRequest.js). The wait ends at
+  // once when that window is closed, stops answering, says the capture
+  // failed or the scorer presses Cancel; the scorer then chooses: Retry,
+  // Approve without PDF (canSkip: the approval only) or Cancel.
+  // OpenBeach video 2026-10-08: closing the window hung the approval.
+  // Resolves to { pdfResult, choice: 'pdf' | 'skip' | 'cancel', reason }.
+  // Each attempt and its outcome go to the activity log (scoresheet.pdf),
+  // and with the PDF where its time went on this device ('timing': the
+  // page's load and each capture step; the tablet's 43 s, 2026-11-22, was
+  // one number).
+  const requestPdf = async ({ canSkip = true, purpose = 'approval' } = {}) => {
+    for (let attempt = 1; ; attempt += 1) {
+      const abort = new AbortController()
+      exportAbortRef.current = abort
+      const startedAt = Date.now()
+      // each step of the page, when first heard here and the time it took there
+      const heard = {}
+      const onProgress = ({ step, ms }) => {
+        if (step && !heard[step]) heard[step] = { at: Date.now() - startedAt, ms }
+      }
+      logScoresheetPdf('requested', { purpose, attempt }, { matchId })
+      try {
+        const pdfResult = await waitForScoresheetPdf(
+          // pdfReq: the page's answers name this attempt (a window of an
+          // earlier one, closed by Cancel or a stall, is ignored)
+          (req) => openAppWindow(`/scoresheet/?matchId=${matchId}&action=getBlob&${PDF_REQUEST_PARAM}=${encodeURIComponent(req)}`, { features: 'width=1600,height=1200', title: t('header.scoresheet') }),
+          { signal: abort.signal, onProgress }
+        )
+        const totalMs = Date.now() - startedAt
+        logScoresheetPdf('received', { purpose, attempt, bytes: pdfResult?.blob?.size, ms: totalMs }, { matchId })
+        if (Object.keys(heard).length) {
+          logScoresheetPdf('timing', {
+            purpose,
+            attempt,
+            reason: pdfTimingText(heard, totalMs, { events: events?.length, dpr: window.devicePixelRatio, zoom: measuredTextZoom() }),
+            ms: totalMs
+          }, { matchId })
+        }
+        setDownloadProgress(prev => (prev ? { ...prev, pdf: true } : prev))
+        return { pdfResult, choice: 'pdf', reason: null }
+      } catch (pdfError) {
+        console.warn('[MatchEnd] No PDF:', pdfError)
+        const reason = pdfError?.reason || PDF_FAIL.FAILED
+        const cancelled = reason === PDF_FAIL.CANCELLED
+        logScoresheetPdf(cancelled ? 'cancelled' : 'failed', { purpose, attempt, reason, ms: Date.now() - startedAt }, { matchId })
+        // Cancel during the wait: stop here
+        const choice = cancelled ? 'cancel' : await askPdfFailure(pdfError, { canSkip })
+        if (choice === 'retry') continue
+        return { pdfResult: null, choice: canSkip && choice === 'skip' ? 'skip' : 'cancel', reason }
+      } finally {
+        exportAbortRef.current = null
+      }
+    }
+  }
+
+  // The approval went without its PDF ("Approve without PDF", or the queue
+  // refused the file): made again here and queued as the approval's would
+  // have been. The server takes the first PDF of an approval from the
+  // match's scorer, also after the close (backend lib/scoresheets.js).
+  const handleCreateMissingPdf = async () => {
+    if (creatingPdf || isClosing) return
+    cLogger.logHandler('handleCreateMissingPdf', { matchId })
+    setCreatingPdf(true)
+    try {
+      setDownloadProgress({ pdfOnly: true, json: true, pdf: false })
+      const { pdfResult } = await requestPdf({ canSkip: false, purpose: 'missing' })
+      setDownloadProgress(null)
+      if (pdfResult && await queueApprovalFiles({ pdfResult, json: false })) {
+        await db.matches.update(matchId, { scoresheetPdfMissing: false })
+        toast.success(t('matchEnd.pdfMissing.queued'))
+      } else if (pdfResult && scoresheetUploadPath(match, { ext: 'pdf' })) {
+        logScoresheetPdf('not_queued', { purpose: 'missing' }, { matchId })
+      }
+    } catch (err) {
+      console.error('[MatchEnd] Could not make the missing PDF:', err?.message)
+      setDownloadProgress(null)
+    } finally {
+      setCreatingPdf(false)
+    }
+  }
+
+  // A test (or easy) match's scoresheet to its signed-in scorer (owner plan
+  // 2026-10-29, step 4): never stored on the server, the mail is its only
+  // copy; Close match then deletes the match from this device. Signed out or
+  // offline: no mail (the ZIP download still has the PDF).
+  const mailTestScoresheet = (pdfResult) => {
+    if (!authCtx?.user || (typeof navigator !== 'undefined' && navigator.onLine === false)) return
+    sendTestScoresheet(pdfResult.blob, {
+      teams: `${homeTeam?.name || t('common.home')} – ${awayTeam?.name || t('common.away')}`,
+      result: `${homeSetsWon}:${awaySetsWon}`
+    }).then((res) => {
+      if (res?.data?.sent) showAlert(t('matchEnd.testMailSent', { to: res.data.to }), 'success')
+      else console.warn('[MatchEnd] Test scoresheet mail not sent:', res?.error?.code || res?.error?.message)
+    }, (err) => console.warn('[MatchEnd] Test scoresheet mail failed:', err?.message))
+  }
+
+  const handleApprove = async () => {
+    cLogger.logHandler('handleApprove', { matchId, allSignaturesDone })
+    setIsSaving(true)
+    try {
+      // Only check signatures for official matches
+      // (a Global match is a real scoresheet: its signatures count too)
+      if ((!match.test || match.global === true) && !allSignaturesDone) {
+        showAlert(t('matchEnd.pleaseCompleteSignatures', 'Please complete all signatures before approving.'), 'warning')
+        setIsSaving(false)
+        return
+      }
+
+      // A result no set or match ends with is never approved: corrected first
+      const currentSets = await db.sets.where('matchId').equals(matchId).toArray()
+      const currentEvents = await db.events.where('matchId').equals(matchId).sortBy('seq')
+      if ((!match.test || match.global === true) && resultIssues({ sets: currentSets, events: currentEvents, match }).length > 0) {
+        showAlert(t('matchEnd.resultIssues.blocked'), 'warning')
+        setIsSaving(false)
+        return
+      }
+
+      // The sheet's consistency checks (the scoresheet window lists them, the
+      // PDF does not): the approval goes ahead only once the scorer saw them
+      const warnings = consistencyWarnings({ sets: currentSets, events: currentEvents, teamAKey, homePlayers, awayPlayers, bestOf: match?.bestOf })
+      if (warnings.length > 0) {
+        const go = await askConfirm({
+          title: t('matchEnd.sheetWarnings.confirmTitle'),
+          message: warnings.join('\n'),
+          confirmLabel: t('matchEnd.sheetWarnings.confirm')
+        })
+        if (!go) {
+          setIsSaving(false)
+          return
+        }
+      }
+
+      // The account approvals that complete a slot (no drawn signature there)
+      // are re-checked with the server before the result is approved (one may
+      // have been voided or undone, or the sets changed). A stale record in a
+      // slot that was signed by hand never blocks: the drawn signature is the
+      // fallback. When the server cannot be asked (offline, an error), the
+      // approvals are not confirmed: only once the scorer agrees, and those
+      // slots then print as pending (no "Approved electronically") and the
+      // approval's summary leaves them out; the server's records come back
+      // with the next refresh.
+      const completing = approvalsCompletingSlots(match, currentSets, { hasRef2 })
+      if (completing.length) {
+        const fresh = online && match.seed_key ? await refreshAccountApprovals() : null
+        if (fresh && !approvalsStillValid(completing, fresh.bySlot, resultKey(currentSets))) {
+          showAlert(t('approval.revalidateFailed'), 'warning')
+          setIsSaving(false)
+          return
+        }
+        if (!fresh) {
+          const go = await askConfirm({
+            title: t('approval.unconfirmedTitle'),
+            // signed out: the session is missing, not the connection
+            message: t(online && match.seed_key && !signedIn ? 'approval.unconfirmedBodySignedOut' : 'approval.unconfirmedBody', {
+              roles: completing.map(c => getSignatureLabel(c.role)).join(', ')
+            }),
+            confirmLabel: t('approval.unconfirmedApprove')
+          })
+          if (!go) {
+            setIsSaving(false)
+            return
+          }
+          const row = await db.matches.get(matchId)
+          const kept = { ...(row?.accountApprovals || {}) }
+          for (const c of completing) delete kept[c.slot]
+          await db.matches.update(matchId, { accountApprovals: Object.keys(kept).length ? kept : null })
+        }
+      }
+
+      // Show download progress
+      setDownloadProgress({ json: false, pdf: false })
+
+      // Prepare export data
+      const allSets = await db.sets.where('matchId').equals(matchId).sortBy('index')
+      const allEvents = await db.events.where('matchId').equals(matchId).sortBy('seq')
+      // The account approvals as checked above (refreshed from the server, or
+      // without those left unconfirmed), not as this render read them: the
+      // ZIP's JSON, the PDF and the uploaded final JSON print what was approved
+      const approvedMatch = { ...match, accountApprovals: (await db.matches.get(matchId))?.accountApprovals ?? null }
+
+      // In the backup file format: Restore match takes the ZIP's JSON back.
+      // It had the teams inside the match and no version, and the restore
+      // refused it (backupManager.matchBackupFromMatchEndExport still reads
+      // those files).
+      const exportData = matchEndExportData({
+        match: approvedMatch,
+        homeTeam,
+        awayTeam,
+        homePlayers,
+        awayPlayers,
+        sets: allSets,
+        events: allEvents
+      })
+
+      // Like every backup file (06ee9d6fc): sealed for the game PIN, the
+      // referee PIN and the league's recovery key, so the ZIP left in
+      // Downloads holds no plain rosters or dates of birth; Restore match opens
+      // it with either PIN. A match without PINs (test) stays plain; a seal
+      // that fails never blocks the approval.
+      let dataStr
+      try {
+        const { backupFileText } = await import('../utils/backupFile')
+        dataStr = await backupFileText(matchId, exportData, new Date(exportData.lastUpdated), { pinSource: approvedMatch })
+      } catch (err) {
+        console.warn('[MatchEnd] ZIP match data not sealed:', err?.message)
+        dataStr = JSON.stringify(exportData, null, 2)
+      }
+      const matchDate = match.scheduledAt
+        // the LOCAL match day (the UTC day is the day before for a match after midnight)
+        ? new Date(match.scheduledAt).toLocaleDateString('en-GB').replace(/\//g, '-')
+        : new Date().toLocaleDateString('en-GB').replace(/\//g, '-')
+      const jsonFilename = `MatchData_${sanitizeForFilename(homeTeam?.name || t('common.home'))}_vs_${sanitizeForFilename(awayTeam?.name || t('common.away'))}_${matchDate}.json`
+
+      // Mark JSON as ready
+      setDownloadProgress(prev => ({ ...prev, json: true }))
+
+      // Open the scoresheet with the getBlob action and wait for its PDF
+      // (requestPdf): the page reads the match from this device's database
+      // (?matchId=), which holds the account approvals as checked above.
+      // Approve without PDF: the JSON, the approval and the ZIP go ahead,
+      // and the approved view makes the PDF again (pdfMissing).
+      // Cancel: nothing is approved.
+      const { pdfResult, choice: pdfChoice, reason: pdfFailReason } = await requestPdf()
+      if (pdfChoice === 'cancel') {
+        setDownloadProgress(null)
+        setIsSaving(false)
+        return
+      }
+
+      // Create ZIP with both files (PDF is optional)
+      const zip = new JSZip()
+      zip.file(jsonFilename, dataStr)
+      if (pdfResult) {
+        zip.file(pdfResult.filename, pdfResult.blob)
+      }
+
+      // Add comprehensive interaction logs to the ZIP
+      try {
+        const logsContent = await exportLogsAsNDJSON(diagnosticLogQuery(matchId, match))
+        if (logsContent && logsContent.length > 0) {
+          const logsFilename = `interaction_logs_${matchDate}.ndjson`
+          zip.file(logsFilename, logsContent)
+        }
+      } catch (logsError) {
+        console.warn('[MatchEnd] Failed to add interaction logs to ZIP:', logsError)
+      }
+      // ... and the match's activity log (oldest first, one JSON object per line)
+      try {
+        const activity = await listActivity(db, { matchId })
+        if (activity.length) {
+          zip.file(`activity_${matchDate}.ndjson`, [...activity].reverse().map(({ lid: _lid, ...r }) => JSON.stringify(r)).join('\n') + '\n')
+        }
+      } catch (activityError) {
+        console.warn('[MatchEnd] Failed to add the activity log to ZIP:', activityError)
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' })
+      const zipFilename = `Match_${sanitizeForFilename(homeTeam?.name || t('common.home'))}_vs_${sanitizeForFilename(awayTeam?.name || t('common.away'))}_${matchDate}.zip`
+
+      // Download the ZIP. On iOS / iPadOS (browser or app) a hidden download
+      // is not usable (the app does nothing, Safari hides the folder): the
+      // files wait for the Scoresheet menu's Share items instead.
+      const shareInstead = prefersShare()
+      if (shareInstead) {
+        setExportFiles({
+          zip: { blob: zipBlob, filename: zipFilename },
+          pdf: pdfResult?.blob ? { blob: pdfResult.blob, filename: pdfResult.filename || zipFilename.replace(/\.zip$/, '.pdf') } : null
+        })
+      } else {
+        const zipLink = document.createElement('a')
+        zipLink.download = zipFilename
+        zipLink.href = URL.createObjectURL(zipBlob)
+        zipLink.click()
+      }
+
+      // The approval and its sync job in one transaction: approved and
+      // queued, or neither
+      await db.transaction('rw', db.sync_queue, db.matches, async () => {
+        // Save to sync queue if official match with seed_key
+        if (!isLocalOnly(match) && match?.seed_key) {
+          // Collect all signatures for the approval JSONB field
+          const approvalData = {
+            approvedAt: new Date().toISOString(),
+            signatures: {
+              captainA: homeLabel === 'A' ? match.homePostGameCaptainSignature : match.awayPostGameCaptainSignature,
+              captainB: homeLabel === 'B' ? match.homePostGameCaptainSignature : match.awayPostGameCaptainSignature,
+              scorer: match.scorerSignature || null,
+              asstScorer: match.asstScorerSignature || null,
+              ref1: match.ref1Signature || null,
+              ref2: match.ref2Signature || null
+            },
+            // Signed on a phone or on this device (docs/qr-signing-spec.md 5.6)
+            signatureSources: approvalSignatureSources(match),
+            // Approved with an account: names and short IDs only (no user ids,
+            // no emails), from the stored row (without approvals left unconfirmed)
+            accounts: approvalSummary((await db.matches.get(matchId)) || match, allSets)
+          }
+
+          // The remarks as approved, just before the approval (db/017)
+          const remarksJob = remarksSnapshotJob((await db.matches.get(matchId)) || match)
+          if (remarksJob) await db.sync_queue.add(remarksJob)
+          await db.sync_queue.add({
+            resource: 'match',
+            action: 'update',
+            payload: {
+              id: match.seed_key,
+              status: 'approved',
+              current_set: null,
+              approval: approvalData
+            },
+            ts: new Date().toISOString(),
+            status: 'queued'
+          })
+        }
+
+        // Mark as approved in local database (status stays 'ended' until Close Match)
+        await db.matches.update(matchId, {
+          approved: true,
+          approvedAt: new Date().toISOString(),
+          current_set: null,
+          // the official PDF counts as missing until its upload is queued
+          ...(!isLocalOnly(match) && match?.seed_key ? { scoresheetPdfMissing: true } : {})
+        })
+      })
+
+      // Update UI state to show post-approval buttons
+      setDownloadProgress(null)
+      setIsSaving(false)
+      setIsApproved(true)
+      if (shareInstead) showAlert(t('matchEnd.approvedShareHint'), 'info')
+
+      // The cloud copies of the PDF and the final JSON go up after the
+      // approval, through the sync queue, which retries them until they are
+      // stored (scoresheetUploadJob). Awaited before it, an upload on a
+      // connection that passed no data held "Confirm and approve" (no Cancel
+      // at that step), and with it the approval and the ZIP, for minutes
+      // (stress test 2026-10-25).
+      if (!isLocalOnly(match)) {
+        const pdfQueued = await queueApprovalFiles({ pdfResult, sets: allSets, events: allEvents, match: approvedMatch })
+        if (pdfQueued && match?.seed_key) await db.matches.update(matchId, { scoresheetPdfMissing: false })
+        // (a match without a game number has no cloud copy: nothing to queue)
+        if (pdfResult && !pdfQueued && match?.seed_key && scoresheetUploadPath(match, { ext: 'pdf' })) logScoresheetPdf('not_queued', { purpose: 'approval' }, { matchId })
+      } else if (usesKeyStore(match)) {
+        // Global or guest: the PDF and the final backup go to the Global store, by the
+        // match's own key (utils/globalCloud); it stays on the device if that fails
+        // (not awaited: its retries must not hold the approval)
+        exportMatchData(matchId).catch(() => null)
+          .then((backupData) => uploadGlobalFinal({ match, matchId, pdfBlob: pdfResult?.blob || null, backupData }))
+          .then((sent) => { if (!sent.ok) showAlert(t('matchEnd.globalNotStored', 'The scoresheet could not be saved online. It stays on this device: download the PDF now.'), 'warning') })
+      } else if (pdfResult) mailTestScoresheet(pdfResult)
+
+      // Warn if PDF was not generated (approval still succeeded): an official
+      // match's is made again from the approved view (pdfMissing)
+      if (!pdfResult) {
+        logScoresheetPdf('approved_without_pdf', { purpose: 'approval', reason: pdfFailReason }, { matchId })
+        showAlert(t(match?.test ? 'matchEnd.pdfGenerationFailedTest' : 'matchEnd.pdfGenerationFailed'), 'warning')
+      }
+    } catch (error) {
+      console.error('Error approving match:', error)
+      showAlert(t('matchEnd.errorApproving', { error: error.message }), 'error')
+      setDownloadProgress(null)
+      setIsSaving(false)
+    }
+  }
+
+  // Handle closing match after approval - deletes local data and navigates home
+  const handleCloseMatch = async () => {
+    cLogger.logHandler('handleCloseMatch', { matchId })
+    if (isClosing) return
+    setIsClosing(true)
+
+    // No official PDF of this approval on its way to the server: once the
+    // match is closed here, this device cannot make it any more
+    const current = await db.matches.get(matchId).catch(() => null)
+    if (current && !isLocalOnly(current) && current.seed_key && current.approved === true && current.scoresheetPdfMissing === true) {
+      const go = await askConfirm({
+        title: t('matchEnd.pdfMissing.closeTitle'),
+        message: t('matchEnd.pdfMissing.closeBody'),
+        confirmLabel: t('matchEnd.pdfMissing.closeAnyway'),
+        tone: 'danger'
+      })
+      if (!go) {
+        setIsClosing(false)
+        return
+      }
+    }
+
+    try {
+      // Update match to final status in Supabase first (before deleting local data)
+      if (!isLocalOnly(match) && match?.seed_key) {
+        await db.sync_queue.add({
+          resource: 'match',
+          action: 'update',
+          payload: {
+            id: match.seed_key,
+            status: 'final'
+          },
+          ts: new Date().toISOString(),
+          status: 'queued'
+        })
+      }
+
+      // Delete all local data for this match from IndexedDB
+      await db.transaction('rw', db.events, db.event_history, db.sets, db.players, db.teams, db.matches, async () => {
+        // Delete events for this match (a wipe, not an undo: db/eventHistory)
+        await wipeMatchEvents(db, matchId, { dropHistory: true })
+
+        // Delete sets for this match
+        await db.sets.where('matchId').equals(matchId).delete()
+
+        // Get team IDs before deleting match
+        const matchData = await db.matches.get(matchId)
+        if (matchData) {
+          // Delete players for both teams
+          if (matchData.homeTeamId) {
+            await db.players.where('teamId').equals(matchData.homeTeamId).delete()
+            await db.teams.delete(matchData.homeTeamId)
+          }
+          if (matchData.awayTeamId) {
+            await db.players.where('teamId').equals(matchData.awayTeamId).delete()
+            await db.teams.delete(matchData.awayTeamId)
+          }
+        }
+
+        // Delete the match itself
+        await db.matches.delete(matchId)
+      })
+      // and its Match setup draft (names and dates of birth of unsaved edits)
+      await clearSetupDraft(matchId).catch(() => {})
+
+      // Navigate home (the match is gone: App leaves it out at once)
+      if (onGoHome) onGoHome({ closed: true })
+    } catch (error) {
+      console.error('[MatchEnd] Error closing match:', error)
+      showAlert(t('matchEnd.errorClosing', 'Error closing match: ') + error.message, 'error')
+      setIsClosing(false)
+    }
+  }
+
+  // Reopen after approval. Test matches and matches whose approval never
+  // reached the server reopen here; a match the server has closed needs an
+  // admin (server-side, audit-logged). See utils/matchReopen.
+  const handleReopenMatchClick = async () => {
+    const current = data?.match
+    let queue = []
+    try {
+      queue = await db.sync_queue.where('resource').equals('match').toArray()
+    } catch { queue = [] }
+    const online = typeof navigator === 'undefined' || navigator.onLine !== false
+    const plan = await planReopen({
+      match: current,
+      queue,
+      online,
+      access,
+      readServerMatch: (seedKey) => apiFrom('matches').select('id, status, closed_at').eq('external_id', seedKey).maybeSingle()
+    })
+    cLogger.logHandler('handleReopenMatchClick', { matchId, plan: plan.kind })
+    switch (plan.kind) {
+      case 'local':
+        return handleReopenMatch()
+      case 'localUnsynced':
+        try {
+          for (const id of plan.supersedeIds || []) await db.sync_queue.update(id, { status: 'superseded' })
+        } catch (err) {
+          console.warn('[MatchEnd] Could not supersede the unsent approval:', err?.message)
+        }
+        return handleReopenMatch({ queue: false })
+      case 'serverOpen':
+        return handleReopenMatch({ queue: false, requeueSetAside: true, everClosed: isKnownClosedOnServer(current) })
+      case 'needsConnection':
+        showAlert(t('matchEnd.reopenNeedsConnection'), 'error')
+        return
+      case 'checkFailed':
+        showAlert(t('matchEnd.reopenCheckFailed'), 'error')
+        return
+      case 'adminReopen':
+        setReopenReason('')
+        setReopenError('')
+        setReopenDialog({ kind: 'admin', row: plan.row })
+        return
+      default:
+        setReopenDialog({ kind: 'adminOnly' })
+    }
+  }
+
+  const submitAdminReopen = async () => {
+    const row = reopenDialog?.row
+    const reason = reopenReason.trim()
+    if (!row?.id || reason.length < 3 || reopenBusy) return
+    setReopenBusy(true)
+    setReopenError('')
+    const { error } = await adminApi.reopenMatch(row.id, { reason })
+    setReopenBusy(false)
+    // Already open on the server (another admin was quicker): reopen here too
+    if (error && error.code !== 'OV_NOT_CLOSED') {
+      setReopenError(error.network || error.status === 0
+        ? t('matchEnd.reopenNeedsConnection')
+        : error.status === 403 ? t('manage.errors.forbidden') : t('matchEnd.reopenCheckFailed'))
+      return
+    }
+    setReopenDialog(null)
+    // The admin reopen voided the account approvals on the server (db/011)
+    await handleReopenMatch({ queue: false, voidApprovals: true, requeueSetAside: true, everClosed: true })
+  }
+
+  // Handle reopening match after approval - allows re-approval or adjustments
+  // queue: false when the server already has the match open (or never saw
+  // it closed): then nothing is sent.
+  // The account approvals stay, like the drawn signatures: the result has not
+  // changed, and the server keeps them on approved -> ended (db/011). A
+  // result change afterwards (Reopen last set, Manual adjustments) drops
+  // them. voidApprovals: the admin reopen, which voided them on the server.
+  // requeueSetAside: the server is known to have the match open, so the
+  // writes it refused as closed and this device set aside go out again.
+  // everClosed: the server had closed it (an admin reopened it): the copy
+  // remembers it, so Delete match removes only this copy (utils/matchReopen
+  // wasClosedOnServer; the server refuses the delete, db/039).
+  const handleReopenMatch = async ({ queue = true, voidApprovals = false, requeueSetAside = false, everClosed = false } = {}) => {
+    cLogger.logHandler('handleReopenMatch', { matchId, queue, voidApprovals, requeueSetAside })
+
+    try {
+      // Clear approval state in database (and the closed notice: the server
+      // has it open again, or never had it closed)
+      await db.matches.update(matchId, {
+        approved: false,
+        approvedAt: null,
+        status: 'ended', // Match is finished but not final
+        // the next approval queues its own PDF
+        scoresheetPdfMissing: null,
+        ...(match?.cloudBlock?.code === 'OV_MATCH_CLOSED' ? { cloudBlock: null } : {}),
+        ...(voidApprovals ? { accountApprovals: null } : {}),
+        ...(everClosed && !isLocalOnly(match) ? { everClosed: true } : {})
+      })
+      setServerClosed(false)
+
+      // The approval's scoresheet files still unsent are the old approval's:
+      // the new approval queues new ones (utils/scoresheetUploader)
+      if (!isLocalOnly(match) && match?.seed_key) {
+        const n = await supersedeUnsentScoresheetUploadsOf(db.sync_queue, match.seed_key)
+        if (n) console.log(`[MatchEnd] Reopened: ${n} scoresheet upload(s) of the earlier approval dropped`)
+      }
+
+      // The writes set aside when the server refused them as closed go out
+      // again (utils/matchHandover requeueClosedJobs), except a closing one
+      // and those of a local copy this one replaced
+      if (requeueSetAside && !isLocalOnly(match) && match?.seed_key) {
+        const n = await requeueClosedJobs(db, match.seed_key, { since: match.restoredAt || match.importedAt || null })
+        if (n) console.log(`[MatchEnd] Reopened on the server: ${n} write(s) set aside as closed queued again`)
+      }
+
+      // Mirror the un-approval to the cloud (approve queued status 'approved')
+      if (queue && !isLocalOnly(match) && match?.seed_key) {
+        await db.sync_queue.add({
+          resource: 'match',
+          action: 'update',
+          payload: {
+            id: match.seed_key,
+            status: 'ended',
+            approval: null
+          },
+          ts: new Date().toISOString(),
+          status: 'queued'
+        })
+      }
+
+      // Update local state
+      setIsApproved(false)
+    } catch (error) {
+      console.error('[MatchEnd] Error reopening match:', error)
+      showAlert(t('matchEnd.errorReopening', 'Error reopening match: ') + error.message, 'error')
+    }
+  }
+
+  // Handle reopening the last set for corrections
+  const handleReopenLastSet = async () => {
+    cLogger.logHandler('handleReopenLastSet', { matchId })
+    setShowReopenConfirm(false)
+    // Approved here or closed on the server: the button is not shown, and the
+    // handler refuses too (a confirmation left open while the match was
+    // approved). Closed on the server, every change would be refused.
+    if (finalActions) {
+      if (closedOnServer) showAlert(t('matchEnd.closedOnServer'), 'error')
+      return
+    }
+
+    try {
+      // Find the last (highest index) set
+      const allSets = await db.sets.where('matchId').equals(matchId).toArray()
+      if (allSets.length === 0) {
+        showAlert(t('matchEnd.noSetsReopen', 'No sets found to reopen'), 'error')
+        return
+      }
+      let lastSet = allSets.reduce((a, b) => (a.index > b.index ? a : b))
+
+      // A forfeit is REVERSED, not reopened as it stands: the last set is often
+      // one the forfeit created (0-25) and the forfeit set holds awarded points.
+      // Remove the created sets, the awarded points, the forfeit set_end and
+      // forfait events, reopen the forfeit set at its pre-forfeit score and
+      // give the played sets a default rewrote their score back
+      // (planForfeitReversal, tested). The match forfeit is read from its
+      // forfait event: a copy continued from the cloud has no forfeitTeam.
+      const allEvents = await db.events.where('matchId').equals(matchId).toArray()
+      const matchForfeit = matchForfeitOf(allEvents)
+      const fromSetIndex = matchForfeit?.setIndex != null
+        ? Math.min(lastSet.index, matchForfeit.setIndex)
+        : lastSet.index
+      const forfeitPlan = planForfeitReversal({ events: allEvents, sets: allSets, fromSetIndex })
+      if (forfeitPlan.hasForfeit) {
+        console.log('[MatchEnd] Reversing forfeit:', forfeitPlan)
+        const deleteIds = new Set(forfeitPlan.deleteEventIds)
+        await withActivityContext({ reason: 'forfeit_reversal' }, () => db.events.bulkDelete(forfeitPlan.deleteEventIds))
+        if (forfeitPlan.deleteSetIds.length > 0) await db.sets.bulkDelete(forfeitPlan.deleteSetIds)
+        for (const r of forfeitPlan.restoreSets) {
+          await db.sets.update(r.id, restoredSetWrites(r).local)
+        }
+        // Never send the removed rows to the cloud; the created sets already
+        // there are deleted (a finished one counted in the approved result)
+        const deletedSetIds = new Set(forfeitPlan.deleteSetIds.map(String))
+        const queued = await db.sync_queue.where('status').equals('queued').toArray()
+        const staleJobs = syncJobsForEvents(queued, deleteIds, match?.seed_key)
+        if (staleJobs.length > 0) await db.sync_queue.bulkDelete(staleJobs.map(j => j.id))
+        await queueSetDeletes(db, match, forfeitPlan.deleteSetIds)
+        if (!isLocalOnly(match) && match?.seed_key) {
+          for (const r of forfeitPlan.restoreSets) {
+            await db.sync_queue.add(setUpdateJob(match, r.id, restoredSetWrites(r).cloud))
+          }
+        }
+        // The set to reopen is the forfeit set, or else the last remaining set
+        const remainingSets = allSets.filter(x => !deletedSetIds.has(String(x.id)))
+        const target = forfeitPlan.reopenSetIndex != null
+          ? remainingSets.find(x => x.index === forfeitPlan.reopenSetIndex)
+          : (remainingSets.length ? remainingSets.reduce((a, b) => (a.index > b.index ? a : b)) : null)
+        if (target) lastSet = target
+      }
+
+      console.log('[MatchEnd] Reopening last set:', { id: lastSet.id, index: lastSet.index })
+
+      // The result changes: account approvals go (server: best-effort undo now,
+      // and the db/011 trigger voids them when status 'live' syncs)
+      await undoAccountApprovalsBestEffort(match)
+
+      // Mark the last set as not finished
+      await db.sets.update(lastSet.id, { finished: false, endTime: null })
+
+      // Set match status back to 'live' and clear all signature fields
+      await db.matches.update(matchId, {
+        status: 'live',
+        approved: false,
+        approvedAt: null,
+        // The match is being played on: it is no longer forfeited or stopped
+        forfeitTeam: null,
+        forfeitReason: null,
+        stoppedReason: null,
+        // Clear all post-match signatures - they must be re-collected after changes
+        ...clearedPostMatchSignatures()
+      })
+
+      // Delete the set_end event for this set to keep event log clean
+      // Find set_end event for this set
+      const setEndEvent = await db.events
+        .where({ matchId: matchId })
+        .filter(e => e.type === 'set_end' && e.setIndex === lastSet.index)
+        .first()
+
+      if (setEndEvent) {
+        // the game captains its set end had ended act again (domain/gameCaptainKeep.js)
+        const restoredCaptains = courtCaptainsRestored(setEndEvent.payload?.previousCourtCaptains)
+        if (Object.keys(restoredCaptains).length) await db.matches.update(matchId, restoredCaptains)
+        console.log('[MatchEnd] Deleting set_end event:', setEndEvent.id)
+        // The event history (db/eventHistory) voids the server's copy; the
+        // old 'event delete' job was never handled by the sync queue.
+        await withActivityContext({ reason: 'reopen_set' }, () => db.events.delete(setEndEvent.id))
+      }
+
+      // The set is played on: the match was not stopped there (Impossibility
+      // to resume), as the Scoreboard's Reopen set; through the event history
+      // too, and its insert never sent goes with it
+      const stoppedIds = (await db.events.where('matchId').equals(matchId).toArray())
+        .filter(e => e.type === 'match_stopped' && e.setIndex === lastSet.index)
+        .map(e => e.id)
+      if (stoppedIds.length > 0) {
+        await withActivityContext({ reason: 'reopen_set' }, () => db.events.bulkDelete(stoppedIds))
+        const queuedJobs = await db.sync_queue.where('status').equals('queued').toArray()
+        const stoppedJobs = syncJobsForEvents(queuedJobs, new Set(stoppedIds), match?.seed_key)
+        if (stoppedJobs.length > 0) await db.sync_queue.bulkDelete(stoppedJobs.map(j => j.id))
+      }
+
+      // Queue sync to Supabase for the set update
+      if (match?.seed_key) {
+        await db.sync_queue.add(setUpdateJob(match, lastSet.id, { finished: false, end_time: null }))
+
+        // Queue sync for match status update
+        await db.sync_queue.add({
+          resource: 'match',
+          action: 'update',
+          payload: {
+            id: match.seed_key,
+            status: 'live',
+            // the post-match signatures were synced as they were made: clear them there too
+            ...(isLocalOnly(match) ? {} : { signatures: signaturesPayload({ ...match, ...clearedPostMatchSignatures() }) })
+          },
+          ts: new Date().toISOString(),
+          status: 'queued'
+        })
+      }
+
+      showAlert(t('matchEnd.setReopened', { index: lastSet.index }), 'success')
+
+      // Navigate back to Scoreboard
+      if (onReopenLastSet) {
+        onReopenLastSet()
+      } else if (onGoHome) {
+        onGoHome()
+      }
+    } catch (error) {
+      console.error('[MatchEnd] Error reopening last set:', error)
+      showAlert(t('matchEnd.errorReopening', { error: error.message }), 'error')
+    }
+  }
+
+  return (
+    <MatchEndPageView>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', gap: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'center', width: '100%', flexWrap: 'wrap' }}>
+          <img src={ballImage} onError={(e) => e.target.src = ballFallback} alt="Volleyball" style={{ width: vmin(4), aspectRatio: '1' }} />
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-stone-900" style={{ margin: 0 }}>{t('matchEnd.title', 'Match complete')}</h1>
+          <img src={ballImage} onError={(e) => e.target.src = ballFallback} alt="Volleyball" style={{ width: vmin(4), aspectRatio: '1' }} />
+        </div>
+
+      </div>
+
+      {/* Winner, Results and Sanctions - All side by side on larger screens */}
+      <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'stretch' }}>
+        {/* Winner Card (.match-end-winner: stays white, its frozen readouts have no ground of their own) */}
+        <div className="card match-end-winner" style={{ flex: '1 1 280px', minWidth: '260px', paddingLeft: '20px', paddingRight: '20px', paddingBottom: '20px', display: 'flex', flexDirection: 'column' }}>
+          <div className={SECTION_HEAD}><h3 className={SECTION_TITLE}>{t('matchEnd.winner', 'Winner')}</h3></div>
+          {/* Team Name with background */}
+          <div style={{ background: 'var(--accent)', color: '#000', padding: '12px 20px', borderRadius: '8px', textAlign: 'center', fontSize: '22px', fontWeight: 700, marginBottom: '16px' }}>
+            {winner}
+          </div>
+          {/* Score and Set Results (.match-end-score: frozen readout type, RESTYLE-SPEC R1) */}
+          <div className="match-end-score" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '24px', flex: 1 }}>
+            {/* Main Score */}
+            <div style={{ fontSize: vmin(8), fontWeight: 800, color: 'var(--accent)' }}>
+              {homeSetsWon}<span style={{ color: 'var(--muted)' }}>:</span>{awaySetsWon}
+            </div>
+            {/* Set Scores - Vertical List */}
+            {/* at least 13 px: 1.5 vmin is under 6 px on a phone held upright */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: Math.max(13, vmin(1.5)) }}>
+              {finishedSets.map((set, idx) => {
+                const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
+                return (
+                  // Fixed em-width centred cells (em, not ch: ch grows with the bold winner digit and is narrower than tabular digits), so 7 and 25 centre on one line
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}>
+                    <span style={{ width: '2em', fontSize: Math.max(11, vmin(1.3)), color: 'var(--muted)', textAlign: 'center' }}>{romanNumerals[idx]}</span>
+                    <span style={{ width: '1.5em', flexShrink: 0, textAlign: 'center', fontWeight: set.homePoints > set.awayPoints ? 700 : 400, color: set.homePoints > set.awayPoints ? 'var(--foreground)' : 'var(--muted)' }}>
+                      {set.homePoints}
+                    </span>
+                    <span>:</span>
+                    <span style={{ width: '1.5em', flexShrink: 0, textAlign: 'center', fontWeight: set.awayPoints > set.homePoints ? 700 : 400, color: set.awayPoints > set.homePoints ? 'var(--foreground)' : 'var(--muted)' }}>
+                      {set.awayPoints}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Results Card */}
+        <div
+          className="card"
+          data-help-id="matchend-results-table"
+          style={{ flex: '1 1 280px', minWidth: '260px', cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
+          onClick={() => setZoomedSection('results')}
+        >
+          <div className={SECTION_HEAD}><h3 className={SECTION_TITLE}>{t('matchEnd.results', 'Results')}</h3></div>
+          <div className="ov-legacy-results" style={{ background: '#fff', borderRadius: '6px', overflow: 'hidden', border: '2px solid #333', flex: 1 }}>
+            <ResultsTable
+              teamAName={resultsTeamAName}
+              teamBName={resultsTeamBName}
+              setResults={calculateSetResults}
+              matchStart={matchStart}
+              matchEnd={matchEndTime}
+              matchDuration={matchDuration}
+              winnerLabel={winnerLabel}
+            />
+          </div>
+        </div>
+
+        {/* Sanctions Card */}
+        <div
+          className="card"
+          style={{ flex: '1 1 280px', minWidth: '260px', cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
+          onClick={() => setZoomedSection('sanctions')}
+        >
+          <div className={SECTION_HEAD}><h3 className={SECTION_TITLE}>{t('matchEnd.sanctions', 'Sanctions')}</h3></div>
+          <div className="ov-legacy-results" style={{ background: '#fff', borderRadius: '6px', overflow: 'hidden', border: '2px solid #333', flex: 1 }}>
+            <SanctionsTable
+              items={sanctionsInBox}
+              improperRequests={improperRequests}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Sponsors on clothing (domain/sponsors.js): each team's box, Team A first,
+          while the option is on or the match is marked; fixed once approved */}
+      {showSponsorBoxes && (
+        <div className="card" data-testid="matchend-sponsors" style={{ marginBottom: '16px' }}>
+          <div className={SECTION_HEAD}><h3 className={SECTION_TITLE}>{t('options.sponsorsOnClothing')}</h3></div>
+          <div className="ov-kit stack:flex-col" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            {(homeLabel === 'A' ? ['home', 'away'] : ['away', 'home']).map(team => {
+              const name = (team === 'home' ? homeTeam?.name : awayTeam?.name) || t(team === 'home' ? 'common.home' : 'common.away')
+              return (
+                <Checkbox
+                  key={team}
+                  variant="card"
+                  className="min-w-[220px] flex-1"
+                  data-testid={`matchend-sponsors-${team}`}
+                  aria-label={`${name} ${t('options.sponsorsOnClothing')}`}
+                  label={name}
+                  hint={t('options.sponsorsOnClothing')}
+                  checked={team === 'home' ? sponsors.home : sponsors.away}
+                  disabled={finalActions}
+                  onChange={e => handleSponsorsChange(team, e.target.checked)}
+                />
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Captain Signatures (none in an easy match: domain/easyMatch.js) */}
+      {!isApproved && match?.easy !== true && (
+        <div className="card" data-help-id="matchend-signatures" style={{ marginBottom: '16px' }}>
+          <div className={SECTION_HEAD}><h3 className={SECTION_TITLE}>{t('matchEnd.teamCaptains', 'Team captains')}</h3></div>
+          <div className="stack:flex-col" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <SignatureBox role="captain-a" />
+            <SignatureBox role="captain-b" />
+          </div>
+        </div>
+      )}
+
+      {/* Remarks Card */}
+      <div className="card" style={{ marginBottom: '16px' }}>
+        <div className={`ov-kit ${SECTION_HEAD}`}>
+          <h3 className={SECTION_TITLE}>{t('matchEnd.remarks', 'Remarks')}</h3>
+          {!finalActions && (
+            <Button
+              variant="secondary"
+              size="md"
+              className="relative font-medium after:absolute after:-inset-1 after:content-[''] stack:h-11 stack:px-4"
+              onClick={() => {
+                setRemarksText(match?.remarks || '')
+                setShowRemarksModal(true)
+              }}
+            >
+              {t('matchEnd.editRemarks', 'Edit remarks')}
+            </Button>
+          )}
+        </div>
+        <div style={{ background: '#fff', borderRadius: '6px', overflow: 'hidden', border: '2px solid #333', minHeight: '60px' }}>
+          <RemarksBox overflowSanctions={overflowSanctions} remarks={match?.remarks || ''} generated={autoRemarks} />
+        </div>
+        {/* Officials who sign a remark (a referee coach, ...): printed in the REMARKS box */}
+        {(remarksSignatures.length > 0 || !signaturesLocked) && (
+          <div className="ov-kit" style={{ marginTop: '12px' }} data-testid="remarks-signatures">
+            {remarksSignatures.length > 0 && (
+              <div className="flex flex-wrap gap-3" style={{ marginBottom: '10px' }}>
+                {remarksSignatures.map((sig, i) => (
+                  <div key={i} className="flex items-center gap-3 rounded-lg border border-stone-200 bg-white px-3 py-2" data-testid="remarks-signature">
+                    <img src={sig.image} alt={remarksSignatureCaption(sig)} className="ov-ink" style={{ height: '40px', maxWidth: '120px', objectFit: 'contain' }} />
+                    <span className="text-sm text-stone-700">{remarksSignatureCaption(sig)}</span>
+                    {!signaturesLocked && (
+                      <Button variant="danger-outline" size="sm" onClick={() => handleRemoveRemarksSignature(i)}>
+                        {t('common.remove', 'Remove')}
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            {!signaturesLocked && remarksSignatures.length < MAX_REMARKS_SIGNATURES && (
+              <Button
+                variant="secondary"
+                size="md"
+                data-testid="remarks-signature-add"
+                onClick={() => setRemarksSigForm({ role: t('matchEnd.remarksSignature.defaultRole', 'Referee coach'), name: '' })}
+              >
+                {t('matchEnd.remarksSignature.add', 'Add a signature to the remarks')}
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Technical remarks (owner 22.11.2026): kept with the match, never printed */}
+      {technicalOn && (
+        <div className="card" style={{ marginBottom: '16px' }} data-testid="matchend-technical-remarks">
+          <div className={`ov-kit ${SECTION_HEAD}`}>
+            <div className="min-w-0">
+              <h3 className={SECTION_TITLE}>{t('matchEnd.technicalRemarks.title', 'Technical remarks')}</h3>
+              <p className="m-0 text-xs text-stone-500">{t('matchEnd.technicalRemarks.hint', 'Not printed on the scoresheet')}</p>
+            </div>
+            {!finalActions && (
+              <Button
+                variant="secondary"
+                size="md"
+                className="relative font-medium after:absolute after:-inset-1 after:content-[''] stack:h-11 stack:px-4"
+                data-testid="matchend-technical-remark-add"
+                onClick={() => setTechnicalText('')}
+              >
+                {t('matchEnd.technicalRemarks.add', 'Add technical remark')}
+              </Button>
+            )}
+          </div>
+          <div className="ov-kit">
+            <TechnicalRemarksList items={technicalList} emptyText={t('matchEnd.technicalRemarks.empty', 'No technical remarks.')} />
+          </div>
+        </div>
+      )}
+
+      {/* Other Signatures - At the bottom */}
+      {!isApproved && captainsDone && match?.easy !== true && (
+        <div className="card" style={{ marginBottom: '16px' }}>
+          <div className={SECTION_HEAD}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <h3 className={SECTION_TITLE}>{t('matchEnd.officialSignatures', 'Official signatures')}</h3>
+              {/* Whose turn it is: a state, so a round pill (sky = pending,
+                  emerald once every signature is in). */}
+              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${currentStep === 'complete' ? 'bg-emerald-100 text-emerald-800' : 'bg-sky-100 text-sky-800'}`}>
+                {currentStep === 'asst-scorer' && t('matchEnd.assistantScorer', 'Assistant scorer')}
+                {currentStep === 'scorer' && t('matchEnd.scorer', 'Scorer')}
+                {currentStep === 'ref2' && t('matchEnd.referee2', '2nd referee')}
+                {currentStep === 'ref1' && t('matchEnd.referee1', '1st referee')}
+                {currentStep === 'complete' && t('matchEnd.allSignaturesCollected', 'All signatures collected')}
+              </span>
+            </div>
+          </div>
+
+          <div className="stack:flex-col" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            {/* Assistant Scorer (if present) */}
+            {hasAsstScorer && (
+              <SignatureBox role="asst-scorer" disabled={false} />
+            )}
+
+            {/* Scorer */}
+            <SignatureBox role="scorer" disabled={hasAsstScorer && !asstScorerSigned} />
+
+            {/* 2nd Referee (if present) - can sign after scorer has signed */}
+            {hasRef2 && (
+              <SignatureBox role="ref2" disabled={!scorerSigned} />
+            )}
+
+            {/* 1st Referee (final) - can sign after ref2 (if present) or after scorer (if no ref2) */}
+            <SignatureBox role="ref1" disabled={(hasRef2 && !ref2Signed) || !scorerSigned} />
+          </div>
+        </div>
+      )}
+
+      {/* The server refused this match for good: say why it does not sync */}
+      {match?.cloudBlock && <CloudBlockNotice match={match} className="mb-3" />}
+
+      {/* Action Buttons */}
+      {/* Page actions: the emerald commit fills the line; the destructive
+          reopen is the soft red; the rest are outline / toolbar. All h-11
+          (courtside, >= 44px). */}
+      {/* (a refusal as closed says so in the notice above already) */}
+      {closedOnServer && !isApproved && match?.cloudBlock?.code !== 'OV_MATCH_CLOSED' && (
+        <p className={NOTICE.info} data-testid="matchend-closed-on-server" style={{ margin: '0 0 12px 0' }}>
+          {t('matchEnd.closedOnServer')}
+        </p>
+      )}
+      {/* A result no set or match ends with: corrected before the approval */}
+      {!finalActions && resultProblems.length > 0 && (
+        <div className={NOTICE.error} role="alert" data-testid="matchend-result-issues" style={{ margin: '0 0 12px 0' }}>
+          <p className="font-semibold" style={{ margin: 0 }}>{t('matchEnd.resultIssues.title')}</p>
+          <ul className="list-disc pl-5" style={{ margin: '4px 0' }}>
+            {resultProblems.map((issue, i) => <li key={i}>{issueText(issue, t)}</li>)}
+          </ul>
+          <p style={{ margin: 0 }}>{t('matchEnd.resultIssues.hint')}</p>
+        </div>
+      )}
+      {/* The scoresheet's consistency checks (never printed): seen before the approval */}
+      {!finalActions && sheetWarnings.length > 0 && (
+        <div className={NOTICE.warning} data-testid="matchend-sheet-warnings" style={{ margin: '0 0 12px 0' }}>
+          <p className="font-semibold" style={{ margin: 0 }}>{t('matchEnd.sheetWarnings.title')}</p>
+          <ul className="list-disc pl-5" style={{ margin: '4px 0 0' }}>
+            {sheetWarnings.map((w, i) => <li key={i}>{w}</li>)}
+          </ul>
+        </div>
+      )}
+      {/* Approved without the official PDF on its way to the server */}
+      {finalActions && pdfMissing && (
+        <div className={`ov-kit ${NOTICE.warning}`} data-testid="matchend-pdf-missing" style={{ margin: '0 0 12px 0', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          <span style={{ flex: '1 1 240px' }}>{t('matchEnd.pdfMissing.notice')}</span>
+          <Button variant="secondary" size="md" onClick={handleCreateMissingPdf} loading={creatingPdf} disabled={creatingPdf || isClosing}>
+            {t('matchEnd.pdfMissing.create')}
+          </Button>
+        </div>
+      )}
+      <div className="ov-kit" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+        {finalActions ? (
+          // Post-approval buttons: Close Match and Reopen Match
+          <>
+            <Button
+              variant="positive"
+              size="xl"
+              onClick={handleCloseMatch}
+              disabled={isClosing || creatingPdf}
+              loading={isClosing}
+              style={{ flex: 1, minWidth: '150px' }}
+            >
+              {t('matchEnd.closeMatch', 'Close match')}
+            </Button>
+            <Button
+              variant="danger-soft"
+              size="xl"
+              onClick={handleReopenMatchClick}
+              disabled={isClosing}
+              className="px-5"
+            >
+              {t('matchEnd.reopenMatch', 'Reopen match')}
+            </Button>
+          </>
+        ) : !showReopenConfirm && (
+          // Pre-approval buttons: Confirm and Approve, Reopen Last Set, Manual Adjustments, Scoresheet
+          <>
+            <Button
+              variant="positive"
+              size="xl"
+              onClick={handleApprove}
+              disabled={isSaving || ((!match.test || match.global === true) && !allSignaturesDone) || resultBlocked}
+              loading={isSaving}
+              data-help-id="matchend-export-json"
+              // at least h-11, taller when Android's larger text wraps it
+              // (it touched the edges at 1.3 in a fixed 44px)
+              className="h-auto min-h-11 py-2 text-center leading-tight disabled:cursor-not-allowed"
+              style={{ flex: 1, minWidth: '150px' }}
+            >
+              {isSaving ? t('matchEnd.downloading', 'Downloading...') : t('matchEnd.approveParams', 'Confirm and approve')}
+            </Button>
+            <Button
+              variant="danger-soft"
+              size="xl"
+              onClick={() => setShowReopenConfirm(true)}
+              data-help-id="matchend-reopen-set"
+              // the size of Confirm and approve beside it (the owner, 2026-10-21)
+              className="h-auto min-h-11 px-5 py-2 text-center leading-tight"
+              style={{ flex: 1, minWidth: '150px' }}
+            >
+              {t('matchEnd.reopenLastSet', 'Reopen last set')}
+            </Button>
+            <Button
+              variant="secondary"
+              size="xl"
+              onClick={onManualAdjustments}
+              className="px-5 font-medium"
+            >
+              {t('corrections.title', 'Corrections')}
+            </Button>
+          </>
+        )}
+        {/* The scoresheet, before and after approval (the server closes the
+            match at approval; Close match then removes it from this device) */}
+        {(finalActions || !showReopenConfirm) && (
+          <div data-help-id="matchend-export-pdf">
+            <MenuList
+              buttonLabel={<span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><FileTextIcon size={15} />{t('matchEnd.scoresheet')}</span>}
+              buttonClassName={`${TOOLBAR_TRIGGER} px-5`}
+              showArrow={true}
+              position="right"
+              vertical="top"
+              items={[
+                { key: 'preview', icon: <SearchIcon />, label: t('matchEnd.preview', 'Preview'), onClick: () => handleShowScoresheet('preview') },
+                { key: 'print', icon: <PrinterIcon />, label: t('matchEnd.print', 'Print'), onClick: () => handleShowScoresheet('print') },
+                { key: 'save', icon: <SaveIcon />, label: t('matchEnd.savePdf', 'Save PDF'), onClick: () => handleShowScoresheet('save') },
+                ...(exportFiles?.pdf ? [{ key: 'share-pdf', icon: <ShareIcon />, label: t('matchEnd.sharePdf', 'Share PDF'), onClick: () => handleShareFile(exportFiles.pdf) }] : []),
+                ...(exportFiles?.zip ? [{ key: 'share-zip', icon: <ShareIcon />, label: t('matchEnd.shareAllFiles', 'Share all files (ZIP)'), onClick: () => handleShareFile(exportFiles.zip) }] : []),
+                { key: 'logs', icon: <ChartIcon />, label: t('matchEnd.downloadLogs', 'Download logs'), onClick: handleDownloadLogs }
+              ]}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Download Progress Modal. Above the header and its open menu (the
+          header is z 1000): nothing behind it can be pressed. Cancel while
+          the PDF is made; when no PDF came, the scorer chooses. */}
+      {downloadProgress && (
+        <div data-testid="export-modal" className={DIALOG_OVERLAY} style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10000
+        }}>
+          {pdfFailure ? (
+            <div role="alertdialog" aria-modal="true" aria-labelledby="ov-export-failed-title" data-testid="export-pdf-failed" className={`ov-kit ${DIALOG_PANEL}`} style={{
+              padding: '24px',
+              maxWidth: '460px',
+              width: '90%'
+            }}>
+              <h3 id="ov-export-failed-title" className={DIALOG_TITLE} style={{ margin: '0 0 8px 0' }}>{t('matchEnd.export.noPdfTitle')}</h3>
+              <p className="text-sm text-stone-700" style={{ margin: '0 0 4px 0' }}>
+                {t(`matchEnd.export.reason.${['closed', 'stalled', 'timeout', 'blocked'].includes(pdfFailure.reason) ? pdfFailure.reason : 'failed'}`)}
+              </p>
+              <p className="text-xs text-stone-500" style={{ margin: '0 0 20px 0' }}>{t(pdfFailure.canSkip ? 'matchEnd.export.cancelKeepsUnapproved' : 'matchEnd.pdfMissing.cancelKeepsMissing')}</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: '8px' }}>
+                <Button variant="secondary" size="md" onClick={() => choosePdfFailure('cancel')}>{t('matchEnd.export.cancel')}</Button>
+                {pdfFailure.canSkip && (
+                  <Button variant="secondary" size="md" onClick={() => choosePdfFailure('skip')}>{t('matchEnd.export.approveWithoutPdf')}</Button>
+                )}
+                <Button variant="positive" size="md" onClick={() => choosePdfFailure('retry')} autoFocus>{t('matchEnd.export.retry')}</Button>
+              </div>
+            </div>
+          ) : (
+            <div role="status" aria-live="polite" className={`ov-kit ${DIALOG_PANEL}`} style={{
+              padding: '24px',
+              maxWidth: '400px',
+              width: '90%',
+              textAlign: 'center'
+            }}>
+              <h3 className={DIALOG_TITLE} style={{ margin: '0 0 16px 0' }}>{t('matchEnd.preparingExport', 'Preparing match export...')}</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px' }}>
+                {!downloadProgress.pdfOnly && (
+                  <div className="text-sm" style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
+                    <span className={downloadProgress.json ? 'text-emerald-600' : 'text-stone-400'} style={{ fontSize: '20px' }}>{downloadProgress.json ? '✓' : '⏳'}</span>
+                    <span className={downloadProgress.json ? 'font-medium text-emerald-700' : 'text-stone-500'}>Match Data (JSON)</span>
+                  </div>
+                )}
+                <div className="text-sm" style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
+                  <span className={downloadProgress.pdf ? 'text-emerald-600' : 'text-stone-400'} style={{ fontSize: '20px' }}>{downloadProgress.pdf ? '✓' : '⏳'}</span>
+                  <span className={downloadProgress.pdf ? 'font-medium text-emerald-700' : 'text-stone-500'}>{t('matchEnd.generatingPdf', 'Generating scoresheet (PDF)')}</span>
+                </div>
+              </div>
+              <p className="text-xs text-stone-500" style={{ margin: 0 }}>
+                {downloadProgress.json && downloadProgress.pdf
+                  ? t('matchEnd.creatingZip', 'Creating ZIP and uploading to cloud...')
+                  : t('matchEnd.export.keepWindowOpen')}
+              </p>
+              {!downloadProgress.pdf && (
+                <div style={{ display: 'flex', justifyContent: 'center', marginTop: '16px' }}>
+                  <Button variant="secondary" size="md" onClick={() => exportAbortRef.current?.abort()} data-testid="export-cancel">{t('matchEnd.export.cancel')}</Button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Reopen Last Set Confirmation Modal */}
+      {showReopenConfirm && (
+        <div className={DIALOG_OVERLAY} style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999
+        }}>
+          <div role="dialog" aria-modal="true" className={DIALOG_PANEL} style={{
+            padding: '24px',
+            maxWidth: '450px',
+            width: '90%'
+          }}>
+            <h3 className={DIALOG_TITLE} style={{ margin: '0 0 8px 0' }}>{t('matchEnd.reopenSetConfirmTitle', 'Reopen last set?')}</h3>
+            <p className="text-sm text-stone-600" style={{ margin: '0 0 12px 0' }}>
+              {t('matchEnd.reopenSetConfirmBody', 'This will reopen the last set for corrections and allow you to continue scoring.')}
+            </p>
+            <p className={NOTICE.warning} style={{ margin: '0 0 24px 0' }}>
+              {t('matchEnd.reopenSetWarning', 'Warning: All collected signatures will be cleared and must be collected again after approval.')}
+            </p>
+            {/* Footer: Cancel left, the destructive commit right (red). */}
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <Button
+                variant="secondary"
+                size="xl"
+                onClick={() => setShowReopenConfirm(false)}
+                className="font-medium"
+                style={{ flex: 1 }}
+              >
+                {t('matchEnd.cancel', 'Cancel')}
+              </Button>
+              <Button
+                variant="danger"
+                size="xl"
+                onClick={handleReopenLastSet}
+                style={{ flex: 1 }}
+              >
+                {t('matchEnd.yesReopen', 'Yes, reopen set')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Zoom Modal for Results/Sanctions */}
+      {zoomedSection && (
+        <div
+          className="bg-stone-900/50 backdrop-blur-sm"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '20px'
+          }}
+          {...backdropDismiss(() => setZoomedSection(null))}
+        >
+          <div
+            className="ov-legacy-results"
+            style={{
+              background: '#fff',
+              borderRadius: '12px',
+              maxWidth: '95vw',
+              maxHeight: '90vh',
+              overflow: 'auto',
+              transform: 'scale(1.2)',
+              transformOrigin: 'center center'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {zoomedSection === 'results' && (
+              <ResultsTable
+                teamAName={resultsTeamAName}
+                teamBName={resultsTeamBName}
+                setResults={calculateSetResults}
+                matchStart={matchStart}
+                matchEnd={matchEndTime}
+                matchDuration={matchDuration}
+                winnerLabel={winnerLabel}
+              />
+            )}
+            {zoomedSection === 'sanctions' && (
+              <SanctionsTable
+                items={sanctionsInBox}
+                improperRequests={improperRequests}
+              />
+            )}
+          </div>
+          {/* Round icon close: white on the dimmed page, 44px. */}
+          <button
+            onClick={() => setZoomedSection(null)}
+            aria-label={t('common.close', 'Close')}
+            title={t('common.close', 'Close')}
+            className="h-11 w-11 inline-flex items-center justify-center rounded-full bg-white text-stone-700 shadow-lg hover:bg-stone-100 transition-colors"
+            style={{
+              position: 'absolute',
+              top: '20px',
+              right: '20px',
+              padding: 0,
+              border: 'none'
+            }}
+          >
+            <X size={20} aria-hidden="true" />
+          </button>
+        </div>
+      )}
+
+      {/* Signature Modal - Added open prop */}
+      <SignaturePad
+        open={!!openSignature}
+        title={openSignature ? getSignatureLabel(openSignature) : ''}
+        existingSignature={openSignature ? getSignatureData(openSignature) : null}
+        onSave={(signatureData, meta) => handleSaveSignature(openSignature, signatureData, meta)}
+        closeOnSave={false}
+        onClose={() => setOpenSignature(null)}
+        phone={openSignature ? {
+          // Approved, closed or final: no phone session can start
+          locked: signaturesLocked,
+          lockedReason: t('matchEnd.signatureLocked'),
+          slot: SLOT_OF_ROLE[openSignature],
+          matchKey: match.seed_key || match.seedKey || null,
+          gamePin: match.gamePin || null,
+          context: phoneSignContext({
+            match,
+            slot: SLOT_OF_ROLE[openSignature],
+            homeTeam,
+            awayTeam,
+            homeCaptain,
+            awayCaptain,
+            lang: i18n.language,
+            fallbackHome: t('common.home'),
+            fallbackAway: t('common.away')
+          })
+        } : null}
+      />
+
+      {/* Approve with an account (scorer, 2nd and 1st referee) */}
+      <AccountApprovalDialog
+        open={!!approvalRole}
+        onClose={() => setApprovalRole(null)}
+        match={match}
+        role={approvalRole}
+        roleLabel={approvalRole ? getSignatureLabel(approvalRole) : ''}
+        sets={sets}
+        userEmail={authCtx?.user?.email || ''}
+        onApproved={handleAccountApproved}
+      />
+
+      {/* A signature in the REMARKS box: who signs, then the pad */}
+      {remarksSigForm && !remarksSigPad && (
+        <Modal title={t('matchEnd.remarksSignature.title', 'Signature in the remarks')} open={true} onClose={() => setRemarksSigForm(null)} width={460}>
+          <div className="ov-kit grid gap-4" style={{ padding: '8px 0 0' }}>
+            <p className="text-sm text-stone-600">{t('matchEnd.remarksSignature.intro', 'For an official who has no signature box on the scoresheet, such as a referee coach. The signature is printed in the remarks.')}</p>
+            <Field label={t('matchEnd.remarksSignature.role', 'Role')}>
+              <Input id="remarks-signature-role" value={remarksSigForm.role} maxLength={REMARKS_ROLE_MAX} onChange={e => setRemarksSigForm(f => ({ ...f, role: e.target.value }))} />
+            </Field>
+            <Field label={t('matchEnd.remarksSignature.name', 'Name')}>
+              <Input id="remarks-signature-name" value={remarksSigForm.name} maxLength={REMARKS_NAME_MAX} onChange={e => setRemarksSigForm(f => ({ ...f, name: e.target.value }))} autoFocus />
+            </Field>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" size="xl" onClick={() => setRemarksSigForm(null)}>{t('common.cancel', 'Cancel')}</Button>
+              <Button variant="positive" size="xl" data-testid="remarks-signature-sign" disabled={!remarksSigForm.role.trim()} onClick={() => setRemarksSigPad(true)}>
+                {t('matchEnd.remarksSignature.sign', 'Sign')}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+      <SignaturePad
+        open={!!remarksSigForm && remarksSigPad}
+        title={remarksSigForm ? remarksSignatureCaption({ role: remarksSigForm.role.trim(), name: remarksSigForm.name.trim() }) : ''}
+        onSave={async (signatureData) => {
+          const next = remarksSigForm && signatureData ? withRemarksSignature(match?.remarksSignatures, { ...remarksSigForm, image: signatureData }) : null
+          if (next && !signaturesLocked) await saveMatchSignature(db, matchId, 'remarksSignatures', next)
+        }}
+        onClose={() => { setRemarksSigPad(false); setRemarksSigForm(null) }}
+        // no "Sign on phone": the phone page and the server know the sheet's own boxes only
+        phone={null}
+      />
+
+      {/* Add technical remark */}
+      {technicalText !== null && (
+        <Modal
+          title={t('matchEnd.technicalRemarks.add', 'Add technical remark')}
+          open={true}
+          onClose={() => { if (!technicalBusy) setTechnicalText(null) }}
+          width={560}
+        >
+          <div className="ov-kit space-y-3" style={{ padding: '8px 0 0' }}>
+            <p className="m-0 text-sm text-stone-600">{t('matchEnd.technicalRemarks.intro', 'Kept with the match and sent with the final scoresheet, not printed on it. The signatures stay.')}</p>
+            <Textarea
+              rows={4}
+              prose
+              aria-label={t('matchEnd.technicalRemarks.title', 'Technical remarks')}
+              data-testid="matchend-technical-remark-text"
+              value={technicalText}
+              onChange={e => setTechnicalText(e.target.value)}
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" size="xl" className="font-medium" disabled={technicalBusy} onClick={() => setTechnicalText(null)}>
+                {t('common.cancel', 'Cancel')}
+              </Button>
+              <Button variant="positive" size="xl" loading={technicalBusy} disabled={!oneLine(technicalText)} data-testid="matchend-technical-remark-save" onClick={handleSaveTechnicalRemark}>
+                {t('common.save', 'Save')}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Remarks Modal */}
+      {showRemarksModal && (
+        <Modal
+          title={t('matchEnd.editRemarks', 'Edit remarks')}
+          open={true}
+          onClose={() => {
+            setShowRemarksModal(false)
+            setRemarksText('')
+          }}
+          width={600}
+        >
+          <div className="ov-kit" style={{ padding: '8px 0 0' }}>
+            <textarea
+              ref={remarksTextareaRef}
+              placeholder={t('matchEnd.remarksPlaceholder', 'Record match remarks...')}
+              aria-label={t('matchEnd.remarks', 'Remarks')}
+              // the official sheet's remarks: a paired phone's text is shown as it arrives (Pair a phone)
+              data-ov-phone="official"
+              value={remarksText}
+              onChange={e => setRemarksText(e.target.value)}
+              className="w-full px-3 py-2 text-sm rounded-lg border border-stone-300 bg-white text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-red-500 resize-y"
+              style={{
+                minHeight: '200px'
+              }}
+              autoFocus
+            />
+            <div style={{ marginTop: '16px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <Button
+                variant="secondary"
+                size="xl"
+                className="font-medium"
+                onClick={() => {
+                  setShowRemarksModal(false)
+                  setRemarksText('')
+                }}
+              >
+                {t('common.cancel', 'Cancel')}
+              </Button>
+              <Button
+                variant="positive"
+                size="xl"
+                onClick={handleSaveRemarks}
+              >
+                {t('common.save', 'Save')}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Reopen a match the server has closed: admins give a reason */}
+      <KitModal
+        open={reopenDialog?.kind === 'admin'}
+        onClose={() => { if (!reopenBusy) setReopenDialog(null) }}
+        decision
+        dismissible={false}
+        title={t('matchEnd.reopenAdminTitle')}
+        closeLabel={t('common.close', 'Close')}
+        footer={<>
+          <Button variant="secondary" size="lg" onClick={() => setReopenDialog(null)} disabled={reopenBusy}>{t('common.cancel', 'Cancel')}</Button>
+          <Button variant="danger" size="lg" loading={reopenBusy} disabled={reopenReason.trim().length < 3 || reopenBusy} onClick={submitAdminReopen} data-testid="admin-reopen-confirm">
+            {t('manage.matches.reopen')}
+          </Button>
+        </>}
+      >
+        <p className="mb-3 text-sm text-stone-600">{t('matchEnd.reopenAdminBody')}</p>
+        <label className="mb-1 block text-xs font-medium text-stone-600" htmlFor="ov-reopen-reason">{t('matchEnd.reopenReason')}</label>
+        <Textarea id="ov-reopen-reason" rows={3} value={reopenReason} onChange={e => { setReopenReason(e.target.value); setReopenError('') }} maxLength={500} required />
+        {reopenError && <p role="alert" className="mt-1.5 text-xs font-medium text-red-600">{reopenError}</p>}
+      </KitModal>
+
+      {/* Closed on the server and this account is no admin */}
+      <KitModal
+        open={reopenDialog?.kind === 'adminOnly'}
+        onClose={() => setReopenDialog(null)}
+        decision
+        title={t('matchEnd.reopenAdminOnlyTitle')}
+        closeLabel={t('common.close', 'Close')}
+        footer={<Button variant="dark" size="lg" onClick={() => setReopenDialog(null)}>{t('common.close', 'Close')}</Button>}
+      >
+        <p className="text-sm text-stone-600" data-testid="reopen-admin-only">
+          {t('matchEnd.reopenAdminOnlyBody', { game: data?.match?.gameN ?? data?.match?.game_n ?? '' })}
+        </p>
+      </KitModal>
+    </MatchEndPageView>
+  )
+}

@@ -1,0 +1,231 @@
+// The club administration export of VolleyManager, read in the browser
+// (db/024, docs/club-licences-spec.md): small made-up workbooks written with
+// jszip here, in the layout of a real export (title row, blank row, header
+// row 3, then one row per person, many columns that must be ignored, the
+// date of birth among them: db/048, owner 2026-11-19 "ONLY licence number").
+import { describe, it, expect } from 'vitest'
+import JSZip from 'jszip'
+import { readLicenceExport, licencePeopleFromRows, normalizeHeader, LicenceExportError } from '../vmLicenceExport'
+
+const serialOf = (iso) => (Date.UTC(...iso.split('-').map((n, i) => Number(n) - (i === 1 ? 1 : 0))) - Date.UTC(1899, 11, 30)) / 86400000
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+const col = (i) => { let s = ''; for (let n = i + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s; return s }
+
+/**
+ * A minimal .xlsx: `rows` of cells; a cell is a string (a shared string, or
+ * inline with { inline: true }), a number, { date: serial } (a number with a
+ * date style), { d: 'ISO' } (t="d"), { str: '...' } (t="str"), or null.
+ */
+async function xlsx(rows, { inline = false, date1904 = false, sheetName = 'Sheet1', sheetFile = 'sheet1.xml' } = {}) {
+  const shared = []
+  const sharedIndex = new Map()
+  const body = rows.map((row, r) => {
+    const cells = row.map((v, c) => {
+      if (v == null) return ''
+      const ref = `${col(c)}${r + 1}`
+      if (typeof v === 'number') return `<c r="${ref}"><v>${v}</v></c>`
+      if (v.date !== undefined) return `<c r="${ref}" s="1"><v>${v.date}</v></c>`
+      if (v.d !== undefined) return `<c r="${ref}" t="d"><v>${esc(v.d)}</v></c>`
+      if (v.str !== undefined) return `<c r="${ref}" t="str"><f>A1</f><v>${esc(v.str)}</v></c>`
+      if (inline) return `<c r="${ref}" t="inlineStr"><is><r><t>${esc(v)}</t></r></is></c>`
+      if (!sharedIndex.has(v)) { sharedIndex.set(v, shared.length); shared.push(v) }
+      return `<c r="${ref}" t="s"><v>${sharedIndex.get(v)}</v></c>`
+    }).join('')
+    return `<row r="${r + 1}">${cells}</row>`
+  }).join('')
+  const zip = new JSZip()
+  zip.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>')
+  zip.file('_rels/.rels', '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>')
+  zip.file('xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${date1904 ? '<workbookPr date1904="1"/>' : ''}<sheets><sheet name="${sheetName}" sheetId="1" r:id="rId7"/></sheets></workbook>`)
+  zip.file('xl/_rels/workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId7" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/${sheetFile}"/><Relationship Id="rId8" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/><Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`)
+  zip.file('xl/styles.xml', '<?xml version="1.0" encoding="UTF-8"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><cellXfs count="2"><xf numFmtId="0"/><xf numFmtId="14" applyNumberFormat="1"/></cellXfs></styleSheet>')
+  zip.file('xl/sharedStrings.xml', `<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${shared.length}" uniqueCount="${shared.length}">${shared.map((s) => `<si><t xml:space="preserve">${esc(s)}</t></si>`).join('')}</sst>`)
+  zip.file(`xl/worksheets/${sheetFile}`, `<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${body}</sheetData></worksheet>`)
+  return zip.generateAsync({ type: 'uint8array' })
+}
+
+// Made-up people of VBC Musterdorf (no real person), with what an export
+// also carries and must never leave the reader
+const ITALIAN = [
+  ['Lista dei giocatori · VBC Musterdorf'],
+  [],
+  ['N. SV', 'Cognome', 'Nome', 'Data di nascita', 'Sesso', 'Nazionalità', 'FdO', 'Categoria', 'Indirizzo E-mail', 'N. telefono', 'Indirizzo'],
+  [100001, 'Beispiel', 'Anna', { date: serialOf('2004-05-06') }, 'D', 'Svizzera', 'FdO', 'U23', 'anna@example.ch', '+41 00 000 00 01', 'Musterweg 1'],
+  [100002, 'Muster', 'Lea Sofia', { date: serialOf('2006-01-31') }, 'D', 'Svizzera', '', 'U20', 'lea@example.ch', '+41 00 000 00 02', 'Musterweg 2'],
+  [100003, 'Probe', 'Marco', { date: serialOf('2001-11-02') + 0.5 }, 'U', 'Italia', '', 'Senior', 'marco@example.ch', '+41 00 000 00 03', 'Musterweg 3']
+]
+
+describe('headers', () => {
+  it('headers: lowercase, trimmed, spaces collapsed, no dots or colons', () => {
+    expect(normalizeHeader(' N. SV ')).toBe('n sv')
+    expect(normalizeHeader('SV-Nr.')).toBe('sv-nr')
+    expect(normalizeHeader('Date  of birth:')).toBe('date of birth')
+    expect(normalizeHeader('N° SV')).toBe('n° sv')
+  })
+})
+
+describe('readLicenceExport', () => {
+  it('Italian: the four fields only, nothing else of the row (no date of birth)', async () => {
+    const r = await readLicenceExport(await xlsx(ITALIAN))
+    expect(r.language).toBe('it')
+    expect(r.rows).toBe(3)
+    expect(r.skipped).toBe(0)
+    expect(r.people).toEqual([
+      { sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', gender: 'f' },
+      { sv_number: '100002', last_name: 'Muster', first_name: 'Lea Sofia', gender: 'f' },
+      { sv_number: '100003', last_name: 'Probe', first_name: 'Marco', gender: 'm' }
+    ])
+    expect(Object.keys(r).sort()).toEqual(['language', 'people', 'rows', 'skipped'])
+    const text = JSON.stringify(r)
+    for (const leak of ['example.ch', '+41', 'Musterweg', 'Svizzera', 'Italia', 'U23', 'FdO', String(Math.floor(serialOf('2004-05-06'))), '2004', 'dob']) expect(text).not.toContain(leak)
+  })
+
+  it('German: SV-Nr., Name = last name, Vorname, inline strings; the Geburtsdatum column is never read', async () => {
+    const r = await readLicenceExport(await xlsx([
+      ['Spielerliste'],
+      [],
+      ['SV-Nr.', 'Name', 'Vorname', 'Geburtsdatum', 'Geschlecht', 'Nationalität', 'E-Mail-Adresse', 'Telefonnummer'],
+      ['200001', 'Testmann', 'Noah', '03.04.2007', 'M', 'Schweiz', 'noah@example.ch', '000'],
+      [200002, 'Muster-Probe', 'Mia', { d: '2005-12-24T00:00:00' }, 'W', 'Schweiz', 'mia@example.ch', '000'],
+      [200003, '  Beispiel  ', '  ', null, 'F', null, null, null]
+    ], { inline: true }))
+    expect(r.language).toBe('de')
+    expect(r.people).toEqual([
+      { sv_number: '200001', last_name: 'Testmann', first_name: 'Noah', gender: 'm' },
+      { sv_number: '200002', last_name: 'Muster-Probe', first_name: 'Mia', gender: 'f' },
+      { sv_number: '200003', last_name: 'Beispiel', first_name: null, gender: 'f' }
+    ])
+    expect(JSON.stringify(r)).not.toMatch(/2007|2005|dob/)
+  })
+
+  it('French: Nom is the last name and Prénom the first name (not the Italian Nome)', async () => {
+    const r = await readLicenceExport(await xlsx([
+      ['Liste des joueurs'],
+      [],
+      ['N° SV', 'Nom', 'Prénom', 'Date de naissance', 'Sexe', 'Adresse e-mail'],
+      [300001, 'Exemple', 'Chloé', { date: serialOf('2003-07-14') }, 'F', 'chloe@example.ch'],
+      [300002, 'Modèle', 'Hugo', { str: '2002-02-02' }, 'H', 'hugo@example.ch']
+    ]))
+    expect(r.language).toBe('fr')
+    expect(r.people).toEqual([
+      { sv_number: '300001', last_name: 'Exemple', first_name: 'Chloé', gender: 'f' },
+      { sv_number: '300002', last_name: 'Modèle', first_name: 'Hugo', gender: 'm' }
+    ])
+    // a French export with the Italian licence header keeps the French columns
+    const mixed = await readLicenceExport(await xlsx([['N. SV', 'Nom', 'Prénom'], [300003, 'Essai', 'Léa']]))
+    expect(mixed.language).toBe('fr')
+    expect(mixed.people[0]).toMatchObject({ last_name: 'Essai', first_name: 'Léa' })
+  })
+
+  it('English, the 1904 date system, another sheet file name', async () => {
+    const r = await readLicenceExport(await xlsx([
+      ['SV no.', 'Last name', 'First name', 'Date of birth', 'Gender'],
+      [400001, 'Sample', 'Sam', { date: 36000 }, 'M']
+    ], { date1904: true, sheetFile: 'data.xml' }))
+    expect(r.language).toBe('en')
+    expect(r.people).toEqual([{ sv_number: '400001', last_name: 'Sample', first_name: 'Sam', gender: 'm' }])
+  })
+
+  it('the date of birth column is never taken for the licence column (an Excel date is 5 digits too)', async () => {
+    // no licence header: the column of 4 to 7 digit numbers is the licence,
+    // never the Geburtsdatum column (date serials) before it
+    const ok = await readLicenceExport(await xlsx([
+      ['Geburtsdatum', 'Name', 'Vorname', 'Ausweis'],
+      [{ date: serialOf('2004-05-06') }, 'Muster', 'Max', 500001]
+    ]))
+    expect(ok.people).toEqual([{ sv_number: '500001', last_name: 'Muster', first_name: 'Max', gender: null }])
+  })
+
+  it('rows without a usable licence number or last name are skipped and counted; a licence twice is one person', async () => {
+    const r = await readLicenceExport(await xlsx([
+      ['N. SV', 'Cognome', 'Nome', 'Data di nascita', 'Sesso'],
+      [100001, 'Beispiel', 'Anna', null, 'D'],
+      [12, 'Corto', 'Numero', null, 'D'],
+      ['abc123', 'Lettere', 'Numero', null, 'U'],
+      [100005, null, 'Senza', null, 'U'],
+      [],
+      [100001, 'Beispiel', 'Anna', { date: serialOf('2004-05-06') }, 'D']
+    ]))
+    expect(r.rows).toBe(5)
+    expect(r.skipped).toBe(3)
+    expect(r.people).toEqual([{ sv_number: '100001', last_name: 'Beispiel', first_name: 'Anna', gender: 'f' }])
+  })
+
+  it('a licence column with another header: the column whose values are all licence numbers', async () => {
+    const r = await readLicenceExport(await xlsx([
+      ['Lizenz', 'Name', 'Vorname', 'Verein'],
+      [500001, 'Muster', 'Max', 'VBC Musterdorf'],
+      ['500002', 'Probe', 'Pia', 'VBC Musterdorf']
+    ]))
+    expect(r.people.map((p) => p.sv_number)).toEqual(['500001', '500002'])
+  })
+
+  it('refuses a file without a licence column, or without names, with what is missing', async () => {
+    const noLicence = await xlsx([
+      ['Lista'],
+      [],
+      ['Cognome', 'Nome', 'Data di nascita', 'Indirizzo E-mail'],
+      ['Beispiel', 'Anna', { date: serialOf('2004-05-06') }, 'anna@example.ch']
+    ])
+    await expect(readLicenceExport(noLicence)).rejects.toMatchObject({ code: 'OV_LICENCE_NO_HEADER', missing: ['sv_number'] })
+    await expect(readLicenceExport(await xlsx([['Foo', 'Bar'], [1, 2]]))).rejects.toBeInstanceOf(LicenceExportError)
+    expect(() => licencePeopleFromRows([['SV-Nr.', 'Name'], [100001, 'Muster']])).toThrow(/first_name/)
+  })
+
+  it('refuses a file that is not an .xlsx', async () => {
+    await expect(readLicenceExport(new TextEncoder().encode('N. SV;Cognome;Nome\n100001;Beispiel;Anna'))).rejects.toMatchObject({ code: 'OV_LICENCE_NOT_XLSX' })
+    await expect(readLicenceExport(new Uint8Array())).rejects.toMatchObject({ code: 'OV_LICENCE_NOT_XLSX' })
+  })
+
+  it('reads a Blob (a picked file)', async () => {
+    const bytes = await xlsx(ITALIAN)
+    const r = await readLicenceExport(new Blob([bytes]))
+    expect(r.people).toHaveLength(3)
+  })
+
+  // A part was unpacked whole before its size was looked at: a 72 KB file
+  // built a string of 73 million characters first (fe-roster-import-9)
+  it('a part whose declared size is over the limit is refused before it is unpacked', async () => {
+    const bytes = withDeclaredSize(await xlsx(ITALIAN), 'xl/worksheets/sheet1.xml', 0x7fffffff)
+    await expect(readLicenceExport(bytes)).rejects.toMatchObject({ code: 'OV_LICENCE_TOO_BIG' })
+  })
+
+  it('a part never grows past the size it declares', async () => {
+    const zip = await JSZip.loadAsync(await xlsx(ITALIAN))
+    zip.file('xl/sharedStrings.xml', `<?xml version="1.0"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><t>${'a'.repeat(4 * 1024 * 1024)}</t></si></sst>`)
+    const packed = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' })
+    // declares 100 bytes: what is unpacked stops there, a broken part
+    await expect(readLicenceExport(withDeclaredSize(packed, 'xl/sharedStrings.xml', 100))).rejects.toBeInstanceOf(LicenceExportError)
+  })
+
+  it('a workbook that unpacks to more than the limit is refused', async () => {
+    const zip = await JSZip.loadAsync(await xlsx(ITALIAN))
+    zip.file('xl/worksheets/sheet1.xml', 'a'.repeat(70 * 1024 * 1024))
+    const packed = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' })
+    await expect(readLicenceExport(packed)).rejects.toMatchObject({ code: 'OV_LICENCE_TOO_BIG' })
+  })
+})
+
+/** The zip with the uncompressed size of `name` set to `size` in its local and central headers. */
+function withDeclaredSize(bytes, name, size) {
+  const out = new Uint8Array(bytes)
+  const dv = new DataView(out.buffer, out.byteOffset, out.byteLength)
+  const nameBytes = new TextEncoder().encode(name)
+  const nameAt = (offset, len) => len === nameBytes.length && nameBytes.every((b, i) => out[offset + i] === b)
+  for (let i = 0; i + 46 < out.length; i++) {
+    const sig = dv.getUint32(i, true)
+    if (sig === 0x04034b50 && nameAt(i + 30, dv.getUint16(i + 26, true))) dv.setUint32(i + 22, size, true)
+    if (sig === 0x02014b50 && nameAt(i + 46, dv.getUint16(i + 28, true))) dv.setUint32(i + 24, size, true)
+  }
+  return out
+}
+
+describe('genderOf: any language, whichever the headers are in', () => {
+  it('letters and words of the four languages', async () => {
+    const { genderOf } = await import('../vmLicenceExport')
+    for (const v of ['D', 'W', 'F', 'Donna', 'weiblich', 'Femme', 'female', 'F.']) expect(genderOf(v)).toBe('f')
+    for (const v of ['U', 'M', 'H', 'Uomo', 'männlich', 'Homme', 'male']) expect(genderOf(v)).toBe('m')
+    expect(genderOf('')).toBeNull()
+    expect(genderOf('x')).toBeNull()
+  })
+})

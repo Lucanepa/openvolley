@@ -1,0 +1,2224 @@
+/**
+ * Server Data Sync Service
+ * Fetches match data from the main scoreboard server instead of using local IndexedDB
+ */
+
+import { apiFrom } from '../lib/apiClient'
+import { getApiUrl, getBackendUrl, getCloudApiUrl, getRelayWebSocketUrl, isLocalRelayUrl } from './backendConfig'
+import { formatTimeLocal } from './timeUtils'
+import { isShownCloudPickerRow, pickerQuerySince, pickerTeamNames } from './pickerMatches'
+import { onPointHubBoard } from './pointHubBoard'
+import { resolveBestOf } from './matchFormat'
+import { sheetInputsFromMatchInfo } from '../domain/sheetInputs'
+
+/**
+ * Generate a unique seed_key for a match
+ * This is the stable identifier used for Supabase sync (stored as external_id)
+ * Format: match_{timestamp}_{random} - never includes modifiable fields like gameN
+ * @returns {string} Unique seed_key
+ */
+export function generateMatchSeedKey() {
+  const timestamp = Date.now()
+  const randomPart = Math.random().toString(36).substring(2, 8)
+  return `match_${timestamp}_${randomPart}`
+}
+
+// Server (relay) URL: the same backend every other module uses (backendConfig:
+// runtime override from ?server= / the connection screen, VITE_BACKEND_URL, the
+// cloud relay on *.openvolley.app, same origin on the LAN server). The old
+// local fallbacks remain for a desktop build without any backend config.
+function getServerUrl() {
+  const configured = getBackendUrl()
+  if (configured) return configured.replace(/\/$/, '')
+
+  const protocol = window.location.protocol === 'https:' ? 'https' : 'http'
+  const hostname = window.location.hostname
+  if (window.location.protocol === 'https:') {
+    return `${protocol}://${hostname}`
+  }
+  const port = window.location.port || '5173'
+  return `${protocol}://${hostname}:${port}`
+}
+
+// Relay WebSocket: the same resolver the scorer publishes with (one relay for all)
+function getWebSocketUrl() {
+  return getRelayWebSocketUrl()
+}
+
+// ---------------------------------------------------------------------------
+// Match access after the PIN step
+// ---------------------------------------------------------------------------
+// The relays hand out a match's bundle (rosters, events, actions) only to a
+// tablet that proved one of its PINs; everyone else gets the public summary
+// (teams, status, score). A successful PIN check here remembers, per match
+// key, the PIN and the backend's match token, and every later subscribe /
+// fetch of that match carries them (subscribe-match pin/token, the
+// X-OV-Match-Pin / X-OV-Match-Token headers). In memory only: after a reload
+// the apps re-check their stored PIN, which remembers it again.
+const matchAccess = new Map() // String(match key) -> { pin, token, type? }
+const MAX_MATCH_ACCESS = 16
+
+/**
+ * Remember what proves access to a match (after a successful PIN check).
+ * `type` is the cloud PIN check's type (referee / bench_home / bench_away):
+ * with it an expired match token can be renewed with the same PIN.
+ */
+export function rememberMatchAccess(matchId, { pin = null, token = null, type = null } = {}) {
+  if (matchId === undefined || matchId === null || (!pin && !token)) return
+  const key = String(matchId)
+  const prev = matchAccess.get(key) || {}
+  matchAccess.delete(key)
+  if (matchAccess.size >= MAX_MATCH_ACCESS) matchAccess.delete(matchAccess.keys().next().value)
+  const entry = { pin: pin ? String(pin).trim() : prev.pin || null, token: token || prev.token || null }
+  const kind = type || prev.type
+  if (kind) entry.type = kind
+  matchAccess.set(key, entry)
+}
+
+// Token renewals per match (at most one a minute)
+const TOKEN_RENEW_MS = 60 * 1000
+const tokenRenewedAt = new Map()
+
+/**
+ * The API fallback read a remembered match without its rosters: the match
+ * token expired (or the backend restarted without a fixed token secret).
+ * Renew it with the remembered PIN (cloud PIN check, at most once a minute).
+ * @returns {Promise<boolean>} true when a new token was remembered
+ */
+async function renewMatchToken(matchId, row) {
+  const a = matchAccessFor(matchId)
+  if (!a?.pin || !a.type || !row || typeof row !== 'object' || 'players_home' in row) return false
+  const key = String(matchId)
+  const last = tokenRenewedAt.get(key)
+  if (last !== undefined && Date.now() - last < TOKEN_RENEW_MS) return false
+  tokenRenewedAt.set(key, Date.now())
+  // Checked against this match only: its own brute-force scope on the
+  // backend, apart from the hall's typos for other matches (2026-10-26)
+  const r = await validatePinSupabase(a.pin, a.type, { matchExternalId: key })
+  return !!(r?.success && r.token && String(r.match?.id) === key)
+}
+
+/** Forget a match's access (exit, PIN no longer valid). No argument: all. */
+export function forgetMatchAccess(matchId) {
+  if (matchId === undefined) {
+    matchAccess.clear()
+    tokenRenewedAt.clear()
+  } else {
+    matchAccess.delete(String(matchId))
+    tokenRenewedAt.delete(String(matchId))
+  }
+}
+
+/** The remembered access of a match, or null. */
+export function matchAccessFor(matchId) {
+  if (matchId === undefined || matchId === null) return null
+  return matchAccess.get(String(matchId)) || null
+}
+
+/** Request headers proving access to a match (empty without one). */
+export function matchAccessHeaders(matchId) {
+  const a = matchAccessFor(matchId)
+  const h = {}
+  if (a?.token) h['X-OV-Match-Token'] = a.token
+  if (a?.pin) h['X-OV-Match-Pin'] = a.pin
+  return h
+}
+
+/**
+ * Validate PIN and get match data from server.
+ * `matchId` (its seed key) or `gameNumber`: the match the tablet picked; the
+ * relay compares the PIN with that match only (a PIN two matches share is
+ * refused with 409 'game-number-required' when none is named). With only a
+ * game number, the one match the relay listed under it (listAvailableMatches,
+ * listedMatchKey) is named by its key: the relay then checks the PIN in that
+ * match's own brute-force scope, not among every match it holds (audit
+ * 2026-11, SEC-06). Relays from before 2026-11 ignore both and take the
+ * first match with the PIN.
+ */
+export async function validatePin(pin, type = 'referee', { matchId = null, gameNumber = null } = {}) {
+  const serverUrl = getServerUrl()
+  const named = matchId != null && matchId !== ''
+    ? String(matchId)
+    : (gameNumber != null && gameNumber !== '' ? listedMatchKey('relay', gameNumber) : null)
+
+  try {
+    const response = await fetch(`${serverUrl}/api/match/validate-pin`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        pin: String(pin).trim(),
+        type,
+        ...(named ? { matchId: named } : {}),
+        ...(!named && gameNumber != null && gameNumber !== '' ? { gameNumber: String(gameNumber) } : {})
+      })
+    })
+
+    if (!response.ok) {
+      let errorMessage = 'Failed to validate PIN'
+      try {
+        const errorData = await response.json()
+        errorMessage = errorData.error || errorMessage
+      } catch (e) {
+        // If response is not JSON, use status text
+        errorMessage = response.statusText || errorMessage
+      }
+      // The status tells a refusal without comparing (429: too many wrong
+      // PINs from this address) from a wrong PIN
+      throw Object.assign(new Error(errorMessage), { status: response.status })
+    }
+
+    // Check if response has content
+    const text = await response.text()
+    if (!text || text.trim() === '') {
+      throw new Error('Empty response from server. Make sure the main scoresheet is running and connected.')
+    }
+
+    try {
+      const result = JSON.parse(text)
+      if (result?.success && result.match?.id != null) {
+        rememberMatchAccess(result.match.id, { pin, token: result.token || null })
+      }
+      return result
+    } catch (e) {
+      console.error('Invalid JSON response:', text)
+      throw new Error('Invalid response from server. Make sure the main scoresheet is running and connected.')
+    }
+  } catch (error) {
+    console.error('Error validating PIN:', error)
+    // If it's already an Error with a message, re-throw it
+    if (error instanceof Error) {
+      throw error
+    }
+    // Otherwise, wrap it
+    throw new Error(error.message || 'Failed to validate PIN. Make sure the main scoresheet is running and connected.')
+  }
+}
+
+/**
+ * Get full match data from server (match, teams, players, sets, events)
+ * Falls back to Supabase direct fetch if HTTP endpoint is not available
+ */
+export async function getMatchData(matchId) {
+  const serverUrl = getServerUrl()
+
+  // Try HTTP endpoint first (WebSocket server may have it)
+  let relayNotFound = false
+  try {
+    const response = await fetch(`${serverUrl}/api/match/${matchId}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...matchAccessHeaders(matchId)
+      }
+    })
+
+    relayNotFound = response.status === 404
+    if (response.ok) {
+      const result = await response.json()
+      // Without a proved PIN the relay answers with the public summary (no
+      // rosters, no events): good enough for a match link before the PIN step,
+      // never a replacement for the bundle after it.
+      if (result?.success && result.access === 'summary' && matchAccessFor(matchId)) {
+        console.debug('[getMatchData] relay answered with the summary only, trying the API')
+      } else {
+        // The relay's copy may lag behind the live state it stored with it
+        return result?.success ? applyNewerLiveState(result) : result
+      }
+    }
+  } catch (error) {
+    console.debug('[getMatchData] HTTP fetch failed, trying API fallback:', error.message)
+  }
+
+  // Fallback to API client direct fetch
+  {
+    try {
+      console.log('[getMatchData] Fetching via API client for matchId:', matchId)
+
+      let match = null
+      let matchError = null
+
+      // Try 1: Fetch match by external_id (seed_key)
+      // The match token of the PIN check unlocks this match's rosters on an
+      // anonymous read (other matches: public columns only).
+      const readByExtId = () => apiFrom('matches')
+        .headers(matchAccessHeaders(matchId))
+        .select('*')
+        .eq('external_id', matchId)
+        .eq('sport_type', 'indoor')
+        .maybeSingle()
+      let { data: matchByExtId, error: extIdError } = await readByExtId()
+      // Rosters missing after the PIN step: renew the token once and read again
+      if (matchByExtId && await renewMatchToken(matchId, matchByExtId)) {
+        const again = await readByExtId()
+        if (again.data) matchByExtId = again.data
+      }
+
+      if (matchByExtId) {
+        match = matchByExtId
+      } else {
+        // Fallback: If matchId is a UUID, try direct id lookup
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+        if (uuidRegex.test(matchId)) {
+          const { data: matchById, error: idError } = await apiFrom('matches')
+            .select('*')
+            .eq('id', matchId)
+            .eq('sport_type', 'indoor')
+            .maybeSingle()
+
+          if (matchById) {
+            match = matchById
+            console.log('[getMatchData] Found match by UUID fallback')
+          } else {
+            matchError = idError || extIdError
+          }
+        } else {
+          matchError = extIdError
+        }
+      }
+
+      if (!match) {
+        console.error('[getMatchData] Supabase match fetch error:', matchError)
+        // notFound: a reachable relay and the database both say it is gone
+        // (a viewer leaves only on that, never on a network failure)
+        return { success: false, error: matchError?.message || 'Match not found', ...(relayNotFound && !matchError ? { notFound: true } : {}) }
+      }
+
+      // Fetch live state if available (for Referee app). Its line-ups,
+      // substitutions and sanctions come only with the match token.
+      const { data: liveState } = await apiFrom('match_live_state')
+        .headers(matchAccessHeaders(matchId))
+        .select('*')
+        .eq('match_id', match.id)
+        .maybeSingle()
+
+      return buildLiveStateMatchData(match, liveState, matchId)
+    } catch (apiError) {
+      console.error('[getMatchData] API fallback error:', apiError)
+      return { success: false, error: apiError.message }
+    }
+  }
+
+  return { success: false, error: 'No data source available' }
+}
+
+/**
+ * Is a match_live_state row newer than the last one applied (by updated_at)?
+ * Rows arrive twice per action (relay push and HTTP write-through) and the
+ * scorer's writes can land out of order; an older row must not roll the view
+ * back. Unknown timestamps count as newer.
+ * @param {object|null} row - live state row
+ * @param {string|null} lastTs - updated_at of the newest row applied
+ */
+export function isNewerLiveState(row, lastTs, { allowEqual = false } = {}) {
+  if (!lastTs) return true
+  const t = Date.parse(row?.updated_at)
+  const last = Date.parse(lastTs)
+  if (Number.isNaN(t) || Number.isNaN(last)) return true
+  return allowEqual ? t >= last : t > last
+}
+
+const liveStateTime = (liveState) => Date.parse(liveState?.updated_at)
+
+/**
+ * The scorer's order of a live state: its sequence number and session
+ * (relayPublisher.createLiveStateOrder), or null (a match_live_state row from
+ * the database, an older scorer).
+ */
+function liveStateOrderOf(liveState) {
+  const seq = Number(liveState?._seq)
+  const session = liveState?._session
+  return Number.isFinite(seq) && typeof session === 'string' && session ? { seq, session } : null
+}
+
+/**
+ * The order the relay received a live state or a bundle's match in
+ * (_relayEpoch/_relaySeq, stamped by the cloud relay: server.js
+ * stampRelayOrder), or null (a database row, a venue relay, an older relay).
+ */
+function relayOrderOf(obj) {
+  const seq = Number(obj?._relaySeq)
+  const epoch = obj?._relayEpoch
+  return Number.isFinite(seq) && typeof epoch === 'string' && epoch ? { seq, epoch } : null
+}
+
+/** Both stamped by the same relay run: their relay order, else null. */
+function sameRelayOrders(x, y) {
+  const a = relayOrderOf(x)
+  const b = relayOrderOf(y)
+  return a && b && a.epoch === b.epoch ? [a.seq, b.seq] : null
+}
+
+/**
+ * Which live state to keep when `incoming` arrives after `current` (relay
+ * push, relay bundle, match_live_state row): `incoming` unless it is older.
+ * Two states of one scorer session compare by sequence number (never by the
+ * wall clock: an NTP step back would freeze the view on the state from before
+ * the step); two sessions (a device switch) by the order the relay received
+ * them in, when it stamped both: the new device's clock may be behind, and in
+ * a hall without internet nothing corrects it. Otherwise by updated_at.
+ * Either may be missing; unknown timestamps count as newer.
+ */
+export function newerLiveState(current, incoming) {
+  if (!incoming) return current || null
+  if (!current) return incoming
+  const a = liveStateOrderOf(current)
+  const b = liveStateOrderOf(incoming)
+  if (a && b && a.session === b.session) return b.seq < a.seq ? current : incoming
+  const relay = sameRelayOrders(current, incoming)
+  if (relay) return relay[1] < relay[0] ? current : incoming
+  return liveStateTime(incoming) < liveStateTime(current) ? current : incoming
+}
+
+/**
+ * The live-state clock of a match on the scorer's device. The viewers and the
+ * realtime hub order the states of different scorer sessions by updated_at,
+ * the scorer's own clock: after a hand-over to a device whose clock was
+ * behind the previous one's (no internet time in the hall), every state of
+ * the new device looked older than the previous device's last, and the
+ * referee, benches and livescore stayed on that score for as long as the
+ * clocks differed (stress test 2026-10-25). A device that continues a match
+ * stamps its live states (updated_at, a relay bundle's _syncedAt) this far
+ * ahead of its clock: liveClockOffsetAfter the last cloud state.
+ *
+ * The offset orders the live states and nothing else. A countdown's start
+ * (timeout_started_at, set_interval_started_at, a relay action's
+ * startTimestamp) stays on the device's own clock: the website and Point Hub
+ * count from it with theirs, and a referee joining or reloading during a
+ * time-out with its own; a start this far ahead showed the full 30 s. The
+ * offset is followed whole, however large: capped (10 minutes, round 2), the
+ * device that took over from a laptop an hour ahead stamped its states 50
+ * minutes older than the laptop's last one, and the viewers dropped every
+ * one of them for the rest of the match. Only garbage is no offset (not a
+ * number, not above 0, beyond LIVE_CLOCK_OFFSET_GARBAGE_MS).
+ */
+export function liveClockOffset(match) {
+  const v = Number(match?.liveClockOffsetMs)
+  return Number.isFinite(v) && v > 0 && v <= LIVE_CLOCK_OFFSET_GARBAGE_MS ? v : 0
+}
+
+/**
+ * A live-state clock offset beyond this (7 days) is garbage, not a clock in a
+ * hall: a damaged record, or a clock set years off. It counts as none. Any
+ * real clock error (seconds, minutes, an hour or two in the wrong time zone)
+ * is far below it and is followed whole.
+ */
+export const LIVE_CLOCK_OFFSET_GARBAGE_MS = 7 * 24 * 60 * 60 * 1000
+
+/** Now on the live-state clock of `match` (ms): see liveClockOffset. */
+export function liveStateNow(match, now = Date.now()) {
+  return now + liveClockOffset(match)
+}
+
+/**
+ * The live-state clock offset of a device that continues a match whose last
+ * state in the cloud is `cloudLiveState`: what makes its first state newer
+ * than that one, however far ahead it is. 0 when this device's clock is
+ * ahead already, the state names no time, or it is garbage (more than
+ * LIVE_CLOCK_OFFSET_GARBAGE_MS ahead).
+ */
+export function liveClockOffsetAfter(cloudLiveState, now = Date.now()) {
+  const last = liveStateTime(cloudLiveState)
+  if (Number.isNaN(last)) return 0
+  const offset = Math.max(0, last - now + 1)
+  return offset <= LIVE_CLOCK_OFFSET_GARBAGE_MS ? offset : 0
+}
+
+/**
+ * Was `liveState` computed after the relay bundle was read on the scorer?
+ * - Same scorer session: its sequence number is higher than the bundle's
+ *   match._syncedSeq (the last number issued before the sync read IndexedDB).
+ * - Another session, both stamped by the relay: the relay received it after
+ *   the bundle (_relaySeq).
+ * - Otherwise its updated_at is later than match._syncedAt (both on the
+ *   scorer's clock; the fallback for a database row or an older scorer).
+ * False when the bundle carries neither (an older scorer).
+ */
+export function isLiveStateNewerThanBundle(liveState, bundle) {
+  if (!liveState || !bundle) return false
+  const match = bundle.match
+  const order = liveStateOrderOf(liveState)
+  const syncedSeq = Number(match?._syncedSeq)
+  if (order && Number.isFinite(syncedSeq) && match?._syncSession === order.session) {
+    return order.seq > syncedSeq
+  }
+  const relay = sameRelayOrders(liveState, match)
+  if (relay) return relay[0] > relay[1]
+  const syncedAt = Number(match?._syncedAt)
+  const liveAt = liveStateTime(liveState)
+  return Number.isFinite(syncedAt) && !Number.isNaN(liveAt) && liveAt > syncedAt
+}
+
+/**
+ * The other way round: was the relay bundle read on the scorer after actions
+ * that `liveState` does not show? Same scorer session: the bundle's
+ * match._syncedSeq is past the state's sequence number; otherwise its
+ * _syncedAt is later than the state's updated_at. False when the bundle
+ * carries neither (an older scorer) or the state is not older.
+ */
+export function isBundleNewerThanLiveState(liveState, bundle) {
+  if (!liveState || !bundle) return false
+  const match = bundle.match
+  const order = liveStateOrderOf(liveState)
+  const syncedSeq = Number(match?._syncedSeq)
+  if (order && Number.isFinite(syncedSeq) && match?._syncSession === order.session) {
+    return syncedSeq > order.seq
+  }
+  const relay = sameRelayOrders(liveState, match)
+  if (relay) return relay[1] > relay[0]
+  const syncedAt = Number(match?._syncedAt)
+  const liveAt = liveStateTime(liveState)
+  return Number.isFinite(syncedAt) && !Number.isNaN(liveAt) && syncedAt > liveAt
+}
+
+/**
+ * A relay bundle with a live state that is newer than it applied: the scorer
+ * pushes its live state after every action, but the bundle (sets, events) can
+ * arrive later, be refused, or be read back from the relay before the scorer's
+ * sync landed. Then the live state's points replace those of the set it names,
+ * so the referee and bench show the newest score whichever path brought it.
+ * "Newer": isLiveStateNewerThanBundle. A bundle that does not say when it was
+ * read (older scorer) or an older live state is returned as it is.
+ * @param {object} bundle - { match, sets, liveState?, ... }
+ * @param {object|null} [liveState] - defaults to the bundle's own
+ */
+export function applyNewerLiveState(bundle, liveState = bundle?.liveState) {
+  if (!bundle || !liveState || !Array.isArray(bundle.sets)) return bundle
+  if (!isLiveStateNewerThanBundle(liveState, bundle)) return bundle
+  const out = { ...bundle, liveState }
+  const index = Number(liveState.current_set)
+  const pointsA = Number(liveState.points_a)
+  const pointsB = Number(liveState.points_b)
+  if (!Number.isFinite(index) || !Number.isFinite(pointsA) || !Number.isFinite(pointsB)) return out
+  const teamAIsHome = (bundle.match?.coinTossTeamA || 'home') === 'home'
+  const homePoints = teamAIsHome ? pointsA : pointsB
+  const awayPoints = teamAIsHome ? pointsB : pointsA
+  let changed = false
+  const sets = bundle.sets.map((s) => {
+    if (!s || Number(s.index) !== index || s.finished) return s
+    if (s.homePoints === homePoints && s.awayPoints === awayPoints) return s
+    changed = true
+    return { ...s, homePoints, awayPoints }
+  })
+  return changed ? { ...out, sets } : out
+}
+
+/**
+ * How long a live-state push newer than the shown bundle waits for the
+ * scorer's sync. A point sends both: the push carries the score, the sync
+ * the server, the rotation, the substitutions. Shown apart (the sync lands
+ * ~200 ms later on the desktop app) the referee saw the score change, then
+ * the ball and the teams move. Within this time the sync arrives and both
+ * are shown in one update; without it the push's score is shown alone.
+ */
+export const LIVE_STATE_HOLD_MS = 400
+
+/**
+ * The newest live state a tablet has seen from any source (relay push, relay
+ * bundle, match_live_state row) and the last relay bundle as received, so a
+ * newer live state wins over an older bundle's score (applyNewerLiveState):
+ * - bundle(result): a relay bundle (getMatchData / subscribeToMatchData
+ *   result). Returns it with the newest live state applied. A bundle read on
+ *   the scorer after the kept state supersedes it (which also frees a state
+ *   kept from before a clock step on the scorer). Results built from a
+ *   match_live_state row (source 'live_state') pass through.
+ * - liveState(row): a live state from elsewhere (database row). True when it
+ *   is now the newest: re-deliver bundle(lastBundle) to show it.
+ */
+export function createLiveStateTracker() {
+  let newest = null
+  let lastBundle = null
+  let holdTimer = null
+  const dropHold = () => {
+    clearTimeout(holdTimer)
+    holdTimer = null
+  }
+  return {
+    get newest() { return newest },
+    get lastBundle() { return lastBundle },
+    reset() {
+      newest = null
+      lastBundle = null
+      dropHold()
+    },
+    /**
+     * Show a newer live state's score (`apply`) only if no bundle comes
+     * within LIVE_STATE_HOLD_MS: the bundle the scorer sends with it has the
+     * server and the rotation too, and shows them all in one update. A second
+     * hold replaces the first.
+     */
+    hold(apply) {
+      dropHold()
+      holdTimer = setTimeout(() => {
+        holdTimer = null
+        apply()
+      }, LIVE_STATE_HOLD_MS)
+    },
+    bundle(result) {
+      if (!result?.success || result.source === 'live_state' || !Array.isArray(result.sets)) return result
+      dropHold()
+      lastBundle = result
+      const m = result.match
+      if (newest && (m?._syncedSeq != null || m?._syncedAt != null) && !isLiveStateNewerThanBundle(newest, result)) {
+        newest = null
+      }
+      newest = newerLiveState(newest, result.liveState)
+      return applyNewerLiveState(result, newest)
+    },
+    liveState(row) {
+      if (!row || typeof row !== 'object') return false
+      const before = newest
+      newest = newerLiveState(newest, row)
+      return newest !== before
+    }
+  }
+}
+
+/**
+ * Build the referee/bench match payload ({ success, match, homeTeam, awayTeam,
+ * homePlayers, awayPlayers, sets, events, liveState }) from a `matches` row and
+ * its `match_live_state` row. Pure: getMatchData uses it after reading both
+ * rows, and the referee applies a pushed live_state row (db-change) with it
+ * directly instead of re-reading the database, which could still return the
+ * row from before the push.
+ * @param {object} match - matches row
+ * @param {object|null} liveState - match_live_state row
+ * @param {string} matchId - the id the caller knows the match by (seed key)
+ */
+export function buildLiveStateMatchData(match, liveState, matchId) {
+  // Build team info from matches table (prefer JSONB, fallback to old columns for transition)
+  const homeTeamName = match.home_team?.name || match.home_team_name || 'Home'
+  const awayTeamName = match.away_team?.name || match.away_team_name || 'Away'
+
+  // A/B Model: Team A = coin toss winner (constant), side_a = which side they're on
+  // Determine coinTossTeamA: is Team A the home or away team?
+  let coinTossTeamA = null
+  let teamAIsHome = true
+
+  if (liveState?.team_a_name) {
+    // Compare live state team_a_name with matches table to determine if Team A is home
+    teamAIsHome = liveState.team_a_name === homeTeamName
+    coinTossTeamA = teamAIsHome ? 'home' : 'away'
+  } else {
+    // Fallback to coin_toss if live state doesn't have A/B data (prefer JSONB, fallback to old columns)
+    coinTossTeamA = match.coin_toss?.team_a || match.coin_toss_team_a || 'home'
+    teamAIsHome = coinTossTeamA === 'home'
+  }
+
+  // Determine which side is home based on side_a
+  // side_a = 'left' means Team A is on left, side_a = 'right' means Team A is on right
+  const sideA = liveState?.side_a || 'left'
+  const leftIsHome = (sideA === 'left') === teamAIsHome
+
+  // Build team info with live state colors
+  const homeColorFromLive = liveState ? (teamAIsHome ? liveState.team_a_color : liveState.team_b_color) : null
+  const awayColorFromLive = liveState ? (teamAIsHome ? liveState.team_b_color : liveState.team_a_color) : null
+
+  const homeTeam = {
+    name: homeTeamName,
+    shortName: match.home_team?.short_name || match.home_short_name || 'HOM',
+    color: homeColorFromLive || match.home_team?.color || '#ef4444'
+  }
+  const awayTeam = {
+    name: awayTeamName,
+    shortName: match.away_team?.short_name || match.away_short_name || 'AWY',
+    color: awayColorFromLive || match.away_team?.color || '#3b82f6'
+  }
+
+  // Build sets from live state using A/B model
+  let sets = []
+  if (liveState) {
+    // Convert A/B points to home/away
+    const homePoints = teamAIsHome ? liveState.points_a : liveState.points_b
+    const awayPoints = teamAIsHome ? liveState.points_b : liveState.points_a
+
+    // Determine serving team - priority: serving_team field, then lineup isServing
+    let servingTeam = 'home'
+    let serverNumber = null
+
+    const lineupA = liveState.lineup_a
+    const lineupB = liveState.lineup_b
+
+    // First priority: use serving_team from live state (set by manual changes or score events)
+    // serving_team stores 'left' or 'right', convert to 'home'/'away'
+    if (liveState.serving_team) {
+      const servingSide = liveState.serving_team // 'left' or 'right'
+      // leftIsHome tells us if home is on left
+      servingTeam = (servingSide === 'left') === leftIsHome ? 'home' : 'away'
+      // Get server number from the serving team's lineup position I
+      // If serving home and Team A is home, use lineupA. Otherwise use lineupB.
+      const servingTeamIsA = (servingTeam === 'home') === teamAIsHome
+      const servingTeamLineup = servingTeamIsA ? lineupA : lineupB
+      serverNumber = servingTeamLineup?.I?.number || null
+    } else if (lineupA?.I?.isServing) {
+      // Fallback: Rich format with serving info in position I (isServing field)
+      servingTeam = teamAIsHome ? 'home' : 'away'
+      serverNumber = lineupA.I.number
+    } else if (lineupB?.I?.isServing) {
+      servingTeam = teamAIsHome ? 'away' : 'home'
+      serverNumber = lineupB.I.number
+    }
+
+    const currentSet = {
+      index: liveState.current_set || 1,
+      homePoints: homePoints || 0,
+      awayPoints: awayPoints || 0,
+      finished: false,
+      servingTeam,
+      serverNumber
+    }
+    sets = [currentSet]
+
+    // Set scores
+    const homeSetsWon = teamAIsHome ? liveState.sets_won_a : liveState.sets_won_b
+    const awaySetsWon = teamAIsHome ? liveState.sets_won_b : liveState.sets_won_a
+    // We only have set counts, not individual set scores - this is a limitation
+  } else {
+    // No live state yet (before first point) - create empty set 1
+    sets = [{ index: 1, homePoints: 0, awayPoints: 0, finished: false }]
+  }
+
+  // Build events array with lineup info from live state
+  let events = []
+
+  if (liveState) {
+    // Lineup events contain rich data (captain, libero, subs, sanctions embedded per position)
+    if (liveState.lineup_a) {
+      events.push({
+        type: 'lineup',
+        setIndex: liveState.current_set || 1,
+        seq: 1,
+        payload: {
+          team: teamAIsHome ? 'home' : 'away',
+          lineup: liveState.lineup_a,
+          isRichFormat: true
+        }
+      })
+    }
+    if (liveState.lineup_b) {
+      events.push({
+        type: 'lineup',
+        setIndex: liveState.current_set || 1,
+        seq: 1.1,
+        payload: {
+          team: teamAIsHome ? 'away' : 'home',
+          lineup: liveState.lineup_b,
+          isRichFormat: true
+        }
+      })
+    }
+
+    // Build sanction events from live state (team-level sanctions only)
+    if (liveState.sanctions_a) {
+      for (const sanction of liveState.sanctions_a) {
+        events.push({
+          type: 'sanction',
+          setIndex: liveState.current_set || 1,
+          ts: sanction.ts,
+          payload: {
+            team: teamAIsHome ? 'home' : 'away',
+            playerNumber: sanction.player,
+            type: sanction.type,
+            playerType: sanction.playerType, // 'player', 'bench', 'libero', 'official'
+            position: sanction.position,
+            role: sanction.role
+          }
+        })
+      }
+    }
+    if (liveState.sanctions_b) {
+      for (const sanction of liveState.sanctions_b) {
+        events.push({
+          type: 'sanction',
+          setIndex: liveState.current_set || 1,
+          ts: sanction.ts,
+          payload: {
+            team: teamAIsHome ? 'away' : 'home',
+            playerNumber: sanction.player,
+            type: sanction.type,
+            playerType: sanction.playerType,
+            position: sanction.position,
+            role: sanction.role
+          }
+        })
+      }
+    }
+
+    // Build substitution events from live state (if stored as JSONB arrays)
+    if (Array.isArray(liveState.subs_a)) {
+      for (const sub of liveState.subs_a) {
+        events.push({
+          type: 'substitution',
+          setIndex: liveState.current_set || 1,
+          ts: sub.ts,
+          payload: {
+            team: teamAIsHome ? 'home' : 'away',
+            playerIn: sub.playerIn,
+            playerOut: sub.playerOut,
+            position: sub.position,
+            exceptional: sub.exceptional || false
+          }
+        })
+      }
+    }
+    if (Array.isArray(liveState.subs_b)) {
+      for (const sub of liveState.subs_b) {
+        events.push({
+          type: 'substitution',
+          setIndex: liveState.current_set || 1,
+          ts: sub.ts,
+          payload: {
+            team: teamAIsHome ? 'away' : 'home',
+            playerIn: sub.playerIn,
+            playerOut: sub.playerOut,
+            position: sub.position,
+            exceptional: sub.exceptional || false
+          }
+        })
+      }
+    }
+
+    // Build timeout events from live state (if stored as JSONB arrays)
+    if (Array.isArray(liveState.timeouts_a)) {
+      for (const timeout of liveState.timeouts_a) {
+        events.push({
+          type: 'timeout',
+          setIndex: liveState.current_set || 1,
+          ts: timeout.ts,
+          payload: {
+            team: teamAIsHome ? 'home' : 'away'
+          }
+        })
+      }
+    } else if (typeof liveState.timeouts_a === 'number') {
+      // Backwards compatibility: if stored as number, create that many timeout events
+      for (let i = 0; i < liveState.timeouts_a; i++) {
+        events.push({
+          type: 'timeout',
+          setIndex: liveState.current_set || 1,
+          payload: {
+            team: teamAIsHome ? 'home' : 'away'
+          }
+        })
+      }
+    }
+    if (Array.isArray(liveState.timeouts_b)) {
+      for (const timeout of liveState.timeouts_b) {
+        events.push({
+          type: 'timeout',
+          setIndex: liveState.current_set || 1,
+          ts: timeout.ts,
+          payload: {
+            team: teamAIsHome ? 'away' : 'home'
+          }
+        })
+      }
+    } else if (typeof liveState.timeouts_b === 'number') {
+      // Backwards compatibility: if stored as number, create that many timeout events
+      for (let i = 0; i < liveState.timeouts_b; i++) {
+        events.push({
+          type: 'timeout',
+          setIndex: liveState.current_set || 1,
+          payload: {
+            team: teamAIsHome ? 'away' : 'home'
+          }
+        })
+      }
+    }
+  }
+
+  // Build players from matches table JSONB columns
+  const homePlayers = match.players_home || []
+  const awayPlayers = match.players_away || []
+
+  // Extract captain info from rich lineup format
+  let homeCaptain = null
+  let awayCaptain = null
+  let homeCourtCaptain = null
+  let awayCourtCaptain = null
+
+  const homeLineup = teamAIsHome ? liveState?.lineup_a : liveState?.lineup_b
+  const awayLineup = teamAIsHome ? liveState?.lineup_b : liveState?.lineup_a
+
+  for (const pos of ['I', 'II', 'III', 'IV', 'V', 'VI']) {
+    if (homeLineup?.[pos]?.isCaptain) homeCaptain = homeLineup[pos].number
+    if (homeLineup?.[pos]?.isCourtCaptain) homeCourtCaptain = homeLineup[pos].number
+    if (awayLineup?.[pos]?.isCaptain) awayCaptain = awayLineup[pos].number
+    if (awayLineup?.[pos]?.isCourtCaptain) awayCourtCaptain = awayLineup[pos].number
+  }
+
+  return {
+    success: true,
+    match: {
+      ...match,
+      id: matchId, // Use external_id as the reference ID
+      // Use liveState.match_status if available (reflects actual game state)
+      status: liveState?.match_status || match.status,
+      coinTossTeamA: coinTossTeamA, // Derived from live state if not in matches table
+      coinTossTeamB: coinTossTeamA === 'home' ? 'away' : 'home',
+      coinTossServeA: match.coin_toss?.serve_a ?? match.coin_toss_serve_a,
+      // the row has match_info.best_of, not bestOf: the bench and the referee's
+      // recorded popups number a best-of-3 decider from this
+      bestOf: resolveBestOf(match, liveState),
+      // the match's LFP tracking and time zone (match_info; domain/sheetInputs)
+      ...sheetInputsFromMatchInfo(match.match_info),
+      firstServe: match.coin_toss?.first_serve || match.first_serve,
+      // coin_toss_confirmed = true if we have liveState with team names (means coin toss happened)
+      coin_toss_confirmed: !!(liveState?.team_a_name),
+      // Get short names from JSONB, or fallback to old columns
+      homeShortName: match.home_team?.short_name || match.home_short_name || homeTeam.shortName,
+      awayShortName: match.away_team?.short_name || match.away_short_name || awayTeam.shortName,
+      homeName: homeTeam.name,
+      awayName: awayTeam.name,
+      homeColor: homeTeam.color,
+      awayColor: awayTeam.color,
+      // Captain info
+      homeCaptain: homeCaptain || null,
+      awayCaptain: awayCaptain || null,
+      homeCourtCaptain: homeCourtCaptain || null,
+      awayCourtCaptain: awayCourtCaptain || null,
+      // Also ensure gameNumber is set
+      gameNumber: match.game_n ? String(match.game_n) : null,
+      gameN: match.game_n
+    },
+    homeTeam,
+    awayTeam,
+    homePlayers,
+    awayPlayers,
+    sets,
+    events,
+    isRichFormat: true, // Always rich format now
+    liveState, // Include raw live state for additional data
+    // Built from the match_live_state row alone (no relay bundle): a pushed
+    // live_state row can be applied with this same function.
+    source: 'live_state'
+  }
+}
+
+// Global WebSocket connection manager to prevent multiple connections
+const wsConnections = new Map() // Map<matchId, { ws, subscribers, reconnectTimeout, reconnectAttempts, isIntentionallyClosed, pingInterval }>
+
+// Ping interval in ms - keeps connection alive on mobile networks (NAT timeout is usually 30-60s)
+const PING_INTERVAL = 25000
+
+// A socket that answers nothing (not even the pong) this long after a ping is
+// dead — e.g. the tablet's Wi-Fi dropped without a close frame — and is replaced.
+// The resubscribe brings a fresh match-full-data snapshot.
+const PONG_TIMEOUT = 10000
+
+// Debug info for mobile debugging
+const wsDebugInfo = {
+  connectedAt: null,
+  lastMessageAt: null,
+  lastPingAt: null,
+  lastPongAt: null,
+  messagesReceived: 0,
+  connectionAttempts: 0,
+  errors: [],
+  wsUrl: null,
+  readyState: null,
+  lastError: null,
+  lastServerError: null
+}
+
+/**
+ * Build the subscriber payload from a relay 'match-data-update' or
+ * 'match-full-data' message. Every relay (cloud backend, LAN server, Electron,
+ * Tauri, Vite dev) sends the bundle flat on the message; older LAN relays nested
+ * it under `data`, so both shapes are accepted.
+ * @returns {object|null} { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events, liveState?, _timestamp, _scoreboardTimestamp }
+ */
+export function readRelayBundle(message) {
+  if (!message || typeof message !== 'object') return null
+  const src = message.match === undefined && message.data && typeof message.data === 'object'
+    ? message.data
+    : message
+  if (!src.match) return null
+  const payload = {
+    match: src.match,
+    homeTeam: src.homeTeam || src.teams?.[0],
+    awayTeam: src.awayTeam || src.teams?.[1],
+    homePlayers: src.homePlayers || src.players?.filter(p => p.teamId === src.match?.homeTeamId) || [],
+    awayPlayers: src.awayPlayers || src.players?.filter(p => p.teamId === src.match?.awayTeamId) || [],
+    sets: src.sets || [],
+    events: src.events || [],
+    _timestamp: message._timestamp || message.timestamp,
+    _scoreboardTimestamp: message._scoreboardTimestamp || message.timestamp
+  }
+  if (src.liveState !== undefined) payload.liveState = src.liveState
+  // 'full' (a PIN proved on this socket: rosters and events) or 'summary';
+  // the referee's live scoresheet opens on a 'full' bundle only
+  const access = message.access ?? src.access
+  if (access === 'full' || access === 'summary') payload.access = access
+  return payload
+}
+
+/**
+ * Get WebSocket debug info for on-screen debugging
+ */
+// Bench requests (backend/lib/benchRequests.js): the relay's messages for the
+// bench (answers, its requests after a reconnect) and the referee (time-out /
+// substitution requests of the benches). They go to these listeners, not to
+// the match-data subscribers.
+export const BENCH_RELAY_MESSAGES = ['bench-request-ack', 'bench-response', 'bench-request-state', 'bench-request-info']
+const relayMessageListeners = new Map() // matchId -> Set<fn(message)>
+
+/**
+ * Listen to the bench-request messages of a match's relay subscription
+ * (subscribeToMatchData opens it). Errors 'bench-request-refused' come too.
+ * @returns {() => void} remove
+ */
+export function addRelayMessageListener(matchId, fn) {
+  const key = String(matchId)
+  if (!relayMessageListeners.has(key)) relayMessageListeners.set(key, new Set())
+  relayMessageListeners.get(key).add(fn)
+  return () => {
+    const set = relayMessageListeners.get(key)
+    if (!set) return
+    set.delete(fn)
+    if (set.size === 0) relayMessageListeners.delete(key)
+  }
+}
+
+function notifyRelayMessage(matchId, message) {
+  for (const fn of relayMessageListeners.get(String(matchId)) || []) {
+    try { fn(message) } catch (err) { console.error('[ServerDataSync] relay message listener failed:', err) }
+  }
+}
+
+/**
+ * Send a message on the match's relay subscription socket. false when it is
+ * not open (nothing is queued: the caller says "not sent").
+ */
+export function sendRelayMessage(matchId, payload) {
+  const connection = wsConnections.get(String(matchId))
+  const ws = connection?.ws
+  if (!ws || ws.readyState !== WebSocket.OPEN) return false
+  try {
+    ws.send(JSON.stringify(payload))
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function getWsDebugInfo(matchId) {
+  const matchIdStr = String(matchId)
+  const connection = wsConnections.get(matchIdStr)
+
+  return {
+    ...wsDebugInfo,
+    readyState: connection?.ws?.readyState ?? -1,
+    readyStateLabel: connection?.ws ? ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'][connection.ws.readyState] : 'NO_CONNECTION',
+    subscriberCount: connection?.subscribers?.size ?? 0,
+    reconnectAttempts: connection?.reconnectAttempts ?? 0,
+    isIntentionallyClosed: connection?.isIntentionallyClosed ?? false
+  }
+}
+
+// Store connect functions for each match to allow force reconnect
+const connectFunctions = new Map()
+
+/**
+ * Force reconnect WebSocket for a match
+ */
+export function forceReconnect(matchId) {
+  const matchIdStr = String(matchId)
+  const connection = wsConnections.get(matchIdStr)
+
+  if (!connection) {
+    console.log('[ServerDataSync] No connection to reconnect for match', matchId)
+    return false
+  }
+
+  console.log('[ServerDataSync] Force reconnecting...')
+
+  // Close existing connection with code 4000 (custom code that triggers reconnect)
+  if (connection.ws) {
+    try {
+      connection.ws.close(4000, 'Force reconnect')
+    } catch (e) { }
+    connection.ws = null
+  }
+
+  // Clear timeouts
+  if (connection.reconnectTimeout) {
+    clearTimeout(connection.reconnectTimeout)
+    connection.reconnectTimeout = null
+  }
+  if (connection.pingInterval) {
+    clearInterval(connection.pingInterval)
+    connection.pingInterval = null
+  }
+
+  // Reset flags
+  connection.isIntentionallyClosed = false
+  connection.reconnectAttempts = 0
+
+  // Trigger reconnect using stored connect function
+  const connectFn = connectFunctions.get(matchIdStr)
+  if (connectFn) {
+    setTimeout(connectFn, 100) // Small delay to ensure cleanup completes
+    return true
+  }
+
+  return false
+}
+
+// What this tablet is, for the scorer's tablet status (relay
+// /api/server/connections). A label only: it grants nothing.
+let relayDevice = null
+
+/**
+ * Label this app's relay subscriptions (RefereeApp: 'referee', BenchApp:
+ * 'bench' + team). Applies to subscriptions opened from now on and to the
+ * re-subscribe after every reconnect.
+ * @param {'referee'|'bench'|'livescore'|null} device
+ * @param {'home'|'away'|null} [team]
+ */
+export function setRelayDevice(device, team = null) {
+  relayDevice = device ? { device, ...(team === 'home' || team === 'away' ? { team } : {}) } : null
+}
+
+/**
+ * The subscribe-match message for a match key, with this app's device label
+ * and what proves access to it (PIN / match token of the PIN check).
+ */
+export function subscribeMessage(matchId) {
+  const access = matchAccessFor(matchId)
+  return {
+    type: 'subscribe-match',
+    matchId: String(matchId),
+    ...(relayDevice || {}),
+    ...(access?.pin ? { pin: access.pin } : {}),
+    ...(access?.token ? { token: access.token } : {})
+  }
+}
+
+/**
+ * Delay before a tablet's reconnect attempt `attempt` (1 = first after a
+ * drop): 3 s more per attempt up to 10 s, each spread over its second half
+ * (1.5-3 s, 3-6 s, ...). After a backend restart every referee and bench
+ * tablet lost its socket at the same instant and reconnected at the same
+ * instant (national peak load test 2026-10-26). Never later than before.
+ * @param {number} attempt
+ * @param {() => number} [random] jitter source in [0, 1) (tests)
+ */
+export function viewerReconnectDelay(attempt, random = Math.random) {
+  const step = Math.min(3000 * Math.max(1, Number(attempt) || 1), 10000)
+  return Math.round(step * (0.5 + 0.5 * (typeof random === 'function' ? random() : Math.random())))
+}
+
+/**
+ * Subscribe to match data updates via WebSocket
+ */
+export function subscribeToMatchData(matchId, onUpdate) {
+  const wsUrl = getWebSocketUrl()
+  const matchIdStr = String(matchId)
+
+  // Get or create connection manager for this match
+  let connection = wsConnections.get(matchIdStr)
+  if (!connection) {
+    connection = {
+      ws: null,
+      subscribers: new Set(),
+      reconnectTimeout: null,
+      reconnectAttempts: 0,
+      isIntentionallyClosed: false,
+      pingInterval: null,
+      pongTimer: null,
+      lastMessageAt: 0,
+      onWake: null
+    }
+    wsConnections.set(matchIdStr, connection)
+  }
+
+  // Add this subscriber
+  connection.subscribers.add(onUpdate)
+
+  // Drop a socket that stopped answering and connect a new one right away.
+  const replaceDeadSocket = () => {
+    const dead = connection.ws
+    if (!dead || connection.isIntentionallyClosed) return
+    try {
+      dead.onopen = null
+      dead.onmessage = null
+      dead.onerror = null
+      dead.onclose = null
+      dead.close(4000, 'No answer to ping')
+    } catch { /* already gone */ }
+    connection.ws = null
+    if (connection.pingInterval) {
+      clearInterval(connection.pingInterval)
+      connection.pingInterval = null
+    }
+    if (connection.reconnectTimeout) clearTimeout(connection.reconnectTimeout)
+    connection.reconnectTimeout = setTimeout(connect, 250)
+  }
+
+  // Ping and expect any message back within PONG_TIMEOUT. Never judged by the
+  // time of the last message alone, so a throttled background tab is not
+  // mistaken for a dead socket.
+  const probe = () => {
+    const ws = connection.ws
+    if (connection.isIntentionallyClosed) return
+    if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+      // Back online / visible with no socket: reconnect now, not after the backoff
+      if (connection.reconnectTimeout) clearTimeout(connection.reconnectTimeout)
+      connection.reconnectTimeout = null
+      connection.ws = null
+      connect()
+      return
+    }
+    if (ws.readyState !== WebSocket.OPEN) return
+    const sentAt = Date.now()
+    try {
+      wsDebugInfo.lastPingAt = sentAt
+      ws.send(JSON.stringify({ type: 'ping', timestamp: sentAt }))
+    } catch (err) {
+      console.warn('[ServerDataSync] Error sending ping:', err)
+    }
+    if (connection.pongTimer) clearTimeout(connection.pongTimer)
+    connection.pongTimer = setTimeout(() => {
+      connection.pongTimer = null
+      if (connection.ws === ws && connection.lastMessageAt < sentAt) replaceDeadSocket()
+    }, PONG_TIMEOUT)
+  }
+
+  if (!connection.onWake && typeof window !== 'undefined') {
+    connection.onWake = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      probe()
+    }
+    window.addEventListener('online', connection.onWake)
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', connection.onWake)
+  }
+
+  const connect = () => {
+    // Store this connect function for force reconnect
+    connectFunctions.set(matchIdStr, connect)
+    // Don't reconnect if intentionally closed or already connected
+    if (connection.isIntentionallyClosed) return
+    if (connection.ws && connection.ws.readyState === WebSocket.OPEN) {
+      // Already connected, just send subscription message
+      try {
+        connection.ws.send(JSON.stringify(subscribeMessage(matchIdStr)))
+      } catch (err) {
+        console.error('[ServerDataSync] Error sending subscription:', err)
+      }
+      return
+    }
+    if (connection.ws && connection.ws.readyState === WebSocket.CONNECTING) {
+      // Already connecting, wait for it
+      return
+    }
+
+    try {
+      // Close existing connection if any (but not if it's already closed)
+      if (connection.ws && connection.ws.readyState !== WebSocket.CLOSED) {
+        connection.ws.close()
+      }
+
+      wsDebugInfo.wsUrl = wsUrl
+      wsDebugInfo.connectionAttempts++
+      connection.ws = new WebSocket(wsUrl)
+
+      connection.ws.onopen = () => {
+        // Skip if intentionally closed (cleanup ran before connection opened)
+        if (connection.isIntentionallyClosed || !connection.ws) return
+
+        connection.reconnectAttempts = 0 // Reset on successful connection
+        wsDebugInfo.connectedAt = Date.now()
+        wsDebugInfo.lastError = null
+        console.log('[ServerDataSync] WebSocket connected')
+
+        // Request match data subscription
+        try {
+          connection.ws.send(JSON.stringify(subscribeMessage(matchIdStr)))
+        } catch (err) {
+          // Error sending subscription
+        }
+
+        // Start ping interval to keep connection alive (important for mobile networks)
+        if (connection.pingInterval) {
+          clearInterval(connection.pingInterval)
+        }
+        connection.pingInterval = setInterval(probe, PING_INTERVAL)
+      }
+
+      connection.ws.onmessage = (event) => {
+        // Skip if intentionally closed
+        if (connection.isIntentionallyClosed) return
+
+        try {
+          const message = JSON.parse(event.data)
+          connection.lastMessageAt = Date.now()
+          wsDebugInfo.lastMessageAt = connection.lastMessageAt
+          wsDebugInfo.messagesReceived++
+
+          // Handle pong (heartbeat response)
+          if (message.type === 'pong') {
+            wsDebugInfo.lastPongAt = Date.now()
+            return
+          }
+
+          // Bench requests: to their own listeners (addRelayMessageListener)
+          if (BENCH_RELAY_MESSAGES.includes(message.type) || (message.type === 'error' && message.code === 'bench-request-refused')) {
+            if (message.matchId === undefined || String(message.matchId) === matchIdStr) notifyRelayMessage(matchIdStr, message)
+            return
+          }
+
+          const notify = (payload) => {
+            connection.subscribers.forEach(subscriber => {
+              try {
+                subscriber(payload)
+              } catch (err) {
+                console.error('[ServerDataSync] Error in subscriber callback:', err)
+              }
+            })
+          }
+
+          if ((message.type === 'match-data-update' || message.type === 'match-full-data') && String(message.matchId) === matchIdStr &&
+              message.access === 'summary') {
+            // The public summary (no PIN proved on this socket): never replaces
+            // the bundle; only its live state is used, like a live-state-update.
+            const liveState = newerLiveState(connection.lastLiveState, message.liveState)
+            if (liveState && liveState === message.liveState) {
+              connection.lastLiveState = liveState
+              if (connection.lastPayload) {
+                connection.lastPayload = applyNewerLiveState({ ...connection.lastPayload, liveState }, liveState)
+                notify(connection.lastPayload)
+              }
+            }
+          } else if ((message.type === 'match-data-update' || message.type === 'match-full-data') && String(message.matchId) === matchIdStr) {
+            // Match data (full snapshot on subscribe, then every scoreboard sync).
+            // Pass through timestamp fields for latency tracking.
+            const bundle = readRelayBundle(message)
+            if (bundle) {
+              // The relay decides whether the last live-state still applies: it
+              // re-sends it with every bundle while the same scoreboard / game PIN
+              // keeps the match, and drops it on a takeover. Re-applying an old
+              // one here would show another match's sides, sets or 'ended' state.
+              // A live state newer than the bundle wins over its score.
+              const payload = applyNewerLiveState(bundle)
+              connection.lastLiveState = payload.liveState
+              connection.lastPayload = payload
+              // it brings everything a held push had: one update
+              clearTimeout(connection.liveHoldTimer)
+              connection.liveHoldTimer = null
+              notify(payload)
+            }
+          } else if (message.type === 'live-state-update' && String(message.matchId) === matchIdStr) {
+            // Scoreboard's computed live-state: re-deliver the last bundle with
+            // it so consumers see one consistent object, its score included
+            // when the push is newer than the bundle. An older push (pushes and
+            // syncs race) is not applied over a newer one.
+            const liveState = newerLiveState(connection.lastLiveState, message.liveState)
+            if (liveState && liveState === message.liveState) {
+              connection.lastLiveState = liveState
+              if (connection.lastPayload) {
+                connection.lastPayload = applyNewerLiveState({ ...connection.lastPayload, liveState }, liveState)
+                // Shown with the scorer's sync that follows it (LIVE_STATE_HOLD_MS)
+                clearTimeout(connection.liveHoldTimer)
+                connection.liveHoldTimer = setTimeout(() => {
+                  connection.liveHoldTimer = null
+                  if (!connection.isIntentionallyClosed && connection.lastPayload) notify(connection.lastPayload)
+                }, LIVE_STATE_HOLD_MS)
+              }
+            }
+          } else if (message.type === 'scorer-presence') {
+            // Whether the match's scorer device is connected to this relay
+            // (sent on subscribe and when it changes; older relays never send
+            // it): the tablets warn when it is gone (useScorerAway)
+            connection.scorerPresent = message.present === true
+            notify({ _scorerPresence: connection.scorerPresent, matchId: matchIdStr })
+          } else if (message.type === 'match-deleted' && String(message.matchId) === matchIdStr) {
+            // Match removed from the relay (match end / scorer deleted it)
+            connection.lastPayload = null
+            connection.lastLiveState = undefined
+            clearTimeout(connection.liveHoldTimer)
+            connection.liveHoldTimer = null
+            notify({ _deleted: true, matchId: matchIdStr })
+          } else if (message.type === 'error') {
+            // Relay refused something (rate limit, not the match's scoreboard, ...)
+            wsDebugInfo.lastServerError = { time: Date.now(), code: message.code || null, message: message.message || 'Server error' }
+            console.warn('[ServerDataSync] Relay error:', message.code || '', message.message || '')
+            // The PIN this tablet proved is no longer this match's (the scorer
+            // changed it): its view of the match ends (useRealtimeConnection onAccessLost)
+            if (message.code === 'pin-invalid' && String(message.matchId) === matchIdStr) notify({ _accessDenied: message.code, matchId: matchIdStr })
+          } else if (message.type === 'match-action' && String(message.matchId) === matchIdStr) {
+            // Action received from scoreboard (timeout, substitution, set_end, etc.)
+            connection.subscribers.forEach(subscriber => {
+              try {
+                // Pass the action with a special _action wrapper, including timestamps for latency tracking
+                subscriber({
+                  _action: message.action,
+                  _actionData: message.data,
+                  _timestamp: message._timestamp || message.timestamp,
+                  _scoreboardTimestamp: message._scoreboardTimestamp || message.timestamp
+                })
+              } catch (err) {
+                console.error('[ServerDataSync] Error in subscriber callback for action:', err)
+              }
+            })
+          }
+        } catch (err) {
+          console.error('[ServerDataSync] Error parsing message:', err)
+        }
+      }
+
+      connection.ws.onerror = (error) => {
+        // Track error for debugging
+        wsDebugInfo.lastError = {
+          time: Date.now(),
+          message: error?.message || 'WebSocket error',
+          readyState: connection.ws?.readyState
+        }
+        wsDebugInfo.errors.push(wsDebugInfo.lastError)
+        if (wsDebugInfo.errors.length > 10) wsDebugInfo.errors.shift() // Keep last 10 errors
+
+        // Skip if ws is null (cleanup already happened) or intentionally closed
+        if (!connection.ws || connection.isIntentionallyClosed) return
+
+        // Only log if it's not a connection error (which is expected during initial connection)
+        // Connection errors are usually handled by onclose
+        if (connection.ws.readyState === WebSocket.CONNECTING) {
+          // This is expected during initial connection attempts, don't log as error
+          return
+        }
+        console.warn('[ServerDataSync] WebSocket error (will attempt reconnect):', error)
+      }
+
+      connection.ws.onclose = (event) => {
+        // Clear ping interval
+        if (connection.pingInterval) {
+          clearInterval(connection.pingInterval)
+          connection.pingInterval = null
+        }
+
+        // Don't reconnect if intentionally closed or ws is null
+        if (connection.isIntentionallyClosed || !connection.ws) return
+
+        // Don't reconnect on normal closure (code 1000)
+        if (event.code === 1000) {
+          console.log('[ServerDataSync] WebSocket closed normally')
+          return
+        }
+
+        // Only reconnect if there are still subscribers
+        if (connection.subscribers.size === 0) {
+          console.log('[ServerDataSync] No subscribers, not reconnecting')
+          return
+        }
+
+        // Exponential backoff for reconnection
+        connection.reconnectAttempts++
+        const delay = viewerReconnectDelay(connection.reconnectAttempts)
+        console.log(`[ServerDataSync] WebSocket disconnected, reconnecting in ${delay / 1000} seconds... (attempt ${connection.reconnectAttempts})`)
+        connection.reconnectTimeout = setTimeout(connect, delay)
+      }
+    } catch (err) {
+      console.error('[ServerDataSync] Connection error:', err)
+      // Exponential backoff for reconnection
+      connection.reconnectAttempts++
+      const delay = viewerReconnectDelay(connection.reconnectAttempts)
+      connection.reconnectTimeout = setTimeout(connect, delay)
+    }
+  }
+
+  // Connect if not already connected
+  if (!connection.ws || connection.ws.readyState === WebSocket.CLOSED) {
+    connect()
+  } else if (connection.ws.readyState === WebSocket.OPEN) {
+    // Already connected, send subscription immediately
+    try {
+      connection.ws.send(JSON.stringify(subscribeMessage(matchIdStr)))
+    } catch (err) {
+      console.error('[ServerDataSync] Error sending subscription:', err)
+    }
+  }
+
+  // Return unsubscribe function
+  return () => {
+    // Remove this subscriber
+    connection.subscribers.delete(onUpdate)
+
+    // If no more subscribers, close the connection
+    if (connection.subscribers.size === 0) {
+      connection.isIntentionallyClosed = true
+      if (connection.reconnectTimeout) {
+        clearTimeout(connection.reconnectTimeout)
+        connection.reconnectTimeout = null
+      }
+      if (connection.pingInterval) {
+        clearInterval(connection.pingInterval)
+        connection.pingInterval = null
+      }
+      if (connection.pongTimer) {
+        clearTimeout(connection.pongTimer)
+        connection.pongTimer = null
+      }
+      clearTimeout(connection.liveHoldTimer)
+      connection.liveHoldTimer = null
+      if (connection.onWake) {
+        window.removeEventListener('online', connection.onWake)
+        if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', connection.onWake)
+        connection.onWake = null
+      }
+      if (connection.ws) {
+        connection.ws.close(1000, 'Unsubscribing') // Normal closure
+        connection.ws = null
+      }
+      // Remove from maps
+      wsConnections.delete(matchIdStr)
+      connectFunctions.delete(matchIdStr)
+    }
+  }
+}
+
+/**
+ * Get WebSocket connection status for a match
+ * Returns: 'connected', 'connecting', 'disconnected', or 'unknown'
+ */
+export function getWebSocketStatus(matchId) {
+  const matchIdStr = String(matchId)
+  const connection = wsConnections.get(matchIdStr)
+
+  if (!connection || !connection.ws) {
+    return 'disconnected'
+  }
+
+  switch (connection.ws.readyState) {
+    case WebSocket.CONNECTING:
+      return 'connecting'
+    case WebSocket.OPEN:
+      return 'connected'
+    case WebSocket.CLOSING:
+    case WebSocket.CLOSED:
+      return 'disconnected'
+    default:
+      return 'unknown'
+  }
+}
+
+/**
+ * Is the relay this app talks to up? GET /api/server/status on the configured
+ * backend (every relay serves it), not on window.location — on a static
+ * deployment that answers with index.html.
+ * @returns {Promise<{ running: boolean }>}
+ */
+export async function getRelayServerStatus({ fetchImpl = fetch } = {}) {
+  try {
+    const response = await fetchImpl(`${getServerUrl()}/api/server/status`, { headers: { Accept: 'application/json' } })
+    if (!response.ok) return { running: false }
+    const type = response.headers?.get?.('content-type') || ''
+    if (type && !type.includes('json')) return { running: false }
+    const body = await response.json()
+    return { ...(body && typeof body === 'object' ? body : {}), running: true }
+  } catch {
+    return { running: false }
+  }
+}
+
+/**
+ * Find match by game number from server
+ */
+export async function findMatchByGameNumber(gameNumber) {
+  const serverUrl = getServerUrl()
+
+  try {
+    const response = await fetch(`${serverUrl}/api/match/by-game-number?gameNumber=${encodeURIComponent(gameNumber)}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    })
+
+    if (!response.ok) {
+      return null
+    }
+
+    const result = await response.json()
+    // relayMatchId: the relay's room key, under which GET / PATCH find the match
+    return result.match ? { ...result.match, relayMatchId: result.matchId ?? null } : null
+  } catch (error) {
+    console.error('Error finding match by game number:', error)
+    return null
+  }
+}
+
+/**
+ * Update match data on server (for upload roster, etc.). `pin`: the team's
+ * upload PIN of the match, which the relay checks (X-OV-Match-Pin).
+ */
+export async function updateMatchData(matchId, updates, { pin = null } = {}) {
+  const serverUrl = getServerUrl()
+
+  try {
+    const response = await fetch(`${serverUrl}/api/match/${encodeURIComponent(matchId)}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(pin ? { 'X-OV-Match-Pin': String(pin) } : {})
+      },
+      body: JSON.stringify(updates)
+    })
+
+    if (!response.ok) {
+      throw new Error('Failed to update match data')
+    }
+
+    const result = await response.json()
+    return result
+  } catch (error) {
+    console.error('Error updating match data:', error)
+    throw error
+  }
+}
+
+// The match keys the tablet pickers listed last (listAvailableMatches*), by
+// game number: a PIN check that knows only the game picked (two listed rows
+// share the number, a numeric LAN id) names its match from them when exactly
+// one listed match carries that number, so the backend and the relay compare
+// the PIN with that match only, in its own brute-force scope, and do not look
+// it up among every live match (audit 2026-11, SEC-06). 'cloud': the cloud
+// rows' external_ids; 'relay': the relay's room keys (indoor). Kept
+// PICKER_KEYS_TTL_MS after the list was read.
+const PICKER_KEYS_TTL_MS = 15 * 60 * 1000
+const pickerKeys = { cloud: new Map(), relay: new Map() } // game number -> { keys: Set, at }
+const gameKeyOf = (n) => (n === undefined || n === null ? '' : String(n).trim())
+
+/** Remember the match keys of a picker list (replaces what that source listed before). */
+function rememberPickerKeys(source, rows, now = Date.now()) {
+  const map = pickerKeys[source]
+  if (!map || !Array.isArray(rows)) return
+  map.clear()
+  for (const row of rows) {
+    if (!row || typeof row !== 'object' || (source === 'relay' && row.sportType === 'beach')) continue
+    const game = gameKeyOf(row.gameNumber)
+    const key = source === 'cloud' ? row.external_id : row.id
+    // a numeric id is a LAN relay's own: no cloud match and no seed key
+    if (!game || typeof key !== 'string' || !key.trim() || /^\d+$/.test(key.trim())) continue
+    const e = map.get(game) || { keys: new Set(), at: now }
+    e.keys.add(key.trim())
+    map.set(game, e)
+  }
+}
+
+/** The one match key `source` listed under `gameNumber` (fresh), else null. */
+export function listedMatchKey(source, gameNumber, now = Date.now()) {
+  const e = pickerKeys[source]?.get(gameKeyOf(gameNumber))
+  if (!e || now - e.at > PICKER_KEYS_TTL_MS || e.keys.size !== 1) return null
+  return e.keys.values().next().value
+}
+
+/** Forget the listed match keys (tests, leaving the picker). */
+export function forgetListedMatches() {
+  pickerKeys.cloud.clear()
+  pickerKeys.relay.clear()
+}
+
+/**
+ * List available matches from server (for game number dropdown)
+ */
+export async function listAvailableMatches({ test = false } = {}) {
+  const serverUrl = getServerUrl()
+  const url = `${serverUrl}/api/match/list${test ? '?test=1' : ''}`
+
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    })
+
+    if (!response.ok) {
+      return { success: false, matches: [], error: `HTTP ${response.status}: ${response.statusText}` }
+    }
+
+    const result = await response.json()
+    if (result?.success !== false && Array.isArray(result?.matches)) rememberPickerKeys('relay', result.matches)
+    return result
+  } catch (error) {
+    console.error('[listAvailableMatches] Error:', error.message)
+    return { success: false, matches: [], error: error.message }
+  }
+}
+
+// The columns the tablet pickers read: the stale rule (status, scheduled_at,
+// updated_at, coin_toss), sport_type / test (beach and test rows are left
+// out), the team names (team1_data / team2_data when home_team / away_team
+// carry none) and the connection flags.
+const PICKER_COLUMNS = 'id, external_id, game_n, status, test, sport_type, scheduled_at, updated_at, coin_toss, home_team, away_team, team1_data, team2_data, connections'
+
+/** The scheduled time of a cloud row for a picker row ('TBD' when none). */
+function pickerDateTime(scheduledAt) {
+  if (!scheduledAt) return 'TBD'
+  try {
+    // Ensure timestamp is parsed as UTC (the cloud may return it without 'Z')
+    let scheduledStr = scheduledAt
+    if (!scheduledStr.endsWith('Z') && !scheduledStr.includes('+')) {
+      scheduledStr = scheduledStr + 'Z'
+    }
+    const scheduledDate = new Date(scheduledStr)
+    // Display in local timezone
+    const dateStr = scheduledDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    const timeStr = formatTimeLocal(scheduledStr)
+    return `${dateStr} ${timeStr}`
+  } catch (e) {
+    return 'TBD'
+  }
+}
+
+/**
+ * The cloud rows a tablet picker may offer: setup / live, written in the last
+ * PICKER_QUERY_WINDOW_MS, indoor, not test, not stale (utils/pickerMatches.js),
+ * and `joinable` (the connection flags). Soonest first.
+ * @param {(connections: object) => boolean} joinable
+ * @returns {Promise<{ data: object[]|null, error: object|null }>}
+ */
+async function listCloudPickerRows(joinable, now = Date.now()) {
+  const { data, error } = await apiFrom('matches')
+    .select(PICKER_COLUMNS)
+    .in('status', ['setup', 'live'])
+    .gte('updated_at', pickerQuerySince(now))
+    .order('scheduled_at', { ascending: true })
+  if (error) return { data: null, error }
+  return { data: (data || []).filter((m) => isShownCloudPickerRow(m, now) && joinable(m.connections || {})), error: null }
+}
+
+/** A cloud row in the shape of the relay's match list. */
+function cloudPickerRow(m) {
+  const { home, away } = pickerTeamNames(m)
+  return {
+    id: m.external_id || m.id,
+    external_id: m.external_id, // Keep original for cloud writes
+    gameNumber: m.game_n || m.external_id,
+    homeTeam: home,
+    awayTeam: away,
+    homeTeamName: home,
+    awayTeamName: away,
+    scheduledAt: m.scheduled_at,
+    updatedAt: m.updated_at,
+    dateTime: pickerDateTime(m.scheduled_at),
+    status: m.status
+  }
+}
+
+/**
+ * List available matches from the cloud (referee picker): see
+ * listCloudPickerRows, with the referee connection on. No PINs: they are
+ * checked server-side (validate-connection-pin).
+ */
+export async function listAvailableMatchesSupabase({ now = Date.now() } = {}) {
+  try {
+    const { data, error } = await listCloudPickerRows((c) => c.referee_enabled === true, now)
+
+    if (error) {
+      // 404 (a relay without /api/db) or no answer (venue offline, or a LAN
+      // tablet origin the cloud does not serve): the caller falls back to the
+      // relay's own match list, nothing is wrong
+      if (error.status !== 404 && !error.network) console.error('[listAvailableMatchesSupabase] Error:', error)
+      return { success: false, matches: [], error: error.message }
+    }
+
+    const matches = data.map((m) => ({ ...cloudPickerRow(m), refereeConnectionEnabled: true }))
+    rememberPickerKeys('cloud', matches)
+    return { success: true, matches }
+  } catch (error) {
+    console.error('[listAvailableMatchesSupabase] Exception:', error)
+    return { success: false, matches: [], error: error.message }
+  }
+}
+
+/**
+ * List available matches from the cloud for the bench apps: see
+ * listCloudPickerRows, with the home or the away bench connection on. Bench
+ * PINs are never shipped to the client: validated server-side on connect.
+ */
+export async function listAvailableMatchesForBenchSupabase({ now = Date.now() } = {}) {
+  try {
+    const { data, error } = await listCloudPickerRows((c) => c.home_bench_enabled === true || c.away_bench_enabled === true, now)
+
+    if (error) {
+      // No answer (venue offline, LAN tablet origin): the relay list stands in
+      if (error.status !== 404 && !error.network) console.error('[listAvailableMatchesForBenchSupabase] Error:', error)
+      return { success: false, matches: [], error: error.message }
+    }
+
+    const matches = data.map((m) => {
+      const connections = m.connections || {}
+      return {
+        ...cloudPickerRow(m),
+        homeBenchEnabled: connections.home_bench_enabled,
+        awayBenchEnabled: connections.away_bench_enabled
+      }
+    })
+    rememberPickerKeys('cloud', matches)
+    return { success: true, matches }
+  } catch (error) {
+    console.error('[listAvailableMatchesForBenchSupabase] Exception:', error)
+    return { success: false, matches: [], error: error.message }
+  }
+}
+
+/**
+ * Validate PIN against Supabase database
+ * Returns match data if PIN is valid
+ * With matchExternalId the PIN is checked against that match only: a tablet
+ * re-checking its stored PIN after a reload, whose check the backend then
+ * counts apart from other tablets' typos behind the same address. With only
+ * `gameNumber` (the game picked, when its row named no cloud match: two
+ * listed rows share the number, a numeric LAN id), the one cloud match the
+ * picker listed under that number is named (listedMatchKey); else the
+ * backend looks the PIN up among every live match, as before (audit
+ * 2026-11, SEC-06: such a lookup tests a guess against every match).
+ * A refusal without comparing (too many wrong PINs from this address) comes
+ * back with rateLimited: true, never as a wrong PIN. A failed check says what
+ * the backend answered (status) or, when it did not answer at all (network
+ * error, timed out), unreachable: true: a tablet re-checking its stored PIN
+ * keeps it when nothing was compared.
+ */
+export async function validatePinSupabase(pin, type = 'referee', { timeoutMs = 3000, matchExternalId, gameNumber = null } = {}) {
+  // Bounded: on a venue network that drops packets to the internet this check
+  // must fail fast so the caller can fall back to the LAN relay.
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+  const timer = controller && timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : null
+  try {
+    const pinStr = String(pin).trim()
+
+    if (!pinStr || pinStr.length !== 6) {
+      return { success: false, error: 'Invalid PIN format' }
+    }
+
+    // SECURITY: the PIN is validated server-side. Match connection PINs are
+    // never sent to the client (previously this read connection_pins for every
+    // live match into the browser, defeating the PIN gate).
+    const apiUrl = getCloudApiUrl('/api/match/validate-connection-pin')
+    if (!apiUrl) return { success: false, error: 'Backend not available' }
+    const named = matchExternalId || (gameNumber != null && gameNumber !== '' ? listedMatchKey('cloud', gameNumber) : null)
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: pinStr, type, ...(named ? { matchExternalId: String(named) } : {}) }),
+      ...(controller ? { signal: controller.signal } : {})
+    })
+
+    let result
+    try {
+      result = await response.json()
+    } catch {
+      return { success: false, error: 'Validation failed', status: response.status, ...(response.status === 429 ? { rateLimited: true } : {}) }
+    }
+
+    if (response.status === 429) {
+      return { success: false, rateLimited: true, error: result?.error || 'Too many attempts', status: 429 }
+    }
+    if (!response.ok || !result?.success) {
+      return { success: false, error: result?.error || 'Invalid PIN code', status: response.status }
+    }
+
+    if (result.match?.id != null) rememberMatchAccess(result.match.id, { pin: pinStr, token: result.token || null, type })
+    return { success: true, match: result.match, token: result.token || null }
+  } catch (error) {
+    if (error?.name === 'AbortError') return { success: false, error: 'Server PIN check timed out', unreachable: true }
+    console.error('[validatePinSupabase] Exception:', error)
+    return { success: false, error: error.message, unreachable: true }
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+/**
+ * Validate a roster-upload PIN server-side (Supabase mode).
+ * The upload PINs are never sent to the client; the server compares them.
+ * With matchExternalId the PIN is checked against that match only (the server
+ * filters on it, and the answer must name it): a PIN of match A never unlocks
+ * the roster upload of match B.
+ * @param {'home'|'away'} team
+ * @param {string} pin
+ * @param {string} [matchExternalId] the match the roster will be written to
+ */
+export async function validateUploadPinSupabase(team, pin, matchExternalId) {
+  try {
+    const pinStr = String(pin).trim()
+    if (!pinStr || pinStr.length !== 6) {
+      return { success: false, error: 'Invalid PIN format' }
+    }
+    const apiUrl = getCloudApiUrl('/api/match/validate-connection-pin')
+    if (!apiUrl) return { success: false, error: 'Backend not available' }
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pin: pinStr,
+        type: team === 'home' ? 'upload_home' : 'upload_away',
+        ...(matchExternalId ? { matchExternalId: String(matchExternalId) } : {})
+      })
+    })
+    let result
+    try { result = await response.json() } catch { return { success: false, error: 'Validation failed' } }
+    if (!response.ok || !result?.success) {
+      return { success: false, error: result?.error || 'Invalid upload PIN' }
+    }
+    if (matchExternalId && String(result.match?.id ?? '') !== String(matchExternalId)) {
+      return { success: false, error: 'Invalid upload PIN' }
+    }
+    return { success: true, match: result.match }
+  } catch (error) {
+    console.error('[validateUploadPinSupabase] Exception:', error)
+    return { success: false, error: error.message }
+  }
+}
+
+/**
+ * Store a team's roster as the match's pending roster in the cloud (Upload
+ * Roster app). Authorised by the team's upload PIN of that match, not by an
+ * account: POST /api/match/upload-roster writes only the pending roster and the
+ * team's coach/captain signatures.
+ * @param {string} matchExternalId
+ * @param {'home'|'away'} team
+ * @param {string} pin - the team's upload PIN
+ * @param {{players: object[], bench: object[], coachSignature?: string|null, captainSignature?: string|null, timestamp?: string}} rosterData
+ * @returns {Promise<{success: boolean, status?: number, error?: string}>}
+ */
+export async function uploadRosterToCloud(matchExternalId, team, pin, rosterData, { fetchImpl = fetch } = {}) {
+  const apiUrl = getCloudApiUrl('/api/match/upload-roster')
+  if (!apiUrl) return { success: false, error: 'Backend not available' }
+  const { coachSignature = null, captainSignature = null, ...roster } = rosterData || {}
+  try {
+    const response = await fetchImpl(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ matchExternalId: String(matchExternalId), team, pin: String(pin).trim(), roster, coachSignature, captainSignature })
+    })
+    let result = null
+    try { result = await response.json() } catch { /* not JSON */ }
+    if (!response.ok || !result?.success) {
+      return { success: false, status: response.status, error: result?.error || 'Upload failed' }
+    }
+    return { success: true, status: response.status }
+  } catch (error) {
+    return { success: false, status: 0, error: error.message }
+  }
+}
+
+/**
+ * The relay's view of who watches a match (GET /api/server/connections) on the
+ * same backend the app talks to — not window.location, which on a static
+ * deployment answers with the SPA's index.html. Null when unreachable.
+ * @param {string} matchKey - the relay room key (seed_key)
+ */
+const connectionsCache = new Map() // url -> { at, promise }
+const CONNECTIONS_TTL_MS = 4000
+
+export function fetchRelayConnections(matchKey, { fetchImpl = fetch, maxAgeMs = CONNECTIONS_TTL_MS } = {}) {
+  const url = getApiUrl(`/api/server/connections${matchKey ? `?matchId=${encodeURIComponent(matchKey)}` : ''}`)
+  if (!url) return Promise.resolve(null)
+  // Several views poll this (header chip, scoreboard, connection setup): one
+  // request serves them all for a few seconds.
+  const hit = connectionsCache.get(url)
+  if (hit && Date.now() - hit.at < maxAgeMs) return hit.promise
+  const promise = requestRelayConnections(url, fetchImpl)
+  connectionsCache.set(url, { at: Date.now(), promise })
+  if (connectionsCache.size > 20) connectionsCache.delete(connectionsCache.keys().next().value)
+  return promise
+}
+
+async function requestRelayConnections(url, fetchImpl) {
+  try {
+    const response = await fetchImpl(url, { headers: { Accept: 'application/json' } })
+    if (!response.ok) return null
+    const type = response.headers?.get?.('content-type') || ''
+    if (type && !type.includes('json')) return null
+    const body = await response.json()
+    return body && typeof body === 'object' && Array.isArray(body.clients) ? body : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Which tablets the relay sees on a match: { referee, benchHome, benchAway,
+ * watchers }. Counts only clients subscribed to matchKey. A bench that did not
+ * say which team it is counts for both benches only when one of them is enabled.
+ * A referee or bench counts only when the relay does not say it is unproved
+ * (`proved: false`, the same rule as the Connect dialog's roleClients): a
+ * socket that only named its role is a watcher.
+ * @param {object|null} connections - fetchRelayConnections() result
+ * @param {string} matchKey
+ * @param {object} [match] - scorer's match (connection flags)
+ */
+export function summarizeRelayTablets(connections, matchKey, match = null) {
+  const out = { referee: 0, benchHome: 0, benchAway: 0, watchers: 0 }
+  if (!connections || !Array.isArray(connections.clients)) return out
+  const key = matchKey == null ? null : String(matchKey)
+  let benchUnknown = 0
+  for (const c of connections.clients) {
+    if (key && String(c.matchId) !== key) continue
+    out.watchers++
+    if (c.proved === false) continue
+    if (c.role === 'referee') out.referee++
+    else if (c.role === 'bench' && c.team === 'home') out.benchHome++
+    else if (c.role === 'bench' && c.team === 'away') out.benchAway++
+    else if (c.role === 'bench') benchUnknown++
+  }
+  if (benchUnknown > 0 && match) {
+    const home = match.homeTeamConnectionEnabled === true
+    const away = match.awayTeamConnectionEnabled === true
+    if (home && !away) out.benchHome += benchUnknown
+    else if (away && !home) out.benchAway += benchUnknown
+  }
+  return out
+}
+
+/**
+ * Merge what the relay sees (summarizeRelayTablets) into a heartbeat-based
+ * tablet summary (utils/connectionHealth getTabletStatusSummary): a role the
+ * relay has a subscriber for is connected.
+ */
+export function applyRelayTablets(summary, relay) {
+  if (!summary || !relay) return summary
+  const seen = { referee: relay.referee > 0, bench_home: relay.benchHome > 0, bench_away: relay.benchAway > 0 }
+  // how many tablets the relay has for each role (1R and 2R are one role:
+  // the chip counts roles, the list shows "Referee ×2")
+  const devices = { referee: relay.referee || 0, bench_home: relay.benchHome || 0, bench_away: relay.benchAway || 0 }
+  const roles = summary.roles.map((r) => {
+    const withCount = { ...r, devices: devices[r.role] ?? 0 }
+    return seen[r.role] && r.status !== 'connected' ? { ...withCount, status: 'connected', color: '#22c55e', ageMs: null } : withCount
+  })
+  const connectedCount = roles.filter((r) => r.status === 'connected').length
+  const issues = roles.some((r) => r.status !== 'connected')
+  return {
+    ...summary,
+    roles,
+    connectedCount,
+    overallStatus: summary.expectedCount > 0 ? (issues ? 'issues' : 'ok') : summary.overallStatus
+  }
+}
+
+/**
+ * Team names of a match object from any source: the scorer's Dexie match
+ * (homeName/awayName), a relay bundle, the cloud PIN check (homeTeam string),
+ * a matches row (home_team JSONB) or a match list entry (homeTeamName).
+ * @returns {{ home: string|null, away: string|null }}
+ */
+/**
+ * Is a PIN check's answer for another game than the one picked by its game
+ * number (`gameNumber`; no key could be picked: two listed matches share the
+ * number, a numeric LAN id)? Only when both name one: an answer without a
+ * game number is not compared. A PIN-only check opened whichever match
+ * answered, another hall's whose PIN was the same.
+ */
+export function isOtherGame(match, gameNumber) {
+  const picked = gameNumber == null ? '' : String(gameNumber).trim()
+  const found = match?.gameNumber ?? match?.gameN ?? match?.game_n
+  const answered = found == null ? '' : String(found).trim()
+  return picked !== '' && answered !== '' && answered !== picked
+}
+
+export function matchTeamNames(match, { homeTeam, awayTeam } = {}) {
+  const pick = (...vals) => {
+    for (const v of vals) {
+      if (typeof v === 'string' && v.trim()) return v.trim()
+      if (v && typeof v === 'object' && typeof v.name === 'string' && v.name.trim()) return v.name.trim()
+    }
+    return null
+  }
+  const m = match || {}
+  return {
+    home: pick(m.homeTeamName, m.homeName, m.home_team_name, m.home_team, m.homeTeam, homeTeam),
+    away: pick(m.awayTeamName, m.awayName, m.away_team_name, m.away_team, m.awayTeam, awayTeam)
+  }
+}
+
+// PIN fields the relay needs from the scorer: the game PIN proves the
+// scoreboard role, the connection PINs let the relay check referee/bench PINs
+// itself (LAN). Nothing else secret goes over the relay.
+const RELAY_PIN_FIELDS = ['gamePin', 'refereePin', 'homeTeamPin', 'awayTeamPin', 'homeTeamUploadPin', 'awayTeamUploadPin']
+// globalKey: the only access to a Global match's backup store (utils/globalCloud);
+// globalOrganizer: the tournament code that lists and adds to its matches and
+// PDFs, cloudShareToken: the match's read-only share link (utils/globalCloudDb,
+// audit SEC-28); liveSecret: the live screen's court (utils/globalLive)
+const NEVER_RELAYED = ['game_pin', 'connection_pins', 'connectionPins', 'globalKey', 'globalOrganizer', 'cloudShareToken', 'liveSecret']
+
+// What no relay hands a tablet stays on the device too (the same lists as
+// backend/lib/publicColumns.js): a person's date of birth, nationality and
+// contact data; the officials (with theirs), every signature image, the
+// approvals, the manual-change log and the rosters waiting for the scorer.
+// The remarks go (the referee's live scoresheet prints them, and the cloud
+// relay gives them to the referee only), without the dates of a
+// date-of-birth correction.
+const RELAY_PERSON_OMIT = ['dob', 'dateOfBirth', 'date_of_birth', 'birthDate', 'birthdate', 'birth_date', 'country', 'nationality', 'email', 'phone', 'address']
+const RELAY_MATCH_OMIT = [
+  'officials', 'signatures', 'approval', 'accountApprovals', 'account_approvals', 'manualChanges', 'manual_changes',
+  'pendingHomeRoster', 'pendingAwayRoster', 'pending_home_roster', 'pending_away_roster',
+  'pendingTeam1Roster', 'pendingTeam2Roster', 'pending_team1_roster', 'pending_team2_roster'
+]
+const RELAY_ROSTER_KEYS = [
+  'players_home', 'players_away', 'bench_home', 'bench_away', 'players_team1', 'players_team2',
+  'benchHome', 'benchAway', 'homePlayers', 'awayPlayers', 'team1Players', 'team2Players'
+]
+// A team row: the names and colours the tablets draw
+const RELAY_TEAM_KEYS = ['name', 'shortName', 'short_name', 'color', 'liberoColor', 'liberoColour', 'libero_color', 'libero_colour']
+const isSignatureKey = (k) => /signature/i.test(k)
+
+function relayPerson(p) {
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return p
+  if (!RELAY_PERSON_OMIT.some((k) => k in p)) return p
+  const out = { ...p }
+  for (const k of RELAY_PERSON_OMIT) delete out[k]
+  return out
+}
+
+/** A roster (players or bench) as sync-match-data carries it: copies without dates of birth or contact data. */
+export function relayPeoplePayload(list) {
+  return Array.isArray(list) ? list.map(relayPerson) : []
+}
+
+/** A team row as sync-match-data carries it: its names and colours, or null. */
+export function relayTeamPayload(team) {
+  if (!team || typeof team !== 'object') return null
+  const out = {}
+  for (const k of RELAY_TEAM_KEYS) if (team[k] !== undefined) out[k] = team[k]
+  return out
+}
+
+// An in-match roster edit wrote a corrected date of birth with both dates
+// ("- Player #7 dob: 03.05.2011 → 04.06.2011 (Team)"): the change stays, the
+// dates go, to the team label at the end of the line or to its end
+// (backend/lib/publicColumns.js redactRemarkDobs, the same steps). Read with
+// indexOf, never a backtracking pattern: a long remarks text took the relay
+// seconds per bundle.
+const DOB_LABEL = 'dob: '
+const DOB_ARROWS = [' → ', ' -> ']
+const DOB_CHANGED = 'date of birth changed'
+// Where a line ends (the line ends of `.` and `$` in a pattern)
+const LINE_END = /[\n\r\u2028\u2029]/g
+const WORD_CHAR = /[A-Za-z0-9_]/
+
+/** Where the value after the first arrow at or after `from` starts, or -1. */
+function dobValueAt(line, from) {
+  let start = -1
+  let length = 0
+  for (const arrow of DOB_ARROWS) {
+    const i = line.indexOf(arrow, from)
+    if (i !== -1 && (start === -1 || i < start)) {
+      start = i
+      length = arrow.length
+    }
+  }
+  return start === -1 ? -1 : start + length
+}
+
+/** Where a line's trailing " (Team)" starts (no brackets inside), or -1. */
+function teamLabelAt(line) {
+  if (!line.endsWith(')')) return -1
+  const at = line.lastIndexOf(' (')
+  if (at === -1) return -1
+  const inner = line.slice(at + 2, -1)
+  return inner.includes('(') || inner.includes(')') ? -1 : at
+}
+
+/** The remarks text as the relay gets it: no dates of a date-of-birth correction. */
+export function relayRemarks(text) {
+  if (typeof text !== 'string' || !text.includes(DOB_LABEL)) return text
+  let out = ''
+  let copied = 0
+  let from = 0
+  for (;;) {
+    const at = text.indexOf(DOB_LABEL, from)
+    if (at === -1) break
+    if (at > 0 && WORD_CHAR.test(text[at - 1])) {
+      from = at + 1
+      continue
+    }
+    LINE_END.lastIndex = at
+    const lineEnd = LINE_END.exec(text)?.index ?? text.length
+    // from "dob: " to the end of its line: at least one character before
+    // the arrow and one after it
+    const rest = text.slice(at, lineEnd)
+    const value = dobValueAt(rest, DOB_LABEL.length + 1)
+    if (value === -1 || value >= rest.length) {
+      from = lineEnd
+      continue
+    }
+    const label = teamLabelAt(rest)
+    out += text.slice(copied, at) + DOB_CHANGED
+    copied = from = at + (label > value ? label : rest.length)
+  }
+  return copied === 0 ? text : out + text.slice(copied)
+}
+
+/**
+ * The relay room key of a scorer's match: its seed_key (what the tablets know
+ * from the PIN check and the QR code); a test match's seedKey (the relays key
+ * by seed_key ?? seedKey too). Null while the match has none (a blank match
+ * before Create Match): it is not published then. A Dexie id is no key: every
+ * device's first match is id 1, so scorers met in room '1' and a tablet
+ * following it got another scorer's match.
+ * An easy match has one only on a local relay (isLocalRelayUrl: the desktop app,
+ * a scoreboard or a venue server serving this page, a local server set in the
+ * app): there a scoreboard in the hall follows it, and it never reaches the
+ * cloud (mayPublishMatchData keeps a test-type match off the cloud too). With the
+ * cloud relay it has none: unofficial, it never leaves the device. A Point Hub
+ * board's own screen always counts as local.
+ * @param {object|null} match
+ * @returns {string|null}
+ */
+export function relayMatchKey(match) {
+  if (match?.easy === true && !onPointHubBoard() && !isLocalRelayUrl(getRelayWebSocketUrl())) return null
+  for (const seed of [match?.seed_key, match?.seedKey]) {
+    if (typeof seed === 'string' && seed.trim()) return seed.trim()
+  }
+  return null
+}
+
+/**
+ * The match object a scorer sends in sync-match-data, without the personal
+ * data no relay hands on (RELAY_MATCH_OMIT, signatures, people's dates of
+ * birth). PINs go only with the first sync on a socket and when one changes
+ * (the relay keeps the stored ones meanwhile); pass the signature returned
+ * last time for this socket, or null.
+ * `_syncedSeq` / `_syncSession` (the scorer's live-state order, marked before
+ * the sync read IndexedDB: `mark` = { seq, session, at }) let the tablets tell
+ * whether a live-state push is newer than this copy (applyNewerLiveState);
+ * `_syncedAt` (the scorer's clock) is the fallback when the two come from
+ * different sessions.
+ * @returns {{ match: object, pinSignature: string }}
+ */
+export function relayMatchPayload(match, lastPinSignature = null, { now = Date.now(), mark = null } = {}) {
+  const out = { ...(match || {}) }
+  delete out._syncedSeq
+  delete out._syncSession
+  // (on the match's live-state clock, as the live states' updated_at)
+  out._syncedAt = (Number.isFinite(mark?.at) ? mark.at : now) + liveClockOffset(match)
+  delete out.liveClockOffsetMs
+  // (sent as device.claim and device.supersedes, matchHandover relaySyncDevice)
+  delete out.scorerClaim
+  delete out.supersededClaims
+  if (mark && Number.isFinite(mark.seq) && typeof mark.session === 'string' && mark.session) {
+    out._syncedSeq = mark.seq
+    out._syncSession = mark.session
+  }
+  const pins = {}
+  for (const f of RELAY_PIN_FIELDS) {
+    const v = f === 'gamePin' ? (out.gamePin ?? out.game_pin) : out[f]
+    pins[f] = v === undefined || v === '' ? null : v
+    delete out[f]
+  }
+  for (const f of NEVER_RELAYED) delete out[f]
+  for (const k of Object.keys(out)) {
+    if (RELAY_MATCH_OMIT.includes(k) || isSignatureKey(k)) delete out[k]
+    else if (RELAY_ROSTER_KEYS.includes(k)) out[k] = Array.isArray(out[k]) ? out[k].map(relayPerson) : out[k]
+  }
+  if (typeof out.remarks === 'string') out.remarks = relayRemarks(out.remarks)
+  const pinSignature = JSON.stringify(pins)
+  return {
+    match: pinSignature === lastPinSignature ? out : { ...out, ...pins },
+    pinSignature
+  }
+}

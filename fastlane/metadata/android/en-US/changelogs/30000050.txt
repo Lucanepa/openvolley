@@ -1,0 +1,4 @@
+OpenVolley 3.0.5
+- A match continued on a device whose clock is far behind keeps the referee, bench and livescore following, however large the difference.
+- Time-out and set break countdowns are right on a referee tablet that joins or reloads during one, and an ended time-out stays closed.
+- Livescore: the list keeps updating after a game it showed disappeared during a connection drop.

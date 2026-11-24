@@ -1,0 +1,272 @@
+/**
+ * Pure libero helpers (FIVB 2025-2028 Rule 19) — no React, no Dexie.
+ *
+ * What the scoreboard records for a libero replacement (FIVB 19.3.2):
+ *   libero_entry     { team, position, playerOut, liberoIn }
+ *   libero_exchange  { team, position, liberoOut, liberoIn, playerNumber }
+ *   lineup sub-event { team, lineup, liberoSubstitution: { position, liberoNumber, playerNumber } }
+ * The lineup's liberoSubstitution is carried on by every rotation with the
+ * libero's new position, so it is matched by libero NUMBER, never by position.
+ */
+
+import { playersAvailableForNextSet } from './matchEnd'
+import { sanctionedPlayerNumber } from './sanctions'
+
+const same = (a, b) => a != null && b != null && String(a) === String(b)
+const bySeqDesc = (a, b) => (b.seq || 0) - (a.seq || 0)
+const asNumber = (n) => (n == null || n === '' ? null : (Number.isNaN(Number(n)) ? n : Number(n)))
+
+/**
+ * The player a libero currently on court replaced: the only player who may
+ * take the libero's place (FIVB 19.3.2.1), e.g. when the libero is expelled
+ * or disqualified (19.4.1, 21.3.2-21.3.3) and must leave the court.
+ * @param {Array} events all events of the match
+ * @param {'home'|'away'} teamKey
+ * @param {number} setIndex
+ * @param {number|string} liberoNumber
+ * @returns {number|string|null} the replaced player's number, or null when unknown
+ */
+export function playerReplacedByLibero(events, teamKey, setIndex, liberoNumber) {
+  const ofTeam = (events || []).filter(e => e && e.setIndex === setIndex && e.payload?.team === teamKey)
+
+  // The lineup's liberoSubstitution (kept current through rotations and exchanges)
+  const lineup = ofTeam
+    .filter(e => e.type === 'lineup' && same(e.payload?.liberoSubstitution?.liberoNumber, liberoNumber))
+    .sort(bySeqDesc)[0]
+  if (lineup && lineup.payload.liberoSubstitution.playerNumber != null) {
+    return asNumber(lineup.payload.liberoSubstitution.playerNumber)
+  }
+
+  // Older data without it: the libero's latest entry or exchange event
+  const replacement = ofTeam
+    .filter(e => (e.type === 'libero_entry' || e.type === 'libero_exchange') && same(e.payload?.liberoIn, liberoNumber))
+    .sort(bySeqDesc)[0]
+  if (!replacement) return null
+  const replaced = replacement.type === 'libero_entry' ? replacement.payload.playerOut : replacement.payload.playerNumber
+  return asNumber(replaced)
+}
+
+/** The event that brings an injured libero back into play (owner 22.11.2026). */
+export const LIBERO_RECOVERED = 'libero_recovered'
+
+const seqOf = (e) => Number(e?.seq) || 0
+
+/**
+ * True when a libero re-designation replaced this libero (its
+ * unableLiberoNumber, or his roster row marked 'unable' by it): he is out for
+ * the rest of the match, also when he became unable through an injury (owner
+ * decision 22.11.2026: "if the injured libero got re-designated, he can't take
+ * part anymore in the game").
+ * @param {Array} events
+ * @param {'home'|'away'} teamKey
+ * @param {number|string} liberoNumber
+ * @param {{player?: object|null}} [opts] his roster row
+ */
+export function liberoReplacedByRedesignation(events, teamKey, liberoNumber, { player = null } = {}) {
+  if (player?.libero === 'unable') return true
+  return (events || []).some(e => e?.type === 'libero_redesignation' && e.payload?.team === teamKey && same(e.payload?.unableLiberoNumber, liberoNumber))
+}
+
+// The team's libero events that name this number as one of its liberos
+const namesLibero = (e, n) => (
+  ((e.type === 'libero_unable' || e.type === LIBERO_RECOVERED) && same(e.payload?.liberoNumber, n)) ||
+  (e.type === 'libero_entry' && same(e.payload?.liberoIn, n)) ||
+  (e.type === 'libero_exchange' && (same(e.payload?.liberoIn, n) || same(e.payload?.liberoOut, n))) ||
+  (e.type === 'libero_exit' && same(e.payload?.liberoOut, n)) ||
+  (e.type === 'lineup' && same(e.payload?.liberoSubstitution?.liberoNumber, n)))
+
+/**
+ * True for an original libero of a team that re-designated a libero (none of
+ * its re-designations named him the new libero): he is out for the rest of
+ * the match, whatever comes after (FIVB 19.4.2, Swiss exam Q84; owner
+ * decision 23.11.2026: "after a re-designation, no original libero of that
+ * team may return"). Known by his roster row (a libero mark other than
+ * 'redesignated'), else, with no row, by the team's libero events naming him.
+ * A player who is no libero is never locked out.
+ * @param {Array} mine the team's events
+ * @param {number|string} liberoNumber
+ * @param {object|null} player his roster row
+ */
+function lockedOutOriginal(mine, liberoNumber, player) {
+  const redesignations = mine.filter(e => e.type === 'libero_redesignation')
+  if (redesignations.length === 0 || redesignations.some(e => same(e.payload?.newLiberoNumber, liberoNumber))) return false
+  if (player) return Boolean(player.libero) && player.libero !== 'redesignated'
+  return mine.some(e => namesLibero(e, liberoNumber))
+}
+
+/**
+ * Whether a libero may play now, and whether an unable one may come back
+ * (FIVB 19.4.2; owner decisions 22.11.2026 and 23.11.2026). He is unable when
+ *  - a re-designation replaced him: out for the match (replaced);
+ *  - he is one of the team's original liberos and his team re-designated a
+ *    libero: out for the match too, also when he was unable only for a set
+ *    (expelled) or recovers later (Q84; lockedOutOriginal). The app offers a
+ *    re-designation only once every libero of the team is unable, so this
+ *    ends no play the rules allow;
+ *  - disqualified (any set) or expelled in this set (21.3.2-21.3.3);
+ *  - declared unable, injured or ill, disqualified, or expelled in this set
+ *    (libero_unable) since his latest return (libero_recovered);
+ *  - substituted because of an injury since then (older data).
+ * mayReturn: unable only because of an injury or illness, not replaced by a
+ * re-designation and, for one of the team's original liberos, no
+ * re-designation of his team yet. As long as his team re-designated nobody,
+ * the injured libero may play again; the scorer records it
+ * (libero_recovered). Once the team re-designated a libero, no original
+ * libero of it comes back, also by a libero_recovered written after that
+ * (FIVB 19.4.2, Swiss exam Q84: L1 disqualified, L2 injured, L3
+ * re-designated: L2 recovered does not play next to L3; owner 23.11.2026).
+ * A re-designated libero injured later may come back as long as no further
+ * re-designation replaced him.
+ * A libero declared unable (by the coach or the game captain) is out for the
+ * rest of the match, whatever comes after it, a libero_recovered too (owner
+ * 22.11.2026: "Once declared or becoming unable and re-designated: can't
+ * continue playing").
+ * @param {Array} events all events of the match
+ * @param {'home'|'away'} teamKey
+ * @param {number|string} liberoNumber
+ * @param {{setIndex?: number|null, player?: object|null}} [opts] setIndex: the
+ *   set being played (expulsions count in it only); player: his roster row
+ * @returns {{unable: boolean, mayReturn: boolean, replaced: boolean}}
+ */
+export function liberoPlayState(events, teamKey, liberoNumber, { setIndex = null, player = null } = {}) {
+  const thisSet = (e) => setIndex == null || (e.setIndex ?? 1) === setIndex
+  const mine = (events || []).filter(e => e && e.payload?.team === teamKey)
+  if (liberoReplacedByRedesignation(mine, teamKey, liberoNumber, { player })) {
+    return { unable: true, mayReturn: false, replaced: true }
+  }
+  // an original libero after his team's re-designation: out for the match
+  if (lockedOutOriginal(mine, liberoNumber, player)) {
+    return { unable: true, mayReturn: false, replaced: false }
+  }
+  // declared unable once: out for the match (an older libero_unable without a reason is a declaration)
+  if (mine.some(e => e.type === 'libero_unable' && same(e.payload?.liberoNumber, liberoNumber) && (e.payload?.reason || 'declared') === 'declared')) {
+    return { unable: true, mayReturn: false, replaced: false }
+  }
+  // a disqualification (any set) or an expulsion (its set) of him, also one
+  // given to him as a team official (a playing coach)
+  const sentOff = mine.some(e => e.type === 'sanction' && same(sanctionedPlayerNumber(e.payload), liberoNumber) &&
+    (e.payload?.type === 'disqualification' || (e.payload?.type === 'expulsion' && thisSet(e))))
+  // Any other number the team's re-designations did not name once it
+  // re-designated a libero (a roster row without a libero mark next to libero
+  // events, older data): no way back either (Q84). Only a return recorded
+  // before the first re-designation counts.
+  const redesignations = mine.filter(e => e.type === 'libero_redesignation')
+  const lockedOut = redesignations.length > 0 && !redesignations.some(e => same(e.payload?.newLiberoNumber, liberoNumber))
+  const firstRedesignationSeq = redesignations.reduce((min, e) => Math.min(min, seqOf(e)), Infinity)
+  // what happened since he last came back
+  const back = mine
+    .filter(e => e.type === LIBERO_RECOVERED && same(e.payload?.liberoNumber, liberoNumber) && !(lockedOut && seqOf(e) > firstRedesignationSeq))
+    .reduce((max, e) => Math.max(max, seqOf(e)), -Infinity)
+  const reasons = []
+  for (const e of mine) {
+    if (seqOf(e) <= back) continue
+    if (e.type === 'libero_unable' && same(e.payload?.liberoNumber, liberoNumber)) {
+      const reason = e.payload?.reason || 'declared'
+      if (reason === 'expulsion' && !thisSet(e)) continue
+      reasons.push(reason)
+    } else if (e.type === 'substitution' && same(e.payload?.playerOut, liberoNumber) && e.payload?.isInjury === true) {
+      reasons.push('injury')
+    }
+  }
+  const unable = sentOff || reasons.length > 0
+  return { unable, mayReturn: unable && !sentOff && !lockedOut && reasons.every(r => r === 'injury'), replaced: false }
+}
+
+// The events that made a libero unable (FIVB 19.4.2.1-19.4.2.2): his
+// libero_unable, an expulsion or a disqualification of him, an injury
+// substitution of him (older data)
+const unableEventsOf = (events, teamKey, number) => (events || []).filter(e => e?.payload?.team === teamKey && (
+  (e.type === 'libero_unable' && same(e.payload?.liberoNumber, number)) ||
+  (e.type === 'sanction' && same(sanctionedPlayerNumber(e.payload), number) && (e.payload?.type === 'expulsion' || e.payload?.type === 'disqualification')) ||
+  (e.type === 'substitution' && same(e.payload?.playerOut, number) && e.payload?.isInjury === true)))
+
+/**
+ * The unable libero a re-designation replaces when the team has none left
+ * (FIVB 19.4.2.3-19.4.2.4, Swiss exam Q84; owner decision 23.11.2026): the
+ * one whose unavailability triggered it, i.e. of the liberos unable now and
+ * not replaced before, the one who became unable last, whatever the reason
+ * (L1 disqualified, then L2 injured: the re-designation replaces L2).
+ * An original libero out since an earlier re-designation (lockedOutOriginal)
+ * comes last: he became unable then, and a sanction of him on the bench
+ * afterwards triggers nothing (L1 expelled, L2 injured, L3 re-designated, L3
+ * injured, L1 disqualified on the bench: a further re-designation replaces L3).
+ * @param {Array} players the team's roster
+ * @param {Array} events all events of the match
+ * @param {'home'|'away'} teamKey
+ * @param {{setIndex?: number|null}} [opts]
+ * @returns {object|null} his roster entry
+ */
+export function liberoToReplaceByRedesignation(players, events, teamKey, { setIndex = null } = {}) {
+  const mine = (events || []).filter(e => e && e.payload?.team === teamKey)
+  const lastUnableSeq = (number) => unableEventsOf(mine, teamKey, number)
+    .reduce((max, e) => Math.max(max, seqOf(e)), -Infinity)
+  const candidates = (players || [])
+    .filter(p => p?.libero && p.libero !== '' && p.libero !== 'unable')
+    .filter(p => {
+      const state = liberoPlayState(mine, teamKey, p.number, { setIndex, player: p })
+      return state.unable && !state.replaced
+    })
+    .map(p => ({ p, seq: lastUnableSeq(p.number), lockedOut: lockedOutOriginal(mine, p.number, p) }))
+  if (candidates.length === 0) return null
+  // locked-out originals last, then the latest first; ties (no event known)
+  // keep the roster order (stable sort)
+  candidates.sort((a, b) => (a.lockedOut !== b.lockedOut ? (a.lockedOut ? 1 : -1) : a.seq === b.seq ? 0 : b.seq - a.seq))
+  return candidates[0].p
+}
+
+/**
+ * Why a libero is unable, as the re-designation replacing him records it
+ * (its `reason`): the reason of the latest event that made him unable (his
+ * libero_unable, an expulsion or a disqualification, an injury substitution
+ * of older data); 'declared' when none says otherwise. The new libero may
+ * come in at once after an injury, expulsion or disqualification (Swiss exam
+ * Q143, Q204), after a declaration only after a completed rally.
+ * @param {Array} events all events of the match
+ * @param {'home'|'away'} teamKey
+ * @param {number|string} liberoNumber
+ * @returns {'declared'|'injury'|'expulsion'|'disqualification'}
+ */
+export function liberoUnableReason(events, teamKey, liberoNumber) {
+  const latest = unableEventsOf(events, teamKey, liberoNumber).sort(bySeqDesc)[0]
+  if (!latest) return 'declared'
+  if (latest.type === 'sanction') return latest.payload.type
+  if (latest.type === 'substitution') return 'injury'
+  const reason = latest.payload?.reason
+  return reason === 'injury' || reason === 'expulsion' || reason === 'disqualification' ? reason : 'declared'
+}
+
+/**
+ * The players a team may re-designate as its libero once it has no libero
+ * left (FIVB 19.4.2.3-19.4.2.4; the scorer's "Libero re-designation" list):
+ * roster players who are
+ *  - not on court at the moment of the re-designation,
+ *  - no libero (original, re-designated or unable) and not re-designated
+ *    before, nor the libero who became unable, nor a libero an earlier
+ *    re-designation replaced (out for the match),
+ *  - still allowed to play in the match: not disqualified and not taken out
+ *    by a disqualification substitution or by any exceptional substitution
+ *    (FIVB 15.7, 15.8, 21.3.3; owner 22.11.2026), the rule the next set's
+ *    line-up follows (playersAvailableForNextSet).
+ * A player expelled in the set being played and replaced by a legal
+ * substitution stays on the list: he plays again next set (21.3.2) and is
+ * not offered as libero before then (whether he may be re-designated during
+ * that set is an open owner decision).
+ * @param {Array} players the team's roster
+ * @param {Array} events all events of the match
+ * @param {'home'|'away'} teamKey
+ * @param {{onCourt?: Array, unableLiberoNumber?: number|string|null}} [opts]
+ *   onCourt: the shirt numbers on court now
+ * @returns {Array} the roster entries that may be chosen
+ */
+export function playersForLiberoRedesignation(players, events, teamKey, { onCourt = [], unableLiberoNumber = null } = {}) {
+  const key = (n) => (n == null || n === '' || Number.isNaN(Number(n)) ? null : String(Number(n)))
+  const court = new Set((onCourt || []).map(key))
+  const redesignated = new Set((events || [])
+    .filter(e => e?.type === 'libero_redesignation' && e.payload?.team === teamKey)
+    .flatMap(e => [key(e.payload?.newLiberoNumber), key(e.payload?.unableLiberoNumber)]))
+  const unable = key(unableLiberoNumber)
+  return playersAvailableForNextSet(players, events, teamKey).filter(p => {
+    const n = key(p.number)
+    return n !== null && !court.has(n) && !redesignated.has(n) && n !== unable
+  })
+}

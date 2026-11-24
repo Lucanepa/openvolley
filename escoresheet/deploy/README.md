@@ -1,0 +1,686 @@
+# OpenVolley self-hosted backend: deployment kit
+
+Everything needed to run the OpenVolley cloud backend (`escoresheet/backend`) with its own
+Postgres on one Linux VM, reachable only through a Cloudflare Tunnel.
+
+- **Now (since 09.11.2026): an Infomaniak VPS Lite** (2 vCPU, 4 GB, 60 GB, Debian 13,
+  Plan-les-Ouates, Geneva), in the owner's own Infomaniak organisation "OpenVolley". `ssh ov-vps`
+  from lenovoserver, over Tailscale (public SSH closed); user `debian` with sudo, no root login.
+  It runs the whole stack: backend, Postgres, the tunnel, `get.openvolley.app` (ov-pkgs) and the
+  FreeScout helpdesk (`/opt/freescout`). The kit and `.env` are in `/opt/openvolley` (`root:root`
+  0750): `ssh ov-vps sudo docker compose --project-directory /opt/openvolley ...`. Images are
+  still built on lenovoserver: `build-image.sh --ship ov-vps` (sudo on the host). Releases publish
+  there (`publish-pkgs.sh`, default `OV_PKGS_DEST=ov-vps:/data/openvolley/pkgs/`). lenovoserver
+  copies the VPS's encrypted backups to the NAS every hour (`ov-backup-pull.sh`, installed as
+  `~/stacks/ov-backup-pull`): dumps with their `.counts`, tars, `secrets-*.env.gpg` and `wal/`.
+  Operations: [RUNBOOK-hetzner.md](RUNBOOK-hetzner.md), from "Match-day rules" on (run the
+  commands on `ov-vps`). Moved with [RUNBOOK-move-to-own-vm.md](RUNBOOK-move-to-own-vm.md).
+- **16.10.–09.11.2026: lenovoserver**, the owner's home server, still the build machine. Its
+  stack in `/opt/openvolley` is stopped: a fallback for one week, then removed. Never start its
+  `ov-tunnel` while the VPS runs (Cloudflare would balance between two databases): its `.env`
+  holds no `TUNNEL_TOKEN` and no `COMPOSE_PROFILES=tunnel`, so `up -d` there starts no tunnel.
+- **Before (Option A):** co-tenant on the Hetzner VM `lucanepa-prod` (`ssh hetzner`) next to
+  another production stack. That VPS now belongs to another owner:
+  OpenVolley is the owner's private project and must **never be deployed there again**.
+- **Moving (Option B):** the same files on another host, no DNS change, downtime under
+  15 minutes. Used for the move to lenovoserver; see [RUNBOOK-move-to-own-vm.md](RUNBOOK-move-to-own-vm.md).
+
+The stack is a plain `docker compose` project named `openvolley` in `/opt/openvolley`. It is
+**not** a Coolify resource. It publishes **no host ports**, joins **no** Coolify or Traefik
+network, and carries `traefik.enable=false`.
+
+```
+ browsers / PWAs / tablets
+        |  HTTPS + WSS  backend.openvolley.app  (CNAME -> <tunnel-id>.cfargotunnel.com, proxied)
+        v
+ Cloudflare edge
+        ^  outbound-only QUIC/HTTP2 connections opened by cloudflared (no inbound port, no IP allowlist)
+        |
+ +-- compose project "openvolley" (any VM with Docker) -----------------------------------+
+ |  ov-tunnel    cloudflare/cloudflared  (profile "tunnel") 128 MB, 0.5 CPU, read-only    |
+ |      | network ov-edge (egress allowed): tunnel + backend only                          |
+ |      | network ov-pkgs-edge (internal): tunnel + ov-pkgs; ov-helpdesk: tunnel + helpdesk |
+ |  ov-backend   openvolley-backend:<git-sha>      256 MB, 1 CPU, pids 256, read-only,    |
+ |      |        :8080 HTTP + WebSocket upgrade     user node, no caps, tmpfs /tmp         |
+ |      | network ov-internal (internal: true, no egress)                                  |
+ |  ov-postgres  postgres:17.12-alpine             256 MB, 0.5 CPU, pids 128, read-only,  |
+ |               uid 70, refuses to start without /ovpg/.ovdata                            |
+ |  ov-pkgs      caddy:2.11.7-alpine (ov-pkgs-edge) 64 MB, 0.25 CPU, read-only, nobody,   |
+ |               get.openvolley.app: static APT + F-Droid repos from /data/openvolley/pkgs |
+ +----------------------------------------------------------------------------------------+
+   /data/openvolley/pg       8 GB loop ext4  (.ovdata sentinel, data/ = PGDATA)
+   /data/openvolley/storage 15 GB loop ext4  (.ovdata sentinel, scoresheets/, backup/)
+     ov-vps since 18.11.2026: both on LUKS2 volumes, see "Encryption at rest"
+   /data/openvolley/backups  hourly db dumps + nightly storage tars, GPG-encrypted (public key only)
+   /var/lib/openvolley-status/last_backup   (mounted read-only into ov-backend)
+        |  hourly pull by lenovoserver (ov-backup-pull.sh: ssh ov-vps -> ssh nas-ts)
+        v
+   NAS /volume1/backups/openvolley/infomaniak   dumps + .counts, tars, secrets-*.env.gpg, wal/
+        weekly restore test of the newest dump there: restore-test.sh on lenovoserver
+        (holds the private key)
+   (nas-pull.sh, the same pull run on the NAS over rsync, was never configured)
+```
+
+## Files
+
+"VM" below is the production host: the Infomaniak VPS (`ov-vps`) since 09.11.2026, lenovoserver before.
+
+| File | Runs where | What it does |
+|---|---|---|
+| `compose.yaml` | VM, `/opt/openvolley` | The three services, two networks, limits, bind mounts with `create_host_path: false` |
+| `env.example` | VM | Template for `/opt/openvolley/.env` (mode 600). Lists every variable; no real values |
+| `cloudflared/config.yml` | VM (mounted read-only) | Tunnel ingress: `backend.openvolley.app` (and the temporary `ov-preflight` name) -> `http://ov-backend:8080`, `get.openvolley.app` -> `http://ov-pkgs:80`; everything else 404 |
+| `pkgs/Caddyfile` | VM (mounted read-only into `ov-pkgs`) | Static server for `get.openvolley.app`: GET/HEAD only, directory listings, MIME types for `.deb`/`.apk`/`.jar`/`.json`/`.gpg`, 1-year `immutable` cache for packages, 60 s for everything else (the desktop updater manifests too); `Access-Control-Allow-Origin: *` on `/fdroid/repo/index-v2.json` only (the Android app's update check) |
+| `pkgs/index.html` | template, filled by `publish-pkgs.sh` | Install page at `/` (Android via F-Droid or APK, Linux via APT, Windows `.exe`). Its `<!--per-machine-->` block (administrator prompt, firewall rule) is published only for a desktop version newer than 2.1.0, the last per-user Windows installer |
+| `pkgs/install.sh` | copied by `publish-pkgs.sh` | Linux one-line installer at `/install.sh`: checks the APT key fingerprint, adds the repo, installs `openvolley-escoresheet` (or the package given: `sh -s openbeach-escoresheet`, `sh -s svrz-rc`) |
+| `publish-pkgs.sh` | lenovoserver | Adds `.deb` (repacked to `openvolley-escoresheet` if named otherwise)/signed `.apk`, copies `pkgs/install.sh`, re-signs the APT and F-Droid indexes, rsyncs the public tree to `/data/openvolley/pkgs/` on lenovoserver (with `sudo`; `OV_PKGS_DEST` overrides). `--desktop VERSION [--staging]` also signs a desktop release for the in-app updater and writes its `latest.json`. See [Public downloads](#public-downloads-getopenvolleyapp) |
+| `lib/publish-lib.sh`, `lib/desktop-updater.mjs` | lenovoserver (used by `publish-pkgs.sh`) | The `--desktop` steps and the key-material guard; the `.mjs` (Node, no npm packages) checks updater signatures the way the app does and writes and validates `latest.json` |
+| `homebrew/bump-cask.sh`, `homebrew/Casks/*.rb` | lenovoserver (or any machine), after `publish-pkgs.sh --desktop` | Writes the macOS casks `openvolley` / `openbeach` (version + SHA-256 of the release's `.dmg`) into a checkout of the tap `Lucanepa/homebrew-tap`; you review, commit and push there. See [macOS](#macos-unsigned-homebrew-tap) |
+| `tests/bump-cask.test.sh` | any machine | Offline tests of `bump-cask.sh` |
+| `tests/publish-desktop.test.sh` | any machine with Node, `dpkg-deb` and tauri-cli >= 2.12 | Offline tests of `--desktop` (OpenVolley and `--app beach`) with a throwaway key: signing, verification, `latest.json`, staging, rollback and leak guards, the per-app APT hold-back, GitHub's "Latest" and the OpenBeach fallback (stubbed `gh`), APT names, the Android certificate per app id, `install.sh` and the landing page |
+| `Dockerfile.backend` (+ `.dockerignore`) | build machine | Packages `escoresheet/backend`: `node:24.22.3-trixie-slim` (Node 24 LTS, Debian 13; `Dockerfile.render` uses the same base), `npm ci --omit=dev`, user `node`, HEALTHCHECK on `/health/live` + storage sentinel (no fallback) |
+| `build-image.sh` | build machine (lenovoserver) | Builds `openvolley-backend:<git-sha>` from the committed tree (`git archive HEAD`, allowlist `Dockerfile.backend.dockerignore`), refusing a backend tree without the self-host contract; `--ship <host>` streams it to the VM, keeps a `.tar.gz` for rollbacks and prunes to the newest 5 (`prune-images.sh`); `--ship local` does the archive and the prune with `sudo` when the VM is lenovoserver itself |
+| `check-edge.sh` | any machine, before go-live and after each Cloudflare/DNS change | Read-only: CAA (only pki.goog, letsencrypt.org, ssl.com + iodef), DMARC p=quarantine/reject with rua, TLS 1.0/1.1 refused and 1.2 accepted, http->https redirect and HSTS on backend., app., get. (RUNBOOK-hetzner.md "Edge and mail domain") |
+| `apply-roles.sh` | VM, root | `roles.sql` from stdin with `OV_APP_PW` read from `.env` (never exported into a shell), and `OV_READONLY_PW` when set, then checks the `ov_app` login |
+| `db-browse.sh` | VM, operator | Read the database, never change it: `psql` (as `ov_readonly`, the container's socket) or `web [PORT]` (pgweb on 127.0.0.1 only, a basic-auth password per run, removed on Ctrl-C; reach it with `ssh -N -L 8091:127.0.0.1:8091 ov-vps`). `ov_readonly` reads the views of schema `ov_read`: every table of `public` without its secret columns (game PINs, token and code hashes). Changing data: the manager's Data tab (super admins, audited) |
+| `restore-db.sh` | VM, root | Restores a decrypted dump into a **fresh** database, all-or-nothing (`--single-transaction`), count check, rolls back on any failure, resets the backup count guard |
+| `host-prep.sh` | VM, as root (not on ov-vps since its volumes are encrypted, see Encryption at rest) | Idempotent host setup: loop filesystems, sentinels, `chattr +i`, fstab (`nofail`), dirs, `ovbackup` user, backup units. `--check` is read-only |
+| `backup-openvolley.sh` + `systemd/openvolley-backup*.{service,timer}` | VM, root | Hourly `pg_dump -Fc` + nightly storage tars, GPG to the public key, count-drop guard, rotation, `last_backup` |
+| `ov-backup-pull.sh` | lenovoserver, hourly (`ov-backup-pull.timer`; live copy in `~/stacks/ov-backup-pull`) | Copies the VPS's encrypted backups to the NAS (ssh + cat, sizes compared, mtimes kept, NAS-side retention): dumps and `.counts` 30 days, tars and `secrets-*.env.gpg` 90, `wal/` 91; FreeScout's dumps. A failure posts to ntfy. Tested by `tests/ov-backup-pull.test.sh`, which also fails when `backup-openvolley.sh` writes a file that is neither pulled nor named as staying on the VPS |
+| `nas-pull.sh` | NAS (DSM Task Scheduler) | The same pull run on the NAS over rsync with a restricted read-only key, NAS-side retention, freshness check. Not set up (never was): `ov-backup-pull.sh` does it from lenovoserver |
+| `publish-pkgs.sh --resign` + `systemd/openvolley-pkgs-resign.{service,timer}` | lenovoserver, weekly, from its own clean checkout of main (`~/ov-ops/pkgs-resign`) | Signs the APT index of get.openvolley.app anew (its `Release` is valid 30 days, `Valid-Until`), so a host that replays an old index cannot keep clients on an old version for longer, and the index never expires between releases. Re-signs and syncs `apt/dists/` only, refuses when the index would change. Install the timer **before** the first publish with `Valid-Until`: without it APT users get "Release file is expired" 30 days after the last publish. Every run that synced writes `resign-heartbeat`; a publish refuses while the timer is not enabled or the newest successful re-sign on record (that heartbeat, or systemd's record of the service's last run until the next boot, which also covers a checkout from before the heartbeat) is older than 9 days (`--without-resign-timer` overrides; `tests/publish-resign-timer.test.sh`). When the heartbeat reaches main: move `~/ov-ops/pkgs-resign` to `origin/main`, re-install the unit, start it once (steps in the unit's header). A failed run posts to ntfy (`OV_PKGS_NTFY_URL`, set in the unit); `OV_PKGS_KUMA_PUSH_URL` (push monitor, heartbeat ~8 days) alerts on a missing run |
+| `restore-test.sh` + `systemd/openvolley-restore-test.{service,timer}` | lenovoserver, weekly, from its own clean checkout of main (`~/ov-ops/restore-test`) | Takes the newest dump of the NAS copy (default `nas-ts:/volume1/backups/openvolley/infomaniak`, ssh + cat), its `.counts` and the `secrets-*.env.gpg` it needs, restores into a throwaway Postgres, boots the backend image against it (default: the tag `build-image.sh --ship local` recorded) as production does (`IS_CLOUD=1`, `TRUST_PROXY_FROM`, the dump's `OV_PIN_SECRET` / `OV_MATCH_TOKEN_SECRET`, all in an env file; `RT_BACKEND_ENV_FILE` adds settings), checks `/health` and row-count floors, tears down. A failure posts to ntfy (`RT_NTFY_URL`); `RT_KUMA_PUSH_URL` catches a run that never happens. Tested by `tests/restore-test.test.sh` (with `PG_TEST_URL` it boots `server.js` with the env file it makes) |
+
+## Encryption at rest (ov-vps, since 18.11.2026)
+
+On ov-vps the database and the files are on LUKS2 volumes (aes-xts-plain64,
+512-bit key) instead of plain loop images:
+
+| Mount | Image | Mapper |
+|---|---|---|
+| `/data/openvolley/pg` (10 GB) | `/var/lib/openvolley/pg-crypt.img` | `/dev/mapper/ov-pg` |
+| `/data/openvolley/storage` (20 GB) | `/var/lib/openvolley/storage-crypt.img` | `/dev/mapper/ov-storage` |
+
+- **The VPS never stores the key.** It lives on lenovoserver
+  (`~/ov-ops/secrets/ov-vps-luks.key`, 0400), with a copy on the NAS
+  (`/volume1/backups/openvolley/keys/`). It is sent over ssh stdin only to
+  open the volumes. Without it the live volumes cannot be opened; the
+  GPG backups (their own key) are the other way back.
+- **After a reboot the volumes stay locked.** There is no fstab or crypttab
+  entry, so the bare mountpoints stay empty, ov-postgres refuses to start (no
+  `.ovdata`, exit 78, restart loop), the backend serves no data, and nothing
+  initialises an empty database. Unlock from lenovoserver:
+  `~/ov-ops/ov-vps-unlock.sh`. It opens and mounts both volumes and starts
+  ov-postgres and ov-backend (about 20 s). It is safe to run any time: an open
+  volume prints "ok".
+- **Do not run `host-prep.sh`** on this host. It refuses while a
+  `*-crypt.img` exists, because on a locked host it would lay a fresh, empty
+  plaintext filesystem on the bare mountpoint.
+- Backups, WAL archiving and restore tests are unchanged: they read the
+  mounted filesystems.
+- Move-in: `~/ov-ops/encrypt-volumes-2026-11-18.sh` copied the stopped
+  filesystems onto the opened volumes. It took 20 s of downtime, and every
+  table's row count was the same before and after. The plaintext images
+  `pg.img` and `storage.img` were kept only until the switch was confirmed.
+
+## Runtime contract (backend <-> kit)
+
+These names are shared with the self-host wiring in `escoresheet/backend` and must not drift.
+
+| Variable | Value in the container | Notes |
+|---|---|---|
+| `DATABASE_URL` | `postgres://ov_app:${OV_APP_PW}@ov-postgres:5432/openvolley` | Unset = LAN/local mode exactly as today (venue binaries, Pi) |
+| `STORAGE_ROOT` | `/data/storage` | Bind mount of the storage loop fs; backend refuses writes without `.ovdata` |
+| `STATUS_DIR` | `/var/lib/openvolley-status` | Read-only; contains `last_backup` (ISO timestamp) written by the backup job |
+| `PORT` | `8080` | HTTP **and** WebSocket. `server.js` attaches `ws` to the HTTP server (`new WebSocketServer({ server })`), so there is no separate WS port and the tunnel needs one origin only |
+| `PUBLIC_ORIGINS` | from `.env` | Comma-separated CORS origins |
+| `TRUST_PROXY` | `cloudflare` | Client IP from `cf-connecting-ip`, honoured only from `TRUST_PROXY_FROM` |
+| `TRUST_PROXY_FROM` | `172.30.250.2/32` (`.env` may override) | The tunnel's fixed address on `ov-edge`. No host port exists, and only the tunnel shares `ov-edge` with the backend; the backend refuses to start in cloud mode with `TRUST_PROXY` but no `TRUST_PROXY_FROM` |
+| `PG_POOL_MAX`, `OV_NODE_HEAP_MB`, `OV_BACKEND_MEM`, `OV_BACKEND_CPUS`, `OV_PG_CPUS` | from `.env` (defaults 5, 256, 512m, 1.0, 0.5) | Capacity; raise them as the load test below says (env.example "Capacity") |
+| `OV_ADMIT_HEAP_PCT`, `OV_WATCHDOG_FAILURES`, `OV_PID_FILE` | 85, 4, `/tmp/ov-backend.pid` | New sockets get "relay busy" (1013, retried) above 85% of the heap limit; the healthcheck kills a server that failed 4 `/health/live` checks in a row (`init: true`), compose restarts it |
+| `RESEND_API_KEY`, `RESEND_FROM`, `CONTACT_EMAIL` | from `.env` | Unchanged from today. (`REOPEN_PASSWORD_HASH` was replaced by the admin reopen of db/007 and is no longer read.) |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`, `MANAGER_URL` | from `.env`, all optional | Account emails (backend README "Account emails"): reset and confirmation links. Without `SMTP_HOST`/`SMTP_PASS`: none, reset answers 503, sign-up confirms at once. The support form `/api/contact` uses the account too (its only recipient is `CONTACT_EMAIL`). `/api/match/send-info` uses Resend only |
+| `IS_CLOUD` | `1` | Existing switch for HSTS/CSP in `server.js` |
+| `OV_MIN_MATCHES` | from `.env` | `/health` row-count floor |
+
+Health endpoints: `GET /health/live` (no DB; Docker healthcheck) and `GET /health` (db ping,
+catalog, floor, sentinel, disk free, backup age; 503 on db/floor/sentinel failure; used by
+monitors and `restore-test.sh`). A pre-wiring image (no Postgres code; it would run today's
+unauthenticated local relay mode) is kept off the server three ways: `build-image.sh` refuses
+to build the tree (`--allow-prewiring` makes a local-only `-prewiring` tag that it never ships),
+the image's healthcheck has **no** fallback to `/health`, so such an image never turns healthy
+and `ov-tunnel` (`depends_on: service_healthy`) never starts in front of it, and
+`restore-test.sh` refuses `-prewiring`/`-dirty` tags and fails on missing `/health/live`
+(`RT_ALLOW_DEV_IMAGE=1 RT_REQUIRE_DB_HEALTH=0` for local kit experiments only).
+
+Mount guards: `ov-postgres` and `ov-backend` both exit (code 78, retried by `restart:
+unless-stopped`) while their filesystem's `.ovdata` sentinel is missing, so neither runs on a
+bare mountpoint, and each retry binds the mount afresh once it is back. `ov-postgres` also
+refuses to `initdb` when a cluster has existed on the filesystem (`state/initialized`) but
+`data/PG_VERSION` is gone.
+
+**Never `source` `.env`** into a shell: Compose prefers exported shell variables over `.env`,
+so later `up`/rollback commands in that shell would silently use the old values.
+
+## Pre-deploy checklist: the backend of the 2026-11 audit fixes
+
+Read-only, on the production host, before `deploy.sh` (the release session, with the owner's go):
+
+1. **Settings that compose now passes.** Before, `compose.yaml` passed only some of these to
+   the backend, and a value in `.env` was silently ignored; from this deploy on it takes
+   effect (2611 review, COMPOSE-ENV-NOW-EFFECTIVE). Read them, and remove a value that is
+   left from a test or an incident:
+   ```bash
+   sudo grep -nE '^(OV_SIGNUP_LICENCE|MAIL_BUDGET_[A-Z_]+|OV_ALLOW_DEV_ORIGINS|OV_PIN_ONLY_LOOKUP|OV_BEACH_REFEREE_ADDRESS|OV_SIGN_IN_CEILING_SLOTS)=' /opt/openvolley/.env
+   ```
+   Expected in production: `OV_SIGNUP_LICENCE` empty (a licence number is required at
+   sign-up; `optional` turns that off), every `MAIL_BUDGET_*` empty or sized on purpose (the
+   defaults are in env.example; a small one drops account mails), `OV_ALLOW_DEV_ORIGINS`
+   unset or empty (1 only on the test backend), and the three switches below empty unless
+   the owner decided otherwise.
+2. **The Global cloud's write budget.** Measure what a match really writes and size
+   `OV_GLOBAL_CLOUD_WRITE_MB_DAY` (default 1024; a venue network gets a quarter of it) before
+   a weekend of tournaments (2611 review, GLOBAL-CLOUD-WRITE-BUDGET-SIZING):
+   ```bash
+   sudo docker compose --project-directory /opt/openvolley exec ov-backend node scripts/global-cloud-usage.mjs
+   ```
+   It prints the estimated charge of a match, the matches a day the budget serves in all and
+   per network, and `suggestedWriteMbDay` (the busiest day of the last 30 twice over). A
+   larger budget writes more WAL into the backups (8 days kept): check the backup volume's
+   room before raising it.
+
+## Post-release checklist: switches that wait for the old apps
+
+Some checks of the 2026-11 audit stay lenient on purpose, because app builds still in the halls
+send the older form. Each has a switch in `.env` (env.example); turn it on when the builds that
+need the lenient form are gone, with `docker compose up -d ov-backend` (the backend logs the
+setting at start). Record the date planned for each in the release notes.
+
+| Switch | Now | Turn on when |
+|---|---|---|
+| `OV_PIN_ONLY_LOOKUP` | `on` (empty): referee / bench PIN checks without their match, both sports | `beach` once the OpenVolley apps that name no match are gone (3.x; 26.11.x sends none only when two picker rows share a game number); `off` once the OpenBeach release that names its match has replaced the current one (SEC-06) |
+| `OV_BEACH_REFEREE_ADDRESS` | `optional` (empty): a beach referee slot without a stored address keeps the older rule | `required` once the OpenBeach release that stores `officials[].email` has replaced the older builds (PERM-08, owner decision 6) |
+
+Settings that wait for the owner's choice (the default is the stricter or the older one):
+
+| Setting | Default | The other choice |
+|---|---|---|
+| `OV_SIGN_IN_CEILING_SLOTS` | `account`: past an address's 100 failed sign-ins in 24 h, every source that never signed in to it (nor opened one of its reset or confirmation links) shares one try per interval; a botnet guesses no faster than one source, the owner's new networks wait | `lane`: one try per network (an IPv6 /48, an IPv4 address) and interval; the owner's network keeps its own, a botnet gets one try per network |
+
+## What touches the other tenant (isolation on the shared VM)
+
+Written for the co-tenancy on `lucanepa-prod` (until 16.10.2026). The limits are the same on
+lenovoserver; the Coolify, Traefik and other-tenant items refer to that old host.
+
+Everything the kit does on `lucanepa-prod`, and nothing else:
+
+| Shared resource | What OpenVolley uses | Bound |
+|---|---|---|
+| Disk | `/var/lib/openvolley/{pg,storage}.img` (23 GB, allocated once), `/data/openvolley/backups`, `/data/openvolley/pkgs` (packages, tens of MB per release), `/opt/openvolley/images` + Docker images (~350 MB per backend tag), container logs | Loop images are hard caps: a runaway cannot grow past them. `host-prep.sh` refuses unless 20 GB stay free after allocation. The backups directory is on the root fs and **not** a loop image: `backup-openvolley.sh` estimates every output (db dump, each tar) before writing it and refuses when it would leave under 10 GB free (`OV_MIN_FREE_MB`) or push the directory past 20 GB (`OV_BACKUP_MAX_MB`); a refusal alerts through the Kuma push. Rollback images: `build-image.sh --ship` keeps the newest 5 archives and tags plus the deployed one. Logs `json-file` 5 x 10 MB per service |
+| RAM | 256 + 256 + 128 + 64 MB (`ov-pkgs`) | `mem_limit` = `memswap_limit` (no swap, so the other tenant's page cache is not pushed out), `oom_score_adj: 500` (on host OOM the kernel picks OpenVolley first) |
+| CPU / pids | 1.0 + 0.5 + 0.5 + 0.25 CPU, 256 / 128 / 64 / 64 pids | `cpus`, `pids_limit`; backups run `nice 10`, idle-ish I/O class |
+| Docker daemon | Containers and networks labelled `com.docker.compose.project=openvolley` | No published ports, no `coolify` network, `traefik.enable=false`, bind mounts only (no named volumes, so `docker volume prune` cannot hit data) |
+| Network | Outbound only: Cloudflare (7844 udp/tcp, 443), Resend/SMTP | `ov-internal` is `internal: true`; Postgres has no route out |
+| `/etc/fstab` | Two appended lines, `nofail` | Backup copy written first. `nofail`: a broken image never blocks boot or Docker; the containers just restart until the mount is back |
+| Users | System user `ovbackup` | Shell `/bin/sh`, no password, `authorized_keys` with `command="rrsync -ro ..."`, `restrict` |
+| systemd | `openvolley-backup{,-files}.{service,timer}` | Own unit names, root, `ProtectSystem=full` |
+| Boot order | `x-systemd.before=docker.service` on the two mounts | Ordering only, not a dependency: Docker starts even if the mounts fail |
+
+**Not touched:** Coolify (database, settings, projects, auto-deploy), `coolify-proxy`/Traefik
+(dynamic config, certificates, networks), any container, volume or network of the other tenant (including its Postgres),
+ `/data/backups` and `/data/coolify`, root's crontab, root's GPG keyring
+(backups use `--recipient-file` and a private homedir `/var/lib/openvolley-backup/gnupg`),
+the host firewall, Cloudflare settings of other hostnames. Two items are **read, and changed
+only if needed** (RUNBOOK-hetzner.md step 1): `postgres-autopatch.sh` and `backup-postgres.sh`
+must not select `ov-postgres`, and `sshd_config` must allow the `ovbackup` login.
+
+Audit at any time on the VM:
+
+```bash
+docker ps -a --filter label=com.docker.compose.project=openvolley --format '{{.Names}}\t{{.Ports}}'   # Ports column empty
+docker network ls --filter label=com.docker.compose.project=openvolley
+docker inspect coolify-proxy -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}'           # no openvolley_* network
+for n in openvolley_ov-internal openvolley_ov-edge; do docker network inspect -f '{{.Name}} internal={{.Internal}}: {{range .Containers}}{{.Name}} {{end}}' "$n"; done
+docker stats --no-stream $(docker ps -q --filter label=com.docker.compose.project=openvolley)
+findmnt /data/openvolley/pg; findmnt /data/openvolley/storage
+systemctl list-timers 'openvolley-*'
+```
+
+Complete removal (leaves no trace besides the fstab backup copies): RUNBOOK-hetzner.md, "Uninstall".
+
+## Capacity and limits for big events
+
+National peak load test (2026-10-25/26, production limits: backend 256 MiB / 1 CPU / pool 5,
+Postgres 256 MiB / 0.5 CPU / `max_connections` 20, tunnel 128 MiB / 0.5 CPU). Before the
+round-2 fixes production carried an SVRZ evening and the SVRZ peak (39 matches) comfortably,
+about 150 matches through the first set and about 100 whole matches; the national peak
+(404 matches at once) crash-looped on backend memory in the pre-match.
+
+Since 2026-10-27 the backend has 512m with `NODE_OPTIONS=--max-old-space-size=256` (compose; V8's
+heap stays below `mem_limit`). Compose also pins `--max-semi-space-size=16`, Node 22's young
+generation: Node 24 defaults to 64 MB semi-spaces, which raise V8's heap limit at 256 from
+304 MB to 448 MB, too close to the 512m with the memory outside the heap, and with it the
+relay's budget and the admission mark below, which were measured on 304 MB. At 256m the national peak still OOM-killed it 4-6 times in set 1
+on memory outside V8's heap. The other limits stay as they are. Before an event with more than
+about 100 simultaneous matches, raise for that day and measure again with the peak harness:
+
+| Service | Now | Recommended above ~100 matches | Why |
+|---|---|---|---|
+| `ov-backend` | 512m, 1 CPU, `--max-old-space-size=256` | 1g, 2 CPUs, `--max-old-space-size=700` | memory per socket and per match; above that the single Node event loop is the wall (a second CPU only takes GC and zlib off it) |
+| `ov-postgres` | 256m, 0.5 CPU, pool 5 | 512m, 1 CPU, `PG_POOL_MAX=10` (`max_connections` 20 still fits) | its 0.5 CPU was fully used and 5 of 5 pool clients busy with 4-5 waiting at 404 matches |
+| `ov-tunnel` | 128m, 0.5 CPU, 1 replica | 256-512m, 1 CPU, 2 replicas | a plain docker-proxy alone needed 52-117 % of a CPU and 100-150 MB at 404-754 matches; cloudflared also does TLS and HTTP/2 framing |
+
+A national rollout (404 matches at the peak) needs these limits plus sharding by association
+(several backends behind the tunnel), not one bigger container.
+
+All of these come from `.env` (env.example "Capacity"; `OV_NODE_HEAP_MB`, `OV_BACKEND_MEM`,
+`OV_BACKEND_CPUS`, `OV_PG_CPUS`, `PG_POOL_MAX`), so a scale-up is an `.env` edit and an
+`up -d`, not a kit change. Production (`ov-vps`, 2 vCPU / 4 GB, also running the helpdesk) has
+not been measured: the sum of the CPU limits must stay within the host's, and the peak harness
+must run there on a weekday before the first official Saturday (RUNBOOK-hetzner.md
+"Monitoring"). Above `OV_ADMIT_HEAP_PCT` (85%) of the heap limit, new sockets are told "relay
+busy" (close 1013, the apps retry) instead of the process running out of memory.
+
+The relay's memory for match data (stored bundles and live states) follows the heap limit: 35% of
+it, about 106 MB at `--max-old-space-size=256` and 260 MB at 700, half of that per address. A long
+five-set match counts 0.7-1.8 MB of it (an upper bound on its heap). As it fills, the relay sheds
+new matches first (new rooms are refused at 80% of the total, or of an address's share) so the
+matches in play keep syncing to their referee and bench tablets; on the cloud the rooms the
+database does not know as official matches hold at most 60% of the total, so an anonymous flood
+cannot freeze official matches. Refusals (`relay-full`) show in the `[WS]` summary;
+`OV_RELAY_MAX_MB` sets the total by hand (backend README).
+
+## Vector PDF (ov-render)
+
+The official scoresheet as a vector PDF (field-spec 17.20): text, lines and
+the font in the file, not the device's 3100 x 2170 picture of the sheet.
+
+- **What:** `ov-render` (Dockerfile.render, `escoresheet/render`) runs headless
+  Chromium (Playwright's chromium-headless-shell). It serves the scoresheet page
+  built from the web app's own code (`frontend/render`, `vite.render.config.js`)
+  from its own image, takes a match record from the backend (`POST /render`,
+  shared token) and answers `page.pdf()` of the sheet under the screen media:
+  A3 landscape, 5 mm margins, the 410 x 287 mm sheet where the raster PDF
+  placed its picture. REMARKS that do not fit go on further pages as text.
+- **Where the backend uses it** (`lib/vectorPdf.js`, `lib/scoresheets.js`):
+  - Rebuild PDF in the manager: `POST /api/scoresheets/:id/rebuild-vector`
+    (admins). Without the service (503) the manager captures the sheet itself.
+    Closed indoor matches only: a beach match (409 `OV_BEACH_SHEET`, its sheet
+    is OpenBeach's own) and a match not closed (409 `OV_NOT_CLOSED`, it gets
+    its PDF from the new approval) are not rebuilt, by either route.
+  - After the approval's PDF of an indoor match: once the match is closed, its
+    data quiet for 60 s and 10 min have passed since that PDF (a corrected
+    approval PDF may still come within them), the server prints its own copy
+    and stores it as the newest (`scoresheet.vector` in the audit log). The
+    device's PDF stays. Only a record that ends as its close says may replace
+    it (owner decision 3, `recordGate`): every set finished, as many finished
+    sets as `set_results` lists, each at its score, `final_score` and `winner`
+    as the sets give them, and every finished set's last point at its score
+    (forfeit excepted); a print that misses a picture (a signature) is refused
+    too. Otherwise the device's PDF stays the official one and the Errors tab
+    gets a `job.failed` "vector copy refused (<reason>)" with the game number.
+    A reopen cancels the pending copy (the new approval's PDF brings its own).
+    Rebuild and vector-copy rows never count as the approval's PDF (storePdf).
+    The final mail waits for the copy (at most 25 min after the close). The
+    jobs live in the backend's memory: a restart drops the pending ones (those
+    matches keep the device's PDF).
+  - The device's own offline "Save PDF" is unchanged (raster).
+- **Isolation:** `ov-render-net` is internal (no egress); only the backend is
+  on it; no published port. Every request of the page outside its own made-up
+  origin is refused, so nothing leaves the container. Chromium runs with
+  `--no-sandbox`: the container is the sandbox (cap_drop ALL, read-only root,
+  no-new-privileges, own memory limit 768m, 1 CPU, one page at a time).
+- **Image:** ~1.2 GB on disk (Node + Chromium headless shell + its libraries).
+  ~200 MB of memory with the browser up, about 1 s per sheet on lenovoserver.
+- **Turn it on** (env.example, "Vector PDF"):
+  1. `escoresheet/deploy/build-render-image.sh --ship ov-vps`
+  2. in `/opt/openvolley/.env`: `OV_RENDER_IMAGE=openvolley-render:<sha>`,
+     `OV_RENDER_TOKEN=$(openssl rand -hex 24)`, `OV_RENDER_URL=http://ov-render:8090`,
+     `COMPOSE_PROFILES=tunnel,render`
+  3. `docker compose --project-directory /opt/openvolley up -d` (recreates the
+     backend with the two variables and starts ov-render)
+  4. check: `docker compose exec ov-backend node -e "fetch('http://ov-render:8090/health').then(r=>r.text()).then(console.log)"`
+  Off again: empty `OV_RENDER_URL` and `up -d` (the service may keep running).
+- **Update:** the page is part of the image: build and ship a new render image
+  with every release that changes the scoresheet (or the render service), then
+  set `OV_RENDER_IMAGE` and `up -d`. No migration, no roles.sql change.
+
+## Public downloads: get.openvolley.app
+
+`https://get.openvolley.app` serves the public install routes from `ov-pkgs`, through the same
+tunnel as the backend:
+
+| Path | What | Signed by |
+|---|---|---|
+| `/` | Install page (`pkgs/index.html`, versions filled in at publish time) | n/a |
+| `/install.sh` | One-line Linux installer (`pkgs/install.sh`), served as `text/plain` | pins the APT key fingerprint below |
+| `/apt/` | APT repo: `dists/stable` (component `main`, arch `amd64`), `pool/main/*.deb`, `openvolley.gpg` (binary keyring), `openvolley.asc` | GPG key **OpenVolley packages <packages@openvolley.app>**, ed25519, no expiry, fingerprint `AB46 9DA8 DC3E C90F 8057 320D 285B 18D7 6C16 B82C` |
+| `/fdroid/repo/` | F-Droid repo **OpenVolley** with `com.openvolley.escoresheet` | Index: repo key `CN=openvolley, OU=F-Droid`, RSA 4096, to 2054, fingerprint `61C70F8949441E04E2E21ACC8E6E5C6CC502ADD52A157FB9A8DD8588DACE0720`. APKs: the OpenVolley app key (`frontend/ANDROID.md`), never re-signed |
+| `/desktop/` | Desktop updater manifests: `latest.json` (everyone), `staging.json` (apps started with `OPENVOLLEY_UPDATE_CHANNEL=staging`), `latest-<version>.json` (archive, for the kill switch) | Each installer's signature inside: the desktop updater key (minisign Ed25519, made with `tauri signer`), public half in `frontend/src-tauri/tauri.conf.json` `plugins.updater.pubkey`; the signature also binds the version (`requireSignedVersion`) |
+
+The Windows installer and an APK copy (`OpenVolley-<version>.apk`) are assets of the GitHub
+release `desktop-v<version>`; the page links there. From 2.2.0 the release also carries a `.sig`
+per installer and `latest.json`: the app asks `https://get.openvolley.app/desktop/latest.json`
+first and `https://github.com/Lucanepa/openvolley/releases/latest/download/latest.json` if that
+fails, so the release `desktop/latest.json` announces must be GitHub's "Latest". `desktop.yml`
+sets `make_latest`, server `v*` releases (`release.yml`) set `make_latest: "false"`, Android
+releases are created with `--latest=false`, and `publish-pkgs.sh --desktop <version>` (not
+`--staging`) makes `desktop-v<version>` "Latest" again after uploading its `latest.json`, so a
+release that took it in between gives it back. The Windows and AppImage entries point at the
+GitHub assets, the `.deb` entry at the APT pool.
+
+The in-app `.deb` updater does not download that `.deb`: it runs
+`apt-get install --only-upgrade openvolley-escoresheet`, which installs the newest version the
+APT index lists. So the index never lists a desktop version newer than `desktop/latest.json`
+(the APT hold-back in `lib/publish-lib.sh`): a newer `.deb` stays in the pool, reachable by its
+URL, but out of `Packages` until `latest.json` announces it. Before the first `latest.json`,
+the version on `staging.json` and newer are held back. A `.deb` given by hand that would be held
+back is refused (use `--desktop`).
+
+User commands (also on the page). Linux, one line:
+
+```bash
+curl -fsSL https://get.openvolley.app/install.sh | sudo sh
+```
+
+`install.sh` (POSIX sh, Debian/Ubuntu and derivatives, amd64, root): installs `curl`,
+`ca-certificates` and `gpg` if missing, downloads `apt/openvolley.gpg` and refuses it unless it
+holds exactly one primary key with fingerprint `AB469DA8DC3EC90F8057320D285B18D76C16B82C`
+(not revoked or expired), writes it to `/usr/share/keyrings/openvolley.gpg`, writes
+`/etc/apt/sources.list.d/openvolley.list` (`signed-by` that keyring), then `apt-get update` and
+`apt-get install -y openvolley-escoresheet`. Running it again rewrites the same two files and
+upgrades the package. `OV_PKGS_BASE=http://host:port` points it at another server (tests only).
+The same by hand:
+
+```bash
+curl -fsSL https://get.openvolley.app/apt/openvolley.gpg | sudo tee /usr/share/keyrings/openvolley.gpg >/dev/null
+echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/openvolley.gpg] https://get.openvolley.app/apt stable main' | sudo tee /etc/apt/sources.list.d/openvolley.list
+sudo apt update && sudo apt install openvolley-escoresheet
+```
+
+F-Droid: add `https://get.openvolley.app/fdroid/repo?fingerprint=61C70F8949441E04E2E21ACC8E6E5C6CC502ADD52A157FB9A8DD8588DACE0720`.
+
+**Package name.** The APT package is `openvolley-escoresheet` and the command
+`/usr/bin/openvolley-escoresheet` (`openvolley-escoresheet --server-only` for the tablet relay
+alone). Tauri derives the `.deb` name from `productName` in kebab case, so
+`frontend/src-tauri/tauri.linux.conf.json` overrides `productName` (and pins `mainBinaryName`)
+to `openvolley-escoresheet` on Linux only; `tauri.conf.json` keeps "Openvolley eScoresheet" so
+the Windows installer still finds the earlier install (after 2.1.0 it installs per machine and
+removes an older per-user copy itself, see `frontend/OFFLINE_DESKTOP.md`, Windows install). That deb provides, replaces and conflicts with
+`openvolley-e-scoresheet` (the name of the GitHub `.deb` up to 1.48.19) and `openvolley`.
+`publish-pkgs.sh` repacks any `.deb` published under another name the same way (same version,
+depends and files, deterministic bytes) and migrates old-name files left in the pool, so the
+repo only ever lists `openvolley-escoresheet`. Someone who installed `openvolley-e-scoresheet`
+(the GitHub `.deb`, or this repo before the rename) moves over with the installer or
+`sudo apt install openvolley-escoresheet`; plain `apt upgrade` does not switch package names.
+
+**Keys** (lenovoserver only, never in `/opt/openvolley`, never in git), all under
+`~/.config/openvolley-pkgs/` (mode 700):
+
+- `gnupg/` + `gpg-passphrase`: the APT key. Vaultwarden, folder OpenVolley, **"OpenVolley APT
+  signing key"** (password = passphrase; notes = armored private key and how to restore).
+- `fdroid/config.yml` + `fdroid/keystore.p12`: the F-Droid repo key, created by `fdroid init`.
+  Vaultwarden **"OpenVolley F-Droid repo key"** (password = keystore password; notes = key
+  password, alias, base64 keystore). Losing it means every user must re-add the repo under a
+  new fingerprint; losing the APT key means everyone re-downloads `openvolley.gpg`.
+- `public/`: the served tree, rebuilt by `publish-pkgs.sh`. Only this directory is rsynced.
+
+The desktop updater key lives apart, in `~/.config/openvolley-desktop/` (mode 700):
+`updater.key` (the `tauri signer` private key, password protected) and `key-password` (its
+password), both mode 600, plus `updater.key.pub`, whose content is the `pubkey` committed in
+`tauri.conf.json`. Vaultwarden: **"OpenVolley desktop updater key"** (notes: the key file and
+the password). Losing it means installed apps never update themselves again (a new key needs a
+manual reinstall everywhere). CI never signs and holds no updater secret, so a GitHub compromise
+cannot push code to venue laptops. `publish-pkgs.sh` checks every signature against the key in
+`tauri.conf.json`, never against the `.pub` file next to the private key.
+
+This is separate from the owner's private F-Droid repo (`/srv/fdroid/desktop-calendar`), which
+stays private and is not touched by any of this.
+
+### ReadVolley (Android only)
+
+ReadVolley (the volleyball rules reference, Lucanepa/readvolley) is in the F-Droid repo as
+`com.openvolley.readvolley`, signed with its own key (certificate SHA-256 committed in
+`lib/publish-lib.sh`, `READVOLLEY_APP_CERT_SHA256`). It has no desktop app and no `.deb`: build
+and sign the APK with readvolley's `scripts/release-android.sh`, then
+`escoresheet/deploy/publish-pkgs.sh <signed.apk>`. Its F-Droid metadata is
+`fdroid/metadata/com.openvolley.readvolley.yml` (copy it there once). The install page has no
+ReadVolley section; the app shows up in F-Droid clients that have the repo.
+
+### OpenBeach
+
+OpenBeach (the beach volleyball app, Lucanepa/openbeach) is published from the same repository
+next to OpenVolley: APT package `openbeach-escoresheet` (command of the same name), Android app
+id `com.openvolley.beach` (signed with its own key, never OpenVolley's: its certificate SHA-256
+in `~/.config/openbeach-android/cert.sha256`, read by `lib/publish-lib.sh` `app_cert_sha256`),
+desktop releases tagged `beach-desktop-v<version>` (`desktop.yml` builds the Tauri shell with
+`src-tauri/tauri.beach.conf.json` and openbeach's frontend at the same tag), updater manifests in
+`/desktop/beach/` (same updater key). Its GitHub releases never become "Latest" (OpenVolley's
+updater fallback); OpenBeach's updater falls back to the `beach-desktop-latest` prerelease, whose
+only asset is the `latest.json` that `publish-pkgs.sh --desktop <version> --app beach` uploads
+(it creates that prerelease the first time). The APT hold-back is per package: each against its
+own `latest.json`. The install page shows the OpenBeach section once an OpenBeach `.deb` or APK
+is published. Linux: `curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s openbeach-escoresheet`.
+
+Release: bump openbeach's `escoresheet/frontend/package.json`, tag `beach-desktop-v<version>` in
+both repos, then as below with `--app beach` (`--desktop <version> --app beach --staging`, then
+`--desktop <version> --app beach`). The kill switch works the same in `desktop/beach/`, with
+`beach-desktop-latest` instead of GitHub's "Latest" (re-upload `latest-<previous>.json` there as
+`latest.json`).
+
+### SVRZ RC (APT only)
+
+SVRZ Referee Coaching ([Lucanepa/svrz_rc](https://github.com/Lucanepa/svrz_rc)) puts only its
+`.deb` in this APT repository, so a `.deb` install updates with `sudo apt upgrade`. That app's own
+updater only covers its AppImage. Its installers are the GitHub releases `native-v<version>` of
+**Lucanepa/svrz-referee-coaching** (the `.deb` is named `SVRZ.RC_<v>_amd64.deb`; the package is
+`svrz-rc`, with `/usr/bin/svrz-rc`). Its APK goes to svrz_rc's own F-Droid repo, not this one,
+and the install page has no section for it.
+
+```bash
+gh release download native-v1.4.3 -R Lucanepa/svrz-referee-coaching -p '*.deb' -p '*.deb.sig' -D /tmp/svrz
+escoresheet/deploy/publish-pkgs.sh /tmp/svrz/SVRZ.RC_1.4.3_amd64.deb
+```
+
+The `.deb` goes in only when its `.sig` (made by that project's release build with its updater
+key, `SVRZ_RC_UPDATER_PUBKEY` in `lib/publish-lib.sh`, the `plugins.updater.pubkey` of svrz_rc's
+`tauri.conf.json`) verifies: the OpenVolley APT key then vouches only for what svrz-rc's own CI
+signed. A new svrz-rc updater key means changing that line.
+
+It has no `latest.json` here: the APT hold-back never applies and APT lists a new version at
+once (a hand-given `svrz-rc` `.deb` is never refused for being newer than a manifest). Linux: `curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s svrz-rc`.
+Test: `tests/publish-svrz-rc.test.sh`.
+
+### macOS (signed and notarized), Homebrew tap
+
+Both macOS apps are signed with the Developer ID of Apple team T2Q99T2KH5 (Luca Canepa) and
+notarized by Apple: `desktop.yml` staples the tickets to the .app, the updater's .app.tar.gz
+and the .dmg, so they open like any other app, also without internet in a hall. The build job
+makes an ad-hoc app without any secret; only on a tag push the `sign-macos` job signs,
+notarizes and staples it and makes the .dmg. That job runs no npm, cargo or third-party action
+and never starts the app, and it is the only one with the secrets, which live in the GitHub
+environment `macos-signing` (Settings › Environments, deployment tags `desktop-v*` and
+`beach-desktop-v*` only): `APPLE_CERTIFICATE` (the Developer ID Application .p12, base64) and
+`APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, and the App Store Connect API key
+`APPLE_API_KEY` (key ID), `APPLE_API_ISSUER`, `APPLE_API_PRIVATE_KEY` (.p8; a key with the
+Developer role is enough for notarization). A tag build without them fails `sign-macos` (a
+release is never ad-hoc signed; the release then goes out without macOS files); a manual run
+never signs and builds an ad-hoc app. A release is never replaced: running the workflow again
+on a published tag only adds the files the release lacks. The certificate expires in December 2027 and the developer
+membership on 9 November each year: renew both, then put the new .p12 into
+`APPLE_CERTIFICATE*`. Apps signed before stay valid (secure timestamp). Updating from an
+ad-hoc version (3.0.13 and older) to a signed one asks once more for the local network
+permission (macOS ties it to the signature). The app has no camera or microphone entitlement
+(`Entitlements.plist`): it never asks for either. The casks live in our tap `Lucanepa/homebrew-tap`
+(`brew install --cask lucanepa/tap/openvolley`, `lucanepa/tap/openbeach`). They declare
+`auto_updates`: the app updates itself, `brew upgrade` only follows.
+
+After `publish-pkgs.sh --desktop <version>` (OpenBeach: `--app beach`):
+```bash
+git clone git@github.com:Lucanepa/homebrew-tap.git ~/src/homebrew-tap   # once
+escoresheet/deploy/homebrew/bump-cask.sh <version> ~/src/homebrew-tap   # OpenBeach: --app beach
+cd ~/src/homebrew-tap && git diff && git commit -am "openvolley <version>" && git push
+```
+
+### Release procedure
+
+Any day (owner 20.11.2026: no match-day freeze). An update downloads in the background and
+installs when the scorer quits the app, never during a match.
+
+1. Desktop: bump the version (`escoresheet/frontend/package.json`) and tag `desktop-v<version>`.
+   CI builds and creates the GitHub release; the release job fails if the tag and
+   `package.json` disagree. Releases before 2.2.0 (no updater) were published by downloading
+   the `.deb` by hand
+   (`gh release download desktop-v<version> --repo Lucanepa/openvolley --pattern '*.deb' -D /tmp/ovrel`)
+   and passing it to step 3; from 2.2.0 use `--desktop` (step 3) instead.
+2. Android: `escoresheet/frontend/scripts/release-android.sh` builds and signs the APK and puts
+   it in the private repo as `/srv/fdroid/desktop-calendar/repo/com.openvolley.escoresheet_<code>.apk`
+   (`frontend/ANDROID.md`). Attach it to the release for direct download:
+   ```bash
+   cp /srv/fdroid/desktop-calendar/repo/com.openvolley.escoresheet_<code>.apk /tmp/ovrel/OpenVolley-<version>.apk
+   gh release upload desktop-v<version> --repo Lucanepa/openvolley /tmp/ovrel/OpenVolley-<version>.apk
+   ```
+3. Publish (the desktop part, the APK, or both). A desktop release goes to staging first:
+   ```bash
+   cd escoresheet/frontend && npm ci && cd -     # tauri-cli >= 2.12 (signer --app-version)
+   escoresheet/deploy/publish-pkgs.sh --desktop <version> --staging \
+     /srv/fdroid/desktop-calendar/repo/com.openvolley.escoresheet_<code>.apk
+   ```
+   `--desktop` downloads the release's `-setup.exe`, AppImage and `.deb` with `gh`, checks each
+   is that version (and the `.deb` is `openvolley-escoresheet`), checks that the tag's commit is
+   on `main` and that each file is byte for byte one the tag's `desktop.yml` push run built (its
+   workflow artifacts, kept 90 days: publish within that time; `desktop_provenance`), so an asset
+   replaced on the release after CI is never signed, signs each with the updater key
+   (`tauri signer sign --app-version`, the password goes through the environment only), verifies
+   each signature against `tauri.conf.json` (with `lib/desktop-updater.mjs`, and also with
+   `minisign` when it is installed), writes `latest.json` (notes: the fastlane changelog of the
+   same version) and adds the `.deb` to the APT pool. With `--staging` it updates
+   `desktop/staging.json` and `desktop/latest-<version>.json` and uploads only the `.sig` files to
+   the GitHub release. The `.deb` goes into the APT pool but not into the index (APT hold-back,
+   above), so neither `sudo apt upgrade` nor the in-app updater of an APT install gets it before
+   `latest.json` announces it. Start your own laptops with `OPENVOLLEY_UPDATE_CHANNEL=staging`
+   and check that they update (quit, or "Restart and update"): Windows and AppImage. An APT
+   laptop cannot take a staging version through the updater; install it by hand to try it
+   (`curl -fsSLO https://get.openvolley.app/apt/pool/main/openvolley-escoresheet_<version>_amd64.deb && sudo apt install ./openvolley-escoresheet_<version>_amd64.deb`).
+   Then everyone:
+   ```bash
+   escoresheet/deploy/publish-pkgs.sh --desktop <version>
+   ```
+   That re-signs, writes `desktop/latest.json` too, lists the `.deb` in the APT index and
+   uploads `latest.json` with the `.sig` files to the release (after the rsync, so it never
+   points at a `.deb` not yet served), then makes that release GitHub's "Latest" if another one
+   took it (it warns if that fails). A channel never moves back to an older version this way;
+   see the kill switch below.
+
+   macOS: when the release has `<package>_<version>_universal.app.tar.gz` (the macOS job of
+   `desktop.yml`), `--desktop` checks, signs and announces it too (`darwin-aarch64`,
+   `darwin-x86_64`, one universal file). Without it (a release from before macOS, or a failed
+   macOS job: it does not hold back the Windows / Linux release) `latest.json` has no darwin
+   targets and Macs stay on their version. After the final `--desktop` run, bump the Homebrew
+   cask (below).
+
+   `publish-pkgs.sh` refuses an APK not signed by the OpenVolley app key, a `.deb` that is not the desktop app,
+   and a package that would overwrite a different file under the same version. It also copies
+   `pkgs/install.sh` (after checking it pins the APT key and the package name). `--no-sync` builds `~/.config/openvolley-pkgs/public`
+   without uploading anything (rsync or GitHub). Clients see the new indexes and manifests within 60 s (cache), packages are immutable.
+   Before publishing, refuses anything key-like in the public tree: key stores, password files,
+   `*.key`, PGP private key blocks and minisign / tauri secret keys (as text or base64).
+4. Check: `curl -fsS https://get.openvolley.app/apt/dists/stable/InRelease | head`, the
+   version on the page, `curl -fsSI https://get.openvolley.app/install.sh` (200, text/plain),
+   and for a desktop release `curl -fsS https://get.openvolley.app/desktop/latest.json | head -3`.
+
+To withdraw a version: delete it from `~/.config/openvolley-pkgs/public/apt/pool/main/` or
+`~/.config/openvolley-pkgs/fdroid/repo/` and run `publish-pkgs.sh` again.
+
+**Desktop kill switch** (a bad desktop release is rolling out, on `latest.json` or only on
+staging): point both manifests back at the previous release, take the bad `.deb` out of the
+pool and sync. Clients that have not updated yet stop; clients never downgrade, so ship a fixed
+patch next.
+```bash
+D=~/.config/openvolley-pkgs/public/desktop
+cp $D/latest-<previous>.json $D/latest.json             # everyone
+cp $D/latest-<previous>.json $D/staging.json            # staging laptops too
+rm ~/.config/openvolley-pkgs/public/apt/pool/main/openvolley-escoresheet_<bad>_amd64.deb
+escoresheet/deploy/publish-pkgs.sh                      # rebuilds the APT index, syncs the tree
+gh release delete-asset desktop-v<bad> latest.json --repo Lucanepa/openvolley --yes   # the fallback endpoint too
+gh release edit desktop-v<previous> --repo Lucanepa/openvolley --latest              # and it serves <previous> again
+```
+The APT index follows `latest.json` (hold-back), so the run above drops `<bad>` from it even if
+the `rm` is forgotten, and an APT laptop's in-app updater (`apt-get --only-upgrade`) gets
+`<previous>`, not `<bad>`. The `rm` keeps `<bad>` out of the index for good: the fixed patch's
+release would otherwise list it again as an older version (`apt install
+openvolley-escoresheet=<bad>` could still pick it). Without the last two lines the fallback
+endpoint fails closed (no `latest.json` on the "Latest" release) until the next release.
+
+Tests (offline, throwaway key, no GitHub, no sync):
+`TMPDIR=<scratch dir> OV_TAURI_CLI=<tauri-cli >= 2.12> escoresheet/deploy/tests/publish-desktop.test.sh`.
+
+### Deploy (owner, once)
+
+On lenovoserver (first done on hetzner; on lenovoserver `host-prep.sh` already made the directory):
+
+```bash
+# DNS (openvolley.app zone): CNAME get -> 10659462-0408-42a4-bdd9-fc890094954d.cfargotunnel.com, proxied
+lenovo$ sudo install -d -m 0755 -o root -g root /data/openvolley/pkgs           # or host-prep.sh
+lenovo$ escoresheet/deploy/publish-pkgs.sh                                      # fills it (sudo rsync)
+lenovo$ sudo rsync -rlt --chmod=D750,F640 --exclude=.env escoresheet/deploy/ /opt/openvolley/
+lenovo$ sudo sh -c 'chmod 750 /opt/openvolley/*.sh && chmod 644 /opt/openvolley/cloudflared/config.yml /opt/openvolley/pkgs/Caddyfile'
+lenovo$ sudo docker compose --project-directory /opt/openvolley config -q && sudo docker compose --project-directory /opt/openvolley up -d ov-pkgs && sudo docker compose --project-directory /opt/openvolley restart ov-tunnel
+lenovo$ sudo docker compose --project-directory /opt/openvolley ps ov-pkgs       # healthy
+```
+
+A later `pkgs/Caddyfile` change (such as the F-Droid index CORS header) does not change the
+compose config, so `up -d` alone keeps the old one: copy the kit as above, then
+`sudo docker compose --project-directory /opt/openvolley up -d --force-recreate ov-pkgs` and check
+`curl -fsSI https://get.openvolley.app/fdroid/repo/index-v2.json | grep -i access-control`.
+
+The `chmod 644` matters: the kit lands root-owned `640`, and `ov-pkgs` runs as `nobody` (as
+`ov-tunnel` runs as a non-root user), so without it Caddy cannot read its config. `publish-pkgs.sh`
+writes the public tree `D755,F644`.
+
+Hardening as for the other services (read-only root, `cap_drop: ALL`, `no-new-privileges`, limits,
+`ov-edge` only, no ports), with one capability kept: `/usr/bin/caddy` in the image has the file
+capability `cap_net_bind_service`, and the kernel refuses to exec it when that capability is not in
+the bounding set, so `cap_add: [NET_BIND_SERVICE]`.
+
+## Deviations from the migration plan (and why)
+
+| Plan | Kit | Reason |
+|---|---|---|
+| Proxied A record, Traefik router, Origin CA cert, `ipAllowList` of Cloudflare ranges, monthly range diff | Cloudflare Tunnel container | Owner decision: no public port, nothing to keep in sync, moves with the stack |
+| Coolify project + Compose resource, branch `deploy/openvolley` | Plain compose in `/opt/openvolley`, images by git SHA | Coolify auto-deploy and network attachment cannot interfere; rollback = previous tag |
+| `/data/backups/openvolley`, root crontab | `/data/openvolley/backups`, systemd timers | `/data/backups` and root's crontab belong to the other tenant's backup jobs (rotation and R2 sync not read yet); keep OpenVolley out of them |
+| `gpg --import` into root's keyring | `--recipient-file` + private homedir, fingerprint pinned in `backup.conf` | Nothing added to the keyring the other tenant's backups use; refuses a private key file |
+| `/var/lib/openvolley-{pg,storage}.img`, fstab pass 2 | `/var/lib/openvolley/{pg,storage}.img`, pass 0 | One root-only directory; no boot-time fsck of image files |
+| `STORAGE_DIR`, status at `/status` | `STORAGE_ROOT`, `STATUS_DIR=/var/lib/openvolley-status` | Shared runtime contract |
+| Cold standby: repoint DNS to `cloudflared-lenovo` | Same compose + same `TUNNEL_TOKEN` on lenovoserver | No DNS change; stop the hetzner tunnel first (two live connectors would split traffic) |
+
+## Verified locally (lenovoserver, 2026-10-05)
+
+`docker compose -p ov-kit-test config -q`; image build from this tree; `ov-postgres` +
+`ov-backend` healthy on temp bind dirs (read-only rootfs, uid 70 / node, no caps, no ports,
+Postgres without egress); Postgres exits with `FATAL: /ovpg/.ovdata missing` and initialises
+nothing without the sentinel; a missing bind path is an error; tunnel ingress validated, dummy
+token rejected; backup run with a throwaway key (wrong fingerprint, missing sentinel and a 50%
+count drop all refused before dumping; `counts.reset` accepted); `restore-test.sh` passed on
+that dump, failed on a raised floor, on a wrong passphrase and in strict mode on the pre-wiring
+image; `host-prep.sh` apply run twice (idempotent) inside a throwaway privileged container with
+64 MB images, immutable bare mountpoint refused writes, a lost image with its fstab line still
+present was refused; `shellcheck` clean.
+
+Review fixes, same day: `build-image.sh` refuses the current pre-wiring tree (and `--ship` with
+`--allow-prewiring`); the `-prewiring` image stays `unhealthy` and `ov-tunnel` stays `Created`
+("dependency failed to start"); `ov-backend` exits 78 without the storage sentinel and starts
+once it is back; `ov-postgres` writes `state/initialized` and then refuses (exit 78, no initdb) on
+an emptied `data/`; a shell-exported `OV_MIN_MATCHES` overrides `.env` (the reason for "never
+source .env"), and the quoted `env.example` now sources completely; `apply-roles.sh` (quoted
+password, refuses non-URL-safe passwords and a failing statement; password not in any argv);
+`restore-db.sh` refused while the backend ran, on an encrypted file, while the backup lock was
+held and while another session was connected, restored with matching counts (old database kept,
+`counts.reset` touched, `template1` pollution ignored), and rolled back to the untouched old
+database on a truncated stream, a truncated file, a failing `pg_dump` in the pipe and a count
+mismatch; `backup-openvolley.sh` refused an unset fingerprint and stopped before a tar that would
+exceed `OV_BACKUP_MAX_MB` (no partial left); `restore-test.sh` refused a dev tag, a missing tag
+file and a missing `roles.sql`, swept a planted leftover container, network and `/dev/shm`
+directory, passed, and cleaned up everything on SIGTERM; `prune-images.sh` kept the newest N plus
+the deployed tag. All throwaway containers, networks, images and temp dirs removed afterwards.

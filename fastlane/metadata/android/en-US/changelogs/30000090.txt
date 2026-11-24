@@ -1,0 +1,7 @@
+OpenVolley 3.0.9
+- Backup files on the device are encrypted: the game PIN or the referee PIN opens them.
+- The match-end file can be restored, and a restored match keeps the PIN it was opened with.
+- The last backup is saved before the app closes, also when the computer shuts down or Android sends the app away.
+- No backup files of a copy another device continued.
+- A team's waiting roster no longer opens Match Setup by itself at start.
+- "Auto-download data at set end" is remembered.

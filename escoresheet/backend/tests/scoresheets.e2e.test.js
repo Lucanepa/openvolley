@@ -1,0 +1,542 @@
+/**
+ * The manager's Scoresheets tab (lib/scoresheets.js): where a match's stored
+ * PDF is found, and end to end who may list and open it (admins and the
+ * sport's competition managers; scorers only their own, through storage),
+ * with every open in the audit log.
+ *
+ * The end-to-end part needs PG_TEST_URL (see tests/helpers/pgTestDb.js) or
+ * OV_E2E_DOCKER=1.
+ */
+import { describe, it, before, after } from 'node:test'
+import assert from 'node:assert/strict'
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { randomBytes } from 'node:crypto'
+import pg from 'pg'
+import { SKIP, bootServer, api, provisionDatabase, sleep } from './helpers/e2eServer.js'
+import { grantRoles } from './helpers/pgTestDb.js'
+import { REBUILD_REASON_MAX, STALE_SLACK_MS, VIEW_LINK_MAX, VIEW_LINK_TTL_MS, beachJsonPathParts, bestPdf, cleanGame, createScoresheets, downloadName, filePart, isMatchScoresheetFile, isScoresheetPdf, isScoresheetUploadPath, pdfLocator, pdfPathParts } from '../lib/scoresheets.js'
+import { manageFamilyOf } from '../lib/manageApi.js'
+
+const key = () => `k${randomBytes(16).toString('hex')}`
+const pdfBytes = (label) => Buffer.from(`%PDF-1.4\n% ${label}\n%%EOF\n`)
+
+describe('scoresheets (unit)', () => {
+  it('routes /api/scoresheets to its own family', () => {
+    assert.equal(manageFamilyOf('/api/scoresheets'), 'scoresheets')
+    assert.equal(manageFamilyOf('/api/scoresheets/00000000-0000-4000-8000-000000000000/pdf'), 'scoresheets')
+    assert.equal(manageFamilyOf('/api/scoresheetsx'), null)
+  })
+
+  it('indoor: the game number (else the external id) and the scheduled UTC day', () => {
+    const k = key()
+    const loc = pdfLocator({ sport: 'indoor', game_n: 402397, external_id: 'match_1', scheduled_at: '2026-10-10T12:30:00Z' })
+    assert.deepEqual(loc.folders, ['2026-10-10'])
+    assert.equal(loc.rank(`game402397_${k}.pdf`), 2)
+    assert.equal(loc.rank('game402397.pdf'), 1, 'an older file without the random part')
+    assert.equal(loc.rank(`game4023970_${k}.pdf`), 0, 'another game')
+    assert.equal(loc.rank(`game402397_${k}_final.json`), 0, 'not the PDF')
+    // no game number: the external id, path-safe as the app writes it
+    const friendly = pdfLocator({ sport: 'indoor', game_n: null, external_id: 'vm:abc 1', scheduled_at: '2026-10-10T23:30:00+02:00' })
+    assert.deepEqual(friendly.folders, ['2026-10-10'])
+    assert.equal(cleanGame('vm:abc 1'), 'vm-abc-1')
+    assert.equal(friendly.rank(`gamevm-abc-1_${k}.pdf`), 2)
+  })
+
+  it('beach: beach/{day}/game{n}_{seed}.pdf, the seed being the external id', () => {
+    const loc = pdfLocator({ sport: 'beach', game_n: 7, external_id: 'match_1760000000000_ab.c', scheduled_at: '2026-10-11T09:00:00Z' })
+    assert.deepEqual(loc.folders, ['beach/2026-10-11'])
+    assert.equal(loc.rank('game7_match_1760000000000_ab-c.pdf'), 2)
+    assert.equal(loc.rank('game7_match_1760000000000_zz.pdf'), 0, 'another tournament\'s game 7')
+    assert.equal(loc.rank('game7.pdf'), 1)
+    assert.equal(loc.rank('game7_match_1760000000000_ab-c_final.json'), 0)
+    // the seed is all after the first '_': a match whose external id is a
+    // tail of the seed is not the name's (its parts are '_'-joined too)
+    for (const tail of ['ab.c', '1760000000000_ab.c']) {
+      const other = pdfLocator({ sport: 'beach', game_n: null, external_id: tail, scheduled_at: '2026-10-11T09:00:00Z' })
+      assert.equal(other.rank('game7_match_1760000000000_ab-c.pdf'), 0, tail)
+    }
+    assert.equal(pdfLocator({ sport: 'beach', external_id: 'match_1', scheduled_at: '2026-10-11T09:00:00Z' }).rank('gameunknown_match_1.pdf'), 2, 'no game number')
+  })
+
+  it('no scheduled date: the days it was closed, updated and created', () => {
+    const loc = pdfLocator({ sport: 'indoor', game_n: 5, scheduled_at: null, closed_at: '2026-10-12T20:00:00Z', updated_at: '2026-10-12T21:00:00Z', created_at: '2026-10-11T18:00:00Z' })
+    assert.deepEqual(loc.folders, ['2026-10-12', '2026-10-11'])
+  })
+
+  it('the download is named like a scoresheet the app saves: game<n>_<league>_<day in Zurich>', () => {
+    assert.equal(downloadName({ game_n: 402397, league: '1L D', scheduled_at: '2026-10-10T12:30:00Z' }, '2026-10-10'), 'game402397_1LD_2026-10-10.pdf')
+    // beach leagues keep their words apart; so does an indoor league name (not a code)
+    assert.equal(downloadName({ game_n: 8, league: 'Muster Volley Cup', scheduled_at: '2026-10-10T12:30:00Z' }, '2026-10-10'), 'game8_Muster-Volley-Cup_2026-10-10.pdf')
+    assert.equal(downloadName({ game_n: 7, sport: 'beach', league: 'Sunset Beach Tour', scheduled_at: '2026-10-10T12:30:00Z' }, '2026-10-10'), 'game7_Sunset-Beach-Tour_2026-10-10.pdf')
+    // 00:30 in Zurich (22:30 UTC, filed under the UTC day): the name has the match day, as the app's
+    assert.equal(downloadName({ game_n: 5, league: '', scheduled_at: '2026-10-10T22:30:00Z' }, '2026-10-10'), 'game5_2026-10-11.pdf')
+    assert.equal(downloadName({ game_n: null, external_id: 'match_1_x', sport: 'beach', league: 'Sunset Beachtour Seeblick', home_name: 'Müller / Weber', away_name: 'Rossi / Bianchi' }, '2026-10-11'),
+      'Mueller-Weber_vs_Rossi-Bianchi_Sunset-Beachtour-Seeblick_2026-10-11.pdf')
+    assert.equal(filePart('../a/b:c.d', 60), 'a-b-c-d')
+  })
+
+  it('a scoresheet PDF path as the apps write it (db/033: such a file is stored for its match only)', () => {
+    const k = key()
+    assert.deepEqual(pdfPathParts(`2026-10-10/game402397_${k}.pdf`), { key: `2026-10-10/game402397_${k}.pdf`, folder: '2026-10-10', day: '2026-10-10', name: `game402397_${k}.pdf`, sport: 'indoor', game: '402397', seed: null })
+    assert.equal(pdfPathParts('2026-10-10/gamevm-abc-1.pdf').game, 'vm-abc-1')
+    assert.deepEqual(pdfPathParts('beach/2026-10-11/game7_match_1_ab-c.pdf'), { key: 'beach/2026-10-11/game7_match_1_ab-c.pdf', folder: 'beach/2026-10-11', day: '2026-10-11', name: 'game7_match_1_ab-c.pdf', sport: 'beach', game: '7', seed: 'match_1_ab-c' })
+    assert.deepEqual([pdfPathParts('beach/2026-10-11/game7.pdf').game, pdfPathParts('beach/2026-10-11/game7.pdf').seed], ['7', null])
+    assert.equal(pdfPathParts('beach/2026-10-11/game_match_1_x.pdf').seed, 'match_1_x', 'no game part: the seed is still all after the first _')
+    for (const bad of ['game1.pdf', 'a/b/game1.pdf', 'beach/game1.pdf', '2026-10-10/scoresheet.pdf', '2026-10-10/game1.PDF', '2026-10-10/game1_x.pdf', '../game1.pdf', 'beach/2026-10-11/match_1.pdf', 7]) {
+      assert.equal(pdfPathParts(bad), null, String(bad))
+    }
+    assert.equal(isScoresheetPdf('2026-10-10/game1.PDF'), true, 'refused by storePdf, never stored past it')
+    assert.equal(isScoresheetPdf(`2026-10-10/game1_${k}_final.json`), false)
+  })
+
+  it('an OpenBeach JSON path with a seed belongs to its match; indoor JSON and the older seedless names do not', () => {
+    assert.deepEqual(beachJsonPathParts('beach/2026-10-11/game7_match_1_ab-c_final.json'), { key: 'beach/2026-10-11/game7_match_1_ab-c_final.json', folder: 'beach/2026-10-11', day: '2026-10-11', name: 'game7_match_1_ab-c_final.json', sport: 'beach', game: '7', seed: 'match_1_ab-c' })
+    assert.equal(beachJsonPathParts('beach/2026-10-11/game7_match_1_ab-c.json').seed, 'match_1_ab-c')
+    for (const other of ['beach/2026-10-11/game7.json', 'beach/2026-10-11/game7_final.json', `2026-10-10/game1_${key()}_final.json`, 'beach/game7_match_1_x.json', 'beach/2026-10-11/game7_match_1_x.pdf', '../game7_x.json', null]) {
+      assert.equal(beachJsonPathParts(other), null, String(other))
+    }
+    assert.equal(isMatchScoresheetFile('beach/2026-10-11/game7_match_1_x_final.json'), true)
+    assert.equal(isMatchScoresheetFile('beach/2026-10-11/game7_match_1_x.pdf'), true)
+    assert.equal(isMatchScoresheetFile(`2026-10-10/game1_${key()}.json`), false)
+  })
+
+  it('uploads to the bucket: only the paths the apps write, of every version', () => {
+    const k = key()
+    for (const p of [`2026-10-10/game402397_${k}.pdf`, `2026-10-10/game402397_${k}_final.json`, `2026-10-10/game402397_${k}.json`,
+      '2026-10-10/game402397.pdf', '2026-10-10/game402397_final.json', '2026-10-10/gameunknown.json', '2026-10-10/gamematch_1_x.json',
+      'beach/2026-10-11/game7_match_1_ab-c.pdf', 'beach/2026-10-11/game7_match_1_ab-c_final.json', 'beach/2026-10-11/game7_final.json']) {
+      assert.equal(isScoresheetUploadPath(p), true, p)
+    }
+    // a file at a folder's name, a file below a scoresheet's name, anything else
+    for (const p of ['2026-10-10', 'beach', 'beach/2026-10-11', `2026-10-10/game1_${k}.pdf/x.json`, 'beach/2026-10-11/game7_match_1.pdf/x.json',
+      'beach/2026-10-11/x/game7.json', 'beach/game7_match_1.pdf', '2026-10-10/notes.txt', '2026-10-10/game1.json.txt', '2026-10-10/game1.PDF',
+      '2026-10-10/scoresheet.pdf', 'Beach/2026-10-11/game7.pdf', 'misc/2026-10-10/game1.pdf', '2026-1-10/game1.pdf', '../2026-10-10/game1.pdf', '', null, 7]) {
+      assert.equal(isScoresheetUploadPath(p), false, String(p))
+    }
+  })
+
+  it('the best file: a file of the match before an older one, then the newest', () => {
+    const rank = (name) => (name.startsWith('k') ? 2 : name === 'old' ? 1 : 0)
+    assert.equal(bestPdf([{ name: 'old', mtimeMs: 9 }, { name: 'k1', mtimeMs: 1 }, { name: 'k2', mtimeMs: 5 }, { name: 'x', mtimeMs: 99 }], rank).name, 'k2')
+    assert.equal(bestPdf([{ name: 'old', mtimeMs: 9 }], rank).name, 'old')
+    assert.equal(bestPdf([{ name: 'x', mtimeMs: 9 }], rank), null)
+  })
+})
+
+describe('scoresheet view links (unit)', () => {
+  // a module with a fake clock and one stored PDF (recorded for the match,
+  // db/033); readPdf's database and storage stubbed
+  function sheets () {
+    let t = 1_000_000
+    const audits = []
+    const m = { id: '11111111-1111-4111-8111-111111111111', game_n: 402397, external_id: 'x', status: 'final', scheduled_at: new Date('2026-10-10T12:30:00Z'), is_beach: false, test: false, league: '1L D', home_name: 'H', away_name: 'A' }
+    const stored = { match_id: m.id, path: `2026-10-10/game402397_k${'a'.repeat(32)}.pdf`, stored_at: new Date(1) }
+    const pool = { query: async (text) => ({ rows: [/match_scoresheets/.test(text) ? stored : m] }) }
+    const storage = {
+      listFilesTrusted: async () => [{ name: `game402397_k${'a'.repeat(32)}.pdf`, mtimeMs: 1 }],
+      readTrusted: async () => Buffer.from('%PDF-1.4\n%%EOF\n')
+    }
+    const accounts = { audit: async (_c, e) => { audits.push(e) } }
+    const s = createScoresheets({ pool, storage, accounts, logger: { warn () {}, error () {} }, now: () => t })
+    return { s, m, audits, tick: (ms) => { t += ms } }
+  }
+  const tokenOf = (path) => path.split('/')[3]
+
+  it('serves its PDF until the TTL, then 404; another name is 404', async () => {
+    const { s, m, audits, tick } = sheets()
+    const made = await s.createViewLink({ actorId: 'u1', matchId: m.id })
+    assert.equal(made.status, 200)
+    assert.equal(made.body.data.filename, 'game402397_1LD_2026-10-10.pdf')
+    assert.equal(audits.length, 1)
+    const token = tokenOf(made.body.data.path)
+    assert.equal((await s.readViewLink({ token, name: 'game402397_1LD_2026-10-10.pdf' })).status, 200)
+    assert.equal((await s.readViewLink({ token, name: 'game402397.pdf' })).status, 404)
+    tick(VIEW_LINK_TTL_MS - 1)
+    assert.equal((await s.readViewLink({ token, name: 'game402397_1LD_2026-10-10.pdf' })).status, 200)
+    tick(1)
+    assert.equal((await s.readViewLink({ token, name: 'game402397_1LD_2026-10-10.pdf' })).status, 404)
+  })
+
+  it('keeps at most VIEW_LINK_MAX PDFs: the oldest link goes first', async () => {
+    const { s, m } = sheets()
+    const first = tokenOf((await s.createViewLink({ actorId: 'u1', matchId: m.id })).body.data.path)
+    for (let i = 0; i < VIEW_LINK_MAX; i++) await s.createViewLink({ actorId: 'u1', matchId: m.id })
+    assert.equal((await s.readViewLink({ token: first, name: 'game402397_1LD_2026-10-10.pdf' })).status, 404)
+  })
+
+  it('a refused read makes no link', async () => {
+    const { s } = sheets()
+    assert.equal((await s.createViewLink({ actorId: 'u1', matchId: 'not-a-uuid' })).status, 404)
+  })
+})
+
+describe('scoresheets end to end', { skip: SKIP }, () => {
+  let db, srv, sql, storageRoot, statusDir
+  let ipSeq = 1
+  const nextIp = () => `198.51.100.${ipSeq++}`
+  const users = {}
+  let gameSeq = 93100
+
+  async function account (name, roles) {
+    const email = `${name}-${randomBytes(3).toString('hex')}@example.ch`
+    const password = 'correct-horse-battery'
+    const ip = nextIp()
+    const up = await api(srv.base, '/api/auth/sign-up', { headers: { 'cf-connecting-ip': ip }, body: { email, password, metadata: { first_name: name, last_name: 'Test' } } })
+    assert.equal(up.status, 200, up.text)
+    let inn
+    for (let attempt = 0; attempt < 10; attempt++) {
+      inn = await api(srv.base, '/api/auth/sign-in', { headers: { 'cf-connecting-ip': ip }, body: { email, password } })
+      if (!(inn.status === 503 && inn.json?.error?.code === 'auth_busy')) break
+      await sleep(1100)
+    }
+    assert.equal(inn.status, 200, inn.text)
+    const u = { id: inn.json.data.user.id, token: inn.json.data.session.access_token, email }
+    if (roles) await grantRoles(sql, u.id, roles)
+    users[name] = u
+    return u
+  }
+  const get = (user, path) => api(srv.base, path, { method: 'GET', token: user?.token, proto: null })
+  const expectCode = (r, status, code) => {
+    assert.equal(r.status, status, r.text)
+    assert.equal(r.json?.error?.code, code, r.text)
+  }
+  async function newMatch (owner, { sport = 'indoor', scheduledAt = '2026-10-10T16:00:00Z' } = {}) {
+    const ext = `match_${Date.now()}_${randomBytes(3).toString('hex')}`
+    const n = gameSeq++
+    const data = { external_id: ext, game_n: n, status: 'live', scheduled_at: scheduledAt, home_team: { name: `Home ${n}` }, away_team: { name: `Away ${n}` }, ...(sport === 'beach' ? { sport_type: 'beach' } : {}) }
+    const r = await api(srv.base, '/api/db', { token: owner.token, body: { table: 'matches', action: 'insert', params: { data, returning: 'id', single: true } } })
+    assert.equal(r.status, 200, r.text)
+    return { ext, n, id: r.json.data.id }
+  }
+  async function uploadPdf (owner, path, label) {
+    const r = await api(srv.base, '/api/storage/upload', { token: owner.token, body: { bucket: 'scoresheets', path, fileBase64: pdfBytes(label).toString('base64'), contentType: 'application/pdf' } })
+    assert.equal(r.status, 200, r.text)
+  }
+
+  before(async () => {
+    db = await provisionDatabase()
+    sql = new pg.Client({ connectionString: db.url })
+    await sql.connect()
+    storageRoot = mkdtempSync(join(tmpdir(), 'ov-sheets-storage-'))
+    writeFileSync(join(storageRoot, '.ovdata'), '')
+    statusDir = mkdtempSync(join(tmpdir(), 'ov-sheets-status-'))
+    writeFileSync(join(statusDir, 'last_backup'), new Date().toISOString().replace(/\.\d{3}Z$/, 'Z') + '\n')
+    srv = await bootServer({
+      DATABASE_URL: db.url,
+      STORAGE_ROOT: storageRoot,
+      STATUS_DIR: statusDir,
+      TRUST_PROXY: 'cloudflare',
+      TRUST_PROXY_FROM: '127.0.0.1/32,::1/128',
+      STORAGE_BACKUP_MIN_FREE_MB: '1',
+      STORAGE_SCORESHEETS_MIN_FREE_MB: '1'
+    })
+    await account('admin', ['admin'])
+    await account('ivan', ['scorer'])
+    await account('bea', ['beach:scorer'])
+    await account('cm', ['competition_manager'])
+    await account('bcm', ['beach:competition_manager'])
+  })
+
+  after(async () => {
+    await sql?.end().catch(() => {})
+    await srv?.stop()
+    await db?.drop()
+    if (storageRoot) rmSync(storageRoot, { recursive: true, force: true })
+    if (statusDir) rmSync(statusDir, { recursive: true, force: true })
+  })
+
+  it('lists a sport\'s matches with their PDF for its competition managers and admins only', async () => {
+    const withPdf = await newMatch(users.ivan)
+    const without = await newMatch(users.ivan)
+    await uploadPdf(users.ivan, `2026-10-10/game${withPdf.n}_${key()}.pdf`, 'indoor')
+    const beach = await newMatch(users.bea, { sport: 'beach', scheduledAt: '2026-10-11T09:00:00Z' })
+    await uploadPdf(users.bea, `beach/2026-10-11/game${beach.n}_${beach.ext}.pdf`, 'beach')
+
+    const list = await get(users.cm, '/api/scoresheets?app=indoor')
+    assert.equal(list.status, 200, list.text)
+    const byId = new Map(list.json.data.matches.map((m) => [m.id, m]))
+    assert.equal(byId.get(withPdf.id)?.pdf, true)
+    assert.equal(byId.get(without.id)?.pdf, false)
+    assert.equal(byId.get(withPdf.id)?.home_name, `Home ${withPdf.n}`)
+    assert.equal(byId.has(beach.id), false, 'indoor only')
+    assert.equal(byId.get(withPdf.id)?.scorer_email, undefined, 'no addresses for competition managers')
+
+    const beachList = await get(users.bcm, '/api/scoresheets?app=beach')
+    assert.equal(beachList.status, 200, beachList.text)
+    assert.deepEqual(beachList.json.data.matches.map((m) => [m.id, m.pdf, m.sport]), [[beach.id, true, 'beach']])
+    assert.equal((await get(users.admin, '/api/scoresheets?app=beach')).status, 200)
+    assert.equal((await get(users.cm, `/api/scoresheets?app=indoor&q=${withPdf.n}`)).json.data.matches.length, 1)
+
+    expectCode(await get(users.cm, '/api/scoresheets?app=beach'), 403, 'OV_FORBIDDEN')
+    expectCode(await get(users.bcm, '/api/scoresheets?app=indoor'), 403, 'OV_FORBIDDEN')
+    expectCode(await get(users.bcm, '/api/scoresheets'), 403, 'OV_FORBIDDEN')
+    expectCode(await get(users.ivan, '/api/scoresheets?app=indoor'), 403, 'OV_FORBIDDEN')
+    expectCode(await get(users.cm, '/api/scoresheets?app=volley'), 400, 'OV_INVALID_REQUEST')
+    assert.equal((await get(null, '/api/scoresheets?app=indoor')).status, 401)
+  })
+
+  it('opens the newest PDF of a match in its sport, audited; others are refused', async () => {
+    const m = await newMatch(users.ivan)
+    await uploadPdf(users.ivan, `2026-10-10/game${m.n}_${key()}.pdf`, 'first device')
+    await sleep(20)
+    await uploadPdf(users.ivan, `2026-10-10/game${m.n}_${key()}.pdf`, 'second device')
+
+    // the uploader-only rule still holds for everyone else through storage
+    const list = await api(srv.base, '/api/storage/list', { token: users.cm.token, body: { bucket: 'scoresheets', path: '2026-10-10' } })
+    assert.equal(list.json.data.some((f) => f.name.startsWith(`game${m.n}_`)), false)
+
+    const r = await fetch(`${srv.base}/api/scoresheets/${m.id}/pdf?download=1`, { headers: { Authorization: `Bearer ${users.cm.token}` } })
+    assert.equal(r.status, 200)
+    assert.equal(r.headers.get('content-type'), 'application/pdf')
+    assert.equal(r.headers.get('cache-control'), 'no-store')
+    assert.match(r.headers.get('content-disposition'), new RegExp(`^attachment; filename="game${m.n}_2026-10-10\\.pdf"$`))
+    assert.equal(Buffer.from(await r.arrayBuffer()).toString(), pdfBytes('second device').toString())
+
+    const { rows } = await sql.query("SELECT actor_id, details, app FROM audit_log WHERE action = 'scoresheet.read' AND match_id = $1", [m.id])
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].actor_id, users.cm.id)
+    assert.equal(rows[0].details.download, true)
+    assert.equal(rows[0].app, null, 'an indoor entry')
+    assert.equal(JSON.stringify(rows[0].details).includes('_k'), false, 'the random part stays out of the log')
+
+    const inline = await fetch(`${srv.base}/api/scoresheets/${m.id}/pdf`, { headers: { Authorization: `Bearer ${users.admin.token}` } })
+    assert.equal(inline.status, 200)
+    assert.match(inline.headers.get('content-disposition'), /^inline; /)
+
+    expectCode(await get(users.bcm, `/api/scoresheets/${m.id}/pdf`), 403, 'OV_FORBIDDEN')
+    expectCode(await get(users.ivan, `/api/scoresheets/${m.id}/pdf`), 403, 'OV_FORBIDDEN')
+    assert.equal((await sql.query("SELECT count(*)::int n FROM audit_log WHERE action = 'scoresheet.read' AND match_id = $1", [m.id])).rows[0].n, 2)
+  })
+
+  it('a view link opens the PDF in the browser\'s viewer under its name, audited; others get 404', async () => {
+    const m = await newMatch(users.ivan)
+    await uploadPdf(users.ivan, `2026-10-10/game${m.n}_${key()}.pdf`, 'view me')
+    const post = (user, id) => api(srv.base, `/api/scoresheets/${id}/view`, { token: user?.token, body: {} })
+
+    const made = await post(users.cm, m.id)
+    assert.equal(made.status, 200, made.text)
+    const { path, filename, expires_at: expiresAt } = made.json.data
+    assert.equal(filename, `game${m.n}_2026-10-10.pdf`)
+    assert.match(path, new RegExp(`^/api/scoresheet-view/[A-Za-z0-9_-]{43}/game${m.n}_2026-10-10\\.pdf$`))
+    const ttl = Date.parse(expiresAt) - Date.now()
+    assert.ok(ttl > 9 * 60 * 1000 && ttl <= 10 * 60 * 1000, `expires in ~10 min, not ${ttl} ms`)
+    // the read is on record when the link is made, as for GET .../pdf
+    const { rows } = await sql.query("SELECT actor_id, details FROM audit_log WHERE action = 'scoresheet.read' AND match_id = $1", [m.id])
+    assert.deepEqual(rows.map((x) => [x.actor_id, x.details.download]), [[users.cm.id, false]])
+
+    // no session needed: the browser's viewer has none; inline, named, never cached or passed on
+    const r = await fetch(`${srv.base}${path}`)
+    assert.equal(r.status, 200)
+    assert.equal(r.headers.get('content-type'), 'application/pdf')
+    assert.equal(r.headers.get('content-disposition'), `inline; filename="game${m.n}_2026-10-10.pdf"`)
+    assert.equal(r.headers.get('cache-control'), 'no-store, private')
+    assert.equal(r.headers.get('referrer-policy'), 'no-referrer')
+    assert.equal(Buffer.from(await r.arrayBuffer()).toString(), pdfBytes('view me').toString())
+    // the viewer may load it again (a reload) within the TTL
+    assert.equal((await fetch(`${srv.base}${path}`)).status, 200)
+    assert.equal((await fetch(`${srv.base}${path}`, { method: 'HEAD' })).status, 200)
+
+    // another name, another token, a malformed one: 404, and nothing else is answered
+    const token = path.split('/')[3]
+    for (const bad of [
+      `/api/scoresheet-view/${token}/other.pdf`,
+      `/api/scoresheet-view/${'A'.repeat(43)}/game${m.n}_2026-10-10.pdf`,
+      `/api/scoresheet-view/${token}`,
+      '/api/scoresheet-view/x/y.pdf'
+    ]) {
+      const b = await fetch(`${srv.base}${bad}`)
+      assert.equal(b.status, 404, bad)
+      assert.notEqual(b.headers.get('content-type'), 'application/pdf', bad)
+    }
+    assert.equal((await fetch(`${srv.base}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })).status, 405)
+    // without a JSON body type no API write reaches its route
+    assert.equal((await fetch(`${srv.base}${path}`, { method: 'POST' })).status, 415)
+
+    // only who may open the PDF may make a link; no session, no link
+    expectCode(await post(users.bcm, m.id), 403, 'OV_FORBIDDEN')
+    expectCode(await post(users.ivan, m.id), 403, 'OV_FORBIDDEN')
+    assert.equal((await post(null, m.id)).status, 401)
+    const none = await newMatch(users.ivan)
+    expectCode(await post(users.cm, none.id), 404, 'OV_SCORESHEET_NOT_FOUND')
+  })
+
+  it('a beach PDF for the beach competition manager; no PDF and no match are 404', async () => {
+    const beach = await newMatch(users.bea, { sport: 'beach', scheduledAt: '2026-10-12T09:00:00Z' })
+    await uploadPdf(users.bea, `beach/2026-10-12/game${beach.n}_${beach.ext}.pdf`, 'beach sheet')
+    // another tournament's game with the same number on the same day: not a
+    // match of this server, nothing is stored (db/033; 503: it may be on its way)
+    const other = await api(srv.base, '/api/storage/upload', { token: users.bea.token, body: { bucket: 'scoresheets', path: `beach/2026-10-12/game${beach.n}_match_1_other.pdf`, fileBase64: pdfBytes('other tournament').toString('base64'), contentType: 'application/pdf' } })
+    expectCode(other, 503, 'OV_MATCH_NOT_FOUND')
+    const r = await fetch(`${srv.base}/api/scoresheets/${beach.id}/pdf`, { headers: { Authorization: `Bearer ${users.bcm.token}` } })
+    assert.equal(r.status, 200)
+    assert.equal(Buffer.from(await r.arrayBuffer()).toString(), pdfBytes('beach sheet').toString())
+    const { rows } = await sql.query("SELECT app FROM audit_log WHERE action = 'scoresheet.read' AND match_id = $1", [beach.id])
+    assert.deepEqual(rows.map((x) => x.app), ['beach'])
+    expectCode(await get(users.cm, `/api/scoresheets/${beach.id}/pdf`), 403, 'OV_FORBIDDEN')
+
+    const none = await newMatch(users.ivan)
+    expectCode(await get(users.cm, `/api/scoresheets/${none.id}/pdf`), 404, 'OV_SCORESHEET_NOT_FOUND')
+    expectCode(await get(users.cm, '/api/scoresheets/00000000-0000-4000-8000-000000000000/pdf'), 404, 'OV_NOT_FOUND')
+  })
+
+  it('a beach match is listed and searched under its pairs (team1_data / team2_data), and its file named so', async () => {
+    // OpenBeach writes team1_data / team2_data and leaves home_team / away_team empty
+    const ext = `match_${Date.now()}_${randomBytes(3).toString('hex')}`
+    const data = { external_id: ext, status: 'live', sport_type: 'beach', scheduled_at: '2026-10-12T09:00:00Z', team1_data: { name: 'Muster / Beispiel' }, team2_data: { name: 'Rossi / Bianchi' } }
+    const r = await api(srv.base, '/api/db', { token: users.bea.token, body: { table: 'matches', action: 'insert', params: { data, returning: 'id', single: true } } })
+    assert.equal(r.status, 200, r.text)
+    const id = r.json.data.id
+    await uploadPdf(users.bea, `beach/2026-10-12/game_${ext}.pdf`, 'beach')
+    const row = (await get(users.bcm, '/api/scoresheets?app=beach')).json.data.matches.find((m) => m.id === id)
+    assert.deepEqual([row?.home_name, row?.away_name], ['Muster / Beispiel', 'Rossi / Bianchi'])
+    assert.deepEqual((await get(users.bcm, '/api/scoresheets?app=beach&q=bianchi')).json.data.matches.map((m) => m.id), [id])
+    const pdf = await get(users.bcm, `/api/scoresheets/${id}/pdf?download=1`)
+    assert.equal(pdf.status, 200, pdf.text)
+    assert.match(pdf.headers.get('content-disposition'), /filename="Muster-Beispiel_vs_Rossi-Bianchi/)
+  })
+
+  // "Rebuild PDF" (owner 2026-11-16): the stale flag and the admin's rebuild
+  const closeNow = async (user, id) => {
+    const r = await api(srv.base, '/api/db', { token: user.token, body: { table: 'matches', action: 'update', params: { data: { status: 'final' }, filters: [{ type: 'eq', column: 'id', value: id }] } } })
+    assert.equal(r.status, 200, r.text)
+  }
+  /** The match's close and stored PDFs `secs` earlier (as if the approval was that long ago). */
+  async function backdate (id, secs) {
+    await sql.query('SET session_replication_role = replica')
+    try {
+      await sql.query('UPDATE public.matches SET closed_at = closed_at - make_interval(secs => $2), updated_at = updated_at - make_interval(secs => $2) WHERE id = $1', [id, secs])
+    } finally {
+      await sql.query('SET session_replication_role = origin')
+    }
+    await sql.query('UPDATE public.match_scoresheets SET stored_at = stored_at - make_interval(secs => $2), first_stored_at = first_stored_at - make_interval(secs => $2) WHERE match_id = $1', [id, secs])
+    await sql.query('UPDATE public.match_sheet_changes SET changed_at = changed_at - make_interval(secs => $2) WHERE match_id = $1', [id, secs])
+  }
+  /** A write to a closed match as the SQL tab or an admin tool makes it (db/007: ov.allow_closed). */
+  async function closedWrite (text, params) {
+    await sql.query('BEGIN')
+    try {
+      await sql.query("SET LOCAL ov.allow_closed = 'on'")
+      await sql.query(text, params)
+      await sql.query('COMMIT')
+    } catch (err) {
+      await sql.query('ROLLBACK')
+      throw err
+    }
+  }
+  const rowOf = async (user, id) => (await get(user, '/api/scoresheets?app=indoor&limit=500')).json.data.matches.find((x) => x.id === id)
+
+  it('a PDF is out of date once the match data changed after it (and after the close)', async () => {
+    const m = await newMatch(users.ivan)
+    await uploadPdf(users.ivan, `2026-10-10/game${m.n}_${key()}.pdf`, 'approval')
+    await closeNow(users.ivan, m.id)
+    // the close itself and the approval's own writes: not out of date
+    assert.equal((await rowOf(users.cm, m.id)).pdf_stale, false)
+    await backdate(m.id, 3600)
+    assert.equal((await rowOf(users.cm, m.id)).pdf_stale, false, 'nothing changed since')
+    // a correction after the match (Corrections, the Data or SQL tab): a column the sheet reads
+    await closedWrite("UPDATE public.matches SET remarks = 'Set 2 start corrected' WHERE id = $1", [m.id])
+    const row = await rowOf(users.cm, m.id)
+    assert.equal(row.pdf_stale, true, row && JSON.stringify(row))
+    assert.ok(Date.parse(row.data_changed_at) > Date.parse(row.pdf_updated_at) + STALE_SLACK_MS)
+    // no PDF: never out of date
+    const none = await newMatch(users.ivan)
+    assert.equal((await rowOf(users.cm, none.id)).pdf_stale, false)
+  })
+
+  it('an UPDATE of an event row (SQL or Data tab) makes the PDF out of date; releasing the game does not (db/045)', async () => {
+    const m = await newMatch(users.ivan)
+    await sql.query("INSERT INTO public.events (external_id, match_id, set_index, type, payload, seq, ts) VALUES ($1, $2, 1, 'point', '{\"team\":\"home\"}', 1, now())", [`ev_${m.ext}`, m.id])
+    await uploadPdf(users.ivan, `2026-10-10/game${m.n}_${key()}.pdf`, 'approval')
+    await closeNow(users.ivan, m.id)
+    await backdate(m.id, 3600)
+    assert.equal((await rowOf(users.cm, m.id)).pdf_stale, false)
+
+    // the game released (lib/accounts.js release-game: official_game_exempt, released_at, updated_at)
+    const released = await api(srv.base, `/api/admin/matches/${m.id}/release-game`, { token: users.admin.token, body: { reason: 'a duplicate of the other scorer' } })
+    assert.equal(released.status, 200, released.text)
+    assert.equal((await rowOf(users.cm, m.id)).pdf_stale, false, 'nothing on the sheet changed')
+    // an account deletion's ON DELETE SET NULL of an event's voided_by: not a sheet change either
+    await closedWrite('UPDATE public.events SET voided_by = $2 WHERE match_id = $1', [m.id, users.admin.id])
+    await closedWrite('UPDATE public.events SET voided_by = NULL WHERE match_id = $1', [m.id])
+    assert.equal((await rowOf(users.cm, m.id)).pdf_stale, false)
+
+    // the event row itself edited (it moved no updated_at / created_at before db/045)
+    await closedWrite(`UPDATE public.events SET payload = '{"team":"away"}' WHERE match_id = $1`, [m.id])
+    assert.equal((await rowOf(users.cm, m.id)).pdf_stale, true)
+  })
+
+  it('a set changed or an event removed after the PDF: out of date; a write that changes nothing: not', async () => {
+    const m = await newMatch(users.ivan)
+    await sql.query('INSERT INTO public.sets (match_id, index, home_points, away_points, finished) VALUES ($1, 1, 25, 20, true)', [m.id])
+    await sql.query("INSERT INTO public.events (external_id, match_id, set_index, type, seq, ts) VALUES ($1, $2, 1, 'point', 1, now())", [`ev_${m.ext}`, m.id])
+    await uploadPdf(users.ivan, `2026-10-10/game${m.n}_${key()}.pdf`, 'approval')
+    await closeNow(users.ivan, m.id)
+    await backdate(m.id, 3600)
+    // a no-op rewrite of the set (a resent job: only updated_at moves)
+    await closedWrite('UPDATE public.sets SET home_points = home_points WHERE match_id = $1', [m.id])
+    assert.equal((await rowOf(users.cm, m.id)).pdf_stale, false)
+    await closedWrite("UPDATE public.sets SET end_time = now() WHERE match_id = $1", [m.id])
+    assert.equal((await rowOf(users.cm, m.id)).pdf_stale, true)
+    await backdate(m.id, 3600)
+    await closedWrite('DELETE FROM public.events WHERE match_id = $1', [m.id])
+    assert.equal((await rowOf(users.cm, m.id)).pdf_stale, true)
+    // a match deleted with its rows: no trigger error (the child rows' match is gone)
+    await closedWrite('DELETE FROM public.matches WHERE id = $1', [m.id])
+    assert.equal((await sql.query('SELECT count(*)::int AS n FROM public.match_sheet_changes WHERE match_id = $1', [m.id])).rows[0].n, 0)
+  })
+
+  it('an admin rebuilds a closed match\'s PDF without reopening it: served as the newest, the old one kept, audited', async () => {
+    const m = await newMatch(users.ivan)
+    const firstPath = `2026-10-10/game${m.n}_${key()}.pdf`
+    await uploadPdf(users.ivan, firstPath, 'approval')
+    await closeNow(users.ivan, m.id)
+    await backdate(m.id, 3600)
+
+    // the record to draw from: admins only, audited
+    const whole = await get(users.admin, `/api/scoresheets/${m.id}/match`)
+    assert.equal(whole.status, 200, whole.text)
+    assert.equal(whole.json.data.match.id, m.id)
+    assert.equal(whole.json.data.match.game_pin, undefined, 'no PIN')
+    assert.ok(Array.isArray(whole.json.data.sets) && Array.isArray(whole.json.data.events))
+    const read = await sql.query("SELECT details FROM audit_log WHERE action = 'scoresheet.read' AND match_id = $1", [m.id])
+    assert.deepEqual(read.rows.map((x) => x.details.purpose), ['rebuild'])
+    expectCode(await get(users.cm, `/api/scoresheets/${m.id}/match`), 403, 'OV_FORBIDDEN')
+    expectCode(await get(users.ivan, `/api/scoresheets/${m.id}/match`), 403, 'OV_FORBIDDEN')
+    expectCode(await get(users.admin, '/api/scoresheets/00000000-0000-4000-8000-000000000000/match'), 404, 'OV_NOT_FOUND')
+
+    const rebuild = (user, body) => api(srv.base, `/api/scoresheets/${m.id}/rebuild`, { token: user?.token, body })
+    const file = pdfBytes('rebuilt').toString('base64')
+    // the scorer (who may still write the match's PDF otherwise) and a competition manager: refused
+    expectCode(await rebuild(users.ivan, { reason: 'times', fileBase64: file }), 403, 'OV_FORBIDDEN')
+    expectCode(await rebuild(users.cm, { reason: 'times', fileBase64: file }), 403, 'OV_FORBIDDEN')
+    assert.equal((await rebuild(null, { reason: 'times', fileBase64: file })).status, 401)
+    // a reason, a PDF
+    expectCode(await rebuild(users.admin, { reason: '  ', fileBase64: file }), 400, 'OV_INVALID_REQUEST')
+    expectCode(await rebuild(users.admin, { reason: 'x'.repeat(REBUILD_REASON_MAX + 1), fileBase64: file }), 400, 'OV_INVALID_REQUEST')
+    expectCode(await rebuild(users.admin, { reason: 'times', fileBase64: Buffer.from('not a pdf').toString('base64') }), 415, 'OV_STORAGE_CONTENT_TYPE')
+
+    const ok = await rebuild(users.admin, { reason: 'Set start times corrected', fileBase64: file })
+    assert.equal(ok.status, 200, ok.text)
+    // the closed match's newest PDF is the rebuilt one (pdf, view link, list)
+    const pdf = await fetch(`${srv.base}/api/scoresheets/${m.id}/pdf`, { headers: { Authorization: `Bearer ${users.cm.token}` } })
+    assert.equal(pdf.status, 200)
+    assert.equal(Buffer.from(await pdf.arrayBuffer()).toString(), pdfBytes('rebuilt').toString())
+    const row = await rowOf(users.cm, m.id)
+    assert.equal(row.pdf_stale, false)
+    assert.equal(row.pdf_updated_at, ok.json.data.stored_at)
+    // the approval's PDF stays, recorded for the match; the match is still closed
+    const recs = await sql.query('SELECT path FROM public.match_scoresheets WHERE match_id = $1 ORDER BY stored_at', [m.id])
+    assert.equal(recs.rows.length, 2)
+    assert.equal(recs.rows[0].path, firstPath)
+    assert.match(recs.rows[1].path, new RegExp(`^2026-10-10/game${m.n}_k[0-9a-f]{32}\\.pdf$`))
+    assert.notEqual((await sql.query('SELECT closed_at FROM public.matches WHERE id = $1', [m.id])).rows[0].closed_at, null)
+    const audit = await sql.query("SELECT actor_id, details FROM audit_log WHERE action = 'scoresheet.rebuild' AND match_id = $1", [m.id])
+    assert.equal(audit.rows.length, 1)
+    assert.equal(audit.rows[0].actor_id, users.admin.id)
+    assert.equal(audit.rows[0].details.reason, 'Set start times corrected')
+    assert.equal(audit.rows[0].details.closed, true)
+    assert.equal(JSON.stringify(audit.rows[0].details).includes('_k'), false, 'the random part stays out of the log')
+  })
+})

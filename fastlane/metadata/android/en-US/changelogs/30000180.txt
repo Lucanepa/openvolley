@@ -1,0 +1,6 @@
+OpenVolley 3.0.18
+- Referee: Last action follows the log after an Undo.
+- Go back: a serve given by hand rotates nobody on the scoresheet either.
+- Bench: the coming set during the interval; team names, start, end and duration in the match-end result.
+- Decision change: names only what it takes back.
+- SERVE box as wide as its content on the referee and scorer screens.

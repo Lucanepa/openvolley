@@ -1,0 +1,70 @@
+{
+  "id": "com.openvolley.escoresheet",
+  "runtime": "org.gnome.Platform",
+  "runtime-version": "51",
+  "sdk": "org.gnome.Sdk",
+  "command": "openvolley-escoresheet",
+  "finish-args": [
+    "--share=ipc",
+    "--socket=wayland",
+    "--socket=fallback-x11",
+    "--device=dri",
+    "--share=network",
+    "--talk-name=org.kde.StatusNotifierWatcher",
+    "--system-talk-name=org.freedesktop.NetworkManager",
+    "--system-talk-name=org.bluez",
+    "--system-talk-name=org.fedoraproject.FirewallD1",
+    "--filesystem=xdg-download",
+    "--filesystem=/run/media",
+    "--filesystem=/media"
+  ],
+  "cleanup": [
+    "/include",
+    "/lib/pkgconfig",
+    "/share/man",
+    "*.la",
+    "*.a"
+  ],
+  "modules": [
+    "shared-modules/libayatana-appindicator/libayatana-appindicator-gtk3.json",
+    {
+      "name": "openvolley-escoresheet",
+      "buildsystem": "simple",
+      "sources": [
+        {
+          "type": "file",
+          "url": "https://github.com/Lucanepa/openvolley/releases/download/desktop-v26.11.6/openvolley-escoresheet_26.11.6_amd64.deb",
+          "sha256": "4f908eda6e8672c321ad70f9105366ca01f8869acb889d468fad48d1048d7aa1",
+          "dest-filename": "openvolley-escoresheet.deb",
+          "only-arches": [
+            "x86_64"
+          ]
+        },
+        {
+          "type": "file",
+          "path": "unstamp-bundle-type.py"
+        },
+        {
+          "type": "file",
+          "path": "com.openvolley.escoresheet.desktop"
+        },
+        {
+          "type": "file",
+          "path": "com.openvolley.escoresheet.metainfo.xml"
+        }
+      ],
+      "build-commands": [
+        "ar x openvolley-escoresheet.deb",
+        "tar -xf data.tar.*",
+        "python3 unstamp-bundle-type.py usr/bin/openvolley-escoresheet",
+        "install -Dm755 usr/bin/openvolley-escoresheet ${FLATPAK_DEST}/bin/openvolley-escoresheet",
+        "if [ -f usr/lib/firewalld/zones/openvolley-tablets.xml ]; then install -Dm644 usr/lib/firewalld/zones/openvolley-tablets.xml ${FLATPAK_DEST}/lib/firewalld/zones/openvolley-tablets.xml; fi",
+        "install -Dm644 usr/share/icons/hicolor/32x32/apps/openvolley-escoresheet.png ${FLATPAK_DEST}/share/icons/hicolor/32x32/apps/${FLATPAK_ID}.png",
+        "install -Dm644 usr/share/icons/hicolor/128x128/apps/openvolley-escoresheet.png ${FLATPAK_DEST}/share/icons/hicolor/128x128/apps/${FLATPAK_ID}.png",
+        "install -Dm644 usr/share/icons/hicolor/256x256@2/apps/openvolley-escoresheet.png ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png",
+        "install -Dm644 ${FLATPAK_ID}.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop",
+        "install -Dm644 ${FLATPAK_ID}.metainfo.xml ${FLATPAK_DEST}/share/metainfo/${FLATPAK_ID}.metainfo.xml"
+      ]
+    }
+  ]
+}

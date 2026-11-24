@@ -1,0 +1,3 @@
+OpenVolley 3.2.1
+- The macOS app is signed and available again.
+- Global mode: birthdate, ID number or text beside the names, own role names for bench officials, no Swiss German.

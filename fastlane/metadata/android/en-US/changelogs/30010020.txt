@@ -1,0 +1,3 @@
+OpenVolley 3.1.2
+- Match Setup: the cards say "Offline" only when the server cannot be reached; signed out, a match is "Saved on device".
+- Desktop: "Updating OpenVolley…" while the app reloads into a new version.

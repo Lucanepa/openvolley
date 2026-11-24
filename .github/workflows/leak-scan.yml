@@ -1,0 +1,83 @@
+name: Leak scan
+
+# Scans the commits each push or pull request adds with .gitleaks.toml
+# (credentials and the match-data-* personal-data rules), and runs the rule
+# tests in .githooks. The pre-commit hook does the same scan, but only in
+# clones where core.hooksPath is set; this catches the others and web
+# uploads. The log lists rule, file and commit only (it is public).
+# The scanner (.githooks/ci-leak-scan.sh), its rules and allowlists
+# (.gitleaks.toml, .gitleaksignore) come from the base branch (a pull
+# request's base, else the default branch), never from the scanned commits:
+# a change cannot allowlist its own data. ci-allowlist-guard.sh fails a
+# change that edits the allowlists; it goes in a pull request of its own,
+# reviewed by a code owner (CODEOWNERS covers .githooks/ and .gitleaks.toml).
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # >= 8.25 for the [[allowlists]] blocks in .gitleaks.toml
+      GITLEAKS_VERSION: 8.29.0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install gitleaks
+        run: |
+          cd "$RUNNER_TEMP"
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          curl -fsSLO "$base/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSLO "$base/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          sha256sum --ignore-missing -c "gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          tar -xzf "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" gitleaks
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Rule tests
+        run: |
+          .githooks/test-gitleaks-config.sh
+          .githooks/test-gitignore.sh
+          .githooks/test-ci-leak-scan.sh
+          .githooks/test-pre-push.sh
+          .githooks/test-allowlist-guard.sh
+
+      # A checkout of the base branch next to this one (same object store,
+      # so it sees the scanned commits): its scanner, rules and allowlists.
+      - name: Check out the base branch's scanner and rules
+        env:
+          PR_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          trusted=${PR_BASE:-$(git rev-parse --verify "origin/$DEFAULT_BRANCH^{commit}")}
+          git worktree add --detach "$RUNNER_TEMP/trusted" "$trusted"
+          echo "TRUSTED=$trusted" >> "$GITHUB_ENV"
+          echo "Scanner and rules of $trusted"
+
+      - name: Allowlists unchanged
+        env:
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          # the base branch's guard once it has one (before that: this one)
+          guard="$RUNNER_TEMP/trusted/.githooks/ci-allowlist-guard.sh"
+          [ -x "$guard" ] || guard=.githooks/ci-allowlist-guard.sh
+          "$guard" "$TRUSTED" "$HEAD_SHA"
+
+      - name: Scan the new commits
+        if: ${{ !cancelled() }}
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          "$RUNNER_TEMP/trusted/.githooks/ci-leak-scan.sh" "$BASE" "$HEAD_SHA" "$DEFAULT_BRANCH"

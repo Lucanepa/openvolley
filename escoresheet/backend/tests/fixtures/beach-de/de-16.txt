@@ -1,0 +1,32 @@
+# double elimination, 16 teams, board 16 (30 matches)
+# game code phase round wave source1 source2 [W=winner rank] [L=loser rank]
+1 W1 winners 1 1 seed:1 seed:16
+2 W2 winners 1 1 seed:8 seed:9
+3 W3 winners 1 1 seed:4 seed:13
+4 W4 winners 1 1 seed:5 seed:12
+5 W5 winners 1 1 seed:2 seed:15
+6 W6 winners 1 1 seed:7 seed:10
+7 W7 winners 1 1 seed:3 seed:14
+8 W8 winners 1 1 seed:6 seed:11
+9 W9 winners 2 2 winner:W1 winner:W2
+10 W10 winners 2 2 winner:W3 winner:W4
+11 W11 winners 2 2 winner:W5 winner:W6
+12 W12 winners 2 2 winner:W7 winner:W8
+13 L1 losers 1 2 loser:W1 loser:W2 L=13
+14 L2 losers 1 2 loser:W3 loser:W4 L=13
+15 L3 losers 1 2 loser:W5 loser:W6 L=13
+16 L4 losers 1 2 loser:W7 loser:W8 L=13
+17 W13 winners 3 3 winner:W9 winner:W10
+18 W14 winners 3 3 winner:W11 winner:W12
+19 L5 losers 2 3 winner:L1 loser:W12 L=9
+20 L6 losers 2 3 winner:L2 loser:W11 L=9
+21 L7 losers 2 3 winner:L3 loser:W10 L=9
+22 L8 losers 2 3 winner:L4 loser:W9 L=9
+23 L9 losers 3 4 winner:L5 winner:L6 L=7
+24 L10 losers 3 4 winner:L7 winner:L8 L=7
+25 L11 losers 4 5 winner:L9 loser:W13 L=5
+26 L12 losers 4 5 winner:L10 loser:W14 L=5
+27 SF1 final 1 6 winner:W13 winner:L12
+28 SF2 final 1 6 winner:W14 winner:L11
+29 P3 placement 2 7 loser:SF1 loser:SF2 W=3 L=4
+30 F final 2 7 winner:SF1 winner:SF2 W=1 L=2

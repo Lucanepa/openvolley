@@ -1,0 +1,242 @@
+import ballFallback from '../../ball_fallback.png'
+import { DISC, discCssVars } from './discSizing.js'
+import { TEAM_COLOUR_MARK, markColourOn } from '../../utils/teamColours.js'
+import { CardGlyph, topSanction } from './SanctionCards.jsx'
+import { LIBERO_FLASH_MS } from './discFlash.js'
+
+// Primary ball image (with a bundled copy as fallback)
+// The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
+// stay cached (old green ball) after an update
+const ballImage = ballFallback
+
+// Corner badge: a square of --disc-badge on a corner of the disc's box, set
+// out of it by --disc-badge-out (at most 5 px: discSizing badgeOutset) so it
+// sits on the disc's edge, off the number (owner, 15.11).
+const badgeBase = {
+  position: 'absolute',
+  boxSizing: 'border-box',
+  minWidth: 'var(--disc-badge)',
+  height: 'var(--disc-badge)',
+  padding: '0 calc(var(--disc-badge) * 0.08)',
+  borderRadius: 'calc(var(--disc-badge) * 0.2)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  fontSize: 'calc(var(--disc-badge) * 0.6)',
+  fontWeight: 700,
+  lineHeight: 1,
+  whiteSpace: 'nowrap',
+  fontVariantNumeric: 'tabular-nums'
+}
+
+/** The sanction card's height on a disc, of the badge size (SanctionCards.jsx draws it). */
+export const DISC_CARD_HEIGHT = 0.95
+
+const YELLOW = '#fde047'
+const RED = '#ef4444'
+const LIBERO_BLUE = '#3b82f6'
+const SLATE = '#0f172a'
+
+/**
+ * One player on the referee court: a disc with the shirt number, the
+ * position (top left), the player it replaced (top right: white for a
+ * libero replacement, yellow for a substitution), libero and captain marks
+ * (bottom left), the player's most severe sanction as cards (bottom right:
+ * yellow, red, red + yellow together, red + yellow apart; the full list is in
+ * the sanctions panel), the LFP mark (top centre)
+ * and the serve ball beside it. All sizes are shares of the disc diameter
+ * (discSizing.js), so the disc, its number and its marks scale together with
+ * the court.
+ *
+ * @param {object} props
+ * @param {string|number} props.number
+ * @param {string} props.position I..VI
+ * @param {number} props.capPx largest diameter in px (discCapPx)
+ * @param {'left'|'right'} props.side court half: the ball goes to the end-line side
+ * @param {string} props.background disc fill (the team's shirt colour, see utils/teamColours.js)
+ * @param {string} props.color number colour
+ * @param {string} [props.textShadow] outline for the number on a mid-tone fill
+ * @param {string|null} [props.ring] edge colour for a fill that would melt into the court (white, yellow...)
+ * @param {boolean|'once'} [props.flash] recently substituted in: orange flashing ring
+ *   (true: pulsing, a substitution; 'once': one pulse, a libero replacement)
+ * @param {boolean} [props.showBall]
+ * @param {string|number|null} [props.replacedNumber]
+ * @param {boolean} [props.replacedByLibero]
+ * @param {string|null} [props.liberoLabel] L, L1, L2 (null: not a libero, or shown as LC)
+ * @param {boolean} [props.liberoRedesignated]
+ * @param {boolean} [props.liberoUnable]
+ * @param {null|'C'|'GC'|'LC'|'LGC'} [props.captain] C captain, GC game captain, LC libero captain, LGC libero game captain
+ * @param {{ warning?: boolean, penalty?: boolean, expulsion?: boolean, disqualification?: boolean }} [props.sanctions]
+ * @param {null|boolean} [props.lfp] null: LFP tracking off; true/false: LFP / !LFP
+ */
+export default function PlayerDisc({
+  number, position, capPx, side, background, color, textShadow, ring = null, flash = false, showBall = false,
+  replacedNumber = null, replacedByLibero = false, liberoLabel = null, liberoRedesignated = false, liberoUnable = false,
+  captain = null, sanctions = {}, lfp = null
+}) {
+  const sanctionMark = topSanction(sanctions)
+  const liberoCaptain = captain === 'LC' || captain === 'LGC'
+  // The blue libero mark stays apart from a blue shirt
+  const liberoMark = markColourOn(background, LIBERO_BLUE, SLATE)
+  return (
+    <div
+      data-player-disc={position}
+      style={{
+        ...discCssVars(capPx, { lfp: lfp !== null }),
+        position: 'relative',
+        boxSizing: 'border-box',
+        width: 'var(--disc)',
+        height: 'var(--disc)',
+        flexShrink: 0,
+        border: flash ? '3px solid #f97316' : ring ? `2px solid ${ring}` : '1px solid var(--border)',
+        borderRadius: '50%',
+        background,
+        ...TEAM_COLOUR_MARK,
+        color,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: 'var(--disc-number)',
+        lineHeight: 1,
+        fontWeight: flash ? 900 : 700,
+        fontVariantNumeric: 'tabular-nums',
+        boxShadow: '0 3px 12px rgba(0, 0, 0, 0.5)',
+        // a substitution pulses until it is cleared; a libero replacement once
+        animation: flash === 'once' ? `recentSubFlash ${LIBERO_FLASH_MS}ms ease-in-out 1`
+          : flash ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined
+      }}
+    >
+      {showBall && (
+        <img
+          data-disc-ball=""
+          src={ballImage}
+          onError={(e) => { e.currentTarget.src = ballFallback }}
+          alt="Ball"
+          style={{
+            position: 'absolute',
+            // End-line side of the server's disc, inside the court: the ball
+            // shrinks when the court is narrow (discSizing.js: --disc-ball).
+            left: side === 'right' ? 'calc(100% + var(--disc-ball-gap))' : 'auto',
+            right: side === 'left' ? 'calc(100% + var(--disc-ball-gap))' : 'auto',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            width: 'var(--disc-ball)',
+            height: 'var(--disc-ball)',
+            filter: 'drop-shadow(0 3px 8px rgba(0, 0, 0, 0.5))'
+          }}
+        />
+      )}
+
+      {/* Top left: position */}
+      <span data-disc-badge="position" style={{
+        ...badgeBase,
+        top: 'var(--disc-badge-out)',
+        left: 'var(--disc-badge-out)',
+        background: 'rgba(15, 23, 42, 0.95)',
+        border: '2px solid var(--border)',
+        color: '#fff'
+      }}>
+        {position}
+      </span>
+
+      {/* Top centre: LFP */}
+      {lfp !== null && (
+        <span data-disc-badge="lfp" style={{
+          ...badgeBase,
+          top: 'var(--disc-badge-out)',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          // Narrow enough to sit between the position and replaced-player
+          // badges on the top row
+          minWidth: 0,
+          height: 'calc(var(--disc-badge) * 0.75)',
+          padding: '0 calc(var(--disc-badge) * 0.06)',
+          fontSize: `calc(var(--disc-badge) * ${DISC.lfp})`,
+          letterSpacing: '-0.02em',
+          background: lfp ? 'rgba(249, 115, 22, 0.95)' : 'rgba(147, 51, 234, 0.95)',
+          border: '1px solid var(--border)',
+          color: '#fff',
+          zIndex: 3
+        }}>
+          {lfp ? 'LFP' : '!LFP'}
+        </span>
+      )}
+
+      {/* Top right: the player this one replaced */}
+      {replacedNumber != null && replacedNumber !== '' && (
+        <span data-disc-badge="replaced" style={{
+          ...badgeBase,
+          top: 'var(--disc-badge-out)',
+          right: 'var(--disc-badge-out)',
+          background: replacedByLibero ? '#ffffff' : YELLOW,
+          border: replacedByLibero ? '2px solid rgba(0, 0, 0, 0.3)' : '2px solid rgba(0, 0, 0, 0.25)',
+          color: '#0f172a',
+          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.25)'
+        }}>
+          {replacedNumber}
+        </span>
+      )}
+
+      {/* Bottom left: libero (L, L1, L2; LC replaces it for a libero captain) */}
+      {liberoLabel && !liberoCaptain && (
+        <span data-disc-badge="libero" style={{
+          ...badgeBase,
+          bottom: 'var(--disc-badge-out)',
+          left: 'var(--disc-badge-out)',
+          background: liberoMark,
+          border: '2px solid var(--border)',
+          color: '#fff'
+        }}>
+          <span style={{ position: 'relative', display: 'inline-block' }}>
+            {liberoLabel}{liberoRedesignated && 'R'}
+            {liberoUnable && (
+              <span style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                fontSize: '1.2em',
+                color: RED,
+                fontWeight: 900
+              }}>✕</span>
+            )}
+          </span>
+        </span>
+      )}
+
+      {/* Captain: C (green) / game captain (amber), LC for a libero captain */}
+      {captain && (
+        <span data-disc-badge="captain" style={{
+          ...badgeBase,
+          bottom: 'var(--disc-badge-out)',
+          // Next to the L badge when both show
+          left: liberoLabel && !liberoCaptain ? 'calc(var(--disc-badge) + 2px + var(--disc-badge-out))' : 'var(--disc-badge-out)',
+          // LC keeps the type size of every other mark and widens its badge
+          // instead (a smaller share fell to 5 px on a 36 px disc)
+          background: captain === 'LC' ? '#ffffff' : captain === 'LGC' ? liberoMark : 'rgba(15, 23, 42, 0.95)',
+          border: `2px solid ${captain === 'C' || captain === 'LC' ? '#22c55e' : '#fbbf24'}`,
+          color: captain === 'C' || captain === 'LC' ? '#22c55e' : '#fbbf24'
+        }}>
+          {liberoCaptain ? 'LC' : 'C'}
+        </span>
+      )}
+
+      {/* Bottom right: the most severe sanction, as the cards the referee showed */}
+      {sanctionMark && (
+        <span data-disc-badge="sanctions" data-sanction={sanctionMark} style={{
+          position: 'absolute',
+          bottom: 'var(--disc-badge-out)',
+          right: 'var(--disc-badge-out)',
+          display: 'flex',
+          alignItems: 'flex-end',
+          height: 'var(--disc-badge)',
+          zIndex: 2
+        }}>
+          <CardGlyph kind={sanctionMark} height={`calc(var(--disc-badge) * ${DISC_CARD_HEIGHT})`} />
+        </span>
+      )}
+
+      <span data-disc-number="" style={textShadow ? { textShadow } : undefined}>{number}</span>
+    </div>
+  )
+}

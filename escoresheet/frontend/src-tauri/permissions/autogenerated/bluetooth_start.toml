@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-bluetooth-start"
+description = "Enables the bluetooth_start command without any pre-configured scope."
+commands.allow = ["bluetooth_start"]
+
+[[permission]]
+identifier = "deny-bluetooth-start"
+description = "Denies the bluetooth_start command without any pre-configured scope."
+commands.deny = ["bluetooth_start"]

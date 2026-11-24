@@ -1,0 +1,577 @@
+/**
+ * Production Server for eScoresheet
+ * Serves static files and provides WebSocket server for real-time connections
+ * Supports both HTTP/HTTPS and WS/WSS
+ */
+
+import { createServer as createHttpServer } from 'http'
+import { createServer as createHttpsServer } from 'https'
+import { createServer as createNetServer } from 'net'
+import { readFileSync, existsSync, statSync, mkdirSync, writeFileSync, renameSync } from 'fs'
+import { createHash, randomBytes, timingSafeEqual } from 'crypto'
+import { fileURLToPath } from 'url'
+import { dirname, join, resolve, extname, basename, sep } from 'path'
+import { WebSocketServer } from 'ws'
+import { networkInterfaces, homedir } from 'os'
+import { createLanRelay, createLocalAddressCheck, createMainInstanceGate, isTrustedRelayOrigin, WS_MAX_PAYLOAD, WS_PER_MESSAGE_DEFLATE, signCore, pairCore } from './lanRelayCore.js'
+import { relayPageCsp } from './csp.js'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+
+// Configuration
+// Default to port 5173 (same as Vite dev server)
+// For tablet/phone access, run: npm run start:prod (builds and starts server)
+// Or: npm run build && npm run start
+const PORT = process.env.PORT || 5173
+const WS_PORT = process.env.WS_PORT || 8080
+// OV_RELAY_DIST_DIR: another build to serve (the relay tests' throwaway builds)
+const DIST_DIR = process.env.OV_RELAY_DIST_DIR ? resolve(process.env.OV_RELAY_DIST_DIR) : join(__dirname, 'dist')
+// The role pages of a build. OpenBeach's are flat (referee_beach.html, ...):
+// /referee, /referee/ and /referee.html open them, as on the Tauri relay
+// (src-tauri relay.rs resolve_asset), instead of the scorer app.
+const ROLE_PATHS = ['referee', 'bench', 'livescore', 'scoreboard', 'scoresheet', 'upload_roster']
+const HOSTNAME = process.env.HOSTNAME || 'escoresheet.local' // Custom hostname instead of localhost
+// The Content-Security-Policy of the app's pages (SEC-47: csp.js relayPageCsp,
+// as the desktop app's relay sends it). An OpenBeach build (flat
+// referee_beach.html, no referee/ folder page) has inline scripts of its own:
+// its policy is the OpenBeach repository's, none here, as before.
+const isBeachBuild = () => existsSync(join(DIST_DIR, 'referee_beach.html')) && !existsSync(join(DIST_DIR, 'referee', 'index.html'))
+const PAGE_CSP = relayPageCsp()
+
+// The WS protocol and /api/match/* endpoints come from ./lanRelayCore.js (shared
+// with the dev plugin).
+
+// HTTPS configuration - default to true for production
+const useHttps = process.env.HTTPS !== 'false' && (process.env.HTTPS === 'true' || process.env.USE_HTTPS === 'true' || process.env.NODE_ENV === 'production')
+let httpsOptions = null
+
+if (useHttps) {
+  // Support for base64-encoded certificates (for cloud deployment)
+  if (process.env.SSL_CERT_BASE64 && process.env.SSL_KEY_BASE64) {
+    try {
+      httpsOptions = {
+        cert: Buffer.from(process.env.SSL_CERT_BASE64, 'base64').toString('utf-8'),
+        key: Buffer.from(process.env.SSL_KEY_BASE64, 'base64').toString('utf-8')
+      }
+      console.log('🔒 HTTPS enabled with base64-encoded certificates (cloud deployment)')
+    } catch (err) {
+      console.error('❌ Failed to decode base64 certificates:', err.message)
+    }
+  } else {
+    // Look for Cloudflare origin certificates in project root first, then local
+    const certPath = process.env.SSL_CERT_PATH ||
+      (existsSync(join(__dirname, '..', '..', 'cert.pem'))
+        ? join(__dirname, '..', '..', 'cert.pem')  // C:\Users\lcane\Desktop\openvolley\cert.pem
+        : join(__dirname, 'localhost.pem'))
+    const keyPath = process.env.SSL_KEY_PATH ||
+      (existsSync(join(__dirname, '..', '..', 'key.pem'))
+        ? join(__dirname, '..', '..', 'key.pem')   // C:\Users\lcane\Desktop\openvolley\key.pem
+        : join(__dirname, 'localhost-key.pem'))
+
+    if (existsSync(certPath) && existsSync(keyPath)) {
+      httpsOptions = {
+        cert: readFileSync(certPath),
+        key: readFileSync(keyPath)
+      }
+      const isCloudflare = certPath.includes('cert.pem') && !certPath.includes('localhost')
+      console.log(`🔒 HTTPS enabled with ${isCloudflare ? 'Cloudflare Origin Certificate' : 'custom certificates'}`)
+      console.log(`   Certificate: ${certPath}`)
+      console.log(`   Private Key: ${keyPath}`)
+    } else {
+      console.warn('⚠️  HTTPS requested but certificates not found. Falling back to HTTP.')
+      console.warn(`   Expected certificates at: ${certPath} and ${keyPath}`)
+      console.warn('   Run "npm run generate-certs" to create self-signed certificates for development')
+    }
+  }
+}
+
+// Single main-scoresheet lock (same rule as the Tauri relay and the
+// dev plugin): only this machine itself — loopback or its own LAN IP — may
+// register or release it, so a LAN device cannot lock anyone out of "/".
+const isLocalAddress = createLocalAddressCheck(networkInterfaces)
+const mainGate = createMainInstanceGate({ isLocal: isLocalAddress })
+
+/**
+ * The game PIN of every room this relay held, as a salted hash on disk
+ * (OV_RELAY_STATE_DIR, default ~/.openvolley-relay/claims.json): after a
+ * restart a room is still the scorer's, and a sync without its game PIN does
+ * not take it over (lanRelayCore claim). Rooms are forgotten after
+ * CLAIM_KEEP_MS or when the scorer deletes the match. Errors writing the file
+ * are logged and leave the claims in memory. `dir` null: in memory only (the
+ * tests' relays, NODE_ENV=test without OV_RELAY_STATE_DIR).
+ */
+const CLAIM_KEEP_MS = 7 * 24 * 60 * 60 * 1000
+const MAX_STORED_CLAIMS = 2000
+function createClaimFileStore(dir) {
+  const file = dir ? join(dir, 'claims.json') : null
+  let state = { salt: randomBytes(16).toString('hex'), rooms: {} }
+  if (file) try {
+    const read = JSON.parse(readFileSync(file, 'utf8'))
+    if (read && typeof read.salt === 'string' && read.rooms && typeof read.rooms === 'object') state = read
+  } catch { /* first start, or an unreadable file: start afresh */ }
+  const digest = (matchId, pin) => createHash('sha256').update(`${state.salt}\0${matchId}\0${pin}`).digest('hex')
+  const save = () => {
+    if (!file) return
+    try {
+      mkdirSync(dir, { recursive: true, mode: 0o700 })
+      writeFileSync(`${file}.tmp`, JSON.stringify(state), { mode: 0o600 })
+      renameSync(`${file}.tmp`, file)
+    } catch (err) {
+      console.warn('[Relay] could not save the room claims:', err.message)
+    }
+  }
+  const prune = () => {
+    const now = Date.now()
+    const entries = Object.entries(state.rooms).filter(([, r]) => r && now - r.at < CLAIM_KEEP_MS)
+    entries.sort((a, b) => b[1].at - a[1].at)
+    state.rooms = Object.fromEntries(entries.slice(0, MAX_STORED_CLAIMS))
+  }
+  prune()
+  return {
+    check(matchId, pin) {
+      const r = Object.hasOwn(state.rooms, matchId) ? state.rooms[matchId] : null
+      if (!r || Date.now() - r.at >= CLAIM_KEEP_MS) return undefined
+      if (pin === null || pin === undefined) return false
+      const a = Buffer.from(digest(matchId, pin), 'hex')
+      const b = Buffer.from(String(r.h), 'hex')
+      return a.length === b.length && timingSafeEqual(a, b)
+    },
+    remember(matchId, pin) {
+      const h = digest(matchId, pin)
+      const r = Object.hasOwn(state.rooms, matchId) ? state.rooms[matchId] : null
+      // the file is written when a room or its PIN is new, and once an hour per room
+      if (r && r.h === h && Date.now() - r.at < 60 * 60 * 1000) return
+      state.rooms[matchId] = { h, at: Date.now() }
+      prune()
+      save()
+    },
+    forget(matchId) {
+      if (!Object.hasOwn(state.rooms, matchId)) return
+      delete state.rooms[matchId]
+      save()
+    },
+  }
+}
+
+// The names this relay is reached by besides addresses and LAN names (Host check)
+const RELAY_HOSTS = [HOSTNAME, ...String(process.env.OV_RELAY_HOSTS || '').split(',')]
+  .map((h) => h.trim().toLowerCase()).filter(Boolean)
+
+// Shared match data store + WS protocol (populated by the scoreboard via WebSocket).
+// Sign on phone: this machine may start a session, others prove the game PIN.
+const relay = createLanRelay({
+  isLocal: isLocalAddress,
+  claimStore: createClaimFileStore(process.env.OV_RELAY_STATE_DIR ? resolve(process.env.OV_RELAY_STATE_DIR)
+    : process.env.NODE_ENV === 'test' ? null : join(homedir(), '.openvolley-relay')),
+  allowedHosts: RELAY_HOSTS,
+})
+
+// MIME types for static files
+const MIME_TYPES = {
+  '.html': 'text/html',
+  '.js': 'application/javascript',
+  '.mjs': 'application/javascript',
+  '.css': 'text/css',
+  '.json': 'application/json',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
+  '.eot': 'application/vnd.ms-fontobject',
+  '.webmanifest': 'application/manifest+json',
+  '.pdf': 'application/pdf'
+}
+
+// WebSocket clients storage
+const wsClients = new Set()
+
+// Helper to get local IP address
+function getLocalIP() {
+  const nets = networkInterfaces()
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name] || []) {
+      if (net.family === 'IPv4' && !net.internal) {
+        return net.address
+      }
+    }
+  }
+  return '127.0.0.1'
+}
+
+// Request handler: a throw answers 500 and never ends the relay process
+// (every court's tablets would lose it)
+const requestHandler = (req, res) => {
+  try {
+    handleRequest(req, res)
+  } catch (err) {
+    console.error('[HTTP] request failed:', err && err.message)
+    if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'application/json' })
+    if (!res.writableEnded) res.end(JSON.stringify({ success: false, error: 'Internal error' }))
+  }
+}
+
+function handleRequest(req, res) {
+  let urlPath = req.url.split('?')[0] // Remove query string
+
+  // --- Centralized CORS headers ---
+  const origin = req.headers.origin
+  // Same rule as the relay's own routes (lanRelayCore isTrustedRelayOrigin)
+  if (origin && isTrustedRelayOrigin(origin, req.headers.host)) {
+    res.setHeader('Access-Control-Allow-Origin', origin)
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', 'https://app.openvolley.app')
+  }
+  res.setHeader('Vary', 'Origin')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Instance-ID, X-OV-Match-Pin, X-OV-Match-Token')
+
+  // --- Security headers ---
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN')
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
+
+  // Debug logging for API routes
+  if (urlPath.startsWith('/api/')) {
+    console.log(`[API] ${req.method} ${urlPath} from ${req.socket.remoteAddress}`)
+  }
+  
+  // Health check (the coin toss's WebSocket server check, the server
+  // connection screen), as the Tauri relay answers it
+  if (urlPath === '/health' || urlPath === '/api/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ status: 'ok', running: true }))
+    return
+  }
+
+  // API endpoints
+  if (urlPath === '/api/server/status') {
+    const localIP = getLocalIP()
+    const protocol = httpsOptions ? 'https' : 'http'
+    const wsProtocol = httpsOptions ? 'wss' : 'ws'
+    res.writeHead(200, {
+      'Content-Type': 'application/json'
+    })
+    res.end(JSON.stringify({
+      running: true,
+      mainInstanceId: mainGate.mainInstanceId,
+      hasMainInstance: mainGate.mainInstanceId !== null,
+      protocol,
+      wsProtocol,
+      hostname: HOSTNAME,
+      localIP,
+      port: PORT,
+      wsPort: WS_PORT,
+      urls: {
+        main: `${protocol}://${HOSTNAME}:${PORT}/`,
+        mainIP: `${protocol}://${localIP}:${PORT}/`,
+        referee: `${protocol}://${HOSTNAME}:${PORT}/referee`,
+        refereeIP: `${protocol}://${localIP}:${PORT}/referee`,
+        bench: `${protocol}://${HOSTNAME}:${PORT}/bench`,
+        benchIP: `${protocol}://${localIP}:${PORT}/bench`,
+        livescore: `${protocol}://${HOSTNAME}:${PORT}/livescore`,
+        livescoreIP: `${protocol}://${localIP}:${PORT}/livescore`,
+        websocket: `${wsProtocol}://${HOSTNAME}:${WS_PORT}`,
+        websocketIP: `${wsProtocol}://${localIP}:${WS_PORT}`
+      }
+    }))
+    return
+  }
+  
+  // Handle CORS preflight (the scoreboard codes answer their own: CORS *)
+  if (req.method === 'OPTIONS' && urlPath.startsWith('/api/display/') && relay.handleApiRequest(req, res, req.url)) return
+  if (req.method === 'OPTIONS') {
+    res.writeHead(200)
+    res.end()
+    return
+  }
+  
+  if (mainGate.handleRequest(req, res, urlPath)) return
+
+  // Relay-owned endpoints (validate-pin, match/:id, list, by-game-number,
+  // PATCH, server/connections) — one implementation in lanRelayCore.
+  if (urlPath.startsWith('/api/')) {
+    if (relay.handleApiRequest(req, res, req.url)) return
+    // Unknown API routes get JSON, not the SPA's index.html with a 200.
+    res.writeHead(404, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ success: false, error: 'Not found' }))
+    return
+  }
+
+  // Single main-instance gate for "/" (the "already running" page, and the
+  // /?court=other opt-in for a scoresheet on another court): lanRelayCore
+  if (mainGate.handleMainPage(req, res, urlPath)) return
+
+  // Allow access to referee, bench, livescore, etc. even if main instance exists
+  let filePath = join(DIST_DIR, urlPath === '/' ? 'index.html' : urlPath)
+
+  // Security: prevent directory traversal. Require a path separator after
+  // DIST_DIR so sibling dirs like "dist-backup" cannot pass a bare prefix check.
+  if (filePath !== DIST_DIR && !filePath.startsWith(DIST_DIR + sep)) {
+    res.writeHead(403, { 'Content-Type': 'text/plain' })
+    res.end('Forbidden')
+    return
+  }
+  
+  // Check if file exists
+  if (!existsSync(filePath)) {
+    // If URL doesn't have .html extension, try adding it
+    if (!urlPath.endsWith('.html') && !urlPath.includes('.')) {
+      const htmlPath = urlPath.startsWith('/') ? urlPath.substring(1) + '.html' : urlPath + '.html'
+      const htmlFilePath = join(DIST_DIR, htmlPath)
+      if (existsSync(htmlFilePath)) {
+        filePath = htmlFilePath
+      }
+    } else if (urlPath.endsWith('.html')) {
+      // Legacy /referee.html links: Vite builds folder pages (referee/index.html).
+      const folderIndex = join(DIST_DIR, urlPath.slice(0, -'.html'.length), 'index.html')
+      if (folderIndex.startsWith(DIST_DIR + sep) && existsSync(folderIndex)) {
+        filePath = folderIndex
+      }
+    }
+    
+    // A role page's own sub-path (/livescore/board: the scoreboard page, which
+    // the livescore entry picks by its path): that role's page
+    if (!existsSync(filePath)) {
+      const sub = /^\/+([a-z_]+)\/[a-z0-9_-]+\/?$/i.exec(urlPath)
+      if (sub && ROLE_PATHS.includes(sub[1])) {
+        const own = join(DIST_DIR, sub[1], 'index.html')
+        if (existsSync(own)) filePath = own
+      }
+    }
+
+    // An OpenBeach build's role page
+    if (!existsSync(filePath)) {
+      const role = urlPath.replace(/^\/+|\/+$/g, '').replace(/\.html$/, '')
+      const beachPage = join(DIST_DIR, `${role}_beach.html`)
+      if (ROLE_PATHS.includes(role) && existsSync(beachPage)) filePath = beachPage
+    }
+
+    // If still not found, try index.html for SPA fallback
+    if (!existsSync(filePath)) {
+      const indexPath = join(DIST_DIR, 'index.html')
+      if (existsSync(indexPath)) {
+        filePath = indexPath
+      } else {
+        res.writeHead(404, { 'Content-Type': 'text/plain' })
+        res.end('Not Found')
+        return
+      }
+    }
+  }
+  
+  // Check if it's a directory, serve index.html
+  try {
+    const stats = statSync(filePath)
+    if (stats.isDirectory()) {
+      filePath = join(filePath, 'index.html')
+      if (!existsSync(filePath)) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' })
+        res.end('Not Found')
+        return
+      }
+    }
+  } catch (err) {
+    res.writeHead(404, { 'Content-Type': 'text/plain' })
+    res.end('Not Found')
+    return
+  }
+  
+  // Read and serve file
+  try {
+    const content = readFileSync(filePath)
+    const ext = extname(filePath).toLowerCase()
+    const contentType = MIME_TYPES[ext] || 'application/octet-stream'
+    
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      'Cache-Control': ext === '.html' || ext === '.json' || basename(filePath) === 'sw.js' || ext === '.webmanifest'
+        ? 'no-cache'
+        : 'public, max-age=31536000',
+      // The app's pages: its policy (PAGE_CSP)
+      ...(ext === '.html' && !isBeachBuild() ? { 'Content-Security-Policy': PAGE_CSP } : {}),
+      // The phone pages (/sign, /pair): strict CSP, no referrer, no-cache
+      ...(signCore.isSignPagePath(urlPath) || pairCore.isPairPagePath(urlPath) ? signCore.SIGN_PAGE_HEADERS : {})
+    })
+    res.end(content)
+  } catch (err) {
+    console.error('Error serving file:', err)
+    res.writeHead(500, { 'Content-Type': 'text/plain' })
+    res.end('Internal Server Error')
+  }
+}
+
+// Create HTTP or HTTPS server for static files
+const httpServer = httpsOptions 
+  ? createHttpsServer(httpsOptions, requestHandler)
+  : createHttpServer(requestHandler)
+
+// Create WebSocket server. With HTTPS on, pages are served over https:// and
+// browsers refuse ws:// (mixed content), so the relay accepts wss:// with the
+// same certificate — exactly what /api/server/status advertises. Plain ws:// is
+// still accepted on the SAME port (the first byte of a TLS handshake is 0x16),
+// so LAN clients that predate HTTPS — the LedBox bridge defaults to
+// ws://127.0.0.1:8080 — keep working with zero setup.
+const wss = new WebSocketServer({
+  noServer: true,
+  perMessageDeflate: WS_PER_MESSAGE_DEFLATE, // bundles to the tablets (lanRelayCore)
+  maxPayload: WS_MAX_PAYLOAD
+})
+const wsOnly = (req, res) => {
+  res.writeHead(426, { 'Content-Type': 'text/plain' })
+  res.end('WebSocket only')
+}
+const wsPlainServer = createHttpServer(wsOnly)
+const wsTlsServer = httpsOptions ? createHttpsServer(httpsOptions, wsOnly) : null
+for (const server of [wsPlainServer, wsTlsServer]) {
+  server?.on('upgrade', (req, socket, head) => {
+    // A page elsewhere (any Origin a browser sends that is not the app's) or
+    // a re-pointed name (Host) gets no socket (lanRelayCore upgradeRefusal)
+    if (relay.upgradeRefusal(req)) {
+      socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n')
+      return
+    }
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req))
+  })
+}
+const wsListener = createNetServer((socket) => {
+  socket.on('error', () => socket.destroy())
+  if (!wsTlsServer) {
+    wsPlainServer.emit('connection', socket)
+    return
+  }
+  // Peek the first byte to route TLS vs plain; the byte is pushed back unread.
+  socket.setTimeout(10000, () => socket.destroy())
+  socket.once('readable', function route() {
+    const first = socket.read(1)
+    if (first === null) {
+      socket.once('readable', route)
+      return
+    }
+    socket.unshift(first)
+    socket.setTimeout(0)
+    ;(first[0] === 0x16 ? wsTlsServer : wsPlainServer).emit('connection', socket)
+  })
+})
+wsListener.listen(WS_PORT, '0.0.0.0') // Bind to all interfaces for LAN access
+
+// Socket churn: connectivity checks open and close a socket every few
+// seconds, so per-socket lines (with the client IP) would flood the log. One
+// summary line a minute instead, like backend/server.js; OV_LOG_CONNECTIONS=1
+// brings back per-socket lines (without IPs) for debugging.
+const LOG_EACH_CONNECTION = process.env.OV_LOG_CONNECTIONS === '1'
+const wsChurn = { opened: 0, closed: 0, since: Date.now() }
+setInterval(() => {
+  if (wsChurn.opened === 0 && wsChurn.closed === 0) { wsChurn.since = Date.now(); return }
+  const secs = Math.max(1, Math.round((Date.now() - wsChurn.since) / 1000))
+  console.log(`[WebSocket] last ${secs}s: ${wsChurn.opened} sockets opened, ${wsChurn.closed} sockets closed, open now ${wsClients.size}`)
+  wsChurn.opened = 0
+  wsChurn.closed = 0
+  wsChurn.since = Date.now()
+}, 60_000).unref()
+
+wss.on('connection', (ws, req) => {
+  const clientIp = req.socket.remoteAddress
+  // Connection limits, in all and per address (lanRelayCore admit)
+  const refused = relay.admit(clientIp)
+  if (refused) {
+    console.warn(`[WebSocket] Connection rejected: ${refused.reason}`)
+    ws.close(refused.code, refused.reason)
+    return
+  }
+  wsChurn.opened++
+  if (LOG_EACH_CONNECTION) console.log(`[WebSocket] Client connected (total ${wsClients.size + 1})`)
+
+  wsClients.add(ws)
+  // Sends the 'connected' welcome message
+  relay.addClient(ws, { ip: clientIp })
+
+  // All message handling (sync, subscribe, actions, PIN-free fan-out,
+  // scoreboard ownership) lives in lanRelayCore.
+  ws.on('message', (message) => relay.handleMessage(ws, message))
+
+  // Handle client disconnect - remove from subscriptions
+  ws.on('close', () => {
+    wsClients.delete(ws)
+    wsChurn.closed++
+    if (LOG_EACH_CONNECTION) console.log(`[WebSocket] Client disconnected (total ${wsClients.size})`)
+    relay.removeClient(ws)
+  })
+
+  // Handle errors
+  ws.on('error', (error) => {
+    console.error('[WebSocket] Socket error:', error?.message || error)
+    wsClients.delete(ws)
+    relay.removeClient(ws)
+  })
+})
+
+// Broadcast function to send data to all connected clients
+function broadcast(data, excludeWs = null) {
+  const message = JSON.stringify(data)
+  wsClients.forEach((client) => {
+    if (client !== excludeWs && client.readyState === 1) { // WebSocket.OPEN
+      try {
+        client.send(message)
+      } catch (err) {
+        console.error('[WebSocket] Error broadcasting to client:', err)
+        wsClients.delete(client)
+      }
+    }
+  })
+}
+
+// Start HTTP/HTTPS server
+const protocol = httpsOptions ? 'https' : 'http'
+const localIP = getLocalIP()
+httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 ${protocol.toUpperCase()} Server running`)
+  console.log(`   ${protocol}://${HOSTNAME}:${PORT}`)
+  console.log(`   ${protocol}://${localIP}:${PORT}`)
+  console.log(`   ${protocol}://localhost:${PORT}`)
+  console.log(`📁 Serving files from: ${DIST_DIR}`)
+  console.log(`🔐 Main instance protection: Enabled`)
+  console.log(`📡 API endpoints available at /api/*`)
+  console.log(`📱 For tablet/phone access, use: ${protocol}://${localIP}:${PORT}`)
+})
+
+// WebSocket server started
+const wsProtocol = httpsOptions ? 'wss' : 'ws'
+console.log(`🔌 WebSocket Server running${httpsOptions ? ' (wss:// and ws:// on the same port)' : ''}`)
+console.log(`   ${wsProtocol}://${HOSTNAME}:${WS_PORT}`)
+console.log(`   ${wsProtocol}://${localIP}:${WS_PORT}`)
+
+// Export server info and control functions
+export { broadcast, getLocalIP, mainGate }
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, shutting down gracefully...')
+  httpServer.close(() => {
+    console.log('HTTP server closed')
+  })
+  wss.close(() => {
+    console.log('WebSocket server closed')
+  })
+  wsListener.close()
+  relay.close()
+  process.exit(0)
+})
+
+process.on('SIGINT', () => {
+  console.log('SIGINT received, shutting down gracefully...')
+  httpServer.close(() => {
+    console.log('HTTP server closed')
+  })
+  wss.close(() => {
+    console.log('WebSocket server closed')
+  })
+  wsListener.close()
+  relay.close()
+  process.exit(0)
+})

@@ -1,0 +1,570 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+
+vi.mock('../../utils/backendConfig', () => ({
+  getApiUrl: (path) => `http://relay.test${path}`,
+  getCloudApiUrl: (path) => `http://backend.test${path}`
+}))
+
+import { apiRequest, apiFrom, apiAuth, apiStorage, apiMatchRestore, apiMatchRestoreByPin, apiMatchClaim, apiMatchScorer, apiMatchKnown, apiPostEventRevisions, ageOf, isSessionRejected, normalizeError, toBase64, BACKEND_REACHED_EVENT, DB_REQUEST_TIMEOUT_MS } from '../apiClient'
+
+function jsonResponse(body, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body
+  }
+}
+
+// Returns the parsed JSON body of the n-th fetch call
+const sentBody = (n = 0) => JSON.parse(globalThis.fetch.mock.calls[n][1].body)
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+// Stress test 2026-10-25: the cloud back while the Wi-Fi stayed up fired no
+// 'online' event; the sync queue and the relay socket waited out their backoff
+describe('BACKEND_REACHED_EVENT', () => {
+  let seen
+  const count = () => { seen++ }
+  beforeEach(() => {
+    seen = 0
+    window.addEventListener(BACKEND_REACHED_EVENT, count)
+  })
+  afterEach(() => {
+    window.removeEventListener(BACKEND_REACHED_EVENT, count)
+    vi.restoreAllMocks()
+  })
+
+  it('is dispatched once when the backend answers again after requests failed to reach it', async () => {
+    globalThis.fetch = vi.fn(async () => { throw new TypeError('Failed to fetch') })
+    await apiFrom('match_live_state').upsert({ match_id: 'm' })
+    await apiMatchScorer('match_1_a', { claim: false })
+    expect(seen).toBe(0)
+    // a tunnel / proxy answering 502 is not the backend
+    globalThis.fetch = vi.fn(async () => jsonResponse({ error: 'bad gateway' }, 502))
+    await apiFrom('matches').select('id').limit(1)
+    expect(seen).toBe(0)
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: null, error: null }))
+    await apiFrom('match_live_state').upsert({ match_id: 'm' })
+    expect(seen).toBe(1)
+    await apiFrom('match_live_state').upsert({ match_id: 'm' })
+    expect(seen).toBe(1)
+  })
+})
+
+describe('apiClient QueryBuilder', () => {
+  beforeEach(() => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: null, error: null }))
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('sends db, storage and auth to the cloud API, never to the relay', async () => {
+    await apiFrom('matches').select('id').limit(1)
+    await apiStorage.from('backup').list('logs')
+    await apiAuth.signInWithPassword({ email: 'a@b.c', password: 'x' })
+    const urls = globalThis.fetch.mock.calls.map(c => c[0])
+    expect(urls).toEqual([
+      'http://backend.test/api/db',
+      'http://backend.test/api/storage/list',
+      'http://backend.test/api/auth/sign-in'
+    ])
+  })
+
+  it('upsert().select("id").single() keeps the upsert and asks for returning', async () => {
+    await apiFrom('matches').upsert({ external_id: 'm1' }, { onConflict: 'external_id' }).select('id').single()
+    const body = sentBody()
+    expect(body.action).toBe('upsert')
+    expect(body.params.returning).toBe('id')
+    expect(body.params.single).toBe(true)
+    expect(body.params.onConflict).toBe('external_id')
+    expect(body.params.data).toEqual({ external_id: 'm1' })
+  })
+
+  it('delete().eq().select("*", {count, head}) stays a delete', async () => {
+    await apiFrom('events').delete().eq('match_id', 'u1').select('*', { count: 'exact', head: true })
+    const body = sentBody()
+    expect(body.action).toBe('delete')
+    expect(body.params.returning).toBe('*')
+    expect(body.params.count).toBe('exact')
+    expect(body.params.head).toBe(true)
+    expect(body.params.filters).toEqual([{ type: 'eq', column: 'match_id', value: 'u1' }])
+  })
+
+  it('update().eq().select("a,b") keeps the update and its data', async () => {
+    await apiFrom('matches').update({ manual_changes: [1] }).eq('external_id', 'm1').select('a,b')
+    const body = sentBody()
+    expect(body.action).toBe('update')
+    expect(body.params.data).toEqual({ manual_changes: [1] })
+    expect(body.params.returning).toBe('a,b')
+  })
+
+  it('select() with no column list after a write returns all columns', async () => {
+    await apiFrom('profiles').update({ first_name: 'A' }).eq('user_id', 'x').select().single()
+    const body = sentBody()
+    expect(body.action).toBe('update')
+    expect(body.params.returning).toBe('*')
+  })
+
+  it('a plain select is unchanged', async () => {
+    await apiFrom('matches').select('id, status', { count: 'exact' }).eq('external_id', 'm1').limit(1)
+    const body = sentBody()
+    expect(body.action).toBe('select')
+    expect(body.params.columns).toBe('id, status')
+    expect(body.params.count).toBe('exact')
+    expect(body.params.limit).toBe(1)
+    expect(body.params).not.toHaveProperty('returning')
+  })
+
+  it('carries the HTTP status and normalises string errors', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ error: 'Too many requests' }, 429))
+    const result = await apiFrom('matches').select('id')
+    expect(result.status).toBe(429)
+    expect(result.error).toEqual({ message: 'Too many requests', status: 429 })
+  })
+
+  it('keeps { message } errors and adds the status', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: null, error: { message: 'Database operation failed' } }, 400))
+    const result = await apiFrom('matches').select('id')
+    expect(result.error).toEqual({ message: 'Database operation failed', status: 400 })
+  })
+})
+
+describe('normalizeError', () => {
+  it('wraps strings, keeps objects, fills a fallback', () => {
+    expect(normalizeError('Authentication required', 401)).toEqual({ message: 'Authentication required', status: 401 })
+    expect(normalizeError({ message: 'x', code: 'c' }, 400)).toEqual({ message: 'x', code: 'c', status: 400 })
+    expect(normalizeError(null, 503, 'Auth request failed')).toEqual({ message: 'Auth request failed (503)', status: 503 })
+  })
+})
+
+describe('apiAuth.getSession session-clearing rule', () => {
+  const session = { access_token: 'tok', expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: 'u1' } }
+
+  beforeEach(() => {
+    localStorage.clear()
+    localStorage.setItem('api_auth_token', JSON.stringify(session))
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('keeps the session when offline (network error) and returns it unverified', async () => {
+    globalThis.fetch = vi.fn(async () => { throw new TypeError('Failed to fetch') })
+    const { data } = await apiAuth.getSession()
+    expect(data.session.access_token).toBe('tok')
+    expect(data.session.unverified).toBe(true)
+    expect(localStorage.getItem('api_auth_token')).not.toBeNull()
+  })
+
+  it('keeps the session on 429', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ error: 'Too many requests' }, 429))
+    const { data } = await apiAuth.getSession()
+    expect(data.session).not.toBeNull()
+    expect(localStorage.getItem('api_auth_token')).not.toBeNull()
+  })
+
+  it('keeps the session on 503', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ error: 'Supabase not configured on server' }, 503))
+    const { data } = await apiAuth.getSession()
+    expect(data.session).not.toBeNull()
+    expect(localStorage.getItem('api_auth_token')).not.toBeNull()
+  })
+
+  it('clears the session on 401', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ error: 'Invalid or expired token' }, 401))
+    const { data } = await apiAuth.getSession()
+    expect(data.session).toBeNull()
+    expect(localStorage.getItem('api_auth_token')).toBeNull()
+  })
+
+  it('clears the session when the auth server rejects the JWT (200 + error)', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: null, error: { message: 'invalid JWT: token is expired' } }, 200))
+    const { data } = await apiAuth.getSession()
+    expect(data.session).toBeNull()
+    expect(localStorage.getItem('api_auth_token')).toBeNull()
+  })
+
+  it('returns the verified user on success', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { user: { id: 'u1', email: 'a@b.c' } }, error: null }))
+    const { data } = await apiAuth.getSession()
+    expect(data.session.user).toEqual({ id: 'u1', email: 'a@b.c' })
+    expect(data.session.unverified).toBeUndefined()
+  })
+
+  it('signals SIGNED_OUT in the same tab when the token is cleared', async () => {
+    const cb = vi.fn()
+    const { data: { subscription } } = apiAuth.onAuthStateChange(cb)
+    globalThis.fetch = vi.fn(async () => jsonResponse({ error: 'Invalid or expired token' }, 401))
+    await apiAuth.getSession()
+    expect(cb).toHaveBeenCalledWith('SIGNED_OUT', null)
+    subscription.unsubscribe()
+  })
+})
+
+describe('isSessionRejected', () => {
+  it('only treats an explicit rejection as fatal', () => {
+    expect(isSessionRejected({ error: { message: 'x', status: 401 } })).toBe(true)
+    expect(isSessionRejected({ error: { message: 'x', code: 'invalid_token', status: 400 } })).toBe(true)
+    expect(isSessionRejected({ error: { message: 'Failed to fetch', status: 0, network: true } })).toBe(false)
+    expect(isSessionRejected({ error: { message: 'Too many requests', status: 429 } })).toBe(false)
+    expect(isSessionRejected({ error: { message: 'Authentication error', status: 500 } })).toBe(false)
+    expect(isSessionRejected({ error: { message: 'fetch failed', status: 200 } })).toBe(false)
+    expect(isSessionRejected({ error: null })).toBe(false)
+  })
+
+  it('HTTP 200 + error: only GoTrue token errors sign out, never gateway text', () => {
+    const at200 = (message) => isSessionRejected({ error: { message, status: 200 } })
+    expect(at200('invalid JWT: unable to parse or verify signature, token has invalid claims: token is expired')).toBe(true)
+    expect(at200('JWT expired')).toBe(true)
+    expect(at200('User from sub claim in JWT does not exist')).toBe(true)
+    expect(at200('Session from session_id claim in JWT does not exist')).toBe(true)
+    expect(at200('An invalid response was received from the upstream server')).toBe(false)
+    expect(at200('Not Found')).toBe(false)
+    expect(at200('Bad Gateway: upstream connect error or disconnect/reset before headers')).toBe(false)
+    expect(at200('Internal server error')).toBe(false)
+  })
+})
+
+describe('QueryBuilder transport failures', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('passes an abort signal so a stalled request cannot hang forever', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: [], error: null }))
+    await apiFrom('matches').select('id')
+    const opts = globalThis.fetch.mock.calls[0][1]
+    expect(opts.signal).toBeDefined()
+  })
+
+  it('a timeout or network failure resolves as a network error, never throws', async () => {
+    globalThis.fetch = vi.fn(async () => { throw new DOMException('The operation timed out.', 'TimeoutError') })
+    const result = await apiFrom('sets').update({ home_points: 3 }).eq('external_id', 'm:s:1')
+    expect(result.data).toBeNull()
+    expect(result.error.network).toBe(true)
+    expect(result.error.status).toBe(0)
+  })
+})
+
+describe('storage upload encoding', () => {
+  const decode = (b64) => Buffer.from(b64, 'base64').toString('utf8')
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('encodes non-Latin-1 text as UTF-8', async () => {
+    const text = 'Čech Müller 🏐 — “quoted”'
+    expect(decode(await toBase64(text))).toBe(text)
+  })
+
+  it('encodes large binary payloads without overflowing the stack', async () => {
+    const bytes = new Uint8Array(600000)
+    for (let i = 0; i < bytes.length; i++) bytes[i] = i % 251
+    const b64 = await toBase64(bytes)
+    const back = Buffer.from(b64, 'base64')
+    expect(back.length).toBe(bytes.length)
+    expect(back[12345]).toBe(12345 % 251)
+  })
+
+  it('encodes Blobs and objects', async () => {
+    expect(decode(await toBase64(new Blob(['Zürich'])))).toBe('Zürich')
+    expect(JSON.parse(decode(await toBase64({ a: 'é' })))).toEqual({ a: 'é' })
+  })
+
+  it('upload sends the UTF-8 base64 body', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { path: 'p' }, error: null }))
+    const result = await apiStorage.from('backup').upload('logs/x.txt', 'ü 🏐', { contentType: 'text/plain' })
+    expect(result.error).toBeNull()
+    expect(decode(sentBody().fileBase64)).toBe('ü 🏐')
+  })
+
+  // Backend db/033: a scoresheet PDF is stored for the match the upload names
+  it('upload names the match when given (match_external_id), and sends no such field otherwise', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { path: 'p' }, error: null }))
+    await apiStorage.from('scoresheets').upload('2026-10-25/game1_k.pdf', new Uint8Array([37, 80, 68, 70, 45]), { contentType: 'application/pdf', upsert: true, matchExternalId: 'match_1_a' })
+    expect(sentBody(0)).toMatchObject({ bucket: 'scoresheets', path: '2026-10-25/game1_k.pdf', match_external_id: 'match_1_a', upsert: true })
+    await apiStorage.from('backup').upload('logs/x.txt', 'x', { contentType: 'text/plain' })
+    expect('match_external_id' in sentBody(1)).toBe(false)
+  })
+
+  // Stress test 2026-10-25: an upload on a connection that passed no data held
+  // "Confirm and approve" (and with it the approval) for minutes
+  it('an upload that gets no answer ends as a network error within its bound', async () => {
+    vi.useFakeTimers()
+    // (AbortSignal.timeout runs on Node's own timers, not the fake ones)
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => {
+      const ctrl = new AbortController()
+      setTimeout(() => ctrl.abort(), ms)
+      return ctrl.signal
+    })
+    try {
+      globalThis.fetch = vi.fn((url, init) => new Promise((resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('The operation timed out.', 'TimeoutError')))
+      }))
+      let result = null
+      apiStorage.from('scoresheets').upload('2026-10-25/game1_k.pdf', new Uint8Array(100000), { contentType: 'application/pdf' }).then(r => { result = r })
+      await vi.advanceTimersByTimeAsync(DB_REQUEST_TIMEOUT_MS + 30000)
+      expect(result?.error).toMatchObject({ network: true, status: 0 })
+    } finally {
+      timeoutSpy.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('self-hosted backend contract', () => {
+  const session = { access_token: 'tok', expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: 'u1' } }
+  const sentHeaders = (n = 0) => globalThis.fetch.mock.calls[n][1].headers
+
+  beforeEach(() => {
+    localStorage.clear()
+    localStorage.setItem('api_auth_token', JSON.stringify(session))
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('sends X-OV-Proto: 2 on /api/db and /api/storage requests', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: [], error: null }))
+    await apiFrom('matches').select('id')
+    await apiStorage.from('backup').list('x')
+    expect(sentHeaders(0)['X-OV-Proto']).toBe('2')
+    expect(sentHeaders(0).Authorization).toBe('Bearer tok')
+    expect(sentHeaders(1)['X-OV-Proto']).toBe('2')
+  })
+
+  it('has no apiAuth.updateProfile (the auth profile route is read-only; AuthContext writes via /api/db)', () => {
+    expect(apiAuth.updateProfile).toBeUndefined()
+  })
+
+  it('exports the token event names the sync queue listens to', async () => {
+    const mod = await import('../apiClient')
+    expect(mod.AUTH_TOKEN_STORAGE_KEY).toBe('api_auth_token')
+    const seen = []
+    const h = (e) => seen.push(e.detail)
+    window.addEventListener(mod.AUTH_TOKEN_CHANGE_EVENT, h)
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { session: { access_token: 'n', user: { id: 'u2' } }, user: { id: 'u2' } }, error: null }))
+    await apiAuth.signInWithPassword({ email: 'a@b.ch', password: 'x' })
+    window.removeEventListener(mod.AUTH_TOKEN_CHANGE_EVENT, h)
+    expect(seen).toEqual([{ access_token: 'n', user: { id: 'u2' } }])
+  })
+
+  it('apiMatchRestore posts the whole match to /api/match/restore with the session', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { id: 'uuid', counts: { sets: 1, events: 2, liveState: 0 } }, error: null }))
+    const r = await apiMatchRestore({ match: { external_id: 'm1' }, sets: [{}], events: [{}, {}] })
+    expect(globalThis.fetch.mock.calls[0][0]).toBe('http://backend.test/api/match/restore')
+    expect(sentHeaders()['X-OV-Proto']).toBe('2')
+    expect(sentHeaders().Authorization).toBe('Bearer tok')
+    // device: the restore is this device's take-over of the match (db/019)
+    expect(sentBody()).toEqual({ match: { external_id: 'm1' }, sets: [{}], events: [{}, {}], liveState: null, device: { id: expect.stringMatching(UUID_RE), platform: 'web' } })
+    expect(r.error).toBeNull()
+    expect(r.data.counts.events).toBe(2)
+  })
+
+  it('/api/db writes name the device in the body (never a header), reads do not', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: null, error: null }))
+    await apiFrom('events').upsert({ external_id: 'm1:e:1' }, { onConflict: 'external_id' })
+    expect(sentBody().device).toEqual({ id: expect.stringMatching(UUID_RE), platform: 'web' })
+    expect(Object.keys(sentHeaders()).some(k => /device/i.test(k))).toBe(false)
+    await apiFrom('events').select('id').eq('external_id', 'm1:e:1')
+    expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body).device).toBeUndefined()
+  })
+
+  it('a queued restore says how long ago it was made (db/019), by this device\'s clock', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { id: 'u', counts: {} }, error: null }))
+    const queuedAt = new Date(Date.now() - 60_000).toISOString()
+    await apiMatchRestore({ match: { external_id: 'm1' }, queuedAt })
+    expect(sentBody().age_ms).toBeGreaterThanOrEqual(60_000)
+    expect(sentBody().age_ms).toBeLessThan(120_000)
+    expect(ageOf(1000, 4000)).toBe(3000)
+    expect(ageOf(5000, 4000)).toBe(0)
+    expect(ageOf('nope')).toBeNull()
+    expect(ageOf(null)).toBeNull()
+  })
+
+  it('the event history names the device that sends it (db/019)', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: {}, error: null }))
+    await apiPostEventRevisions('m1', [{ rev_uid: 'r', device_id: 'old-id' }])
+    expect(globalThis.fetch.mock.calls[0][0]).toBe('http://backend.test/api/match/event-revisions')
+    expect(sentBody()).toEqual({ match_external_id: 'm1', revisions: [{ rev_uid: 'r', device_id: 'old-id' }], device: { id: expect.stringMatching(UUID_RE), platform: 'web' } })
+  })
+
+  // 2611 review, SR-1: a match deleted on the server is 'deleted' to a device
+  // that scored it, whoever is signed in on it; the question names the device
+  it('apiMatchKnown names this device', async () => {
+    await apiMatchKnown('m1')
+    expect(globalThis.fetch.mock.calls[0][0]).toMatch(/\/api\/match\/known$/)
+    expect(sentBody()).toEqual({ external_id: 'm1', device: { id: expect.stringMatching(UUID_RE), platform: 'web' } })
+  })
+
+  it('apiMatchScorer claims or asks for this device', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { external_id: 'm1', mine: true, moved: true }, error: null }))
+    const r = await apiMatchScorer('m1')
+    expect(globalThis.fetch.mock.calls[0][0]).toBe('http://backend.test/api/match/scorer')
+    expect(sentBody()).toEqual({ external_id: 'm1', device: { id: expect.stringMatching(UUID_RE), platform: 'web' }, claim: true })
+    expect(r.data.moved).toBe(true)
+    await apiMatchScorer('m1', { claim: false })
+    expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body).claim).toBe(false)
+  })
+
+  it('apiMatchRestore sends a hand-over re-key only when there is one', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { id: 'u', counts: {} }, error: null }))
+    await apiMatchRestore({ match: { external_id: 'm1' }, rekey: { sets: {}, events: { 'm1:e:9': 'm1:e:1' } } })
+    expect(sentBody().rekey).toEqual({ sets: {}, events: { 'm1:e:9': 'm1:e:1' } })
+    await apiMatchRestore({ match: { external_id: 'm1' } })
+    expect('rekey' in JSON.parse(globalThis.fetch.mock.calls[1][1].body)).toBe(false)
+  })
+
+  it('apiMatchRestore reports 426 with its status (retry later, not fatal)', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: null, error: { message: 'too old', code: 'OV_CLIENT_TOO_OLD' } }, 426))
+    const r = await apiMatchRestore({ match: { external_id: 'm1' } })
+    expect(r.error.status).toBe(426)
+    expect(r.error.code).toBe('OV_CLIENT_TOO_OLD')
+    globalThis.fetch = vi.fn(async () => { throw new TypeError('Failed to fetch') })
+    const offline = await apiMatchRestore({ match: { external_id: 'm1' } })
+    expect(offline.error.network).toBe(true)
+  })
+
+  it('apiMatchRestoreByPin carries the session when there is one (take-over) and maps 404 to an error object', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: null, error: { message: 'Match not found with this ID and PIN', code: 'OV_NOT_FOUND' } }, 404))
+    const r = await apiMatchRestoreByPin(12, '123456')
+    expect(globalThis.fetch.mock.calls[0][0]).toBe('http://backend.test/api/match/restore-by-pin')
+    expect(sentHeaders().Authorization).toBe('Bearer tok')
+    expect(sentBody()).toEqual({ gameN: 12, pin: '123456' })
+    expect(r.error.code).toBe('OV_NOT_FOUND')
+    expect(r.status).toBe(404)
+    // Signed out: anonymous lookup
+    localStorage.removeItem('api_auth_token')
+    await apiMatchRestoreByPin(12, '123456')
+    expect(globalThis.fetch.mock.calls[1][1].headers.Authorization).toBeUndefined()
+  })
+
+  // 2026-10-26: a device that continued a match signed out never got its
+  // queued claim through; the game PIN proved here makes it the scorer
+  it('apiMatchRestoreByPin claims the match for this device only when it continues it', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { match: { external_id: 'm1' }, sets: [], events: [], liveState: null, scorer: { mine: true, moved: true } }, error: null }))
+    localStorage.removeItem('api_auth_token')
+    const r = await apiMatchRestoreByPin(12, '123456', { claim: true, externalId: 'm1' })
+    expect(sentBody()).toEqual({ gameN: 12, pin: '123456', claim: true, device: { id: expect.stringMatching(UUID_RE), platform: 'web' }, external_id: 'm1' })
+    expect(globalThis.fetch.mock.calls[0][1].headers.Authorization).toBeUndefined()
+    expect(r.data.scorer.mine).toBe(true)
+    // the search for backups only looks it up
+    await apiMatchRestoreByPin(12, '123456')
+    expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body)).toEqual({ gameN: 12, pin: '123456' })
+  })
+
+  it('apiMatchClaim proves the game PIN with the session', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { id: 'u', external_id: 'match_1', role: 'editor' }, error: null }))
+    const r = await apiMatchClaim('match_1', '864201')
+    expect(globalThis.fetch.mock.calls[0][0]).toBe('http://backend.test/api/match/claim')
+    expect(sentHeaders().Authorization).toBe('Bearer tok')
+    expect(sentBody()).toEqual({ externalId: 'match_1', pin: '864201' })
+    expect(r.data.role).toBe('editor')
+  })
+
+  it('a query can carry extra headers (match token) without replacing the session', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: [], error: null }))
+    await apiFrom('matches').headers({ 'X-OV-Match-Token': 'v1.a.b', Authorization: 'Bearer forged' }).select('*').eq('external_id', 'm')
+    expect(sentHeaders()['X-OV-Match-Token']).toBe('v1.a.b')
+    expect(sentHeaders().Authorization).toBe('Bearer tok')
+  })
+
+  it('signOut clears the session locally, then revokes it on the server (offline it is cleared too)', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: null, error: null }))
+    await apiAuth.signOut()
+    expect(globalThis.fetch.mock.calls[0][0]).toBe('http://backend.test/api/auth/sign-out')
+    expect(sentBody()).toEqual({ access_token: 'tok' })
+    expect(localStorage.getItem('api_auth_token')).toBeNull()
+
+    localStorage.setItem('api_auth_token', JSON.stringify(session))
+    globalThis.fetch = vi.fn(async () => { throw new TypeError('Failed to fetch') })
+    await apiAuth.signOut()
+    expect(localStorage.getItem('api_auth_token')).toBeNull()
+  })
+
+  it('getSession keeps the server-slid expires_at', async () => {
+    const later = session.expires_at + 30 * 24 * 3600
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { user: { id: 'u1' }, session: { expires_at: later, expires_in: 99 } }, error: null }))
+    const { data } = await apiAuth.getSession()
+    expect(data.session.expires_at).toBe(later)
+    expect(JSON.parse(localStorage.getItem('api_auth_token')).expires_at).toBe(later)
+  })
+})
+
+// National peak load test 2026-10-26: hundreds of scorers signing in within
+// two minutes; the server's sign-in gate (a few per second for the whole
+// server) answered one in ten with 503 auth_busy, which the app showed as an
+// error the scorer had to tap away and retry by hand.
+describe('apiAuth.signInWithPassword when sign-in is busy', () => {
+  const busy = () => jsonResponse({ data: null, error: { message: 'Sign-in is busy right now. Please try again in a few seconds.', code: 'auth_busy' } }, 503)
+  const ok = () => jsonResponse({ data: { session: { access_token: 'n', user: { id: 'u2' } }, user: { id: 'u2' } }, error: null })
+
+  beforeEach(() => { localStorage.clear(); vi.useFakeTimers() })
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
+
+  it('asks again after 2-4 s, a few times, before showing the error', async () => {
+    const answers = [busy(), busy(), ok()]
+    globalThis.fetch = vi.fn(async () => answers.shift())
+    const pending = apiAuth.signInWithPassword({ email: 'a@b.ch', password: 'x' })
+    await vi.advanceTimersByTimeAsync(1999)
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(10000)
+    const r = await pending
+    expect(globalThis.fetch).toHaveBeenCalledTimes(3)
+    expect(r.error).toBeNull()
+    expect(JSON.parse(localStorage.getItem('api_auth_token')).access_token).toBe('n')
+  })
+
+  it('gives up after three more tries; other refusals are never retried', async () => {
+    globalThis.fetch = vi.fn(async () => busy())
+    const pending = apiAuth.signInWithPassword({ email: 'a@b.ch', password: 'x' })
+    await vi.advanceTimersByTimeAsync(30000)
+    const r = await pending
+    expect(globalThis.fetch).toHaveBeenCalledTimes(4)
+    expect(r.error.code).toBe('auth_busy')
+    expect(r.status).toBe(503)
+
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: null, error: { message: 'Invalid login credentials' } }, 400))
+    const wrong = await apiAuth.signInWithPassword({ email: 'a@b.ch', password: 'y' })
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+    expect(wrong.error.message).toBe('Invalid login credentials')
+  })
+})
+
+// Rebuild PDF's Cancel (owner 2026-11-16): the caller's signal aborts the request
+describe('apiRequest signal', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('a cancelled request answers aborted, not a network failure, and the backend is not marked unreachable', async () => {
+    let seen = 0
+    const count = () => { seen++ }
+    // an answer first: whatever an earlier test left marked unreachable is cleared
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { ok: true } }))
+    await apiRequest('GET', '/api/x')
+    window.addEventListener(BACKEND_REACHED_EVENT, count)
+    try {
+      const ctrl = new AbortController()
+      globalThis.fetch = vi.fn((_url, init) => new Promise((_resolve, reject) => {
+        init.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+      }))
+      const pending = apiRequest('POST', '/api/scoresheets/m/rebuild', { reason: 'x' }, { signal: ctrl.signal })
+      ctrl.abort()
+      const res = await pending
+      expect(res.error).toMatchObject({ aborted: true })
+      expect(res.error.network).toBeUndefined()
+      // the next answer is not a "backend reached again" (nothing was marked unreachable)
+      globalThis.fetch = vi.fn(async () => jsonResponse({ data: { ok: true } }))
+      await apiRequest('GET', '/api/x')
+      expect(seen).toBe(0)
+      // already aborted: no request at all
+      const done = new AbortController()
+      done.abort()
+      globalThis.fetch = vi.fn()
+      expect((await apiRequest('GET', '/api/x', undefined, { signal: done.signal })).error).toMatchObject({ aborted: true })
+      expect(globalThis.fetch).not.toHaveBeenCalled()
+    } finally {
+      window.removeEventListener(BACKEND_REACHED_EVENT, count)
+    }
+  })
+})

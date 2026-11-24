@@ -1,0 +1,6 @@
+OpenVolley 3.4.2
+- Set 1 always proposes the scheduled start time; another time needs a reason.
+- Match setup: optional 10-minute interval after set 2 (the next start time and the break countdown follow it).
+- Signed out, "New match" starts a match in the Swiss format without an account; signed in, it is "SV match".
+- The referee directory is only for scorers: "Database" in Match setup only in official matches.
+- Privacy policy 1.20.

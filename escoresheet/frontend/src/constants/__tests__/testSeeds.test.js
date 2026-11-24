@@ -1,0 +1,106 @@
+import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { TEST_MATCH_SEED_KEY, newTestMatchSeedKey, isTestMatchSeedKey, testMatchSeedKeyFor, getTestHomeTeamShortName, getTestAwayTeamShortName, getTestTeamByExternalId, TEST_HOME_TEAM_EXTERNAL_ID, TEST_AWAY_TEAM_EXTERNAL_ID, TEST_TEAM_SEED_DATA, TEST_HOME_BENCH, TEST_AWAY_BENCH, seedTeamPatch } from '../testSeeds'
+import { playerOfficialLinks } from '../../domain/playerOfficials'
+import { relayMatchKey } from '../../utils/serverDataSync'
+import { SHORT_NAME_MAX, cleanShortName } from '../../domain/teamIdentity'
+import { teamShortLabels } from '../../utils/teamShortLabels'
+
+// A test (rehearsal) match publishes its live state to the venue relay and
+// shows in its match list: its seed key is its relay room, so two scorers
+// rehearsing on one relay need two keys.
+describe('test match seed key', () => {
+  const DEVICE_KEY = `${TEST_MATCH_SEED_KEY}-${'0a1b2c'.repeat(2)}`
+  it('is per device: test-match-default-<random>', () => {
+    const a = newTestMatchSeedKey()
+    const b = newTestMatchSeedKey()
+    expect(a).toMatch(/^test-match-default-[0-9a-f]{12}$/)
+    expect(a).not.toBe(b)
+    expect(relayMatchKey({ id: 1, seedKey: a })).toBe(a)
+  })
+
+  it('tells a test match key from any other', () => {
+    for (const k of [TEST_MATCH_SEED_KEY, DEVICE_KEY]) expect(isTestMatchSeedKey(k)).toBe(true)
+    for (const k of ['match_1791223004296_b2mej1', 'test-team-alpha', 'test-match-defaultx', '', null, undefined]) expect(isTestMatchSeedKey(k)).toBe(false)
+  })
+
+  it('a device keeps its own key across restarts; the shared legacy key (or none) gets a new one', () => {
+    expect(testMatchSeedKeyFor(DEVICE_KEY)).toBe(DEVICE_KEY)
+    for (const k of [TEST_MATCH_SEED_KEY, undefined, null, 'match_1']) {
+      const next = testMatchSeedKeyFor(k)
+      expect(next).not.toBe(TEST_MATCH_SEED_KEY)
+      expect(isTestMatchSeedKey(next)).toBe(true)
+    }
+  })
+
+  it('App.jsx no longer gives every test match the shared key', () => {
+    const app = readFileSync(resolve(__dirname, '../../App.jsx'), 'utf8')
+    expect(app).not.toMatch(/seedKey: TEST_MATCH_SEED_KEY/)
+    expect(app).toMatch(/const testSeedKey = testMatchSeedKeyFor\(existingMatch\?\.seedKey\)/)
+    expect(app).toMatch(/seedKey: testSeedKey,/)
+  })
+})
+
+// The server test match names its teams by these external ids: they must find
+// the seed teams, or the sheet and the PDF's file name said HOME / AWAY.
+describe('test team seeds', () => {
+  it('the external ids find the seed teams and their short names', () => {
+    expect(getTestHomeTeamShortName()).not.toBe('HOME')
+    expect(getTestAwayTeamShortName()).not.toBe('AWAY')
+    expect(getTestTeamByExternalId(TEST_HOME_TEAM_EXTERNAL_ID)?.players.length).toBeGreaterThan(6)
+    expect(getTestTeamByExternalId(TEST_AWAY_TEAM_EXTERNAL_ID)?.players.length).toBeGreaterThan(6)
+    expect(getTestTeamByExternalId('test-team-home')).toBe(getTestTeamByExternalId(TEST_HOME_TEAM_EXTERNAL_ID))
+  })
+})
+
+// Owner 2026-11-20: made-up clubs only (they were "VBC Zürich" and a real
+// club); a device seeded with the teams of before takes the new names
+describe('test team names', () => {
+  it('are made-up clubs with short names as Match Setup stores them, and two different labels', () => {
+    const [home, away] = TEST_TEAM_SEED_DATA
+    expect([home.name, home.shortName, away.name, away.shortName]).toEqual(['VBC Musterau', 'MUS', 'VC Beispielstadt', 'BSP'])
+    for (const team of TEST_TEAM_SEED_DATA) {
+      expect(team.name).not.toMatch(/Zürich|Luzern/i)
+      expect(team.shortName.length).toBeLessThanOrEqual(SHORT_NAME_MAX)
+      expect(cleanShortName(team.shortName)).toBe(team.shortName)
+    }
+    expect(teamShortLabels({ shortName: home.shortName, name: home.name }, { shortName: away.shortName, name: away.name })).toEqual(['MUS', 'BSP'])
+    // the colours stay (DictateApp.jsx and the dictation videos show them)
+    expect([home.color, away.color]).toEqual(['#3b82f6', '#dc2626'])
+  })
+
+  it('a stored seed team of before takes the name and short name of its definition, never another colour', () => {
+    const [home, away] = TEST_TEAM_SEED_DATA
+    expect(seedTeamPatch({ id: 1, seedKey: home.seedKey, name: 'VBC Zürich', shortName: 'ZÜRICH', color: '#3b82f6' }, home)).toEqual({ name: 'VBC Musterau', shortName: 'MUS' })
+    expect(seedTeamPatch({ id: 2, seedKey: away.seedKey, name: 'Volley Luzern', shortName: 'LUZERN', color: '#16a34a' }, away)).toEqual({ name: 'VC Beispielstadt', shortName: 'BSP' })
+    expect(seedTeamPatch({ id: 2, name: 'VC Beispielstadt', shortName: 'LUZERN' }, away)).toEqual({ shortName: 'BSP' })
+    expect(seedTeamPatch({ id: 1, name: 'VBC Musterau', shortName: 'MUS', color: '#000000' }, home)).toBeNull()
+    expect(seedTeamPatch(null, home)).toBeNull()
+  })
+})
+
+// A test match's teams wear preset shirts, so the colour picker opens on
+// their tile and not on Custom (the away team was #ef4444 once, no preset)
+describe('test team colours', () => {
+  it('are presets', async () => {
+    const { TEST_TEAM_SEED_DATA } = await import('../testSeeds')
+    const { presetColour } = await import('../../utils/teamColours')
+    for (const team of TEST_TEAM_SEED_DATA) expect(presetColour(team.color), team.name).toBeTruthy()
+    const app = readFileSync(resolve(__dirname, '../../App.jsx'), 'utf8')
+    expect(app).not.toMatch(/awayTeamData\?\.color \|\| '#ef4444'/)
+  })
+})
+
+// Owner 2026-11-22: a default test match links no official to a player (a
+// playing coach is made by hand, "Plays as"); the assistant coach 2 and the
+// medic of the home bench had captain #1's licence
+describe('test benches', () => {
+  it('no official shares a licence with a player of either test team', () => {
+    const [home, away] = TEST_TEAM_SEED_DATA
+    expect(playerOfficialLinks(TEST_HOME_BENCH, home.players)).toEqual([])
+    expect(playerOfficialLinks(TEST_AWAY_BENCH, away.players)).toEqual([])
+    const playerLicences = new Set(TEST_TEAM_SEED_DATA.flatMap(t => t.players.map(p => p.dob)))
+    for (const o of [...TEST_HOME_BENCH, ...TEST_AWAY_BENCH]) expect(playerLicences.has(o.dob)).toBe(false)
+  })
+})

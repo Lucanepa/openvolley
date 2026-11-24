@@ -1,0 +1,20 @@
+# Installed by host-prep.sh. Nightly: database dump plus storage snapshot
+# (all of scoresheets/ + backup/ files changed in the last ~26 h).
+[Unit]
+Description=OpenVolley nightly backup with storage snapshot
+Documentation=file:///opt/openvolley/README.md
+Wants=docker.service
+After=docker.service
+ConditionPathExists=/etc/openvolley/backup.conf
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/backup-openvolley.sh --with-files
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=2h
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=read-only

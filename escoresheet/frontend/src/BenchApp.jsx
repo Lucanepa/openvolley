@@ -1,0 +1,1143 @@
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
+import { validatePin, validatePinSupabase, listAvailableMatches, getWebSocketStatus, listAvailableMatchesForBenchSupabase, getMatchData, matchTeamNames, setRelayDevice, getRelayServerStatus, isOtherGame } from './utils/serverDataSync'
+import { benchJoinableMatches } from './utils/relayMatchList'
+import MatchEntry from './components/MatchEntry'
+import { useUprightLock } from './components/referee/upright.js'
+import DashboardHeader from './components/DashboardHeader'
+import ContextualHelpPanel from './components/help/ContextualHelpPanel'
+import UpdateBanner from './components/UpdateBanner'
+import ServerConnectionScreen from './components/ServerConnectionScreen'
+import { applyServerParam, isServedFromLocalServer } from './utils/backendConfig'
+import { loadMatchList } from './utils/matchListSource'
+import { setDiagnosticsInfo } from './utils/diagnosticsInfo'
+import ballFallback from './ball_fallback.png'
+
+// Primary ball image (with a bundled copy as fallback)
+// The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
+// stay cached (old green ball) after an update
+const ballImage = ballFallback
+import { supabase } from './lib/supabaseClient'
+import { apiFrom } from './lib/apiClient'
+import { CalendarX2, ChevronRight, Loader2, RefreshCw } from 'lucide-react'
+import { Button } from './ui/Button.jsx'
+import { IconButton } from './ui/IconButton.jsx'
+import TestMatchesSwitch from './components/TestMatchesSwitch.jsx'
+import { FormError } from './ui/Field.jsx'
+import { EmptyState } from './ui/EmptyState.jsx'
+import { RowList } from './ui/Row.jsx'
+import { ListLoading, SkeletonRows } from './ui/Skeleton.jsx'
+import { EntryPage, EntryCard, PinInput, ListLabel, GameRow, NarrowScreenOverlay } from './components/dashboards/EntryKit.jsx'
+
+// Connection modes
+const CONNECTION_MODES = {
+  AUTO: 'auto',
+  SUPABASE: 'supabase',
+  WEBSOCKET: 'websocket'
+}
+
+// The connected bench survives a reload (like the referee's refereeMatchId /
+// refereePin): { matchId, team, pin, gameNumber, homeTeamName, awayTeamName }.
+// Re-validated against the server on load.
+const BENCH_SESSION_KEY = 'bench_session'
+// A stored session no server could check yet is checked again this often
+const BENCH_RESTORE_RETRY_MS = 5000
+// After an outage, how long a refusal of the stored session is not believed
+// yet: a backend or venue relay that has just restarted knows a match that is
+// only on the relay (a test match, a hall without internet) once its scorer
+// publishes it again, up to a minute later (the scorer's longest reconnect
+// step), and until then answers 404 like for a wrong PIN
+export const BENCH_RESTORE_GRACE_MS = 2 * 60 * 1000
+
+/**
+ * Keep a stored bench session the servers refused (keep checking it): only
+ * when this restore waited through an outage (`sawNoAnswer`) and the first
+ * refusal since is less than BENCH_RESTORE_GRACE_MS old. Without an outage a
+ * refusal is a wrong PIN, a match that ended or a bench switched off, at once.
+ */
+export function keepRefusedBenchSession({ sawNoAnswer, firstRefusalAt, now = Date.now() }) {
+  return sawNoAnswer && firstRefusalAt != null && now - firstRefusalAt < BENCH_RESTORE_GRACE_MS
+}
+
+export function readBenchSession() {
+  try {
+    const raw = localStorage.getItem(BENCH_SESSION_KEY)
+    const s = raw ? JSON.parse(raw) : null
+    if (!s || !s.matchId || (s.team !== 'home' && s.team !== 'away') || !/^\d{6}$/.test(String(s.pin || ''))) return null
+    return s
+  } catch {
+    return null
+  }
+}
+
+function writeBenchSession(session) {
+  try {
+    if (session) localStorage.setItem(BENCH_SESSION_KEY, JSON.stringify(session))
+    else localStorage.removeItem(BENCH_SESSION_KEY)
+  } catch { /* storage unavailable: the bench just asks again after a reload */ }
+}
+
+// A server's answer that it compared the PIN and refused it: a wrong PIN, a
+// match that ended or a bench switched off (4xx, 404 from both). Not 429 (too
+// many wrong PINs: nothing compared), and not a network error, a time-out or a
+// server error (5xx).
+const isRefusal = (status) => status >= 400 && status < 500 && status !== 429
+
+/**
+ * Validate a bench PIN server-side: the backend's database check (cloud) and
+ * the LAN relay, in the order the connection mode / match source suggests. The
+ * cloud check is skipped in WebSocket mode and gives up after 3 s, so an
+ * offline venue never waits. matchExternalId (a stored session's match): the
+ * backend checks the PIN against that match only, apart from other tablets'
+ * typos behind the same venue address. A failed result says rateLimited: true
+ * when a server refused to compare (too many wrong PINs from this address),
+ * and noAnswer: true when no server compared it at all: none answered (down,
+ * offline, timed out), or the backend failed (5xx), where the relay not
+ * knowing the match says nothing either (it is that backend's relay in the
+ * cloud). A stored session is kept then: only a refusal is a wrong PIN.
+ * The relay is asked for matchExternalId too (else for `gameNumber`, the game
+ * picked), and its answer for another match is refused: a relay that
+ * compared the PIN with every match it holds opened another hall's match
+ * whose bench PIN was the same. Without matchExternalId (a numeric LAN id,
+ * no link) an answer, cloud or relay, for another game number than
+ * `gameNumber` is refused too (isOtherGame). A relay that finds the PIN in
+ * more than one match and was not told which says ambiguous: true.
+ */
+export async function validateBenchPin(pin, team, { connectionMode = CONNECTION_MODES.AUTO, preferLan = false, matchExternalId, gameNumber = null } = {}) {
+  const pinType = team === 'home' ? 'homeTeam' : 'awayTeam'
+  let rateLimited = false
+  let ambiguous = false
+  let cloudRefused = false
+  let cloudFailed = false
+  let lanRefused = false
+  const checkSupabase = async () => {
+    const type = team === 'home' ? 'bench_home' : 'bench_away'
+    // Only a game number picked: the cloud check names the one cloud match
+    // the picker listed under it, if any (serverDataSync listedMatchKey, SEC-06)
+    const r = matchExternalId
+      ? await validatePinSupabase(pin, type, { matchExternalId })
+      : (gameNumber != null && gameNumber !== '' ? await validatePinSupabase(pin, type, { gameNumber: String(gameNumber) }) : await validatePinSupabase(pin, type))
+    if (r?.rateLimited) rateLimited = true
+    if (isRefusal(r?.status) || (r?.status >= 200 && r?.status < 300 && !r.success)) cloudRefused = true
+    if (r?.status >= 500) cloudFailed = true
+    if (!r.success || !r.match) return r
+    if (!matchExternalId && isOtherGame(r.match, gameNumber)) {
+      cloudRefused = true
+      return { success: false, error: 'Invalid PIN code' }
+    }
+    // The server only accepts a bench PIN while that bench is enabled; older
+    // backends don't echo the flag, which would trip the disconnect check.
+    const flag = team === 'home' ? 'homeTeamConnectionEnabled' : 'awayTeamConnectionEnabled'
+    return r.match[flag] === undefined ? { ...r, match: { ...r.match, [flag]: true } } : r
+  }
+  const named = matchExternalId ? { matchId: String(matchExternalId) } : (gameNumber != null && gameNumber !== '' ? { gameNumber: String(gameNumber) } : {})
+  const checkLan = () => validatePin(pin, pinType, named).then((r) => {
+    if (r?.success && r.match && (matchExternalId ? String(r.match.id) !== String(matchExternalId) : isOtherGame(r.match, gameNumber))) {
+      lanRefused = true
+      return { success: false }
+    }
+    if (!r?.success) lanRefused = true
+    return r
+  }, (err) => {
+    if (err?.status === 429) rateLimited = true
+    if (err?.status === 409) ambiguous = true
+    if (isRefusal(err?.status)) lanRefused = true
+    return { success: false, error: err.message }
+  })
+  const ok = (r) => r?.success && r.match
+  let result
+  if (connectionMode === CONNECTION_MODES.WEBSOCKET) {
+    result = await checkLan()
+  } else if (preferLan) {
+    result = await checkLan()
+    if (!ok(result) && connectionMode === CONNECTION_MODES.AUTO) result = await checkSupabase()
+  } else {
+    result = await checkSupabase()
+    if (!ok(result)) result = await checkLan()
+  }
+  if (ok(result)) return result
+  if (rateLimited) return { ...result, success: false, rateLimited: true }
+  if (ambiguous) return { ...result, success: false, ambiguous: true }
+  const refused = cloudRefused || (lanRefused && !cloudFailed)
+  return refused ? result : { ...result, success: false, noAnswer: true }
+}
+
+/** "Game 12", or undefined while the game number is unknown (never "Game null"). */
+export function benchGameLabel(t, gameNumber) {
+  if (gameNumber == null || gameNumber === '') return undefined
+  return `${t('benchDashboard.game')} ${gameNumber}`
+}
+
+export default function BenchApp() {
+  const { t, i18n } = useTranslation()
+  // Bench tablets are upright (owner 2026-11-09): locked to portrait where
+  // the platform allows it, as the referee's (the Android app natively; a
+  // browser only installed or in fullscreen), free again when left
+  useUprightLock()
+  const [serverReady, setServerReady] = useState(isServedFromLocalServer())
+  const [autoConnectMatch, setAutoConnectMatch] = useState(null)
+  const [autoConnectTeam, setAutoConnectTeam] = useState(null)
+  const [restoringSession, setRestoringSession] = useState(false)
+  const [availableMatches, setAvailableMatches] = useState([])
+  const [showTest, setShowTest] = useState(false) // "Switch to test matches"
+  // true from the start: the list is read on mount, and a first paint of
+  // "No active games" turned into the list a moment later (owner 2026-11-11:
+  // "loads something, stops, loads it again")
+  const [loadingMatches, setLoadingMatches] = useState(true)
+  // the first answer came (later loads show skeleton rows, the first the spinner)
+  const [matchesLoadedOnce, setMatchesLoadedOnce] = useState(false)
+  const [selectedMatch, setSelectedMatch] = useState(null) // The selected match object
+  const [selectedTeam, setSelectedTeam] = useState(null) // 'home' or 'away'
+  const [pinInput, setPinInput] = useState('')
+  // The "?" of every bench page: the panel with the bench's help
+  const [helpOpen, setHelpOpen] = useState(false)
+  const [matchId, setMatchId] = useState(null)
+  const [error, setError] = useState('')
+  const [view, setView] = useState(null) // 'roster' or 'match'
+  const [match, setMatch] = useState(null)
+  const wakeLockRef = useRef(null)
+  const noSleepVideoRef = useRef(null)
+  const [wakeLockActive, setWakeLockActive] = useState(false)
+  const [testModeClicks, setTestModeClicks] = useState(0)
+  const testModeTimeoutRef = useRef(null)
+  const [connectionStatuses, setConnectionStatuses] = useState({
+    server: 'disconnected',
+    websocket: 'disconnected',
+    supabase: 'disconnected'
+  })
+  const [connectionDebugInfo, setConnectionDebugInfo] = useState({})
+  const [connectionMode, setConnectionMode] = useState(() => {
+    try {
+      return localStorage.getItem('bench_connection_mode') || CONNECTION_MODES.AUTO
+    } catch { return CONNECTION_MODES.AUTO }
+  })
+  const [activeConnection, setActiveConnection] = useState(null) // 'supabase' | 'websocket'
+  const supabaseChannelRef = useRef(null)
+  const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 400)
+  const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 700)
+
+  // The support diagnostics (utils/diagnosticsInfo): this bench's connection
+  useEffect(() => {
+    setDiagnosticsInfo('bench', {
+      view,
+      matchId: matchId == null ? null : String(matchId),
+      team: selectedTeam,
+      connectionMode,
+      activeConnection,
+      connections: connectionStatuses,
+      serverReady,
+      error: error ? String(error).slice(0, 200) : null
+    })
+  }, [view, matchId, selectedTeam, connectionMode, activeConnection, connectionStatuses, serverReady, error])
+
+  // Check URL params for auto-connect on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const matchParam = params.get('match')
+    const serverParam = params.get('server')
+    const teamParam = params.get('team')
+
+    // A link naming another server than this page's: the connection screen
+    // asks first, naming it (also on a page a venue relay serves); the link
+    // or the stored session goes on once it is answered
+    const askServer = serverParam ? applyServerParam(serverParam) === 'ask' : false
+
+    // A bench that joined through a link (QR code) still has ?match=&team= in
+    // its address after a reload: nothing removes them, and the app's own
+    // reloads keep the query on purpose. Its stored session for that match
+    // and team is restored as on a plain /bench/; it used to ask for the PIN
+    // again after every reload. The link's PIN step is for a tablet that has
+    // not joined that match yet.
+    const session = readBenchSession()
+    const joinedThisLink = !!(matchParam && session && String(session.matchId) === matchParam && (!teamParam || teamParam === session.team))
+    if (matchParam && !joinedThisLink) {
+      setAutoConnectMatch(matchParam)
+      if (teamParam === 'home' || teamParam === 'away') {
+        setAutoConnectTeam(teamParam)
+      }
+      setServerReady(true)
+    } else if (session) {
+      // Reconnect a bench that was connected before the reload
+      setRestoringSession(true)
+      setServerReady(true)
+    }
+    if (askServer) setServerReady(false)
+  }, [])
+
+  // Restore the stored bench session: same PIN check as a fresh connect.
+  // Only a refusal (a wrong PIN, the match ended, the bench switched off)
+  // drops it. When no server compared the PIN (down, offline, timed out, a
+  // server error) the session stays and is checked again every
+  // BENCH_RESTORE_RETRY_MS until a server answers: a bench reloading during an
+  // outage deleted it and asked for the PIN, also once the server was back.
+  // After such an outage a refusal waits BENCH_RESTORE_GRACE_MS for the scorer
+  // to publish the match again (keepRefusedBenchSession).
+  useEffect(() => {
+    // (after a link's server question, against the server chosen there)
+    if (!restoringSession || !serverReady) return
+    if (!readBenchSession()) {
+      setRestoringSession(false)
+      return
+    }
+    let cancelled = false
+    let retry = null
+    let sawNoAnswer = false
+    let firstRefusalAt = null
+    const check = async () => {
+      // (the stored session, again at each retry: a PIN typed meanwhile wins)
+      const session = readBenchSession()
+      if (!session) {
+        setRestoringSession(false)
+        return
+      }
+      let again = false
+      try {
+        const result = await validateBenchPin(session.pin, session.team, { connectionMode, matchExternalId: session.matchId })
+        if (cancelled) return
+        if (result?.success && result.match && String(result.match.id) === String(session.matchId)) {
+          const names = matchTeamNames(result.match)
+          setSelectedMatch({
+            id: result.match.id,
+            gameNumber: result.match.gameNumber || session.gameNumber,
+            homeTeamName: names.home || session.homeTeamName,
+            awayTeamName: names.away || session.awayTeamName
+          })
+          setSelectedTeam(session.team)
+          setRelayDevice('bench', session.team)
+          setMatchId(result.match.id)
+          setMatch(result.match)
+          setError('')
+          setView('match')
+        } else if (result?.rateLimited) {
+          // Refused without comparing (too many wrong PINs from this
+          // network): keep the session for the next load
+          setError(t('benchDashboard.tooManyAttempts', 'Too many wrong PINs from this network. Wait a few minutes, then try again.'))
+        } else if (result?.noAnswer) {
+          // Nothing compared: keep the session, check again shortly
+          setError(t('benchDashboard.reconnecting', 'No connection to the server. The bench reconnects to its match as soon as it is back.'))
+          sawNoAnswer = true
+          firstRefusalAt = null
+          again = true
+        } else if (keepRefusedBenchSession({ sawNoAnswer, firstRefusalAt: (firstRefusalAt ??= Date.now()) })) {
+          // Refused right after an outage: the relay may not know the match
+          // again yet (its scorer reconnects after it), check again shortly
+          setError(t('benchDashboard.waitingForScoresheet', 'The server is back. The bench rejoins its match as soon as the scoresheet has reconnected.'))
+          again = true
+        } else {
+          writeBenchSession(null)
+          setError('')
+          // Opened through the match's link: its PIN step, match preselected
+          const params = new URLSearchParams(window.location.search)
+          if (params.get('match')) {
+            setAutoConnectMatch(params.get('match'))
+            const teamParam = params.get('team')
+            if (teamParam === 'home' || teamParam === 'away') setAutoConnectTeam(teamParam)
+          }
+        }
+      } catch {
+        // Server unreachable right now: keep the session, check again shortly
+        sawNoAnswer = true
+        firstRefusalAt = null
+        again = !cancelled
+      }
+      if (cancelled) return
+      if (again) retry = setTimeout(check, BENCH_RESTORE_RETRY_MS)
+      else setRestoringSession(false)
+    }
+    check()
+    return () => {
+      cancelled = true
+      if (retry) clearTimeout(retry)
+    }
+  }, [restoringSession, serverReady, connectionMode])
+
+  // Auto-connect to match from URL params
+  useEffect(() => {
+    if (!autoConnectMatch || !serverReady) return
+
+    // A match link (QR code) preselects the match and, with team=, the team:
+    // the bench still enters its PIN (the link alone is no access, and the PIN
+    // check returns the match with its connection flags).
+    const doAutoConnect = async () => {
+      let linked = { id: autoConnectMatch, gameNumber: null }
+      try {
+        const result = await getMatchData(autoConnectMatch)
+        if (result.success && result.match) {
+          const names = matchTeamNames(result.match, { homeTeam: result.homeTeam, awayTeam: result.awayTeam })
+          linked = {
+            // The link's seed key: the relay copy's match.id is the scorer's
+            // Dexie id, which is no match key (every device's first match is 1)
+            id: autoConnectMatch,
+            gameNumber: result.match.gameNumber || result.match.gameN || result.match.game_n || null,
+            homeTeamName: names.home,
+            awayTeamName: names.away
+          }
+        }
+      } catch { /* the PIN step still works without the details */ }
+      setSelectedMatch(linked)
+      if (autoConnectTeam) setSelectedTeam(autoConnectTeam)
+      setAutoConnectMatch(null)
+      setAutoConnectTeam(null)
+    }
+    doAutoConnect()
+  }, [autoConnectMatch, autoConnectTeam, serverReady])
+
+  // Handle server connection established
+  const handleServerConnected = useCallback(() => {
+    setServerReady(true)
+  }, [])
+
+  // Track viewport size for narrow screen blocking
+  useEffect(() => {
+    const handleResize = () => {
+      setViewportWidth(window.innerWidth)
+      setViewportHeight(window.innerHeight)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  // Preload assets that are used later (e.g., volleyball image)
+  useEffect(() => {
+    const assetsToPreload = [
+      ballFallback
+    ]
+
+    assetsToPreload.forEach(src => {
+      const img = new Image()
+      img.src = src
+    })
+  }, [])
+
+  // Request wake lock to prevent screen from sleeping
+  useEffect(() => {
+    const createNoSleepVideo = () => {
+      if (noSleepVideoRef.current) return
+      const mp4 = 'data:video/mp4;base64,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'
+      const video = document.createElement('video')
+      video.setAttribute('playsinline', '')
+      video.setAttribute('muted', '')
+      video.setAttribute('loop', '')
+      video.setAttribute('src', mp4)
+      video.style.position = 'fixed'
+      video.style.top = '-9999px'
+      video.style.left = '-9999px'
+      video.style.width = '1px'
+      video.style.height = '1px'
+      document.body.appendChild(video)
+      noSleepVideoRef.current = video
+      return video
+    }
+    
+    const enableNoSleep = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          if (wakeLockRef.current) {
+            try { await wakeLockRef.current.release() } catch (e) {}
+          }
+          wakeLockRef.current = await navigator.wakeLock.request('screen')
+          setWakeLockActive(true)
+          wakeLockRef.current.addEventListener('release', () => {
+            if (!wakeLockRef.current) {
+              setWakeLockActive(false)
+            }
+          })
+        }
+      } catch (err) {
+        // WakeLock failed, ignore
+      }
+
+      try {
+        const video = createNoSleepVideo()
+        if (video) {
+          await video.play()
+        }
+      } catch (err) {
+        // NoSleep video failed, ignore
+      }
+    }
+
+    const handleInteraction = () => {
+      enableNoSleep()
+      document.removeEventListener('click', handleInteraction)
+      document.removeEventListener('touchstart', handleInteraction)
+    }
+    
+    enableNoSleep()
+    document.addEventListener('click', handleInteraction, { once: true })
+    document.addEventListener('touchstart', handleInteraction, { once: true })
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        enableNoSleep()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      document.removeEventListener('click', handleInteraction)
+      document.removeEventListener('touchstart', handleInteraction)
+      if (wakeLockRef.current) {
+        wakeLockRef.current.release()
+        wakeLockRef.current = null
+      }
+      if (noSleepVideoRef.current) {
+        noSleepVideoRef.current.pause()
+        noSleepVideoRef.current.remove()
+        noSleepVideoRef.current = null
+      }
+    }
+  }, [])
+
+  // Toggle wake lock manually
+  const toggleWakeLock = useCallback(async () => {
+    if (wakeLockActive) {
+      // Disable wake lock
+      if (wakeLockRef.current) {
+        try {
+          await wakeLockRef.current.release()
+          wakeLockRef.current = null
+        } catch (e) {}
+      }
+      if (noSleepVideoRef.current) {
+        noSleepVideoRef.current.pause()
+      }
+      setWakeLockActive(false)
+      console.log('[WakeLock] Manually disabled')
+    } else {
+      // Enable wake lock
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLockRef.current = await navigator.wakeLock.request('screen')
+          setWakeLockActive(true)
+          console.log('[WakeLock] Manually enabled')
+        }
+        if (noSleepVideoRef.current) {
+          await noSleepVideoRef.current.play()
+        }
+      } catch (err) {
+        console.log('[WakeLock] Failed to enable:', err.message)
+        setWakeLockActive(true) // Visual feedback even if API failed
+      }
+    }
+  }, [wakeLockActive])
+
+  // Load available matches function - extracted so it can be called manually
+  const loadMatches = useCallback(async () => {
+    setLoadingMatches(true)
+    try {
+      // Try Supabase first if in AUTO or SUPABASE mode
+      const useSupabase = connectionMode === CONNECTION_MODES.SUPABASE ||
+        connectionMode === CONNECTION_MODES.AUTO
+
+      // Cloud first, relay as fallback; on a page served by a local relay
+      // (venue tablet, desktop app) the relay first, so a cloud that hangs
+      // without an internet uplink never holds up the list.
+      const { result, source, cloud } = await loadMatchList({
+        listCloud: listAvailableMatchesForBenchSupabase,
+        // The relay lists every published match (display devices pick theirs
+        // there): offer only those with a bench connection on.
+        listRelay: async () => {
+          const r = await listAvailableMatches({ test: showTest })
+          return r?.success ? { ...r, matches: benchJoinableMatches(r.matches, Date.now(), { test: showTest }) } : r
+        },
+        relayFirst: isServedFromLocalServer(),
+        useCloud: useSupabase && !showTest // rehearsal matches live in the relay only
+      })
+      if (cloud) {
+        // the cloud is connected even if it has no matches
+        setConnectionStatuses(prev => ({ ...prev, supabase: cloud.success ? 'connected' : 'disconnected' }))
+      }
+      if (result.success && result.matches) {
+        setAvailableMatches(result.matches)
+        setActiveConnection(source)
+      }
+    } catch (err) {
+      console.error('[Bench] Error loading matches:', err)
+    } finally {
+      setLoadingMatches(false)
+      setMatchesLoadedOnce(true)
+    }
+  }, [connectionMode, showTest])
+
+  // Load available matches on mount only (no auto-polling — use manual refresh button)
+  useEffect(() => {
+    loadMatches()
+  }, [loadMatches])
+
+  // Check connection status periodically
+  useEffect(() => {
+    // Check if we're on a static deployment (GitHub Pages, Cloudflare Pages, etc.)
+    // Static deployments don't have a backend server - they rely on Supabase only
+    const isStaticDeployment = !import.meta.env.DEV && (
+      window.location.hostname.includes('github.io') ||
+      window.location.hostname.endsWith('.openvolley.app') // All openvolley.app subdomains are static
+    )
+    const hasBackendUrl = !!import.meta.env.VITE_BACKEND_URL
+
+    // For static deployments without backend, set server as not_available but check Supabase
+    if (isStaticDeployment && !hasBackendUrl) {
+      const checkSupabaseOnly = async () => {
+        let supabaseConnected = false
+        try {
+          const { error } = await apiFrom('matches').select('id').limit(1)
+          supabaseConnected = !error
+        } catch {
+          supabaseConnected = false
+        }
+        setConnectionStatuses(prev => ({
+          ...prev,
+          server: 'not_available',
+          websocket: 'not_available',
+          supabase: supabaseConnected ? 'connected' : 'disconnected'
+        }))
+      }
+      setConnectionDebugInfo({
+        server: {
+          status: 'not_available',
+          message: 'Static deployment - using Supabase only',
+          details: 'Real-time WebSocket updates are not available. Match data is loaded from Supabase database.'
+        }
+      })
+      checkSupabaseOnly()
+      const interval = setInterval(checkSupabaseOnly, 10000)
+      return () => clearInterval(interval)
+    }
+
+    const checkConnections = async () => {
+      try {
+        const serverStatus = await getRelayServerStatus()
+        const wsStatus = matchId ? getWebSocketStatus(matchId) : 'no_match'
+
+        const serverConnected = serverStatus?.running
+
+        // Check Supabase connectivity with a simple query
+        let supabaseConnected = false
+        try {
+          const { error } = await apiFrom('matches').select('id').limit(1)
+          supabaseConnected = !error
+        } catch {
+          supabaseConnected = false
+        }
+
+        setConnectionStatuses(prev => ({
+          ...prev,
+          server: serverConnected ? 'connected' : 'disconnected',
+          websocket: matchId ? wsStatus : 'no_match',
+          supabase: supabaseConnected ? 'connected' : 'disconnected'
+        }))
+
+        // Build debug info for disconnected services
+        const debugInfo = {}
+        if (!serverConnected) {
+          debugInfo.server = {
+            status: 'disconnected',
+            message: 'Cannot reach the scoresheet server',
+            details: 'Make sure the main scoresheet application is running and on the same network.'
+          }
+        }
+        if (matchId && wsStatus !== 'connected' && wsStatus !== 'not_applicable') {
+          debugInfo.websocket = {
+            status: wsStatus,
+            message: wsStatus === 'connecting' ? 'Attempting to connect...' : 'WebSocket connection lost',
+            details: wsStatus === 'disconnected'
+              ? 'Real-time updates are not available. The connection may have been interrupted or the match may have ended.'
+              : wsStatus === 'connecting'
+              ? 'Please wait while we establish a connection to the scoresheet.'
+              : 'Unknown WebSocket state. Try refreshing the page.'
+          }
+        }
+        setConnectionDebugInfo(prev => ({ ...prev, ...debugInfo }))
+      } catch (err) {
+        setConnectionStatuses(prev => ({
+          ...prev, // Preserve supabase status
+          server: 'disconnected',
+          websocket: 'disconnected'
+        }))
+        setConnectionDebugInfo(prev => ({
+          ...prev,
+          server: {
+            status: 'error',
+            message: 'Failed to check server status',
+            details: err.message || 'Network error occurred while checking connection.'
+          }
+        }))
+      }
+    }
+
+    checkConnections()
+    const interval = setInterval(checkConnections, 15000) // Check every 15 seconds
+
+    return () => clearInterval(interval)
+  }, [matchId])
+
+  // Disconnect if connection is disabled
+  useEffect(() => {
+    if (match && selectedTeam) {
+      const connectionEnabled = selectedTeam === 'home'
+        ? match.homeTeamConnectionEnabled === true
+        : match.awayTeamConnectionEnabled === true
+      
+      if (connectionEnabled === false) {
+        writeBenchSession(null)
+        setMatchId(null)
+        setMatch(null)
+        setView(null)
+        setSelectedTeam(null)
+        setPinInput('')
+        setError(t('benchDashboard.connectionDisabled', "The scorer switched this bench's connection off. Ask the scorer to switch it on, then connect again."))
+      }
+    }
+  }, [match, selectedTeam])
+
+  const handleTeamSelect = (team) => {
+    setSelectedTeam(team)
+    setPinInput('')
+    setError('')
+  }
+
+  const handlePinSubmit = async (e) => {
+    e.preventDefault()
+    setError('')
+
+    if (!pinInput || pinInput.length !== 6) {
+      setError(t('benchDashboard.enterSixDigitPin', 'Enter the 6-digit PIN'))
+      return
+    }
+
+    if (!selectedTeam) {
+      setError(t('benchDashboard.selectTeamFirst', 'Select your team first'))
+      return
+    }
+
+    try {
+      // Validate PIN server-side (no local IndexedDB), like RefereeApp: the
+      // backend's Supabase check (the bench lists Supabase matches) and the LAN
+      // relay. LAN first when the user chose WebSocket mode or the match
+      // came from the LAN relay (its row in a merged list, else the list).
+      const pin = pinInput.trim()
+      // Against the match picked (its link or the list): its own brute-force
+      // scope on the backend, apart from the hall's typos for other matches
+      const picked = selectedMatch?.id
+      const result = await validateBenchPin(pin, selectedTeam, {
+        connectionMode,
+        preferLan: (selectedMatch?.listSource || activeConnection) === 'websocket',
+        ...(typeof picked === 'string' && picked ? { matchExternalId: picked } : {}),
+        gameNumber: selectedMatch?.gameNumber ?? null
+      })
+
+      if (result?.success && result.match) {
+        const names = matchTeamNames(result.match)
+        const gameNumber = result.match.gameNumber || selectedMatch?.gameNumber || null
+        setSelectedMatch(prev => ({
+          ...(prev || {}),
+          id: result.match.id,
+          gameNumber,
+          homeTeamName: names.home || prev?.homeTeamName || null,
+          awayTeamName: names.away || prev?.awayTeamName || null
+        }))
+        setRelayDevice('bench', selectedTeam)
+        setMatchId(result.match.id)
+        setMatch(result.match)
+        // (a stored session still waiting for a server is replaced)
+        setRestoringSession(false)
+        writeBenchSession({
+          matchId: result.match.id,
+          team: selectedTeam,
+          pin,
+          gameNumber,
+          homeTeamName: names.home || selectedMatch?.homeTeamName || null,
+          awayTeamName: names.away || selectedMatch?.awayTeamName || null
+        })
+        setView('match') // Go directly to match view (like RefereeApp)
+      } else if (result?.rateLimited) {
+        // Refused without comparing: the PIN may well be right
+        setError(t('benchDashboard.tooManyAttempts', 'Too many wrong PINs from this network. Wait a few minutes, then try again.'))
+      } else if (result?.ambiguous) {
+        // The relay holds more than one match with this PIN: the PIN stays typed
+        setError(t('benchDashboard.pickGame', 'More than one match has this PIN. Pick your game in the list, then enter the PIN again.'))
+      } else if (result?.noAnswer) {
+        // No server compared the PIN (none answered, or the backend failed):
+        // not a wrong PIN, so it stays typed for another try
+        setError(t('benchDashboard.serverUnreachable', 'No connection to the server – check the Wi-Fi and try again.'))
+      } else {
+        setError(t('benchDashboard.invalidPin', 'Invalid PIN. Please try again.'))
+        setPinInput('')
+      }
+    } catch (err) {
+      // The raw error (often the browser's "Failed to fetch") goes to the
+      // console only
+      console.error('[Bench] Error validating PIN:', err)
+      setError(t('benchDashboard.checkFailed', 'The PIN could not be checked. Check the connection and try again.'))
+      setPinInput('')
+    }
+  }
+
+  // Hidden test mode - 6 clicks on "No active game found"
+  const handleTestModeClick = useCallback(() => {
+    if (testModeTimeoutRef.current) {
+      clearTimeout(testModeTimeoutRef.current)
+    }
+
+    setTestModeClicks(prev => {
+      const newCount = prev + 1
+      if (newCount >= 6) {
+        // Create mock test match data
+        const testMatch = {
+          id: -1,
+          gameNumber: 999,
+          homeTeamName: 'Test Home',
+          awayTeamName: 'Test Away',
+          status: 'live'
+        }
+        setSelectedMatch(testMatch)
+        setMatchId(-1)
+        setMatch(testMatch)
+        setSelectedTeam('home')
+        return 0
+      }
+      return newCount
+    })
+
+    // Reset clicks after 2 seconds of no clicking
+    testModeTimeoutRef.current = setTimeout(() => {
+      setTestModeClicks(0)
+    }, 2000)
+  }, [])
+
+  // Handle connection mode change
+  const handleConnectionModeChange = useCallback((mode) => {
+    setConnectionMode(mode)
+    try {
+      localStorage.setItem('bench_connection_mode', mode)
+    } catch (e) {
+      // Ignore localStorage errors
+    }
+    // Force reconnection by clearing states
+    if (supabaseChannelRef.current) {
+      supabase?.removeChannel(supabaseChannelRef.current)
+      supabaseChannelRef.current = null
+    }
+    setActiveConnection(null)
+  }, [connectionMode])
+
+  const handleBack = () => {
+    if (view) {
+      // Leaving the match: no automatic reconnect after a reload
+      writeBenchSession(null)
+      setView(null)
+    } else if (matchId) {
+      setMatchId(null)
+      setPinInput('')
+      setError('')
+    } else if (selectedTeam) {
+      setSelectedTeam(null)
+    } else if (selectedMatch) {
+      setSelectedMatch(null)
+      setError('')
+    }
+  }
+
+  const handleMatchSelect = (matchObj) => {
+    setSelectedMatch(matchObj)
+    setError('')
+  }
+
+  // Get team names from selected match (list entries, PIN check and relay
+  // bundles name them differently)
+  const selectedNames = matchTeamNames(selectedMatch)
+  const homeTeamName = selectedNames.home || 'Home team'
+  const awayTeamName = selectedNames.away || 'Away team'
+
+  // Label this tablet on the relay (scorer's tablet status). Set before the
+  // match view mounts (PIN submit / restore): MatchEntry subscribes in its own
+  // effect, which runs before this component's effects.
+  useEffect(() => {
+    if (!matchId || !selectedTeam) setRelayDevice(null)
+  }, [matchId, selectedTeam])
+
+  // The "?" in every page's header and its panel
+  const toggleHelp = () => setHelpOpen(prev => !prev)
+  const helpPanel = <ContextualHelpPanel open={helpOpen} onClose={() => setHelpOpen(false)} screen="bench" />
+
+  // Show server connection screen first (unless auto-connecting via URL params)
+  if (!serverReady) {
+    return <ServerConnectionScreen onConnected={handleServerConnected} helpScreen="bench" />
+  }
+
+  // If view is selected, show the appropriate component wrapped with SimpleHeader
+  if (matchId && view) {
+    const teamName = selectedTeam === 'home' ? homeTeamName : awayTeamName
+
+    return (
+      <div style={{
+        height: 'var(--ov-vh100, 100vh)',
+        background: 'var(--bg)',
+        color: 'var(--text)',
+        display: 'flex',
+        flexDirection: 'column',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        overflow: 'hidden'
+      }}>
+        <DashboardHeader
+          title={teamName}
+          subtitle={view === 'match' ? `${t('benchDashboard.game')} ${selectedMatch?.gameNumber || matchId}` : teamName}
+          connectionStatuses={connectionStatuses}
+          connectionDebugInfo={connectionDebugInfo}
+          showWakeLock={true}
+          wakeLockActive={wakeLockActive}
+          onToggleWakeLock={toggleWakeLock}
+          connectionMode={connectionMode}
+          activeConnection={activeConnection}
+          onConnectionModeChange={handleConnectionModeChange}
+          onBack={handleBack}
+          backLabel={t('benchDashboard.back')}
+          onHelp={toggleHelp}
+          helpOpen={helpOpen}
+        />
+        {helpPanel}
+
+        <div style={{
+          flex: 1,
+          overflow: 'auto',
+          display: 'flex',
+          flexDirection: 'column'
+        }}>
+          <MatchEntry
+            matchId={matchId}
+            team={selectedTeam}
+            onBack={handleBack}
+            embedded={true}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  // If team is selected, show PIN entry
+  if (selectedTeam) {
+    const teamName = selectedTeam === 'home' ? homeTeamName : awayTeamName
+
+    return (
+      <div style={{
+        minHeight: 'var(--ov-vh100, 100vh)',
+        background: 'var(--bg)',
+        color: 'var(--text)',
+        display: 'flex',
+        flexDirection: 'column',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+      }}>
+        <DashboardHeader
+          title={t('benchDashboard.title')}
+          subtitle={teamName}
+          connectionStatuses={connectionStatuses}
+          connectionDebugInfo={connectionDebugInfo}
+          showWakeLock={true}
+          wakeLockActive={wakeLockActive}
+          onToggleWakeLock={toggleWakeLock}
+          connectionMode={connectionMode}
+          activeConnection={activeConnection}
+          onConnectionModeChange={handleConnectionModeChange}
+          onHelp={toggleHelp}
+          helpOpen={helpOpen}
+        />
+        {helpPanel}
+
+        <EntryPage>
+          <EntryCard
+            art={<img src={ballImage} onError={(e) => e.target.src = ballFallback} alt="Volleyball" className="h-20 w-20" />}
+            title={teamName}
+            subtitle={t('benchDashboard.enterPin')}
+          >
+            <form onSubmit={handlePinSubmit} className="flex flex-col gap-4">
+              <PinInput
+                value={pinInput}
+                onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ''))}
+                placeholder="000000"
+                aria-label={t('benchDashboard.enterPin')}
+                maxLength={6}
+                invalid={!!error}
+              />
+
+              <FormError size="md" className="text-center">{error}</FormError>
+
+              <Button type="submit" size="xl" block>
+                {t('benchDashboard.connect')}
+              </Button>
+            </form>
+
+            <Button variant="ghost" size="xl" block className="mt-3 font-medium" onClick={handleBack}>
+              {t('benchDashboard.back')}
+            </Button>
+          </EntryCard>
+        </EntryPage>
+      </div>
+    )
+  }
+
+  // Team selection (after match is selected)
+  if (selectedMatch && !selectedTeam) {
+    return (
+      <div style={{
+        minHeight: 'var(--ov-vh100, 100vh)',
+        background: 'var(--bg)',
+        color: 'var(--text)',
+        display: 'flex',
+        flexDirection: 'column',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+      }}>
+        <DashboardHeader
+          title={t('benchDashboard.title')}
+          subtitle={benchGameLabel(t, selectedMatch.gameNumber)}
+          connectionStatuses={connectionStatuses}
+          connectionDebugInfo={connectionDebugInfo}
+          showWakeLock={true}
+          wakeLockActive={wakeLockActive}
+          onToggleWakeLock={toggleWakeLock}
+          connectionMode={connectionMode}
+          activeConnection={activeConnection}
+          onConnectionModeChange={handleConnectionModeChange}
+          onHelp={toggleHelp}
+          helpOpen={helpOpen}
+        />
+        {helpPanel}
+
+        <EntryPage>
+          <EntryCard
+            art={<img src={ballImage} onError={(e) => e.target.src = ballFallback} alt="Volleyball" className="h-20 w-20" />}
+            title={t('benchDashboard.selectTeam')}
+            subtitle={benchGameLabel(t, selectedMatch.gameNumber)}
+          >
+            <div className="flex flex-col gap-3">
+              <Button
+                variant="secondary"
+                size="xl"
+                block
+                iconRight={ChevronRight}
+                className="h-auto min-h-14 justify-between py-3 text-left text-base whitespace-normal"
+                onClick={() => handleTeamSelect('home')}
+              >
+                {homeTeamName}
+              </Button>
+              <Button
+                variant="secondary"
+                size="xl"
+                block
+                iconRight={ChevronRight}
+                className="h-auto min-h-14 justify-between py-3 text-left text-base whitespace-normal"
+                onClick={() => handleTeamSelect('away')}
+              >
+                {awayTeamName}
+              </Button>
+            </div>
+
+            <Button variant="ghost" size="xl" block className="mt-6 font-medium" onClick={handleBack}>
+              {t('benchDashboard.back')}
+            </Button>
+          </EntryCard>
+        </EntryPage>
+      </div>
+    )
+  }
+
+  // Initial game selection
+  return (
+    <div style={{
+      minHeight: 'var(--ov-vh100, 100vh)',
+      background: 'var(--bg)',
+      color: 'var(--text)',
+      display: 'flex',
+      flexDirection: 'column',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    }}>
+      {/* Narrow screen blocking overlay */}
+      {viewportWidth < 357 && <NarrowScreenOverlay t={t} />}
+
+      <UpdateBanner />
+
+      <DashboardHeader
+        title={t('benchDashboard.title')}
+        connectionStatuses={connectionStatuses}
+        connectionDebugInfo={connectionDebugInfo}
+        onLoadGames={loadMatches}
+        loadingMatches={loadingMatches}
+        matchCount={availableMatches.length}
+        showWakeLock={true}
+        wakeLockActive={wakeLockActive}
+        onToggleWakeLock={toggleWakeLock}
+        connectionMode={connectionMode}
+        activeConnection={activeConnection}
+        onConnectionModeChange={handleConnectionModeChange}
+        onHelp={toggleHelp}
+        helpOpen={helpOpen}
+      />
+      {helpPanel}
+
+      <EntryPage>
+        <EntryCard
+          width="md"
+          art={<img src={ballImage} onError={(e) => e.target.src = ballFallback} alt="Volleyball" className="h-20 w-20" />}
+          title={t('benchDashboard.title')}
+        >
+        <TestMatchesSwitch showTest={showTest} onChange={setShowTest} />
+        {loadingMatches ? (
+          <div role="status" className="text-left">
+            {matchesLoadedOnce
+              ? <><span className="sr-only">{t('benchDashboard.loadingGames')}</span><SkeletonRows rows={3} pill={false} /></>
+              : <ListLoading first className="py-8" label={t('benchDashboard.loadingGames')} />}
+          </div>
+        ) : availableMatches.length === 0 ? (
+          <div onClick={handleTestModeClick} className="cursor-default select-none">
+            <EmptyState
+              icon={CalendarX2}
+              className="py-6"
+              action={
+                <Button variant="secondary" size="xl" icon={RefreshCw} onClick={loadMatches} disabled={loadingMatches}>
+                  {loadingMatches ? t('common.loading', 'Loading...') : t('benchDashboard.loadGames', 'Load games')}
+                </Button>
+              }
+            >
+              {t('benchDashboard.noActiveGames')}
+            </EmptyState>
+          </div>
+        ) : (
+          <div className="text-left">
+            <ListLabel
+              action={
+                <IconButton
+                  variant="outline"
+                  className="h-11 w-11"
+                  icon={loadingMatches ? <Loader2 size={16} className="animate-spin" aria-hidden /> : RefreshCw}
+                  label={t('benchDashboard.loadGames', 'Load games')}
+                  onClick={loadMatches}
+                  disabled={loadingMatches}
+                />
+              }
+            >
+              {t('benchDashboard.selectGame')}
+            </ListLabel>
+            <RowList soft className="max-h-[300px] overflow-y-auto">
+              {availableMatches.map((m) => (
+                <GameRow
+                  key={m.id}
+                  match={m}
+                  lang={i18n.language}
+                  home={matchTeamNames(m).home || t('common.home')}
+                  away={matchTeamNames(m).away || t('common.away')}
+                  gameLabel={benchGameLabel(t, m.gameNumber)}
+                  onOpen={() => handleMatchSelect(m)}
+                  status={<ChevronRight size={16} className="text-stone-400" aria-hidden />}
+                />
+              ))}
+            </RowList>
+          </div>
+        )}
+
+        <FormError size="md" className="mt-4">{error}</FormError>
+        </EntryCard>
+      </EntryPage>
+    </div>
+  )
+}
+

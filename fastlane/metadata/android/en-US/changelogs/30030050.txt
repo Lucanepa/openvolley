@@ -1,0 +1,5 @@
+OpenVolley 3.3.5
+- After the coin toss: change each team's short name and shirt colour (Match > Edit match info).
+- Live screen: any screen, any match type, from every scorer device.
+- Scoreboard: serve number and names no longer too big on the Point Hub board; menus stay on screen.
+- iPad and iPhone: share the final PDF and ZIP.

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Categories=Utility;Sports;
+{{#if comment}}
+Comment={{comment}}
+{{/if}}
+Exec={{exec}}
+StartupWMClass={{exec}}
+Icon={{icon}}
+Name=OpenBeach
+Terminal=false
+Type=Application

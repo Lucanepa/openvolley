@@ -1,0 +1,5 @@
+OpenVolley 3.0.2
+- A match the server has closed no longer keeps a sync error that Retry cannot clear, and is never reopened on its own: load the official version or remove the copy.
+- Restoring a backup of a closed match is refused before anything changes.
+- Phone: the scoring header lists home – away.
+- The online switch shows a Wi-Fi icon.

@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# Block commits that introduce credentials or personal data.
+#
+# Added 2026-08-13 after a full-history sweep found live keys committed to
+# repos that are public. Disclosure is effectively irreversible: a force-push
+# does not remove the commit, because GitHub keeps unreachable commits
+# addressable by SHA until Support runs GC on the repo. Rotation is the only
+# real remedy, so the only real control is not committing the secret.
+#
+# The same scan blocks personal data from matches (the match-data-* rules in
+# .gitleaks.toml): dates of birth, signature images, contact lists, encrypted
+# backups, and the apps' backup, log and export files by their names. Personal
+# data cannot be rotated at all, so not committing it is the only control
+# there. For clones without this hook (and web uploads), CI runs the same scan
+# on every push and pull request (.github/workflows/leak-scan.yml).
+#
+# Enable in a fresh clone with:  git config core.hooksPath .githooks
+# Nothing sets this automatically (no package.json "prepare" script does it);
+# run the command once per clone. Check with: git config --get core.hooksPath
+#
+# Fails CLOSED when gitleaks is missing: this hook only runs where someone
+# opted in via core.hooksPath, so a silent skip would defeat the point. On a
+# machine without gitleaks (e.g. a venue box), set SKIP_GITLEAKS=1 for that
+# commit; it is printed as a warning, never silent.
+#
+# Needs gitleaks >= 8.25: .gitleaks.toml uses [[allowlists]] targetRules
+# blocks, which older versions refuse to load. core.hooksPath is shared by every
+# worktree of a clone, so every worktree/agent committing here needs it on PATH.
+# A config gitleaks cannot load also blocks (reported separately from a leak).
+#
+# Bypass with --no-verify only if you are certain the match is a placeholder,
+# and add it to the allowlist in .gitleaks.toml so the next commit is clean.
+set -euo pipefail
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  if [[ "${SKIP_GITLEAKS:-}" == "1" ]]; then
+    echo "pre-commit: WARNING — gitleaks not installed and SKIP_GITLEAKS=1: this commit was NOT scanned for secrets." >&2
+    exit 0
+  fi
+  echo "pre-commit: BLOCKED — gitleaks not found on PATH, so staged changes cannot be scanned for secrets." >&2
+  echo "  install: https://github.com/gitleaks/gitleaks/releases (single static binary, works offline)" >&2
+  echo "  or, for this one commit only: SKIP_GITLEAKS=1 git commit ..." >&2
+  exit 1
+fi
+
+# core.hooksPath may be absolute and shared by several worktrees/branches, so
+# resolve the config from the checkout being committed, not the hook's own dir.
+top="$(git rev-parse --show-toplevel)"
+# A distinct exit code for "leaks found", so a crash or an unloadable config
+# (gitleaks exits 1 or 2 for those) is reported as such instead of as a leak.
+LEAKS_FOUND=42
+args=(--redact --no-banner --exit-code "$LEAKS_FOUND")
+if [[ -f "$top/.gitleaks.toml" ]]; then
+  args+=(--config "$top/.gitleaks.toml")
+else
+  echo "pre-commit: no .gitleaks.toml in this checkout — scanning with gitleaks' default rules only." >&2
+fi
+# Look inside staged zips/tarballs too (vendor firmware archives carried a wifi.conf).
+if gitleaks --help 2>&1 | grep -q -- '--max-archive-depth'; then
+  args+=(--max-archive-depth 3)
+fi
+
+# "gitleaks git --pre-commit" replaced "protect" in 8.19; keep the old form for older installs.
+if gitleaks --help 2>&1 | grep -qE '^[[:space:]]+git[[:space:]]'; then
+  scan=(gitleaks git --pre-commit --staged "${args[@]}" "$top")
+else
+  scan=(gitleaks protect --staged "${args[@]}" --source "$top")
+fi
+
+rc=0
+"${scan[@]}" || rc=$?
+if (( rc == LEAKS_FOUND )); then
+  echo >&2
+  echo "pre-commit: BLOCKED — a staged change looks like a credential or personal data." >&2
+  echo "  Credential: remove it and use an env var / secret store instead." >&2
+  echo "  Personal data (match-data-*: a backup, log, roster, contact list or signature):" >&2
+  echo "    new file: unstage it (git rm --cached <file>);" >&2
+  echo "    edited tracked file: remove the data, or unstage the change (git restore --staged <file>)." >&2
+  echo "  Test data uses fictional people and lives in a tests/fixtures/ folder." >&2
+  echo "  Which file and rule: ${scan[*]} -v" >&2
+  echo "  False positive? Add an allowlist entry to .gitleaks.toml." >&2
+  exit 1
+elif (( rc != 0 )); then
+  echo >&2
+  echo "pre-commit: BLOCKED — gitleaks failed to run (exit $rc), so nothing was scanned." >&2
+  echo "  Usually .gitleaks.toml did not load: check the error above, and that gitleaks is >= 8.25 ($(gitleaks version 2>/dev/null || echo unknown) installed)." >&2
+  exit 1
+fi

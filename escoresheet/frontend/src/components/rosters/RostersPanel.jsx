@@ -1,0 +1,432 @@
+import { useMemo } from 'react'
+import { isTeamContact } from '../../domain/officials'
+import { useTranslation } from 'react-i18next'
+import { usePhoneWidth } from '../../hooks/usePhoneWidth'
+import { SectionHeader } from '../../ui/SectionHeader.jsx'
+import { VolleyballIcon } from '../icons'
+import {
+  positionsByNumber,
+  hasLineup,
+  teamSanctionSummary,
+  playerPlayStatus,
+  gameCaptainOnCourt
+} from '../../domain/rosterLive'
+import { sanctionTarget } from '../../domain/describe'
+import { idLabelOf, idModeOf } from '../../domain/idMode'
+
+// Body of the scorer's "Rosters" dialog: players, liberos, bench officials and
+// match officials of both teams. During play it also shows, per person, the
+// court position (I-VI, the server with the ball), the sanctions of the match
+// as cards, and who cannot play (expelled / disqualified / injured).
+// Everything is derived from the events and the current lineups the
+// Scoreboard already holds; nothing is written.
+
+const BENCH_ORDER = { Coach: 0, 'Assistant Coach 1': 1, 'Assistant Coach 2': 2, Physiotherapist: 3, Medic: 4 }
+const sortBench = bench => [...bench].sort((a, b) => (BENCH_ORDER[a.role] ?? 999) - (BENCH_ORDER[b.role] ?? 999))
+const byNumber = (a, b) => (Number(a.number) || 0) - (Number(b.number) || 0)
+const pad = (list, n) => [...list, ...Array(Math.max(0, n - list.length)).fill(null)]
+
+const SANCTION_LABEL_KEYS = {
+  warning: 'scoreboard.sanctions.warning',
+  penalty: 'scoreboard.sanctions.penalty',
+  expulsion: 'scoreboard.sanctions.expulsion',
+  disqualification: 'scoreboard.sanctions.disqualification',
+  delay_warning: 'scoreboard.sanctions.delayWarning',
+  delay_penalty: 'scoreboard.sanctions.delayPenalty',
+  improper_request: 'scoreboard.sanctions.improperRequest'
+}
+
+const CARD = { width: 10, height: 14, borderRadius: 2, flex: 'none', boxShadow: '0 0 0 1px rgba(0,0,0,0.12)' }
+const Card = ({ colour, style }) => <span className={`sanction-card ${colour}`} style={{ ...CARD, display: 'inline-block', ...style }} />
+const MARK = { fontWeight: 700, lineHeight: 1, fontSize: 13, color: '#dc2626' }
+const CELL = { whiteSpace: 'nowrap', verticalAlign: 'middle', paddingLeft: 6, paddingRight: 6 }
+// Fixed table layout: every column but the name has a set width, so both
+// teams' tables (and players / liberos / bench) line up column by column
+// whatever a row holds; the name takes the room left and ends in an
+// ellipsis, so a long name never wraps. Header cells take the same side
+// padding, so labels sit over their values.
+const TABLE = { tableLayout: 'fixed' }
+const TH = { paddingLeft: 6, paddingRight: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
+// The sanctions heading over the phone's 60 px column: the word, split at
+// its soft hyphens (rosterLive.sanctionsNarrow) on two lines rather than cut
+// to "SANCT…" (at 360 and 390 px, 2026-11-21)
+const TH_WRAP = { paddingLeft: 6, paddingRight: 6, whiteSpace: 'normal', hyphens: 'manual', overflowWrap: 'normal', lineHeight: 1.25 }
+function SanctionsHead({ phone }) {
+  const { t } = useTranslation()
+  return phone
+    ? <th style={TH_WRAP} data-sanctions-head="">{t('rosterLive.sanctionsNarrow')}</th>
+    : <th style={TH} data-sanctions-head="">{t('rosterLive.sanctions')}</th>
+}
+const NAME_CELL = { ...CELL, overflow: 'hidden', textOverflow: 'ellipsis' }
+// One row height for every row of both teams' tables, so they stay aligned
+// side by side whatever a row holds (position pill, cards, badges).
+const ROW_H = 42
+
+/**
+ * Some sanction labels carry a soft line break for the scoreboard buttons
+ * ("Verzögerungs-\nwarnung"); a tooltip wants them on one line.
+ */
+export const oneLine = label => String(label).replace(/-\n/g, '').replace(/\s*\n\s*/g, ' ')
+
+/** One sanction as the cards the referee shows (FIVB 21.3). */
+export function SanctionChip({ entry }) {
+  const { t } = useTranslation()
+  const label = oneLine(t(SANCTION_LABEL_KEYS[entry.type] || entry.type, entry.type))
+  const title = `${label} · ${t('rosterLive.setScore', { set: entry.setIndex, score: `${entry.own}:${entry.opp}` })}`
+  let body
+  switch (entry.type) {
+    case 'warning':
+      body = <Card colour="yellow" />
+      break
+    case 'penalty':
+      body = <Card colour="red" />
+      break
+    case 'expulsion':
+      // yellow + red together, in one hand
+      body = (
+        <span style={{ position: 'relative', display: 'inline-block', width: 15, height: 15 }}>
+          <Card colour="yellow" style={{ position: 'absolute', left: 0, top: 1, transform: 'rotate(-10deg)' }} />
+          <Card colour="red" style={{ position: 'absolute', right: 0, top: 0, transform: 'rotate(10deg)' }} />
+        </span>
+      )
+      break
+    case 'disqualification':
+      // yellow + red apart, one in each hand
+      body = <span style={{ display: 'inline-flex', gap: 3 }}><Card colour="yellow" /><Card colour="red" /></span>
+      break
+    case 'delay_warning':
+    case 'delay_penalty':
+      body = (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ov-text-muted, #78716c)' }}>{t('rosterLive.delayShort')}</span>
+          <Card colour={entry.type === 'delay_warning' ? 'yellow' : 'red'} />
+        </span>
+      )
+      break
+    default:
+      body = (
+        <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 4px', borderRadius: 3, border: '1px solid var(--ov-hairline, #e7e5e4)', color: 'var(--ov-text-muted, #78716c)' }}>
+          {entry.type === 'improper_request' ? t('rosterLive.improperRequestShort') : label}
+        </span>
+      )
+  }
+  return (
+    <span title={title} aria-label={title} role="img" data-sanction={entry.type} style={{ display: 'inline-flex', alignItems: 'center' }}>
+      {body}
+    </span>
+  )
+}
+
+function SanctionList({ entries }) {
+  if (!Array.isArray(entries) || !entries.length) return null
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'nowrap' }}>
+      {entries.map(e => <SanctionChip key={e.id} entry={e} />)}
+    </span>
+  )
+}
+
+function PositionCell({ position, isServer }) {
+  const { t } = useTranslation()
+  if (!position) return <td style={CELL} />
+  return (
+    // Left-aligned, so every pill sits in the same place and the server's
+    // ball goes after it instead of pushing it off-centre.
+    <td style={CELL}>
+      <span
+        title={isServer ? `${t('rosterLive.posTitle')} ${position} · ${t('rosterLive.server')}` : `${t('rosterLive.posTitle')} ${position}`}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, verticalAlign: 'middle' }}
+      >
+        <span
+          data-position={position}
+          style={{
+            display: 'inline-block', minWidth: 30, padding: '1px 6px', borderRadius: 999,
+            fontSize: 12, fontWeight: 700, lineHeight: '16px', textAlign: 'center',
+            background: 'rgba(16, 185, 129, 0.14)', color: '#047857', border: '1px solid rgba(16, 185, 129, 0.35)'
+          }}
+        >
+          {position}
+        </span>
+        {isServer && <VolleyballIcon size={16} data-server="" style={{ color: 'var(--text, #1c1917)' }} />}
+      </span>
+    </td>
+  )
+}
+
+// Column widths (fixed layout): # with its badges, the rest for the name.
+// A phone held upright: narrower columns and no date-of-birth column (the
+// date goes under the name, NameWithDob), or the name got no room: one
+// letter at 384 px, nothing at 360 (emulator audit 2026-10-14).
+function Colgroup({ showPos, phone }) {
+  return (
+    <colgroup>
+      <col style={{ width: phone ? 56 : 92 }} />
+      <col />
+      {!phone && <col style={{ width: 96 }} />}
+      {showPos && <col style={{ width: phone ? 44 : 64 }} />}
+      <col style={{ width: phone ? 60 : 96 }} />
+    </colgroup>
+  )
+}
+
+// The name, and on a phone the date of birth under it
+const DOB_LINE = { fontSize: 11, lineHeight: 1.2, color: 'var(--ov-text-muted, #78716c)', overflow: 'hidden', textOverflow: 'ellipsis' }
+function NameWithDob({ name, dob, phone }) {
+  if (!phone) return name
+  return (
+    <>
+      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</div>
+      <div style={DOB_LINE}>{dob || '—'}</div>
+    </>
+  )
+}
+
+// idLabel: the heading of the value beside a name (domain/idMode: Licence in a
+// Swiss match, a Global match's own choice)
+function PlayerTable({ team, rows, showPos, kind, idLabel }) {
+  const { t } = useTranslation()
+  const phone = usePhoneWidth()
+  const cols = (showPos ? 5 : 4) - (phone ? 1 : 0)
+  return (
+    <table className="roster-table" style={TABLE}>
+      <Colgroup showPos={showPos} phone={phone} />
+      <thead>
+        <tr>
+          <th style={TH}>{t('roster.number')}</th>
+          <th style={TH}>{t('roster.name')}</th>
+          {!phone && <th style={TH}>{idLabel || t('roster.dob')}</th>}
+          {showPos && <th style={TH} title={t('rosterLive.posTitle')}>{t('rosterLive.pos')}</th>}
+          <SanctionsHead phone={phone} />
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((player, idx) => {
+          if (!player) {
+            return <tr key={`empty-${kind}-${idx}`} style={{ height: ROW_H }}><td colSpan={cols} /></tr>
+          }
+          const num = String(player.number ?? '')
+          const status = team.status(player)
+          const position = team.positions[num]
+          const fullName = `${player.lastName || player.name || ''} ${player.firstName || ''}`.trim()
+          const outTitle = status.out ? t(`rosterLive.out.${status.out}`) : null
+          return (
+            <tr key={player.id || `${kind}-${num}`} data-player={num} style={{ height: ROW_H, color: status.out ? 'var(--ov-text-muted, #78716c)' : undefined }}>
+              <td style={CELL}>
+                <div className="roster-number" style={{ gap: 6 }}>
+                  <span style={{ minWidth: 22 }}>{player.number ?? '—'}</span>
+                  <span className="roster-role">
+                    {player.libero === 'libero1' && <span className="roster-badge libero">L1</span>}
+                    {player.libero === 'libero2' && <span className="roster-badge libero">L2</span>}
+                    {player.libero === 'redesignated' && <span className="roster-badge libero">LR</span>}
+                    {player.isCaptain && <span className="roster-badge captain">C</span>}
+                    {team.gameCaptain === num && (
+                      <span className="roster-badge captain" title={t('rosterLive.gameCaptain')} style={{ background: 'transparent' }}>
+                        {t('rosterLive.gameCaptainShort')}
+                      </span>
+                    )}
+                    {status.out && <span style={MARK} title={outTitle} aria-label={outTitle} data-out={status.out}>✕</span>}
+                    {status.injured && <span style={MARK} title={t('rosterLive.injured')} aria-label={t('rosterLive.injured')}>✚</span>}
+                  </span>
+                </div>
+              </td>
+              <td className="roster-name" style={{ ...NAME_CELL, textDecoration: status.out ? 'line-through' : undefined }} title={fullName}>
+                <NameWithDob name={fullName} dob={player.dob} phone={phone} />
+              </td>
+              {!phone && <td className="roster-dob" style={CELL}>{player.dob || '—'}</td>}
+              {showPos && <PositionCell position={position} isServer={team.serving && position === 'I'} />}
+              <td style={CELL}><SanctionList entries={team.sanctions.players.get(num)} /></td>
+            </tr>
+          )
+        })}
+      </tbody>
+    </table>
+  )
+}
+
+function BenchTable({ team, rows, emptyAll, idLabel }) {
+  const { t } = useTranslation()
+  const phone = usePhoneWidth()
+  return (
+    <table className="roster-table" style={TABLE}>
+      <colgroup>
+        <col style={{ width: phone ? 84 : 140 }} />
+        <col />
+        {!phone && <col style={{ width: 96 }} />}
+        <col style={{ width: phone ? 60 : 96 }} />
+      </colgroup>
+      <thead>
+        <tr>
+          <th style={TH}>{t('roster.role')}</th>
+          <th style={TH}>{t('roster.name')}</th>
+          {!phone && <th style={TH}>{idLabel || t('roster.dob')}</th>}
+          <SanctionsHead phone={phone} />
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((official, idx) => (
+          <tr key={official ? `${team.key}-bench-${idx}` : `empty-bench-${idx}`} style={{ height: ROW_H }}>
+            {official ? (
+              <>
+                <td style={{ ...CELL, textTransform: 'capitalize', fontWeight: 500 }}><BenchRole role={official.role} phone={phone} /></td>
+                <td style={NAME_CELL} title={`${official.lastName || ''} ${official.firstName || ''}`.trim()}>
+                  <NameWithDob name={`${official.lastName || ''} ${official.firstName || ''}`.trim()} dob={official.dob} phone={phone} />
+                </td>
+                {!phone && <td style={CELL}>{official.dob || '—'}</td>}
+                <td style={CELL}><SanctionList entries={team.sanctions.officials.get(String(official.role))} /></td>
+              </>
+            ) : (
+              <td colSpan={phone ? 3 : 4} />
+            )}
+          </tr>
+        ))}
+        {emptyAll && (
+          <tr>
+            <td colSpan={phone ? 3 : 4} style={{ textAlign: 'center', color: 'var(--muted)', fontStyle: 'italic' }}>{t('scoreboard.roster.noBenchOfficials')}</td>
+          </tr>
+        )}
+      </tbody>
+    </table>
+  )
+}
+
+// On a phone the 84 px role column holds the paper code (C, AC1, AC2, P, M):
+// "Assistant Coach 1" ran over the name. The full role stays the tooltip and
+// what a screen reader says.
+function BenchRole({ role, phone }) {
+  const { t } = useTranslation()
+  if (!role) return '—'
+  const target = phone ? sanctionTarget({ playerType: 'official', role }, t) : null
+  if (!target || target.incomplete) return role
+  return (
+    <span title={target.label} data-role-code={target.code}>
+      <span aria-hidden="true">{target.code}</span>
+      <span className="sr-only">{target.label}</span>
+    </span>
+  )
+}
+
+function Section({ title, action }) {
+  return (
+    <div className="ov-kit">
+      <SectionHeader title={title} action={action} className="mb-2" />
+    </div>
+  )
+}
+
+function TeamSanctionsLine({ entries }) {
+  const { t } = useTranslation()
+  if (!entries?.length) return null
+  return (
+    // h-4: the chips must not make this header taller than the other
+    // team's, or the two tables drift apart row by row.
+    <span className="flex h-4 items-center gap-1.5 text-[11px] font-semibold text-stone-500" data-team-sanctions="">
+      <span>{t('rosterLive.teamSanctions')}</span>
+      <SanctionList entries={entries} />
+    </span>
+  )
+}
+
+/**
+ * @param {object} props
+ * @param {object} props.data       the Scoreboard's live match data
+ * @param {{home: object|null, away: object|null}} props.lineups current lineup per team
+ * @param {'home'|'away'|null} props.servingTeam team serving now
+ * @param {'home'|'away'} [props.team] only this team, without the match
+ *   officials (the pre-match signing dialog: the coach and the captain check
+ *   their own roster)
+ */
+export default function RostersPanel({ data, lineups, servingTeam, team: onlyTeam = null }) {
+  const { t } = useTranslation()
+  const events = data?.events
+  const setIndex = data?.set?.index
+  const showPos = hasLineup(lineups?.home) || hasLineup(lineups?.away)
+
+  const teams = useMemo(() => {
+    const build = key => {
+      const all = (key === 'home' ? data?.homePlayers : data?.awayPlayers) || []
+      const lineup = lineups?.[key] || null
+      return {
+        key,
+        name: (key === 'home' ? data?.homeTeam?.name : data?.awayTeam?.name) || t(key === 'home' ? 'common.home' : 'common.away'),
+        players: all.filter(p => !p.libero).sort(byNumber),
+        liberos: all.filter(p => p.libero).sort(byNumber),
+        bench: sortBench(((key === 'home' ? data?.match?.bench_home : data?.match?.bench_away) || []).filter(b => b.firstName || b.lastName || b.dob)),
+        positions: positionsByNumber(lineup),
+        serving: hasLineup(lineup) && servingTeam === key,
+        sanctions: teamSanctionSummary(events, key),
+        gameCaptain: gameCaptainOnCourt(all, lineup, key === 'home' ? data?.match?.homeCourtCaptain : data?.match?.awayCourtCaptain),
+        status: player => playerPlayStatus(events, key, player, setIndex)
+      }
+    }
+    return { home: build('home'), away: build('away') }
+  }, [data, events, setIndex, lineups, servingTeam, t])
+
+  const shown = onlyTeam ? [teams[onlyTeam]] : [teams.home, teams.away]
+  const maxPlayers = Math.max(...shown.map(team => team.players.length))
+  const maxLiberos = Math.max(...shown.map(team => team.liberos.length))
+  const maxBench = Math.max(...shown.map(team => team.bench.length))
+  // the match officials (a team's contact address is no official: domain/officials isTeamContact)
+  const officials = onlyTeam ? [] : (Array.isArray(data?.match?.officials) ? data.match.officials : []).filter(o => !isTeamContact(o))
+  const idLabel = idLabelOf(t, idModeOf(data?.match), t('roster.dob'))
+
+  return (
+    <div className="roster-panel">
+      <div className="roster-tables">
+        {shown.map(team => (
+          <div className="roster-table-wrapper" key={`players-${team.key}`} data-team={team.key}>
+            <Section title={<>{team.name} {t('scoreboard.players')}</>} action={<TeamSanctionsLine entries={team.sanctions.team} />} />
+            <PlayerTable team={team} rows={pad(team.players, maxPlayers)} showPos={showPos} kind="player" idLabel={idLabel} />
+          </div>
+        ))}
+      </div>
+
+      {maxLiberos > 0 && (
+        <div className="roster-tables" style={{ marginTop: 24 }}>
+          {shown.map(team => (
+            <div className="roster-table-wrapper" key={`liberos-${team.key}`}>
+              <Section title={<>{team.name} {t('scoreboard.liberos')}</>} />
+              <PlayerTable team={team} rows={pad(team.liberos, maxLiberos)} showPos={showPos} kind="libero" idLabel={idLabel} />
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="bench-officials-section" style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid var(--border)' }}>
+        <div className="roster-tables">
+          {shown.map(team => (
+            <div className="roster-table-wrapper" key={`bench-${team.key}`}>
+              <Section title={<>{team.name} {t('scoreboard.benchOfficials')}</>} />
+              <BenchTable team={team} rows={pad(team.bench, maxBench)} emptyAll={maxBench === 0} idLabel={idLabel} />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {officials.length > 0 && (
+        <div className="officials-section" style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid var(--border)' }}>
+          <Section title={t('matchSetup.matchOfficials')} />
+          <table className="roster-table">
+            <thead>
+              <tr>
+                <th>{t('matchSetup.role')}</th>
+                <th>{t('matchSetup.name')}</th>
+                <th>{t('matchSetup.country')}</th>
+                <th>{idLabel}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {officials.map((official, idx) => (
+                <tr key={idx}>
+                  <td style={{ textTransform: 'capitalize', fontWeight: 500 }}>{official.role || '—'}</td>
+                  <td>{official.lastName || ''} {official.firstName || ''}</td>
+                  <td>{official.country || '—'}</td>
+                  <td>{official.dob || official.licence || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}

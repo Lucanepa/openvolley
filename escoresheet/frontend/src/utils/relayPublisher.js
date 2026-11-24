@@ -1,0 +1,569 @@
+/**
+ * The scorer's side of the match relay, kept out of the components so it can be
+ * tested: the one relay connection App.jsx and Scoreboard.jsx share, which PINs
+ * go with a sync, the order of live-state pushes and match_live_state writes,
+ * and how long to wait before reconnecting.
+ */
+import { relayMatchPayload, relayRemarks, getRelayServerStatus } from './serverDataSync'
+import { getRelayWebSocketUrl, isLocalRelayUrl } from './backendConfig'
+import { BACKEND_REACHED_EVENT } from '../lib/apiClient'
+import { setDiagnosticsInfo } from './diagnosticsInfo'
+
+let knownScorerWsPort = null
+
+/**
+ * The relay URL of the scorer page: App.jsx and Scoreboard.jsx both take it
+ * from here, so they attach the shared connection to the SAME url. The LAN
+ * relay's WS port, once either of them learnt it (Electron / server status),
+ * is remembered: a Scoreboard remount (it unmounts for every sub-view) starts
+ * without a status and would otherwise attach to the default-port URL, drop
+ * the socket, prove the match again, and switch back when its status arrives.
+ * @param {{ wsPort?: number|string|null }} [options]
+ * @returns {string|null}
+ */
+export function scorerRelayUrl({ wsPort = null } = {}) {
+  if (wsPort) knownScorerWsPort = wsPort
+  return getRelayWebSocketUrl({ wsPort: wsPort || knownScorerWsPort })
+}
+
+/** Tests only: forget the remembered WS port. */
+export function resetScorerRelayUrl() {
+  knownScorerWsPort = null
+}
+
+/**
+ * PINs go to the relay with the first sync of a match key on a socket and when
+ * one changed; the relay keeps the stored ones meanwhile. Keyed by socket AND
+ * key: a match that just got its seed key (a new relay room) proves it with its
+ * PINs; a PIN-less first sync would have left that room without them. Any relay
+ * error about the match (a refusal, a lost room, 'pins-required') makes the
+ * next sync carry them again.
+ */
+export function createRelayPinTracker() {
+  let sent = { ws: null, key: null, signature: null }
+  return {
+    /**
+     * The match object for a sync of `key` on `ws`. Call commit() once it was sent.
+     * `mark`: the live-state order's mark() taken before the sync read IndexedDB.
+     * @returns {{ match: object, commit: () => void }}
+     */
+    payloadFor(ws, match, key = null, mark = null) {
+      const same = sent.ws === ws && sent.key === key
+      const { match: out, pinSignature } = relayMatchPayload(match, same ? sent.signature : null, { mark })
+      return { match: out, commit: () => { sent = { ws, key, signature: pinSignature } } }
+    },
+    reset() {
+      sent = { ws: null, key: null, signature: null }
+    }
+  }
+}
+
+const WS_CONNECTING = 0
+const WS_OPEN = 1
+// Relay requests ('*-request') want one answer; a bench-request is a notice for every user
+const isRelayRequest = (message) => typeof message?.type === 'string' && message.type.endsWith('-request') && message.type !== 'bench-request'
+
+/**
+ * The scorer's ONE relay connection. App.jsx (the current match, in every
+ * view) and Scoreboard.jsx (every scoring action) both attach to it. They used
+ * to open a socket each: the relay grants the scoreboard role per socket, so
+ * the two proved the same match over and over (one sent PINs, the other left
+ * them out) and the refusals counted toward the relay's per-IP claim limit,
+ * which every scorer behind the venue's NAT shares. One socket is one owner.
+ *
+ * - attach(url, { onOpen(socket), onMessage(message, socket) }) -> detach().
+ *   onOpen runs on every (re)connect, and right away when the socket is
+ *   already open. Relay requests ('*-request') go to the most recently
+ *   attached user only, so each gets one answer; everything else goes to all.
+ * - The socket closes once the last user detached (not in between: an effect
+ *   re-run detaches and attaches again in the same commit).
+ * - Reconnects with relayReconnectDelay; at once when the device is back
+ *   online or the tab visible again, and when a ping gets no answer (a
+ *   half-open socket on venue Wi-Fi without uplink otherwise stays OPEN).
+ * - `pins` is the connection's PIN tracker (createRelayPinTracker).
+ * - listen(fn) -> remove: every message, for a reader that opens nothing.
+ */
+export function createScorerRelay({
+  createSocket = (url) => new WebSocket(url),
+  reconnectDelay = (attempt) => relayReconnectDelay(attempt),
+  setTimer = (fn, ms) => setTimeout(fn, ms),
+  clearTimer = (t) => clearTimeout(t),
+  events = typeof window !== 'undefined' ? window : null,
+  doc = typeof document !== 'undefined' ? document : null,
+  pingIntervalMs = 25000,
+  pongTimeoutMs = 10000,
+  // the support diagnostics (utils/diagnosticsInfo): state and clock offset
+  publish = (state) => setDiagnosticsInfo('relay', state),
+  now = () => Date.now()
+} = {}) {
+  const users = []
+  // Listeners that only read (listen()): they keep no socket open and never
+  // move it to another relay (bench requests, components/scoreboard/BenchRequestCards)
+  const listeners = new Set()
+  const pins = createRelayPinTracker()
+  let url = null
+  let ws = null
+  let attempt = 0
+  let reconnectTimer = null
+  let closeTimer = null
+  let pingTimer = null
+  let pongTimer = null
+  let lastMessageAt = 0
+  let listening = false
+  let pingSentAt = 0
+  // The relay's clock against this device's: the pong carries the relay's
+  // Date.now() (backend server.js, lib/realtimeHub.js), taken half way
+  // through the round trip. null until the first pong.
+  let clock = null
+
+  function stateName() {
+    if (!url) return 'detached'
+    if (!ws) return reconnectTimer ? 'reconnecting' : 'closed'
+    if (ws.readyState === WS_OPEN) return 'open'
+    if (ws.readyState === WS_CONNECTING) return 'connecting'
+    return 'closed'
+  }
+  function report() {
+    try {
+      publish?.({
+        state: stateName(),
+        url: url ? String(url).split(/[?#]/)[0] : null,
+        users: users.length,
+        reconnectAttempt: attempt,
+        lastMessageAt: lastMessageAt || null,
+        clock
+      })
+    } catch { /* diagnostics never break the relay */ }
+  }
+
+  const safe = (fn) => {
+    try { fn() } catch (err) { console.error('[ScorerRelay] handler failed:', err) }
+  }
+  const isOpen = () => !!ws && ws.readyState === WS_OPEN
+
+  function stopPing() {
+    if (pingTimer) clearTimer(pingTimer)
+    if (pongTimer) clearTimer(pongTimer)
+    pingTimer = null
+    pongTimer = null
+  }
+
+  function drop(socket, code, reason) {
+    socket.onopen = null
+    socket.onmessage = null
+    socket.onclose = null
+    socket.onerror = () => {}
+    try {
+      if (socket.readyState === WS_OPEN) socket.close(code, reason)
+      // Closing a socket that is still connecting logs a browser error: close it once open
+      else if (socket.readyState === WS_CONNECTING) socket.onopen = () => { try { socket.close(code, reason) } catch { /* gone */ } }
+    } catch { /* already gone */ }
+  }
+
+  function scheduleReconnect(delay = null) {
+    if (users.length === 0 || reconnectTimer) return
+    reconnectTimer = setTimer(connect, delay ?? reconnectDelay(attempt))
+    attempt += 1
+  }
+
+  function ping() {
+    pingTimer = null
+    const socket = ws
+    if (!socket || socket.readyState !== WS_OPEN) return
+    const sentAt = Date.now()
+    pingSentAt = now()
+    try { socket.send(JSON.stringify({ type: 'ping', timestamp: sentAt })) } catch { /* closing */ }
+    pongTimer = setTimer(() => {
+      pongTimer = null
+      if (ws !== socket) return
+      if (lastMessageAt >= sentAt) {
+        pingTimer = setTimer(ping, pingIntervalMs)
+        return
+      }
+      // No answer: dead, even though it still says OPEN
+      ws = null
+      drop(socket, 4000, 'No answer to ping')
+      scheduleReconnect(0)
+    }, pongTimeoutMs)
+  }
+
+  function connect() {
+    reconnectTimer = null
+    if (!url || users.length === 0) return
+    if (ws && (ws.readyState === WS_OPEN || ws.readyState === WS_CONNECTING)) return
+    let socket
+    try {
+      socket = createSocket(url)
+    } catch (err) {
+      console.error('[ScorerRelay] connection error:', err)
+      scheduleReconnect()
+      return
+    }
+    ws = socket
+    socket.onerror = () => { /* onclose follows */ }
+    socket.onopen = () => {
+      if (ws !== socket) return
+      attempt = 0
+      lastMessageAt = Date.now()
+      stopPing()
+      pingTimer = setTimer(ping, pingIntervalMs)
+      for (const user of [...users]) safe(() => user.onOpen?.(socket))
+      report()
+    }
+    socket.onmessage = (event) => {
+      if (ws !== socket) return
+      lastMessageAt = Date.now()
+      let message
+      try { message = JSON.parse(event.data) } catch { return }
+      if (!message || typeof message !== 'object') return
+      if (message.type === 'pong' && Number.isFinite(message.timestamp) && pingSentAt) {
+        const at = now()
+        const rttMs = Math.max(0, at - pingSentAt)
+        clock = { offsetMs: Math.round(message.timestamp - (pingSentAt + rttMs / 2)), rttMs, at }
+        pingSentAt = 0
+        report()
+      }
+      const targets = isRelayRequest(message) ? users.slice(-1) : [...users]
+      for (const user of targets) safe(() => user.onMessage?.(message, socket))
+      for (const fn of [...listeners]) safe(() => fn(message, socket))
+    }
+    socket.onclose = () => {
+      if (ws !== socket) return
+      ws = null
+      stopPing()
+      scheduleReconnect()
+      report()
+    }
+    report()
+  }
+
+  // Back online / tab visible again / the backend answers again after an
+  // outage (no 'online' event when only the uplink was down): reconnect now
+  // instead of after the backoff (up to 60 s, the referee and benches
+  // following the scorer only through this socket meanwhile)
+  function reconnectNow() {
+    if (users.length === 0) return
+    if (doc && doc.visibilityState === 'hidden') return
+    if (ws && (ws.readyState === WS_OPEN || ws.readyState === WS_CONNECTING)) return
+    if (reconnectTimer) {
+      clearTimer(reconnectTimer)
+      reconnectTimer = null
+    }
+    connect()
+  }
+
+  function listen(on) {
+    if (on === listening) return
+    listening = on
+    const method = on ? 'addEventListener' : 'removeEventListener'
+    events?.[method]?.('online', reconnectNow)
+    events?.[method]?.(BACKEND_REACHED_EVENT, reconnectNow)
+    doc?.[method]?.('visibilitychange', reconnectNow)
+  }
+
+  function shutdown() {
+    closeTimer = null
+    if (users.length > 0) return
+    listen(false)
+    stopPing()
+    if (reconnectTimer) clearTimer(reconnectTimer)
+    reconnectTimer = null
+    attempt = 0
+    if (ws) {
+      const socket = ws
+      ws = null
+      drop(socket, 1000, 'Scorer left the match')
+    }
+    url = null
+    pins.reset()
+    report()
+  }
+
+  return {
+    get socket() { return ws },
+    /** The relay's clock offset from the last pong: { offsetMs, rttMs, at } or null. */
+    get clock() { return clock },
+    /** The relay URL the connection is attached to (null when detached). */
+    get url() { return url },
+    get userCount() { return users.length },
+    pins,
+    isOpen,
+    reconnectNow,
+    /** Every message on the socket while it is attached; -> remove. */
+    listen(fn) {
+      listeners.add(fn)
+      return () => listeners.delete(fn)
+    },
+    /** Send on the open socket; false when there is none. */
+    send(payload) {
+      if (!isOpen()) return false
+      try {
+        ws.send(typeof payload === 'string' ? payload : JSON.stringify(payload))
+        return true
+      } catch {
+        return false
+      }
+    },
+    attach(nextUrl, user = {}) {
+      if (!nextUrl) return () => {}
+      if (closeTimer) {
+        clearTimer(closeTimer)
+        closeTimer = null
+      }
+      const entry = { onOpen: user.onOpen, onMessage: user.onMessage }
+      users.push(entry)
+      listen(true)
+      if (url !== nextUrl) {
+        // Another relay (the LAN server's WS port is known now, ?server= changed)
+        url = nextUrl
+        if (ws) {
+          const old = ws
+          ws = null
+          stopPing()
+          drop(old, 1000, 'Relay changed')
+        }
+        if (reconnectTimer) clearTimer(reconnectTimer)
+        reconnectTimer = null
+        attempt = 0
+        pins.reset()
+        connect()
+      } else if (isOpen()) {
+        const socket = ws
+        Promise.resolve().then(() => {
+          if (users.includes(entry) && ws === socket) safe(() => entry.onOpen?.(socket))
+        })
+      } else if (!ws && !reconnectTimer) {
+        connect()
+      }
+      return () => {
+        const i = users.indexOf(entry)
+        if (i === -1) return
+        users.splice(i, 1)
+        if (users.length === 0 && !closeTimer) closeTimer = setTimer(shutdown, 0)
+      }
+    }
+  }
+}
+
+/**
+ * True for a relay `error` message about this match: it names one of `ids`
+ * (the relay key or the local id), or names none at all.
+ */
+export function isRelayErrorFor(message, ids) {
+  if (!message || message.type !== 'error') return false
+  if (message.matchId === undefined || message.matchId === null) return true
+  const id = String(message.matchId)
+  return ids.some((k) => k !== undefined && k !== null && String(k) === id)
+}
+
+/**
+ * Orders the live-state of one scorer. Each snapshot takes a sequence number
+ * when it is computed (next()), not a wall-clock time: a clock stepped back by
+ * NTP must not freeze the referee and the livescore.
+ * - shouldPush(seq): the relay push of a snapshot older than one already pushed
+ *   is dropped (on a side-out the 'point' snapshot from before the rotation and
+ *   the 'rotation' one race);
+ * - write(seq, fn): match_live_state upserts run one at a time, and one older
+ *   than the last written is skipped (concurrent upserts are last-write-wins).
+ * - session: a random id of this order. The tablets compare sequence numbers
+ *   only within one session (a reload starts again at 1).
+ * - mark(): what a relay sync records BEFORE it reads IndexedDB ({ seq, session,
+ *   at }): the last sequence number issued and the time. A live state with a
+ *   higher number than a bundle's _syncedSeq was computed after the bundle was
+ *   read, so its score wins over the bundle's (serverDataSync.applyNewerLiveState).
+ */
+export function createLiveStateOrder({ session = newLiveSession(), now = () => Date.now() } = {}) {
+  let seq = 0
+  let lastPushed = 0
+  let lastWritten = 0
+  let chain = Promise.resolve()
+  return {
+    session,
+    next() {
+      seq += 1
+      return seq
+    },
+    current() {
+      return seq
+    },
+    mark() {
+      return { seq, session, at: now() }
+    },
+    shouldPush(n) {
+      if (n < lastPushed) return false
+      lastPushed = n
+      return true
+    },
+    /** @returns {Promise<any>} fn's result, or { skipped: true } */
+    write(n, fn) {
+      const run = async () => {
+        if (n < lastWritten) return { skipped: true }
+        lastWritten = n
+        return fn()
+      }
+      const pending = chain.then(run, run)
+      chain = pending.catch(() => {})
+      return pending
+    }
+  }
+}
+
+// isLocalRelayUrl lives in backendConfig, where serverDataSync can import it without a
+// cycle (this module imports serverDataSync); re-exported for the callers of this one.
+export { isLocalRelayUrl }
+
+/**
+ * Where a live-state snapshot of the scorer goes. The relay gets it under the
+ * match's room key (the referee, the livescore and the LedBox bridge follow
+ * it); the database (match_live_state) only for an official match. A test
+ * (rehearsal) match stays out of the database: its live state goes to the
+ * relay only (a venue's or the cloud's, where the tablets list it on
+ * "Switch to test matches").
+ * @param {{ isTest?: boolean, relayKey?: string|null, relayUrl?: string|null }} args
+ * @returns {{ relay: boolean, cloud: boolean }}
+ */
+/**
+ * Whether a match's full data (sync-match-data) may go to this relay: the
+ * same rule as its live state (liveStateTargets). A test match goes to a
+ * local relay only, never to the cloud's: its full data reached the server
+ * on every sync, while its live state was kept local (2026-10-19).
+ * @param {object|null} match
+ * @param {string|null} relayUrl
+ */
+export function mayPublishMatchData(match, relayUrl) {
+  return !!match
+}
+
+// Kept on the device only: the undo snapshots (stateSnapshot on every point,
+// stateBefore on rally starts, rotations and substitutions), about 90% of a
+// match's events (2.5 KB per point). No relay subscriber reads them (referee,
+// bench, livescore, the LedBox bridge), and every sync carried them all, twice
+// per rally (national peak load test 2026-10-26). The cloud relay drops them
+// from older scorers' syncs too.
+const RELAY_EVENT_OMIT = ['stateSnapshot', 'stateBefore']
+
+// Remark text on the events: every event's remark line (payload.autoRemark)
+// and a remark's added lines (the Scoreboard's Remarks dialog: text) without
+// the dates of a date-of-birth correction (relayRemarks), as match.remarks.
+// The whole remarks text the dialog logs with them (fullRemarks) is read by
+// no relay subscriber and stays on the device.
+function relayEventPayload(e) {
+  const p = e.payload
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return p
+  const remark = e.type === 'remark'
+  let out = null
+  for (const k of remark ? ['autoRemark', 'text'] : ['autoRemark']) {
+    if (!(k in p)) continue
+    const v = relayRemarks(p[k])
+    if (v !== p[k]) (out ??= { ...p })[k] = v
+  }
+  if (remark && 'fullRemarks' in p) delete (out ??= { ...p }).fullRemarks
+  return out ?? p
+}
+
+/**
+ * The events as sync-match-data carries them: copies without the undo
+ * snapshots and without a date of birth in their remark text; the device's
+ * own events are not changed.
+ * @param {Array<object>|null|undefined} events
+ * @returns {Array<object>}
+ */
+export function relayEvents(events) {
+  if (!Array.isArray(events)) return []
+  return events.map((e) => {
+    if (!e || typeof e !== 'object') return e
+    const payload = relayEventPayload(e)
+    if (payload === e.payload && !RELAY_EVENT_OMIT.some((k) => k in e)) return e
+    const out = {}
+    for (const k of Object.keys(e)) if (!RELAY_EVENT_OMIT.includes(k)) out[k] = e[k]
+    if (payload !== e.payload) out.payload = payload
+    return out
+  })
+}
+
+export function liveStateTargets({ isTest = false, relayKey = null, relayUrl = null } = {}) {
+  return {
+    relay: !!relayKey,
+    cloud: !isTest
+  }
+}
+
+/**
+ * Publishes one live-state snapshot along liveStateTargets: the relay push
+ * first (so an offline hall or a slow cloud never holds up the referee and
+ * the LedBox), then the cloud work (lookup, upsert, retry marks), which runs
+ * only when `targets.cloud`. Everything that touches the cloud goes in
+ * `toCloud`: a test (rehearsal) match never reaches it.
+ * @param {{ targets: { relay: boolean, cloud: boolean }, toRelay: () => void, toCloud: () => Promise<any> }} args
+ * @returns {Promise<any>} what `toCloud` returned, or undefined when skipped
+ */
+export async function publishLiveState({ targets, toRelay, toCloud }) {
+  if (targets?.relay) toRelay()
+  if (!targets?.cloud) return undefined
+  return toCloud()
+}
+
+export const RELAY_RECONNECT_BASE_MS = 5000
+export const RELAY_RECONNECT_MAX_MS = 60000
+
+/**
+ * Delay before reconnect attempt `attempt` (0 = first after a drop): 5 s,
+ * 10 s, 20 s, 40 s, then 60 s. A relay that is not there (offline hall on a
+ * cloud build) is not hammered with a new socket every few seconds.
+ * Each step is spread over its second half (2.5-5 s, 5-10 s, ...): after a
+ * backend restart every scorer of the country lost its socket at the same
+ * instant and reconnected, re-sending its whole match, at the same instant
+ * (national peak load test 2026-10-26). Never later than before.
+ * @param {number} attempt
+ * @param {() => number} [random] jitter source in [0, 1) (tests)
+ */
+export function relayReconnectDelay(attempt, random = Math.random) {
+  const n = Math.max(0, Math.min(Number(attempt) || 0, 16))
+  const step = Math.min(RELAY_RECONNECT_BASE_MS * 2 ** n, RELAY_RECONNECT_MAX_MS)
+  return Math.round(step * (0.5 + 0.5 * (typeof random === 'function' ? random() : Math.random())))
+}
+
+/**
+ * The relay entry of the scorer's connection status. The scorer's own socket
+ * when it is open; otherwise GET /api/server/status (getRelayServerStatus, as
+ * the referee and bench apps do), never a throwaway probe socket.
+ * @param {{ wsUrl: string|null, ws?: { readyState: number }|null, getStatus?: () => Promise<{ running: boolean }> }} args
+ * @returns {Promise<{ status: string, message: string, details?: string }>}
+ */
+export async function relayConnectionStatus({ wsUrl, ws = null, getStatus = getRelayServerStatus }) {
+  if (!wsUrl) {
+    return { status: 'not_available', message: 'No WebSocket relay for this page (using local database only)' }
+  }
+  if (ws && ws.readyState === WS_OPEN) {
+    return { status: 'connected', message: 'WebSocket server is reachable (active connection)' }
+  }
+  const { running } = await getStatus()
+  if (running) {
+    return { status: 'connected', message: 'WebSocket server is reachable', details: `Relay: ${wsUrl}` }
+  }
+  if (ws && ws.readyState === WS_CONNECTING) {
+    return { status: 'connecting', message: 'Connecting to the WebSocket server...' }
+  }
+  return {
+    status: 'disconnected',
+    message: 'Not connected to the WebSocket server (retrying in the background)',
+    details: `Relay: ${wsUrl}`
+  }
+}
+
+function newLiveSession() {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  } catch { /* insecure context */ }
+  return `${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`
+}
+
+/** The scorer page's relay connection, shared by App.jsx and Scoreboard.jsx. */
+export const scorerRelay = createScorerRelay()
+
+/**
+ * The scorer page's live-state order, shared by App.jsx (its relay syncs mark
+ * it) and Scoreboard.jsx (every live state takes a number). One per page load,
+ * so the numbers keep rising across Scoreboard remounts.
+ */
+export const scorerLiveOrder = createLiveStateOrder()

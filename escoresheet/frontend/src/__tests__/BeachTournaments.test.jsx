@@ -1,0 +1,465 @@
+// OpenBeach's Tournaments tab (manager-beach, plan phase T1): the list and a
+// new tournament, a draw's pairs and seeds, drawing the bracket after a
+// preview, entering a result, the schedule and the ranking CSV. The server
+// is mocked (lib/tournamentApi); its rules are tested in the backend suite.
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { useState } from 'react'
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key, opts) => (typeof opts === 'string' ? opts : key),
+    i18n: { language: 'en', changeLanguage: vi.fn() }
+  })
+}))
+
+const auth = vi.hoisted(() => ({ value: null }))
+vi.mock('../contexts/AuthContext', () => ({ useAuth: () => auth.value }))
+
+const ok = (data) => ({ data, error: null, status: 200 })
+const api = vi.hoisted(() => ({
+  list: vi.fn(),
+  get: vi.fn(),
+  create: vi.fn(),
+  generate: vi.fn(),
+  putSeeds: vi.fn(),
+  enterResult: vi.fn(),
+  setMatchStatus: vi.fn(),
+  withdrawResult: vi.fn(),
+  putCourts: vi.fn(),
+  updateMatch: vi.fn(),
+  schedule: vi.fn(),
+  ranking: vi.fn(),
+  addEntry: vi.fn(),
+  invites: vi.fn(),
+  acceptInvite: vi.fn(),
+  declineInvite: vi.fn(),
+  removeInvite: vi.fn()
+}))
+vi.mock('../lib/tournamentApi', async (orig) => ({ ...(await orig()), tournamentApi: api }))
+const teams = vi.hoisted(() => ({ fetchBundle: vi.fn() }))
+vi.mock('../lib/accountApi', async (orig) => ({ ...(await orig()), savedTeamsApi: teams }))
+const ask = vi.hoisted(() => ({ askConfirm: vi.fn(async () => true), askText: vi.fn(async () => null) }))
+vi.mock('../utils/askConfirm', () => ({ askConfirm: ask.askConfirm, default: ask.askConfirm }))
+vi.mock('../utils/askText', () => ({ askText: ask.askText, default: ask.askText }))
+
+import TournamentsPanel from '../components/manage/tournaments/TournamentsPanel'
+import { accessFromRoles } from '../lib/access'
+import { toast } from '../ui'
+
+const TOUR = {
+  id: 't1', slug: 'zuri-open-2026', title: 'Züri Open', venue: 'Mythenquai', city: 'Zürich', starts_on: '2026-07-11', ends_on: '2026-07-12',
+  day_start: '09:00', day_end: '19:00', status: 'draft', public: false, can_edit: true, updated_at: '2026-10-07T10:00:00Z'
+}
+const entry = (i, extra = {}) => ({ id: `e${i}`, draw_id: 'd1', seed: i, name: `Pair ${i}`, player1: { first: 'A', last: `L${i}` }, player2: { first: 'B', last: `M${i}` }, status: 'registered', final_rank: null, team_id: null, ...extra })
+const COURTS = [{ id: 'c1', number: 1, name: null, active: true, flex: false }, { id: 'c2', number: 2, name: 'Center', active: true, flex: false }]
+const DRAW = { id: 'd1', tournament_id: 't1', category: 'A1', gender: 'women', format: 'DE', status: 'seeded', slot_minutes: 50, rest_minutes: 0, scoring: { best_of: 3, points: [21, 21, 15] } }
+const bundle = (over = {}) => ({ tournament: TOUR, managers: [{ id: 'u-1', email: 'mia@club.ch', name: 'Mia', creator: true }], courts: COURTS, draws: [DRAW], entries: [1, 2, 3, 4].map(i => entry(i)), matches: [], ...over })
+
+function setAuth(roles) {
+  auth.value = { user: { id: 'u-1' }, access: { ...accessFromRoles(roles), known: true } }
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  setAuth(['beach:competition_manager'])
+  api.list.mockResolvedValue(ok({ tournaments: [{ ...TOUR, draws: 1 }] }))
+  api.get.mockResolvedValue(ok(bundle()))
+  api.invites.mockResolvedValue(ok({ invites: [] }))
+  teams.fetchBundle.mockResolvedValue(ok({ competitions: [], teams: [] }))
+})
+
+const openTournament = async () => {
+  render(<TournamentsPanel />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Züri Open' }))
+  await screen.findByRole('heading', { name: 'Züri Open' })
+}
+const openDraw = async () => {
+  await openTournament()
+  fireEvent.click(await screen.findByRole('button', { name: 'A1 · tournaments.genders.women' }))
+}
+
+describe('Tournaments tab', () => {
+  it('lists the tournaments and creates one', async () => {
+    api.create.mockResolvedValue(ok({ tournament: { ...TOUR, id: 't2' } }))
+    render(<TournamentsPanel />)
+    expect(await screen.findByText('Züri Open')).toBeInTheDocument()
+    expect(screen.getByText('11.–12.07.2026')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('tournament-new'))
+    expect(screen.getByTestId('tournament-create')).toBeDisabled()
+    fireEvent.change(screen.getByTestId('tournament-title'), { target: { value: '  Beach Cup ' } })
+    fireEvent.change(screen.getByTestId('tournament-starts'), { target: { value: '2026-08-01' } })
+    fireEvent.click(screen.getByTestId('tournament-create'))
+    await waitFor(() => expect(api.create).toHaveBeenCalledWith({ title: 'Beach Cup', starts_on: '2026-08-01', ends_on: '2026-08-01', venue: null, city: null, courts: 2 }))
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('t2'))
+  })
+
+  it('a beach scorer reads, but cannot create', async () => {
+    setAuth(['beach:scorer'])
+    render(<TournamentsPanel />)
+    expect(await screen.findByText('Züri Open')).toBeInTheDocument()
+    expect(screen.queryByTestId('tournament-new')).toBeNull()
+  })
+
+  it('seeds: reorder the pairs, then save them in that order', async () => {
+    api.putSeeds.mockResolvedValue(ok({ seeded: 4 }))
+    await openDraw()
+    const row = (await screen.findByText('Pair 2')).closest('.flex-wrap')
+    fireEvent.click(within(row).getByRole('button', { name: 'tournaments.moveUp' }))
+    fireEvent.click(screen.getByRole('button', { name: 'tournaments.saveSeeds' }))
+    await waitFor(() => expect(api.putSeeds).toHaveBeenCalledWith('d1', ['e2', 'e1', 'e3', 'e4']))
+  })
+
+  it('draws the bracket after a preview the manager confirms', async () => {
+    const matches = [{ game_n: 1 }, { game_n: 6 }]
+    api.generate.mockResolvedValueOnce(ok({ teams: 4, board_size: 8, warnings: [{ code: 'too_few_teams', min: 8 }], matches }))
+    api.generate.mockResolvedValueOnce(ok({ teams: 4, board_size: 8, warnings: [], matches }))
+    await openDraw()
+    fireEvent.click(await screen.findByTestId('bracket-generate'))
+    await waitFor(() => expect(api.generate).toHaveBeenCalledTimes(2))
+    expect(api.generate).toHaveBeenNthCalledWith(1, 'd1', { dryRun: true })
+    expect(api.generate).toHaveBeenNthCalledWith(2, 'd1')
+    expect(ask.askConfirm).toHaveBeenCalledWith(expect.objectContaining({ title: 'tournaments.generateTitle', message: expect.stringContaining('tournaments.warnings.too_few_teams') }))
+  })
+
+  it('nothing is drawn when the preview is cancelled', async () => {
+    ask.askConfirm.mockResolvedValueOnce(false)
+    api.generate.mockResolvedValue(ok({ teams: 4, board_size: 8, warnings: [], matches: [{ game_n: 1 }] }))
+    await openDraw()
+    fireEvent.click(await screen.findByTestId('bracket-generate'))
+    await waitFor(() => expect(ask.askConfirm).toHaveBeenCalled())
+    expect(api.generate).toHaveBeenCalledTimes(1)
+  })
+
+  it('a result: the sets decide the winner, sent from the first pair\'s side', async () => {
+    const m = (game_n, code, e1, e2, extra = {}) => ({
+      id: `m${game_n}`, draw_id: 'd1', game_n, code, phase: 'winners', round: 1, position: game_n, wave: 1,
+      source1: 'seed:1', source2: 'seed:4', entry1_id: e1, entry2_id: e2, status: 'ready', match_id: null, sets: null, result: null, winner_entry_id: null, ...extra
+    })
+    api.get.mockResolvedValue(ok(bundle({
+      draws: [{ ...DRAW, status: 'drawn' }],
+      matches: [m(1, 'W1', 'e1', 'e4'), m(2, 'W2', 'e2', 'e3'), m(3, 'W3', null, null, { round: 2, source1: 'winner:W1', source2: 'winner:W2', status: 'scheduled' })]
+    })))
+    api.enterResult.mockResolvedValue(ok({ match: {} }))
+    await openDraw()
+    // the open match names where its pairs come from
+    expect(await screen.findAllByText('tournaments.sources.winner')).toHaveLength(2)
+    expect(screen.queryByTestId('result-W3')).toBeNull()
+    fireEvent.click(screen.getByTestId('result-W1'))
+    const save = screen.getByTestId('result-save')
+    expect(save).toBeDisabled()
+    fireEvent.change(screen.getByTestId('result-sets'), { target: { value: '15:21 21:19 12:15' } })
+    expect(save).toBeEnabled()
+    fireEvent.click(save)
+    // with the result this screen showed (none) and its pairs, so a result entered elsewhere
+    // meanwhile is not overwritten and side 2 is never another pair than the one shown
+    await waitFor(() => expect(api.enterResult).toHaveBeenCalledWith('m1', {
+      winner: 2, result: 'played', sets: [[15, 21], [21, 19], [12, 15]], expect: { winner_entry_id: null, result: null, sets: null, entry1_id: 'e1', entry2_id: 'e4' }
+    }))
+  })
+
+  it('a result changed elsewhere meanwhile: no overwrite, the dialog closes and the draw reloads', async () => {
+    api.get.mockResolvedValue(ok(bundle({
+      draws: [{ ...DRAW, status: 'playing' }],
+      matches: [{
+        id: 'm1', draw_id: 'd1', game_n: 1, code: 'W1', phase: 'winners', round: 1, position: 1, wave: 1, source1: 'seed:1', source2: 'seed:4',
+        entry1_id: 'e1', entry2_id: 'e4', status: 'finished', match_id: null, sets: [[21, 10], [21, 12]], result: 'played', winner_entry_id: 'e1'
+      }]
+    })))
+    api.enterResult.mockResolvedValue({ data: null, error: { code: 'OV_RESULT_CHANGED', message: 'changed', status: 409 }, status: 409 })
+    await openDraw()
+    fireEvent.click(await screen.findByTestId('result-W1'))
+    fireEvent.change(screen.getByTestId('result-sets'), { target: { value: '10:21 12:21' } })
+    const loads = api.get.mock.calls.length
+    fireEvent.click(screen.getByTestId('result-save'))
+    await waitFor(() => expect(api.enterResult).toHaveBeenCalledWith('m1', {
+      winner: 2, result: 'played', sets: [[10, 21], [12, 21]], expect: { winner_entry_id: 'e1', result: 'played', sets: [[21, 10], [21, 12]], entry1_id: 'e1', entry2_id: 'e4' }
+    }))
+    await waitFor(() => expect(screen.queryByTestId('result-save')).toBeNull())
+    await waitFor(() => expect(api.get.mock.calls.length).toBeGreaterThan(loads))
+  })
+
+  const READY_W5 = {
+    id: 'm5', draw_id: 'd1', game_n: 5, code: 'W5', phase: 'winners', round: 2, position: 1, wave: 2, source1: 'winner:W1', source2: 'winner:W2',
+    entry1_id: 'e1', entry2_id: 'e2', status: 'ready', match_id: null, sets: null, result: null, winner_entry_id: null
+  }
+
+  it('the pairs of a match changed elsewhere meanwhile: no result for a pair that did not play, the draw reloads', async () => {
+    api.get.mockResolvedValue(ok(bundle({ draws: [{ ...DRAW, status: 'playing' }], matches: [READY_W5] })))
+    api.enterResult.mockResolvedValue({ data: null, error: { code: 'OV_MATCH_TEAMS_CHANGED', message: 'changed', status: 409, details: { match: {} } }, status: 409 })
+    await openDraw()
+    fireEvent.click(await screen.findByTestId('result-W5'))
+    fireEvent.change(screen.getByTestId('result-sets'), { target: { value: '21:10 21:12' } })
+    const loads = api.get.mock.calls.length
+    fireEvent.click(screen.getByTestId('result-save'))
+    await waitFor(() => expect(api.enterResult).toHaveBeenCalledWith('m5', expect.objectContaining({
+      winner: 1, expect: { winner_entry_id: null, result: null, sets: null, entry1_id: 'e1', entry2_id: 'e2' }
+    })))
+    await waitFor(() => expect(screen.queryByTestId('result-save')).toBeNull())
+    await waitFor(() => expect(api.get.mock.calls.length).toBeGreaterThan(loads))
+  })
+
+  it('withdrawing a result names the result this screen showed; refused when it changed meanwhile', async () => {
+    const shown = { ...READY_W5, status: 'finished', result: 'played', sets: [[21, 10], [21, 12]], winner_entry_id: 'e1' }
+    api.get.mockResolvedValue(ok(bundle({ draws: [{ ...DRAW, status: 'playing' }], matches: [shown] })))
+    api.withdrawResult.mockResolvedValue({ data: null, error: { code: 'OV_RESULT_CHANGED', message: 'changed', status: 409 }, status: 409 })
+    await openDraw()
+    fireEvent.click(await screen.findByTestId('result-W5'))
+    const loads = api.get.mock.calls.length
+    fireEvent.click(screen.getByRole('button', { name: 'tournaments.withdrawResult' }))
+    await waitFor(() => expect(api.withdrawResult).toHaveBeenCalledWith('m5', {
+      winner_entry_id: 'e1', result: 'played', sets: [[21, 10], [21, 12]], entry1_id: 'e1', entry2_id: 'e2'
+    }))
+    await waitFor(() => expect(screen.queryByTestId('result-save')).toBeNull())
+    await waitFor(() => expect(api.get.mock.calls.length).toBeGreaterThan(loads))
+  })
+
+  it('Start tells the server a match is on court; Undo start takes it back', async () => {
+    api.get.mockResolvedValue(ok(bundle({ draws: [{ ...DRAW, status: 'playing' }], matches: [READY_W5, { ...READY_W5, id: 'm6', game_n: 6, code: 'W6', status: 'in_progress' }] })))
+    api.setMatchStatus.mockResolvedValue(ok({ match: {} }))
+    await openDraw()
+    expect(screen.queryByTestId('unstart-W5')).toBeNull()
+    expect(screen.queryByTestId('start-W6')).toBeNull()
+    const loads = api.get.mock.calls.length
+    fireEvent.click(await screen.findByTestId('start-W5'))
+    await waitFor(() => expect(api.setMatchStatus).toHaveBeenCalledWith('m5', 'in_progress'))
+    await waitFor(() => expect(api.get.mock.calls.length).toBeGreaterThan(loads))
+    fireEvent.click(screen.getByTestId('unstart-W6'))
+    await waitFor(() => expect(api.setMatchStatus).toHaveBeenCalledWith('m6', 'open'))
+    // the result of a started match is entered as usual
+    expect(screen.getByTestId('result-W6')).toBeInTheDocument()
+  })
+
+  it('reads the tournament again in the background: when the page comes back and every 30 s', async () => {
+    const intervals = vi.spyOn(window, 'setInterval')
+    try {
+      await openTournament()
+      const loads = api.get.mock.calls.length
+      window.dispatchEvent(new Event('focus'))
+      await waitFor(() => expect(api.get.mock.calls.length).toBe(loads + 1))
+      // a failed background read keeps what is shown
+      api.get.mockResolvedValueOnce({ data: null, error: { code: 'OV_DB_UNAVAILABLE', status: 503 }, status: 503 })
+      const every30s = intervals.mock.calls.filter(([, ms]) => ms === 30000).at(-1)
+      expect(every30s).toBeTruthy()
+      every30s[0]()
+      await waitFor(() => expect(api.get.mock.calls.length).toBe(loads + 2))
+      await new Promise(r => setTimeout(r, 0))
+      expect(screen.getByRole('heading', { name: 'Züri Open' })).toBeInTheDocument()
+      expect(screen.getByRole('radio', { name: 'tournaments.sections.draws' })).toBeInTheDocument()
+      expect(screen.queryByText('manage.errors.generic')).toBeNull()
+    } finally {
+      intervals.mockRestore()
+    }
+  })
+
+  it('a court a match was played on is not removed: the server says to switch it off', async () => {
+    api.putCourts.mockResolvedValue({ data: null, error: { code: 'OV_COURT_IN_USE', message: 'in use', status: 409, details: { courts: [2] } }, status: 409 })
+    await openTournament()
+    fireEvent.click(screen.getByRole('radio', { name: 'tournaments.sections.courts' }))
+    fireEvent.click((await screen.findAllByRole('button', { name: 'tournaments.removeCourt' }))[1])
+    fireEvent.click(screen.getByRole('button', { name: 'tournaments.saveCourts' }))
+    await waitFor(() => expect(api.putCourts).toHaveBeenCalledWith('t1', [{ number: 1, name: null, active: true, flex: false }]))
+    expect(await screen.findByText('tournaments.errors.courtInUse')).toBeInTheDocument()
+  })
+
+  it('a background read keeps the courts being typed', async () => {
+    await openTournament()
+    fireEvent.click(screen.getByRole('radio', { name: 'tournaments.sections.courts' }))
+    const name = (await screen.findAllByLabelText('tournaments.courtName'))[0]
+    fireEvent.change(name, { target: { value: 'Stadium' } })
+    const loads = api.get.mock.calls.length
+    window.dispatchEvent(new Event('focus'))
+    await waitFor(() => expect(api.get.mock.calls.length).toBe(loads + 1))
+    await new Promise(r => setTimeout(r, 0))
+    expect(screen.getAllByLabelText('tournaments.courtName')[0]).toHaveValue('Stadium')
+  })
+
+  it('the schedule: planned after a dry run, shown per day, time and court', async () => {
+    api.get.mockResolvedValue(ok(bundle({
+      draws: [{ ...DRAW, status: 'drawn' }],
+      matches: [{ id: 'm1', draw_id: 'd1', game_n: 1, code: 'W1', phase: 'winners', round: 1, source1: 'seed:1', source2: 'seed:4', entry1_id: 'e1', entry2_id: 'e4', status: 'ready', court_id: 'c2', scheduled_at: '2026-07-11T07:00:00Z' }]
+    })))
+    api.schedule.mockResolvedValue(ok({ slots: [{ id: 'm1' }], unplaced: [], warnings: [] }))
+    await openTournament()
+    fireEvent.click(screen.getByRole('radio', { name: 'tournaments.sections.schedule' }))
+    expect(await screen.findByTestId('slot-1')).toHaveTextContent('Pair 1')
+    expect(screen.getByText('09:00')).toBeInTheDocument()
+    expect(screen.getByText('Center')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('schedule-plan'))
+    await waitFor(() => expect(api.schedule).toHaveBeenCalledTimes(2))
+    expect(api.schedule).toHaveBeenNthCalledWith(1, 't1', { dryRun: true, day_start: '09:00', day_end: '19:00' })
+    expect(api.schedule).toHaveBeenNthCalledWith(2, 't1', { day_start: '09:00', day_end: '19:00' })
+  })
+
+  it('a hand move that clashes with the schedule is saved only after the manager confirms it', async () => {
+    api.get.mockResolvedValue(ok(bundle({
+      draws: [{ ...DRAW, status: 'drawn' }],
+      matches: [{ id: 'm1', draw_id: 'd1', game_n: 1, code: 'W1', phase: 'winners', round: 1, source1: 'seed:1', source2: 'seed:4', entry1_id: 'e1', entry2_id: 'e4', status: 'ready', court_id: 'c2', scheduled_at: '2026-07-11T07:00:00Z' }]
+    })))
+    const clash = { data: null, error: { code: 'OV_SLOT_CONFLICT', status: 409, details: { conflicts: [{ reason: 'court', game_n: 2, code: 'W2' }, { reason: 'hours' }] } }, status: 409 }
+    api.updateMatch.mockResolvedValueOnce(clash).mockResolvedValueOnce(ok({ match: {} }))
+    await openTournament()
+    fireEvent.click(screen.getByRole('radio', { name: 'tournaments.sections.schedule' }))
+    fireEvent.click(await screen.findByTestId('slot-1'))
+    fireEvent.click(screen.getByRole('button', { name: 'tournaments.save' }))
+    await waitFor(() => expect(api.updateMatch).toHaveBeenCalledTimes(2))
+    const body = { referee: null, scorer: null, court_id: 'c2', scheduled_at: '2026-07-11T07:00:00.000Z' }
+    expect(api.updateMatch).toHaveBeenNthCalledWith(1, 'm1', body)
+    expect(api.updateMatch).toHaveBeenNthCalledWith(2, 'm1', { ...body, force: true })
+    expect(ask.askConfirm).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'tournaments.slotConflictTitle',
+      message: 'tournaments.slotConflicts.court\ntournaments.slotConflicts.hours',
+      confirmLabel: 'tournaments.saveAnyway'
+    }))
+  })
+
+  it('a clashing hand move the manager does not confirm is not saved', async () => {
+    api.get.mockResolvedValue(ok(bundle({
+      draws: [{ ...DRAW, status: 'drawn' }],
+      matches: [{ id: 'm1', draw_id: 'd1', game_n: 1, code: 'W1', phase: 'winners', round: 1, source1: 'seed:1', source2: 'seed:4', entry1_id: 'e1', entry2_id: 'e4', status: 'ready', court_id: 'c2', scheduled_at: '2026-07-11T07:00:00Z' }]
+    })))
+    api.updateMatch.mockResolvedValue({ data: null, error: { code: 'OV_SLOT_CONFLICT', status: 409, details: { conflicts: [{ reason: 'days' }] } }, status: 409 })
+    ask.askConfirm.mockResolvedValueOnce(false)
+    await openTournament()
+    fireEvent.click(screen.getByRole('radio', { name: 'tournaments.sections.schedule' }))
+    fireEvent.click(await screen.findByTestId('slot-1'))
+    fireEvent.click(screen.getByRole('button', { name: 'tournaments.save' }))
+    await waitFor(() => expect(ask.askConfirm).toHaveBeenCalled())
+    expect(api.updateMatch).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: 'tournaments.save' })).toBeInTheDocument()
+  })
+
+  it('a co-manager is invited (PERM-18): the same answer and list row for every address, withdrawn from the list', async () => {
+    api.addManager = vi.fn(async () => ok({ requested: true }))
+    const success = vi.spyOn(toast, 'success')
+    const failure = vi.spyOn(toast, 'error')
+    ask.askText.mockResolvedValueOnce(' Max@Club.ch ')
+    await openTournament()
+    fireEvent.click(screen.getByRole('radio', { name: 'tournaments.sections.details' }))
+    api.get.mockResolvedValue(ok(bundle({ invited: [{ id: 'i-1', email: 'max@club.ch', invited_at: '2026-11-23T10:00:00Z' }] })))
+    fireEvent.click(await screen.findByRole('button', { name: 'tournaments.addManager' }))
+    await waitFor(() => expect(success).toHaveBeenCalledWith('tournaments.managerInvited'))
+    expect(api.addManager).toHaveBeenCalledWith('t1', 'Max@Club.ch')
+    // the reloaded list shows the address as invited, never whether it has an account
+    expect(await screen.findByText('max@club.ch')).toBeInTheDocument()
+    expect(screen.getByText('tournaments.invitedChip')).toBeInTheDocument()
+    // another address: the very same answer
+    ask.askText.mockResolvedValueOnce('nobody@club.ch')
+    fireEvent.click(await screen.findByRole('button', { name: 'tournaments.addManager' }))
+    await waitFor(() => expect(success).toHaveBeenCalledTimes(2))
+    expect(success).toHaveBeenLastCalledWith('tournaments.managerInvited')
+    expect(failure).not.toHaveBeenCalled()
+    // withdrawn
+    api.removeInvite.mockResolvedValue(ok({ id: 'i-1' }))
+    fireEvent.click(screen.getByRole('button', { name: 'tournaments.removeInvite' }))
+    await waitFor(() => expect(api.removeInvite).toHaveBeenCalledWith('t1', 'i-1'))
+    success.mockRestore()
+    failure.mockRestore()
+  })
+
+  it('an invitation to co-manage: accepted, the tournament opens; declined, it goes; none, no card', async () => {
+    const INV = { id: 'i-9', invited_at: '2026-11-23T10:00:00Z', invited_by: 'Mia', tournament: { id: 't1', slug: TOUR.slug, title: 'Züri Open', starts_on: TOUR.starts_on, ends_on: TOUR.ends_on, status: 'draft' } }
+    api.invites.mockResolvedValue(ok({ invites: [INV, { ...INV, id: 'i-8', tournament: { ...INV.tournament, id: 't8', title: 'Other Cup' } }] }))
+    api.acceptInvite.mockResolvedValue(ok({ tournament: { ...TOUR, can_edit: true } }))
+    api.declineInvite.mockResolvedValue(ok({ id: 'i-8' }))
+    render(<TournamentsPanel />)
+    const card = await screen.findByTestId('tournament-invites')
+    expect(within(card).getByText('Other Cup')).toBeInTheDocument()
+    expect(within(card).getAllByText('tournaments.invitedBy')).toHaveLength(2)
+    // the rows in the server's order: the second is Other Cup
+    api.invites.mockResolvedValue(ok({ invites: [INV] }))
+    fireEvent.click(within(card).getAllByRole('button', { name: 'tournaments.decline' })[1])
+    await waitFor(() => expect(api.declineInvite).toHaveBeenCalledWith('i-8'))
+    await waitFor(() => expect(screen.queryByText('Other Cup')).toBeNull())
+    fireEvent.click(within(await screen.findByTestId('tournament-invites')).getByRole('button', { name: 'tournaments.accept' }))
+    await waitFor(() => expect(api.acceptInvite).toHaveBeenCalledWith('i-9'))
+    await screen.findByRole('heading', { name: 'Züri Open' })
+  })
+
+  it('a beach scorer is shown no invitations', async () => {
+    setAuth(['beach:scorer'])
+    render(<TournamentsPanel />)
+    await screen.findByRole('button', { name: 'Züri Open' })
+    expect(api.invites).not.toHaveBeenCalled()
+    expect(screen.queryByTestId('tournament-invites')).toBeNull()
+  })
+
+  it('the ranking: a table and the CSV for MyBeach', async () => {
+    api.get.mockResolvedValue(ok(bundle({ draws: [{ ...DRAW, status: 'done' }] })))
+    api.ranking.mockResolvedValue(ok({ draw: { ...DRAW, status: 'done' }, complete: true, ranking: [entry(1, { final_rank: 1, player1: { first: 'A', last: 'L1', licence: 'LIC-1' } })], csv: 'Rank;Seed\r\n1;1\r\n' }))
+    const created = []
+    URL.createObjectURL = vi.fn((b) => { created.push(b); return 'blob:x' })
+    URL.revokeObjectURL = vi.fn()
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    await openTournament()
+    fireEvent.click(screen.getByRole('radio', { name: 'tournaments.sections.ranking' }))
+    expect(await screen.findByText(/LIC-1/)).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('ranking-csv'))
+    expect(click).toHaveBeenCalled()
+    expect(created[0].type).toBe('text/csv;charset=utf-8')
+    click.mockRestore()
+  })
+})
+
+// Owner 2026-11-10: "make sure every page there gets their own page". A
+// tournament is a page of its own: #tournaments/<tournament id>.
+describe('a tournament is a page (#tournaments/<id>)', () => {
+  /** The panel with its route kept as the console keeps it; returns the go() calls ([path, opts]). */
+  const routed = (initial = '') => {
+    const calls = []
+    function Harness() {
+      const [route, setRoute] = useState(initial)
+      return <TournamentsPanel route={route} onRoute={(path, opts) => { calls.push([path, opts]); setRoute(path) }} />
+    }
+    render(<Harness />)
+    return calls
+  }
+
+  it('opens from its row; its back button returns to the list', async () => {
+    const calls = routed()
+    fireEvent.click(await screen.findByRole('button', { name: 'Züri Open' }))
+    expect(calls).toEqual([['t1', { push: true }]])
+    expect(await screen.findByRole('heading', { name: 'Züri Open' })).toBeInTheDocument()
+    expect(api.get).toHaveBeenCalledWith('t1')
+    fireEvent.click(screen.getByRole('button', { name: 'tournaments.allTournaments' }))
+    expect(calls.at(-1)).toEqual(['', { push: true }])
+    expect(await screen.findByTestId('tournament-new')).toBeInTheDocument()
+  })
+
+  it('opens from the URL', async () => {
+    routed('t1')
+    expect(await screen.findByRole('heading', { name: 'Züri Open' })).toBeInTheDocument()
+    expect(api.get).toHaveBeenCalledWith('t1')
+  })
+
+  it('a tournament that is not there: not found once the list is in, never read; the way back', async () => {
+    const calls = routed('t-gone')
+    expect(await screen.findByText('manage.pageNotFound')).toBeInTheDocument()
+    expect(api.get).not.toHaveBeenCalled()
+    fireEvent.click(within(screen.getByTestId('page-missing')).getByRole('button', { name: 'tournaments.allTournaments' }))
+    expect(calls).toEqual([['', { push: true }]])
+  })
+
+  it('a new tournament opens at once, before the list has it', async () => {
+    api.create.mockResolvedValue(ok({ tournament: { ...TOUR, id: 't2', title: 'Beach Cup' } }))
+    api.get.mockResolvedValue(ok(bundle({ tournament: { ...TOUR, id: 't2', title: 'Beach Cup' } })))
+    const calls = routed()
+    fireEvent.click(await screen.findByTestId('tournament-new'))
+    fireEvent.change(screen.getByTestId('tournament-title'), { target: { value: 'Beach Cup' } })
+    fireEvent.change(screen.getByTestId('tournament-starts'), { target: { value: '2026-08-01' } })
+    fireEvent.click(screen.getByTestId('tournament-create'))
+    await waitFor(() => expect(calls).toEqual([['t2', { push: true }]]))
+    expect(await screen.findByRole('heading', { name: 'Beach Cup' })).toBeInTheDocument()
+    expect(screen.queryByTestId('page-missing')).toBeNull()
+  })
+
+  it('a deleted tournament leaves its page in place of the history entry', async () => {
+    api.remove = vi.fn(async () => ok({ deleted: true }))
+    const calls = routed('t1')
+    await screen.findByRole('heading', { name: 'Züri Open' })
+    fireEvent.click(screen.getByRole('radio', { name: 'tournaments.sections.details' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'tournaments.delete' }))
+    await waitFor(() => expect(api.remove).toHaveBeenCalledWith('t1'))
+    await waitFor(() => expect(calls.at(-1)).toEqual(['', { push: false }]))
+  })
+})

@@ -1,0 +1,539 @@
+#!/usr/bin/env node
+/**
+ * Build script for subdomain deployments
+ * Builds each dashboard as a standalone static app, one site per subdomain
+ *
+ * Usage:
+ *   node scripts/build-subdomains.js          # Build all subdomains
+ *   node scripts/build-subdomains.js referee  # Build only referee
+ *
+ * Output:
+ *   dist-app/       → app.openvolley.app (main scoresheet)
+ *   dist-referee/   → referee.openvolley.app
+ *   dist-bench/     → bench.openvolley.app
+ *   dist-livescore/ → livescore.openvolley.app
+ *   dist-roster/    → roster.openvolley.app
+ *   dist-manager/   → manager.openvolley.app (admin console, no service worker)
+ *   dist-manager-beach/ → manager-beach.openvolley.app (the same console, OpenBeach brand)
+ */
+
+import { build } from 'vite'
+import { resolve, dirname } from 'path'
+import { fileURLToPath } from 'url'
+import { readFileSync, writeFileSync, mkdirSync, cpSync, copyFileSync, existsSync, rmSync, renameSync } from 'fs'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+import { VitePWA } from 'vite-plugin-pwa'
+import { BUILD_TARGET } from '../build-target.js'
+import { themeBoot } from '../theme-boot.js'
+import { browserCheck } from '../browser-check.js'
+import { buildChannelPlugin, buildChannel, devHeadersFile } from '../build-channel.js'
+import { securityHeaderLines } from '../csp.js'
+import { htmlToImageFontSize } from '../vite-plugin-html-to-image-font-size.js'
+import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, PRECACHE_MAX_FILE_BYTES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, API_NETWORK_ONLY_ROUTE, STATIC_ASSETS_ROUTE, PWA_INCLUDE_ASSETS, PWA_ICONS } from '../pwa-workbox.js'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const frontendDir = resolve(__dirname, '..')
+const disablePWA = process.env.DISABLE_PWA === 'true'
+
+// Read version from package.json
+const packageJson = JSON.parse(readFileSync(resolve(frontendDir, 'package.json'), 'utf-8'))
+const appVersion = packageJson.version
+
+// Subdomain configurations.
+// themeColor: every app is light only (RESTYLE-SPEC 5), so the browser and
+// installed-PWA status bar is white on all of them, as in the vite-build heads.
+export const subdomains = {
+  app: {
+    name: 'Open eScoresheet',
+    shortName: 'eScoresheet',
+    description: 'Volleyball match scoring application',
+    title: 'Open eScoresheet',
+    mainEntry: 'main',
+    themeColor: '#ffffff'
+  },
+  // app.openvolley.app/dictate: a dictation for the test match (after Swiss Volley's)
+  // (dictate/index.html). Built with base /dictate/ into dist-app/dictate/
+  // when the app is built, like the scoresheet; no service worker of its own.
+  dictate: {
+    name: 'Dictation – OpenVolley test match',
+    shortName: 'Diktat',
+    description: 'A dictation for the OpenVolley test match',
+    title: 'Dictation – OpenVolley test match',
+    mainEntry: 'dictate-main',
+    htmlFile: 'dictate/index.html',
+    host: 'app.openvolley.app/dictate',
+    pwa: false,
+    themeColor: '#ffffff'
+  },
+  referee: {
+    name: 'Referee Dashboard',
+    shortName: 'Referee',
+    description: 'Referee view for volleyball match scoring',
+    title: 'Referee Dashboard - OpenVolley',
+    mainEntry: 'referee-main',
+    themeColor: '#ffffff'
+  },
+  bench: {
+    name: 'Team Dashboard',
+    shortName: 'Bench',
+    description: 'Team bench dashboard for volleyball match management',
+    title: 'Team Dashboard - OpenVolley',
+    mainEntry: 'bench-main',
+    themeColor: '#ffffff'
+  },
+  livescore: {
+    name: 'Live Scoreboard',
+    shortName: 'Livescore',
+    description: 'Live scoring display for volleyball match',
+    title: 'Live Scoreboard - OpenVolley',
+    mainEntry: 'livescore-main',
+    themeColor: '#ffffff'
+  },
+  roster: {
+    name: 'Roster Upload',
+    shortName: 'Roster',
+    description: 'Upload roster PDF for volleyball match',
+    title: 'Roster Upload - OpenVolley',
+    mainEntry: 'upload-roster-main',
+    themeColor: '#ffffff'
+  },
+  scoresheet: {
+    name: 'Scoresheet Archive',
+    shortName: 'Scoresheet',
+    description: 'View and download volleyball match scoresheets',
+    title: 'Scoresheet Archive - OpenVolley',
+    mainEntry: 'scoresheet-main',
+    themeColor: '#ffffff',
+    customHtml: true
+  },
+  // manager.openvolley.app: the manage console (admins, competition managers)
+  // on its own. Its page is manager.html (also what `vite` serves in dev). No
+  // service worker: nothing here works offline, and an admin console must
+  // never run a stale build from a cache. Kept out of search engines.
+  manager: {
+    name: 'OpenVolley Manager',
+    shortName: 'Manager',
+    description: "Prepare your team's squad and the roster of each game for the OpenVolley eScoresheet. Clubs, invite codes and official games for competition managers.",
+    title: 'OpenVolley Manager',
+    mainEntry: 'manager-main',
+    themeColor: '#ffffff',
+    htmlFile: 'manager.html',
+    pwa: false,
+    noindex: true
+  },
+  // manager-beach.openvolley.app: the same console as OpenBeach's
+  // (src/managerBrand.js; plan 1.6). Its entry sets the brand; the build lays
+  // OpenBeach's icons (brand/beach/, logo B2) over the OpenVolley ones from
+  // public/ and writes a manifest with its name. Deploy: docs/manager-site-deploy.md
+  // ("OpenBeach's manager"), Pages project openbeach-manager.
+  'manager-beach': {
+    name: 'OpenBeach Manager',
+    shortName: 'Manager',
+    description: 'Accounts, invite codes and saved beach teams for OpenBeach admins and competition managers',
+    title: 'OpenBeach Manager',
+    mainEntry: 'manager-beach-main',
+    themeColor: '#ffffff',
+    htmlFile: 'manager-beach.html',
+    pwa: false,
+    noindex: true,
+    host: 'manager-beach.openvolley.app',
+    brandFiles: {
+      'favicon.ico': 'brand/beach/favicon.ico',
+      'favicon.svg': 'brand/beach/favicon.svg',
+      'apple-touch-icon.png': 'brand/beach/apple-touch-icon.png',
+      'icon-192.png': 'brand/beach/icon-192.png',
+      'icon-512.png': 'brand/beach/icon-512.png'
+    },
+    manifest: true
+  }
+}
+
+/** The public host of a subdomain build. */
+export function hostFor(name) {
+  return subdomains[name]?.host || `${name}.openvolley.app`
+}
+
+/**
+ * A web app manifest for a build without VitePWA (no service worker): only
+ * the name, colours and icons, so an installed shortcut shows the right brand.
+ */
+export function manifestFor(config) {
+  return JSON.stringify({
+    name: config.name,
+    short_name: config.shortName,
+    description: config.description,
+    start_url: '/',
+    display: 'standalone',
+    background_color: '#ffffff',
+    theme_color: config.themeColor,
+    icons: [
+      { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' }
+    ]
+  }, null, 2) + '\n'
+}
+
+/** The page a subdomain is built from: its own .html file, or a generated one. */
+export function htmlFor(config) {
+  if (config.htmlFile) return readFileSync(resolve(frontendDir, config.htmlFile), 'utf-8')
+  return config.customHtml ? createScoresheetHtml(config) : createIndexHtml(config)
+}
+
+/**
+ * Whether the pages get the colour theme boot script (theme-boot.js): not the
+ * scoresheet (the paper form) and not the manager consoles (no theme choice).
+ */
+export function usesTheme(config) {
+  return !config.customHtml && !config.htmlFile
+}
+
+/** Whether the build gets VitePWA (manifest + service worker). */
+export function usesPwa(config, pwaDisabled = disablePWA) {
+  return !pwaDisabled && config.pwa !== false
+}
+
+// Written into dist-<name> of a noindex subdomain (Cloudflare Pages reads
+// _headers from the output root).
+export const NOINDEX_FILES = Object.freeze({
+  'robots.txt': 'User-agent: *\nDisallow: /\n'
+})
+
+/** The name of a subdomain config (its key in `subdomains`). */
+function nameOf(config) {
+  return Object.keys(subdomains).find((k) => subdomains[k] === config) || ''
+}
+
+/**
+ * The _headers file of a build: every build gets the Content-Security-Policy
+ * and frame protection (csp.js; Report-Only on a dev build), a noindex one
+ * (the manager consoles) also X-Robots-Tag and no frames at all.
+ * @param {object} config a subdomains entry
+ * @param {'dev'|'production'} [channel]
+ */
+export function headersFor(config, channel = buildChannel()) {
+  const lines = securityHeaderLines(nameOf(config), channel, { noFrames: !!config.noindex })
+  if (config.noindex) lines.unshift('  X-Robots-Tag: noindex, nofollow')
+  return ['/*', ...lines, '  Referrer-Policy: strict-origin-when-cross-origin', ''].join('\n')
+}
+
+export function extraFilesFor(config, channel = buildChannel()) {
+  const files = config.noindex ? { ...NOINDEX_FILES } : {}
+  files._headers = headersFor(config, channel)
+  if (config.manifest) files['manifest.webmanifest'] = manifestFor(config)
+  return files
+}
+
+export function createIndexHtml(config) {
+  return `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="${config.themeColor}" />
+    <meta name="description" content="${config.description}" />
+    <title>${config.title}</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/${config.mainEntry}.jsx"></script>
+  </body>
+</html>
+`
+}
+
+function createScoresheetHtml(config) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="/favicon.ico" sizes="32x32" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta name="color-scheme" content="light" />
+  <meta name="theme-color" content="${config.themeColor}" />
+  <meta name="description" content="${config.description}" />
+  <title>${config.title}</title>
+  <style>
+    /* Global Font Setting */
+    body {
+      font-family: 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    /* Custom print styles to ensure background graphics/colors print */
+    @media print {
+      html,
+      body {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        margin: 0 !important;
+        padding: 0 !important;
+        height: 100% !important;
+        overflow: hidden !important;
+      }
+
+      @page {
+        size: A4 landscape;
+        margin: 0;
+      }
+
+      #root {
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        height: 100vh !important;
+        max-height: 100vh !important;
+      }
+    }
+
+    /* Hide scrollbar for cleaner look in inputs */
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+
+    .vertical-text {
+      writing-mode: vertical-lr;
+      transform: rotate(180deg);
+    }
+
+    /* Dense table utils */
+    .input-dense {
+      text-align: center;
+      background-color: transparent;
+      width: 100%;
+      height: 100%;
+      outline: none;
+    }
+
+    .input-dense:focus {
+      background-color: rgba(59, 130, 246, 0.1);
+    }
+  </style>
+</head>
+<body class="bg-gray-100 text-gray-900 antialiased print:bg-white text-[10px] overflow-auto">
+  <div id="root"></div>
+  <script type="module" src="/src/${config.mainEntry}.jsx"></script>
+</body>
+</html>
+`
+}
+
+async function buildSubdomain(subdomain, basePath = '/') {
+  const config = subdomains[subdomain]
+  if (!config) {
+    console.error(`Unknown subdomain: ${subdomain}`)
+    console.error(`Available: ${Object.keys(subdomains).join(', ')}`)
+    process.exit(1)
+  }
+
+  const outDir = resolve(frontendDir, `dist-${subdomain}`)
+  const tempIndexName = `_build_${subdomain}.html`
+  const tempIndexPath = resolve(frontendDir, tempIndexName)
+
+  // Clean output directory
+  if (existsSync(outDir)) rmSync(outDir, { recursive: true })
+
+  console.log(`\n🔨 Building ${hostFor(subdomain)}...${basePath !== '/' ? ` (base: ${basePath})` : ''}`)
+
+  // Create temp index.html in frontend root (custom HTML for scoresheet,
+  // manager.html for the manager)
+  writeFileSync(tempIndexPath, htmlFor(config))
+
+  try {
+    await build({
+      // Do NOT merge vite.config.js: its plugins would be concatenated with these
+      // (two VitePWA + two react() fighting over sw.js / manifest, and
+      // DISABLE_PWA could not turn the main config's VitePWA off).
+      configFile: false,
+      root: frontendDir,
+      base: basePath,
+      publicDir: 'public',
+      define: {
+        __APP_VERSION__: JSON.stringify(appVersion)
+      },
+      resolve: {
+        dedupe: ['react', 'react-dom', 'dexie'],
+        alias: {
+          '@': resolve(frontendDir, 'src')
+        }
+      },
+      plugins: [
+        react(),
+        // Tailwind used to reach these builds only via the merged vite.config.js
+        tailwindcss(),
+        // html-to-image's font-size shrinking off, as in vite.config.js (the
+        // manager's Rebuild PDF and the scoresheet subdomain save PDFs)
+        htmlToImageFontSize(),
+        // Colour theme boot script (theme-boot.js), as in vite.config.js
+        themeBoot({ enabled: usesTheme(config) }),
+        // The old-browser message (browser-check.js), on every page, the
+        // scoresheet and the manager consoles too, as in vite.config.js
+        browserCheck(),
+        // A dev-branch build (Pages preview): its test backend, noindex and
+        // the "Test build" badge (build-channel.js), as in vite.config.js
+        buildChannelPlugin(),
+        ...(usesPwa(config) ? [VitePWA({
+          registerType: 'prompt',
+          includeAssets: PWA_INCLUDE_ASSETS,
+          workbox: {
+            // Same precache/offline rules as the main build (pwa-workbox.js)
+            globPatterns: PRECACHE_GLOB_PATTERNS,
+            maximumFileSizeToCacheInBytes: PRECACHE_MAX_FILE_BYTES,
+            globIgnores: PRECACHE_GLOB_IGNORES,
+            ignoreURLParametersMatching: IGNORE_URL_PARAMETERS,
+            // The page is built as _build_<app>.html and renamed to index.html
+            // below; precache it under its final name, or the SW install 404s
+            // and the app never becomes available offline.
+            manifestTransforms: [async (entries) => ({
+              manifest: entries.map((e) => (e.url === tempIndexName ? { ...e, url: 'index.html' } : e)),
+              warnings: []
+            })],
+            skipWaiting: false,
+            clientsClaim: true,
+            navigateFallback: null,
+            runtimeCaching: [
+              offlineNavigationRoute,
+              // the API from the network only, never cached (pwa-workbox.js)
+              API_NETWORK_ONLY_ROUTE,
+              // cache first, never an HTML answer (pwa-workbox.js)
+              STATIC_ASSETS_ROUTE,
+              {
+                urlPattern: /\.html$/,
+                handler: 'NetworkFirst',
+                options: {
+                  cacheName: 'html-cache',
+                  expiration: { maxEntries: 10, maxAgeSeconds: 86400 }
+                }
+              }
+            ],
+            navigateFallbackDenylist: NAVIGATE_FALLBACK_DENYLIST,
+            cleanupOutdatedCaches: true
+          },
+          manifest: {
+            name: config.name,
+            short_name: config.shortName,
+            description: config.description,
+            start_url: '/',
+            display: 'standalone',
+            background_color: '#ffffff',
+            theme_color: config.themeColor,
+            icons: PWA_ICONS
+          }
+        })] : [])
+      ],
+      build: {
+        outDir,
+        emptyOutDir: true,
+        target: BUILD_TARGET,
+        // Hidden source maps on the web builds Cloudflare Pages makes (CF_PAGES=1;
+        // OV_SOURCEMAPS=1 by hand): next to each bundle, with no sourceMappingURL
+        // comment, so browsers never fetch them; the backend's error tracker reads
+        // them to show readable stacks (lib/sourceMaps.js). The code is open
+        // source. Never in the desktop / SEA packages (release.yml builds here too).
+        sourcemap: process.env.CF_PAGES === '1' || process.env.OV_SOURCEMAPS === '1' ? 'hidden' : false,
+        rolldownOptions: {
+          input: tempIndexPath,
+          output: {
+            format: 'es',
+            codeSplitting: {
+              groups: [
+                { name: 'react-vendor', test: /node_modules[\\/]react(-dom)?[\\/]/ },
+                { name: 'dexie-vendor', test: /node_modules[\\/]dexie/ }
+              ]
+            }
+          }
+        }
+      },
+      logLevel: 'warn'
+    })
+
+    // Rename the built HTML to index.html
+    const builtHtmlPath = resolve(outDir, tempIndexName)
+    const finalHtmlPath = resolve(outDir, 'index.html')
+    if (existsSync(builtHtmlPath)) {
+      renameSync(builtHtmlPath, finalHtmlPath)
+    }
+
+    // _headers: over the one a dev build's channel plugin wrote, with its
+    // X-Robots-Tag rule kept (build-channel.js devHeadersFile)
+    const channel = buildChannel()
+    for (const [name, content] of Object.entries(extraFilesFor(config, channel))) {
+      writeFileSync(resolve(outDir, name), name === '_headers' && channel === 'dev' ? devHeadersFile(content) : content)
+    }
+    // The brand's icons over the OpenVolley ones copied from public/
+    for (const [name, source] of Object.entries(config.brandFiles || {})) {
+      copyFileSync(resolve(frontendDir, source), resolve(outDir, name))
+    }
+
+    console.log(`✅ Built ${hostFor(subdomain)} → dist-${subdomain}/`)
+
+  } finally {
+    // Clean up temp file
+    if (existsSync(tempIndexPath)) {
+      rmSync(tempIndexPath)
+    }
+  }
+}
+
+async function main() {
+  const targetSubdomain = process.argv[2]
+  const baseArgIndex = process.argv.indexOf('--base')
+  const basePath = baseArgIndex !== -1 ? process.argv[baseArgIndex + 1] : '/'
+
+  console.log('🏐 OpenVolley Subdomain Builder')
+  console.log(`   Version: ${appVersion}`)
+
+  if (targetSubdomain) {
+    await buildSubdomain(targetSubdomain, basePath)
+
+    // If building 'app', also build scoresheet with /scoresheet/ base path
+    if (targetSubdomain === 'app') {
+      console.log('\n📋 Building embedded scoresheet for app.openvolley.app/scoresheet...')
+      await buildSubdomain('scoresheet', '/scoresheet/')
+      const scoresheetSrc = resolve(frontendDir, 'dist-scoresheet')
+      const scoresheetDest = resolve(frontendDir, 'dist-app', 'scoresheet')
+      if (existsSync(scoresheetSrc)) {
+        mkdirSync(scoresheetDest, { recursive: true })
+        cpSync(scoresheetSrc, scoresheetDest, { recursive: true })
+        console.log('✅ Copied scoresheet to dist-app/scoresheet/')
+      }
+
+      console.log('\n🎬 Building app.openvolley.app/dictate...')
+      await buildSubdomain('dictate', '/dictate/')
+      const dictateSrc = resolve(frontendDir, 'dist-dictate')
+      const dictateDest = resolve(frontendDir, 'dist-app', 'dictate')
+      if (existsSync(dictateSrc)) {
+        mkdirSync(dictateDest, { recursive: true })
+        cpSync(dictateSrc, dictateDest, { recursive: true })
+        console.log('✅ Copied dictate to dist-app/dictate/')
+      }
+    }
+  } else {
+    console.log('\n📦 Building all subdomains...')
+    for (const subdomain of Object.keys(subdomains)) {
+      await buildSubdomain(subdomain)
+    }
+    console.log('\n✨ All subdomain builds complete!')
+    console.log('\n📁 Output directories:')
+    for (const subdomain of Object.keys(subdomains)) {
+      console.log(`   dist-${subdomain}/ → ${hostFor(subdomain)}`)
+    }
+  }
+}
+
+// Run only as a script: tests import the subdomain table above.
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().then(() => {
+    process.exit(0)
+  }).catch((err) => {
+    console.error('Build failed:', err)
+    process.exit(1)
+  })
+}

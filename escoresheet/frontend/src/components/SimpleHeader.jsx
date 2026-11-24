@@ -1,0 +1,339 @@
+import { useState, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
+import { ChevronDown, Maximize, Menu, X } from 'lucide-react'
+import i18n from '../i18n'
+import { ClipboardIcon, TrashIcon } from './icons'
+import { clearCachesAndReload } from '../hooks/useServiceWorker'
+import { cn } from '../ui/cn.js'
+import { toast } from '../ui/uiStore.js'
+import { SegmentedControl } from '../ui/SegmentedControl.jsx'
+import {
+  HEADER_BAR, HEADER_BAR_HEIGHT, HEADER_BTN, HEADER_BTN_ON, HEADER_HIT, HEADER_TITLE, MENU_SECTION, MENU_ROW, MENU_SUBROW,
+  MENU_ROW_ON, MENU_ROW_DANGER, MENU_NEST, MENU_SEP, MENU_ICON, toastLang
+} from './chromeClasses'
+import HeaderMenuItem from './HeaderMenuItem'
+import { MenuPopover } from '../ui/MenuPopover.jsx'
+import { HeaderHelpButton } from './help/HelpButton.jsx'
+
+// Flag SVG components for language selector
+const FlagGB = () => (
+  <svg className="flag" width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+    <rect width="60" height="42" fill="#012169" />
+    <path d="M0,0 L60,42 M60,0 L0,42" stroke="#fff" strokeWidth="7" />
+    <path d="M0,0 L60,42 M60,0 L0,42" stroke="#C8102E" strokeWidth="4" clipPath="url(#gbClip)" />
+    <path d="M30,0 V42 M0,21 H60" stroke="#fff" strokeWidth="12" />
+    <path d="M30,0 V42 M0,21 H60" stroke="#C8102E" strokeWidth="7" />
+  </svg>
+)
+
+const FlagIT = () => (
+  <svg className="flag" width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+    <rect width="20" height="42" fill="#009246" />
+    <rect x="20" width="20" height="42" fill="#fff" />
+    <rect x="40" width="20" height="42" fill="#CE2B37" />
+  </svg>
+)
+
+const FlagDE = () => (
+  <svg className="flag" width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+    <rect width="60" height="14" fill="#000" />
+    <rect y="14" width="60" height="14" fill="#DD0000" />
+    <rect y="28" width="60" height="14" fill="#FFCE00" />
+  </svg>
+)
+
+const FlagFR = () => (
+  <svg className="flag" width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+    <rect width="20" height="42" fill="#002395" />
+    <rect x="20" width="20" height="42" fill="#fff" />
+    <rect x="40" width="20" height="42" fill="#ED2939" />
+  </svg>
+)
+
+const FlagCH = () => (
+  <svg className="flag" width="14" height="14" viewBox="0 0 32 32" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+    <rect width="32" height="32" fill="#ff0000" />
+    <rect x="14" y="6" width="4" height="20" fill="#fff" />
+    <rect x="6" y="14" width="20" height="4" fill="#fff" />
+  </svg>
+)
+
+const languages = [
+  { code: 'en', Flag: FlagGB, label: 'EN' },
+  { code: 'it', Flag: FlagIT, label: 'IT' },
+  { code: 'de', Flag: FlagDE, label: 'DE' },
+  { code: 'de-CH', Flag: FlagCH, label: 'DE' },
+  { code: 'fr', Flag: FlagFR, label: 'FR' }
+]
+
+/**
+ * SimpleHeader - 3-column header for all dashboard apps
+ * Left: Title/version
+ * Middle: Hamburger menu (collapsible)
+ * Right: ? (help, with onHelp) and Fullscreen button
+ *
+ * volleyui chrome: white bar with a stone hairline, kit header buttons, the
+ * menu as a white anchored dropdown with 48 px rows, the optional toggle as a
+ * kit segmented pill (slate-900 when on).
+ */
+export default function SimpleHeader({
+  title,
+  // Optional: what the left column shows instead of the title (the referee's
+  // connection status before the coin toss)
+  leading,
+  version,
+  menuItems = [], // Array of { icon, label, onClick, active, color, toggle, badge, badgeColor, disabled, divider }
+  onFullscreen,
+  isFullscreen = false,
+  toggleOptions, // Optional: segmented toggle [{ label: '1 REF', active: false, onClick }, { label: '2 REF', active: true, onClick }]
+  // The "?" of the page's help panel (ContextualHelpPanel)
+  onHelp,
+  helpOpen = false,
+  // Labelled buttons on the right, before "?": [{ key, label, icon, onClick, testId }].
+  // Icon only on a phone (the label is its aria-label and title), icon and label from sm.
+  actions = []
+}) {
+  const { t } = useTranslation()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [versionExpanded, setVersionExpanded] = useState(false)
+  const [languageExpanded, setLanguageExpanded] = useState(false)
+  const [confirmingClearCache, setConfirmingClearCache] = useState(false)
+  const currentVersion = version || __APP_VERSION__
+
+  const handleClearCache = async () => {
+    try {
+      // Keeps ?match=&team= on reload; refuses when the server is unreachable
+      if (!(await clearCachesAndReload())) {
+        toast.error(t('options.alerts.clearCacheNeedsServer', 'Cannot clear the cache while the server is unreachable: the app could not be reloaded afterwards.'), { lang: toastLang() })
+      }
+    } catch (error) {
+      console.error('Error clearing cache:', error)
+      toast.error(t('options.alerts.failedToClearCache', { error: error.message }), { lang: toastLang() })
+    }
+  }
+
+  // The menu closes on a press outside it and on Escape (ui/MenuPopover.jsx)
+  const menuButtonRef = useRef(null)
+
+  const currentLanguage = languages.find(l => l.code === i18n.language)
+  const CurrentFlag = currentLanguage ? currentLanguage.Flag : FlagGB
+  const activeToggle = toggleOptions ? toggleOptions.findIndex(o => o.active) : -1
+
+  return (
+    <div
+      // 40 px (44 px on a phone: with HEADER_HIT every button is then a full
+      // 44 px target, top to bottom of the bar), taller only when the system
+      // font size is raised (rem): at 150 % the rem-sized buttons were cut at
+      // the top of a fixed 40 px bar
+      className={cn('ov-kit', HEADER_BAR, HEADER_BAR_HEIGHT, 'flex items-center justify-between gap-2')}
+      style={{ padding: '0 12px' }}
+    >
+      {/* LEFT: Title/Version or Toggle. The toggle cannot shrink: its column
+          keeps the toggle's width, so on a narrow phone the menu button moves
+          right instead of sitting on "2 REF". */}
+      <div className={cn('flex min-w-0 flex-1 basis-0 items-center gap-2', toggleOptions?.length > 0 && 'min-w-max')}>
+        {/* Segmented Toggle (like LOCAL/REMOTE) */}
+        {toggleOptions && toggleOptions.length > 0 ? (
+          // The courtside referee's view switch: h-9 segments from the tablet
+          // breakpoint up (RESTYLE-SPEC 3.6); no frame padding there so it fits the 40 px bar.
+          <SegmentedControl
+            variant="pill"
+            ariaLabel={t('refereeDashboard.view', 'View')}
+            options={toggleOptions.map((option, idx) => ({ value: String(idx), label: option.label }))}
+            value={activeToggle >= 0 ? String(activeToggle) : ''}
+            onChange={(v) => toggleOptions[Number(v)]?.onClick?.()}
+            // 28 px segments on a phone (the bar has no room for wider ones):
+            // an invisible ::before makes each a 44 px tall target
+            className="shrink-0 sm:p-0 sm:[&_button]:h-9 sm:[&_button]:px-3 [&_button]:relative [&_button]:before:absolute [&_button]:before:inset-x-0 [&_button]:before:-inset-y-2 [&_button]:before:content-['']"
+          />
+        ) : leading ? (
+          leading
+        ) : title ? (
+          <span className={HEADER_TITLE}>
+            {title}
+          </span>
+        ) : null}
+      </div>
+
+      {/* MIDDLE: Hamburger Menu */}
+      <div className="simple-header-menu relative flex flex-none items-center justify-center">
+        {/* Always show hamburger - at minimum has language, version, and clear cache */}
+        <button
+          ref={menuButtonRef}
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            setMenuOpen(!menuOpen)
+          }}
+          aria-expanded={menuOpen}
+          className={cn(HEADER_BTN, HEADER_HIT, 'min-w-11 px-3', menuOpen && HEADER_BTN_ON)}
+          aria-label={t('header.menu')}
+          title={t('header.menu')}
+        >
+          {menuOpen ? <X size={16} aria-hidden="true" /> : <Menu size={16} aria-hidden="true" />}
+        </button>
+
+        {/* Dropdown Menu */}
+        {menuOpen && (
+          <>
+            <MenuPopover
+              open
+              onClose={() => setMenuOpen(false)}
+              anchorRef={menuButtonRef}
+              label={t('header.menu')}
+              role="group"
+              align="center"
+              closeLabel={t('common.close', 'Close')}
+              className="min-w-[220px] max-w-[280px]"
+            >
+              {menuItems.map((item, index) => {
+                // Divider
+                if (item.divider) {
+                  return <div key={`divider-${index}`} className={MENU_SEP} />
+                }
+
+                // Section header
+                if (item.header) {
+                  return (
+                    <div key={`header-${index}`} className={MENU_SECTION}>
+                      {item.header}
+                    </div>
+                  )
+                }
+
+                return <HeaderMenuItem key={index} item={item} onClose={() => setMenuOpen(false)} />
+              })}
+
+              {/* Language selector */}
+              {menuItems.length > 0 && <div className={MENU_SEP} />}
+              <button
+                type="button"
+                aria-expanded={languageExpanded}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setLanguageExpanded(!languageExpanded)
+                }}
+                className={cn(MENU_ROW, languageExpanded && 'bg-stone-100')}
+              >
+                <span className={MENU_ICON}><CurrentFlag /></span>
+                <span className="flex-1">{t('header.language', 'Language')}</span>
+                <ChevronDown size={14} aria-hidden="true" className={cn('text-stone-400 transition-transform', languageExpanded && 'rotate-180')} />
+              </button>
+
+              {/* Language options */}
+              {languageExpanded && (
+                <div className={MENU_NEST}>
+                  {languages.map((lang) => (
+                    <button
+                      type="button"
+                      key={lang.code}
+                      aria-pressed={i18n.language === lang.code}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        i18n.changeLanguage(lang.code)
+                        setLanguageExpanded(false)
+                      }}
+                      className={cn(MENU_SUBROW, i18n.language === lang.code && MENU_ROW_ON)}
+                    >
+                      <span className="flex w-5 items-center justify-center"><lang.Flag /></span>
+                      <span>{lang.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Version info at bottom */}
+              <div className={MENU_SEP} />
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setVersionExpanded(!versionExpanded)
+                }}
+                className={cn(MENU_ROW, 'text-stone-500')}
+              >
+                <span className={MENU_ICON}><ClipboardIcon size={13} /></span>
+                <span className="flex-1 tabular-nums">Version {currentVersion}</span>
+              </button>
+
+              {/* Clear Cache */}
+              <div className={MENU_SEP} />
+              {!confirmingClearCache ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setConfirmingClearCache(true)
+                  }}
+                  className={cn(MENU_ROW, MENU_ROW_DANGER)}
+                >
+                  <span className={cn(MENU_ICON, 'text-red-500')}><TrashIcon size={13} /></span>
+                  <span className="flex-1">{t('options.clearCache', 'Clear cache')}</span>
+                </button>
+              ) : (
+                <div className="px-3 py-2">
+                  <div className="mb-2 text-sm font-medium text-stone-800">
+                    {t('options.clearCacheConfirm', 'Clear cache and reload?')}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setConfirmingClearCache(false)
+                      }}
+                      className={cn(HEADER_BTN, 'h-10 flex-1 border-stone-300 text-sm text-stone-700')}
+                    >
+                      {t('common.cancel', 'Cancel')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleClearCache()
+                      }}
+                      className={cn(HEADER_BTN, 'h-10 flex-1 border-red-600 bg-red-600 text-sm font-semibold text-white hover:bg-red-700')}
+                    >
+                      {t('common.yes', 'Yes')}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </MenuPopover>
+          </>
+        )}
+      </div>
+
+      {/* RIGHT: ? and Fullscreen Button */}
+      <div className="flex flex-1 basis-0 items-center justify-end gap-2">
+        {actions.map((a) => (
+          <button
+            key={a.key || a.label}
+            type="button"
+            onClick={a.onClick}
+            data-testid={a.testId}
+            aria-label={a.label}
+            title={a.label}
+            className={cn(HEADER_BTN, HEADER_HIT, 'w-9 px-0 sm:w-auto sm:px-2.5 text-stone-800')}
+          >
+            {a.icon}
+            <span className="hidden sm:inline">{a.label}</span>
+          </button>
+        ))}
+        {onHelp && <HeaderHelpButton onClick={onHelp} pressed={helpOpen} />}
+        {onFullscreen && (
+          <button
+            type="button"
+            onClick={onFullscreen}
+            aria-pressed={isFullscreen}
+            className={cn(HEADER_BTN, HEADER_HIT, 'w-9 px-0', isFullscreen && HEADER_BTN_ON)}
+            aria-label={isFullscreen ? t('header.exitFullscreen', 'Exit fullscreen') : t('header.fullscreen', 'Fullscreen')}
+            title={isFullscreen ? t('header.exitFullscreen', 'Exit fullscreen') : t('header.fullscreen', 'Fullscreen')}
+          >
+            <Maximize size={15} aria-hidden="true" />
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}

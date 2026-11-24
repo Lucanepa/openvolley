@@ -1,0 +1,4 @@
+OpenVolley 2.4.10
+- Phone: Corrections opens on a phone and its tabs fit the screen (before, Back only offered to close the app).
+- Phone: the rosters show the names in full, the roster editor's bench fields are usable again, and the turned scoresheet fits the screen.
+- The keyboard no longer hides Save and Cancel. The action log shows local times.

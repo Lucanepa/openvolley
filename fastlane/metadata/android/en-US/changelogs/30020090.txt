@@ -1,0 +1,2 @@
+OpenVolley 3.2.9
+- Global tool: starting a match works again (it failed with "generateRefereePin is not defined").

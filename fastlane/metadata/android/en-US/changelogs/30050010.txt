@@ -1,0 +1,4 @@
+OpenVolley 3.5.1
+- Error reports: when something goes wrong, the app sends what went wrong and where (never what you typed) to the OpenVolley server, also without signing in. You can switch it off in Support & feedback.
+- Test matches: an official's licence number is shown as typed.
+- Privacy policy 1.22.

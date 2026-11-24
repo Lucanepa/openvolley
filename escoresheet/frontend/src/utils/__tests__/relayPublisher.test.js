@@ -1,0 +1,560 @@
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
+import {
+  createRelayPinTracker,
+  createScorerRelay,
+  createLiveStateOrder,
+  isRelayErrorFor,
+  isLocalRelayUrl,
+  liveStateTargets,
+  mayPublishMatchData,
+  publishLiveState,
+  relayReconnectDelay,
+  relayEvents,
+  relayConnectionStatus,
+  scorerRelayUrl,
+  resetScorerRelayUrl
+} from '../relayPublisher'
+import { getRelayWebSocketUrl, setBackendOverride } from '../backendConfig'
+
+const PINS = { gamePin: '987654', refereePin: '314159', homeTeamPin: '271828', awayTeamPin: '161803' }
+const match = (extra = {}) => ({ id: 1, seed_key: 'match_1_a', status: 'live', ...PINS, game_pin: '987654', connection_pins: { x: 1 }, ...extra })
+const hasPins = (m) => 'gamePin' in m || 'refereePin' in m
+
+describe('scorer relay publishing: PINs', () => {
+  it('sends the PINs on a socket\'s first sync, then only when one changes', () => {
+    const pins = createRelayPinTracker()
+    const ws = {}
+    const first = pins.payloadFor(ws, match())
+    expect(first.match).toMatchObject(PINS)
+    expect(first.match.game_pin).toBeUndefined()
+    expect(first.match.connection_pins).toBeUndefined()
+    first.commit()
+
+    const second = pins.payloadFor(ws, match({ status: 'interval' }))
+    expect(hasPins(second.match)).toBe(false)
+    expect(second.match.status).toBe('interval')
+    second.commit()
+
+    // A changed PIN goes out (with the others)
+    const changed = pins.payloadFor(ws, match({ refereePin: '565656' }))
+    expect(changed.match.refereePin).toBe('565656')
+    expect(changed.match.gamePin).toBe('987654')
+  })
+
+  it('a payload that was not sent (commit not called) does not count as sent', () => {
+    const pins = createRelayPinTracker()
+    const ws = {}
+    pins.payloadFor(ws, match())
+    expect(hasPins(pins.payloadFor(ws, match()).match)).toBe(true)
+  })
+
+  it('resends the PINs on a reconnect (new socket), once', () => {
+    const pins = createRelayPinTracker()
+    const a = {}
+    const b = {}
+    pins.payloadFor(a, match()).commit()
+    const onB = pins.payloadFor(b, match())
+    expect(hasPins(onB.match)).toBe(true)
+    onB.commit()
+    expect(hasPins(pins.payloadFor(b, match()).match)).toBe(false)
+  })
+
+  it('resends the PINs after a relay error about the match (refusal, lost room)', () => {
+    const pins = createRelayPinTracker()
+    const ws = {}
+    pins.payloadFor(ws, match()).commit()
+    const refusal = { type: 'error', code: 'not-match-owner', matchId: 'match_1_a' }
+    expect(isRelayErrorFor(refusal, [1, 'match_1_a'])).toBe(true)
+    pins.reset()
+    expect(hasPins(pins.payloadFor(ws, match()).match)).toBe(true)
+  })
+
+  it('sends the PINs with the first sync of a new key on the same socket (the match got its seed key)', () => {
+    const pins = createRelayPinTracker()
+    const ws = {}
+    pins.payloadFor(ws, match(), 'match_1_a').commit()
+    expect(hasPins(pins.payloadFor(ws, match(), 'match_1_a').match)).toBe(false)
+    const other = pins.payloadFor(ws, match({ seed_key: 'match_2_b' }), 'match_2_b')
+    expect(hasPins(other.match)).toBe(true)
+  })
+
+  it('recognises errors about this match only', () => {
+    const ids = [1, 'match_1_a']
+    expect(isRelayErrorFor({ type: 'error', code: 'pins-required', matchId: 'match_1_a' }, ids)).toBe(true)
+    expect(isRelayErrorFor({ type: 'error', code: 'room-limit', matchId: '1' }, ids)).toBe(true)
+    expect(isRelayErrorFor({ type: 'error', message: 'Server room limit reached' }, ids)).toBe(true)
+    expect(isRelayErrorFor({ type: 'error', code: 'not-match-owner', matchId: 'match_2_b' }, ids)).toBe(false)
+    expect(isRelayErrorFor({ type: 'pong' }, ids)).toBe(false)
+  })
+})
+
+describe('scorer relay publishing: live-state order', () => {
+  it('a side-out never pushes or writes the older point row over the rotation row', async () => {
+    const order = createLiveStateOrder()
+    const writes = []
+    // 'point' is called first, 'rotation' right after; the point's snapshot
+    // read is slower, so it reaches the push / write second
+    const point = order.next()
+    const rotation = order.next()
+    expect(order.shouldPush(rotation)).toBe(true)
+    expect(order.shouldPush(point)).toBe(false)
+
+    let releaseRotation
+    const rotationWrite = order.write(rotation, () => new Promise((resolve) => {
+      releaseRotation = () => { writes.push('rotation'); resolve({ error: null }) }
+    }))
+    const pointWrite = order.write(point, async () => { writes.push('point'); return { error: null } })
+    await Promise.resolve()
+    releaseRotation()
+    expect(await rotationWrite).toEqual({ error: null })
+    expect(await pointWrite).toEqual({ skipped: true })
+    expect(writes).toEqual(['rotation'])
+  })
+
+  it('writes run one at a time, in order, and a failed write does not block the next', async () => {
+    const order = createLiveStateOrder()
+    const log = []
+    const a = order.next()
+    const b = order.next()
+    const first = order.write(a, async () => { log.push('a:start'); await Promise.resolve(); log.push('a:end'); throw new Error('net') })
+    const second = order.write(b, async () => { log.push('b'); return { error: null } })
+    await expect(first).rejects.toThrow('net')
+    expect(await second).toEqual({ error: null })
+    expect(log).toEqual(['a:start', 'a:end', 'b'])
+  })
+
+  it('does not depend on the wall clock (an NTP step back does not freeze the livescore)', async () => {
+    const order = createLiveStateOrder()
+    const now = vi.spyOn(Date, 'now')
+    now.mockReturnValue(2_000_000)
+    const a = order.next()
+    expect(order.shouldPush(a)).toBe(true)
+    now.mockReturnValue(1_000_000) // clock stepped back
+    const b = order.next()
+    expect(order.shouldPush(b)).toBe(true)
+    expect(await order.write(b, async () => 'written')).toBe('written')
+    now.mockRestore()
+  })
+})
+
+describe('the scorer\'s one relay connection (App + Scoreboard)', () => {
+  class FakeSocket {
+    constructor(url) {
+      this.url = url
+      this.readyState = 0
+      this.sent = []
+      this.closed = null
+    }
+    send(text) { this.sent.push(JSON.parse(text)) }
+    close(code) {
+      this.readyState = 3
+      this.closed = code
+      this.onclose?.({ code })
+    }
+    open() {
+      this.readyState = 1
+      this.onopen?.()
+    }
+    receive(msg) { this.onmessage?.({ data: JSON.stringify(msg) }) }
+    drop() {
+      this.readyState = 3
+      this.onclose?.({ code: 1006 })
+    }
+  }
+  let sockets
+  let events
+  const make = (opts = {}) => {
+    sockets = []
+    events = new EventTarget()
+    return createScorerRelay({
+      createSocket: (url) => {
+        const s = new FakeSocket(url)
+        sockets.push(s)
+        return s
+      },
+      events,
+      doc: null,
+      // the top of each jittered step: the timings below stay exact
+      reconnectDelay: (n) => relayReconnectDelay(n, () => 1),
+      ...opts
+    })
+  }
+
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('App and Scoreboard share one socket: one owner of the match on the relay', async () => {
+    const relay = make()
+    const app = { onOpen: vi.fn(), onMessage: vi.fn() }
+    const board = { onOpen: vi.fn(), onMessage: vi.fn() }
+    const detachApp = relay.attach('wss://relay', app)
+    sockets[0].open()
+    expect(app.onOpen).toHaveBeenCalledTimes(1)
+    const detachBoard = relay.attach('wss://relay', board)
+    await Promise.resolve()
+    expect(sockets).toHaveLength(1)
+    expect(board.onOpen).toHaveBeenCalledWith(sockets[0])
+
+    // The PIN tracker is the connection's: what App sent with PINs, the
+    // Scoreboard does not resend (and vice versa)
+    relay.pins.payloadFor(sockets[0], match(), 'match_1_a').commit()
+    expect(hasPins(relay.pins.payloadFor(relay.socket, match(), 'match_1_a').match)).toBe(false)
+
+    // Errors and updates reach both; a relay request gets one answer
+    sockets[0].receive({ type: 'error', code: 'pins-required', matchId: 'match_1_a' })
+    expect(app.onMessage).toHaveBeenCalledTimes(1)
+    expect(board.onMessage).toHaveBeenCalledTimes(1)
+    sockets[0].receive({ type: 'match-data-request', requestId: 'r1', matchId: 'match_1_a' })
+    expect(board.onMessage).toHaveBeenCalledTimes(2)
+    expect(app.onMessage).toHaveBeenCalledTimes(1)
+
+    // The Scoreboard leaving (a sub-view) keeps the socket for App
+    detachBoard()
+    vi.runOnlyPendingTimers()
+    expect(sockets[0].closed).toBeNull()
+    expect(relay.userCount).toBe(1)
+    sockets[0].receive({ type: 'game-number-request', requestId: 'r2' })
+    expect(app.onMessage).toHaveBeenCalledTimes(2)
+
+    // An effect re-run (detach + attach in one commit) keeps it too
+    detachApp()
+    const detachAgain = relay.attach('wss://relay', app)
+    vi.runOnlyPendingTimers()
+    expect(sockets[0].closed).toBeNull()
+    expect(sockets).toHaveLength(1)
+
+    // The last one leaving closes it
+    detachAgain()
+    vi.runOnlyPendingTimers()
+    expect(sockets[0].closed).toBe(1000)
+    expect(relay.send({ type: 'ping' })).toBe(false)
+  })
+
+  it('reconnects with backoff, at once when back online, and re-runs every onOpen', () => {
+    const relay = make()
+    const app = { onOpen: vi.fn() }
+    relay.attach('wss://relay', app)
+    sockets[0].open()
+    sockets[0].drop()
+    expect(sockets).toHaveLength(1)
+    vi.advanceTimersByTime(4999)
+    expect(sockets).toHaveLength(1)
+    vi.advanceTimersByTime(1)
+    expect(sockets).toHaveLength(2)
+    sockets[1].drop()
+    // Back online: no waiting for the 10 s backoff
+    events.dispatchEvent(new Event('online'))
+    expect(sockets).toHaveLength(3)
+    sockets[2].open()
+    expect(app.onOpen).toHaveBeenCalledTimes(2)
+    expect(app.onOpen).toHaveBeenLastCalledWith(sockets[2])
+  })
+
+  // Stress test 2026-10-25: the internet back while the Wi-Fi stayed up (no
+  // 'online' event): referee and benches waited 28-34 s for the scorer's socket
+  it('reconnects at once when the backend answers again after an outage', () => {
+    const relay = make()
+    const app = { onOpen: vi.fn() }
+    relay.attach('wss://relay', app)
+    sockets[0].open()
+    sockets[0].drop()
+    vi.advanceTimersByTime(5000)
+    sockets[1].drop()
+    vi.advanceTimersByTime(10000)
+    sockets[2].drop()
+    expect(sockets).toHaveLength(3)
+    // (apiClient: a request got an answer again; the 20 s backoff is not waited out)
+    events.dispatchEvent(new Event('ov-backend-reached'))
+    expect(sockets).toHaveLength(4)
+    sockets[3].open()
+    expect(app.onOpen).toHaveBeenLastCalledWith(sockets[3])
+    // an open socket is left alone
+    events.dispatchEvent(new Event('ov-backend-reached'))
+    expect(sockets).toHaveLength(4)
+  })
+
+  it('replaces a socket that stops answering pings (Wi-Fi without uplink keeps it OPEN)', () => {
+    const relay = make({ pingIntervalMs: 1000, pongTimeoutMs: 500 })
+    relay.attach('wss://relay', {})
+    sockets[0].open()
+    vi.advanceTimersByTime(1000)
+    expect(sockets[0].sent.at(-1).type).toBe('ping')
+    sockets[0].receive({ type: 'pong' })
+    vi.advanceTimersByTime(500)
+    expect(sockets).toHaveLength(1)
+    vi.advanceTimersByTime(1000) // next ping, no answer
+    vi.advanceTimersByTime(500)
+    expect(sockets[0].closed).toBe(4000)
+    vi.advanceTimersByTime(1)
+    expect(sockets).toHaveLength(2)
+  })
+
+  it('the pong\'s server time gives the relay\'s clock offset, for the support diagnostics', () => {
+    let t = 1_000_000
+    const states = []
+    const relay = make({ pingIntervalMs: 1000, pongTimeoutMs: 500, now: () => t, publish: (st) => states.push(st) })
+    relay.attach('wss://relay?pin=771234', {})
+    expect(states.at(-1)).toMatchObject({ state: 'connecting', url: 'wss://relay', clock: null })
+    sockets[0].open()
+    expect(states.at(-1).state).toBe('open')
+    expect(relay.clock).toBe(null)
+    vi.advanceTimersByTime(1000)
+    // the server's clock is 2.5 s ahead; the answer takes 80 ms there and back
+    t += 80
+    sockets[0].receive({ type: 'pong', timestamp: 1_000_000 + 40 + 2500 })
+    expect(relay.clock).toEqual({ offsetMs: 2500, rttMs: 80, at: 1_000_080 })
+    expect(states.at(-1).clock).toEqual(relay.clock)
+    // a pong without a time (a LAN relay) changes nothing
+    sockets[0].receive({ type: 'pong' })
+    expect(relay.clock.offsetMs).toBe(2500)
+    sockets[0].drop()
+    expect(states.at(-1).state).toBe('reconnecting')
+  })
+
+  it('moves to another relay URL (LAN server port known) with fresh PINs', () => {
+    const relay = make()
+    relay.attach('ws://host:8080', {})
+    sockets[0].open()
+    relay.pins.payloadFor(sockets[0], match(), 'match_1_a').commit()
+    relay.attach('ws://host:8181', {})
+    expect(sockets[0].closed).toBe(1000)
+    expect(sockets[1].url).toBe('ws://host:8181')
+    sockets[1].open()
+    expect(hasPins(relay.pins.payloadFor(sockets[1], match(), 'match_1_a').match)).toBe(true)
+    expect(relay.url).toBe('ws://host:8181')
+  })
+})
+
+describe('test (rehearsal) matches: live state to a local relay only', () => {
+  it('tells a venue / local relay from a cloud one', () => {
+    for (const url of [
+      'ws://127.0.0.1:8080', 'ws://localhost:8080', 'wss://192.168.1.20:8080', 'ws://10.0.0.5', 'ws://172.16.4.1:8080',
+      'ws://172.31.255.1', 'ws://169.254.10.2', 'ws://100.114.142.10:8080', 'ws://[::1]:8080', 'ws://[fd12:3456::1]:8080',
+      'ws://[fe80::1]:8080', 'ws://openvolley.local:8080', 'ws://pi.lan', 'ws://openvolley-pi:8080', 'ws://box.home.arpa'
+    ]) expect(isLocalRelayUrl(url), url).toBe(true)
+    for (const url of [
+      'wss://backend.openvolley.app', 'wss://openvolley.app', 'ws://203.0.113.9:8080', 'ws://8.8.8.8', 'ws://172.32.0.1',
+      'ws://100.128.0.1', 'wss://relay.example.com', 'ws://[2001:db8::1]:8080', 'ws://192.168.1.20.nip.io',
+      null, undefined, '', 'not a url'
+    ]) expect(isLocalRelayUrl(url), String(url)).toBe(false)
+  })
+
+  it('an official match goes to the relay and the cloud; a test match to a local relay only, never the cloud', () => {
+    expect(liveStateTargets({ isTest: false, relayKey: 'match_1', relayUrl: 'wss://backend.openvolley.app' })).toEqual({ relay: true, cloud: true })
+    expect(liveStateTargets({ isTest: false, relayKey: null, relayUrl: 'ws://127.0.0.1:8080' })).toEqual({ relay: false, cloud: true })
+    expect(liveStateTargets({ isTest: true, relayKey: 'test_match', relayUrl: 'ws://192.168.1.20:8080' })).toEqual({ relay: true, cloud: false })
+    expect(liveStateTargets({ isTest: true, relayKey: 'test_match', relayUrl: 'wss://backend.openvolley.app' })).toEqual({ relay: true, cloud: false })
+    expect(liveStateTargets({ isTest: true, relayKey: 'test_match', relayUrl: null })).toEqual({ relay: true, cloud: false })
+  })
+
+  // 2026-10-19: a test match's full data reached the cloud relay on every sync
+  it("a test match's full data goes to a local relay only, an official match's anywhere", () => {
+    expect(mayPublishMatchData({ id: 1 }, 'wss://backend.openvolley.app')).toBe(true)
+    expect(mayPublishMatchData({ id: 1, test: true }, 'ws://192.168.1.20:8080')).toBe(true)
+    expect(mayPublishMatchData({ id: 1, test: true }, 'wss://backend.openvolley.app')).toBe(true)
+    expect(mayPublishMatchData({ id: 1, test: true }, null)).toBe(true)
+    expect(mayPublishMatchData(null, 'ws://127.0.0.1:8080')).toBe(false)
+  })
+
+  it('publishLiveState: the relay first, the cloud work only for an official match', async () => {
+    const run = async (targets) => {
+      const calls = []
+      const out = await publishLiveState({
+        targets,
+        toRelay: () => calls.push('relay'),
+        toCloud: async () => { calls.push('cloud'); return 'written' }
+      })
+      return { calls, out }
+    }
+    const official = liveStateTargets({ isTest: false, relayKey: 'match_1', relayUrl: 'wss://backend.openvolley.app' })
+    expect(await run(official)).toEqual({ calls: ['relay', 'cloud'], out: 'written' })
+    // A rehearsal on the venue relay: the LedBox gets it, the cloud never
+    const rehearsal = liveStateTargets({ isTest: true, relayKey: 'test-match-default', relayUrl: 'ws://192.168.1.20:8080' })
+    expect(await run(rehearsal)).toEqual({ calls: ['relay'], out: undefined })
+    // A rehearsal on the cloud relay: the relay only (the tablets list it on "Switch to test matches"), never the database
+    expect(await run(liveStateTargets({ isTest: true, relayKey: 'test-match-default', relayUrl: 'wss://backend.openvolley.app' }))).toEqual({ calls: ['relay'], out: undefined })
+    // No room key yet: the cloud still gets an official match
+    expect(await run(liveStateTargets({ isTest: false, relayKey: null }))).toEqual({ calls: ['cloud'], out: 'written' })
+    expect(await run(undefined)).toEqual({ calls: [], out: undefined })
+  })
+})
+
+describe('scorer relay publishing: reconnect backoff', () => {
+  it('backs off from 5 s to a 60 s cap', () => {
+    expect([0, 1, 2, 3, 4, 5, 50].map((n) => relayReconnectDelay(n, () => 1))).toEqual([5000, 10000, 20000, 40000, 60000, 60000, 60000])
+  })
+
+  // National peak load test 2026-10-26: after a backend restart every scorer
+  // reconnected and re-sent its whole match after exactly 5 s, all at once,
+  // and the burst refilled the backend's memory within seconds.
+  it('spreads the reconnects over the second half of each step', () => {
+    expect([0, 1, 4].map((n) => relayReconnectDelay(n, () => 0))).toEqual([2500, 5000, 30000])
+    expect(relayReconnectDelay(0, () => 0.5)).toBe(3750)
+    const many = Array.from({ length: 200 }, () => relayReconnectDelay(0))
+    expect(Math.min(...many)).toBeGreaterThanOrEqual(2500)
+    expect(Math.max(...many)).toBeLessThanOrEqual(5000)
+    expect(new Set(many).size).toBeGreaterThan(20)
+  })
+})
+
+describe('getRelayWebSocketUrl (one relay for the scorer and its tablets)', () => {
+  afterEach(() => {
+    localStorage.clear()
+    vi.unstubAllEnvs()
+  })
+
+  it('follows the ?server= / connection-screen override first', () => {
+    setBackendOverride('http://192.168.1.100:8080')
+    expect(getRelayWebSocketUrl({ wsPort: 9999 })).toBe('ws://192.168.1.100:8080')
+    setBackendOverride('https://backend.openvolley.app')
+    expect(getRelayWebSocketUrl()).toBe('wss://backend.openvolley.app')
+  })
+
+  it('then VITE_BACKEND_URL (the cloud relay takes the socket on its HTTP port)', () => {
+    vi.stubEnv('VITE_BACKEND_URL', 'https://backend.example.ch')
+    expect(getRelayWebSocketUrl({ wsPort: 8080 })).toBe('wss://backend.example.ch')
+  })
+
+  it('a page served by a LAN relay reaches the relay\'s own WS port', () => {
+    vi.stubEnv('VITE_BACKEND_URL', '')
+    const host = window.location.hostname
+    expect(getRelayWebSocketUrl({ wsPort: 8181 })).toBe(`ws://${host}:8181`)
+    vi.stubEnv('DEV', false)
+    const expected = window.location.port ? `ws://${host}:8080` : `ws://${window.location.host}`
+    expect(getRelayWebSocketUrl()).toBe(expected)
+  })
+
+  it('the dev server: VITE_WS_PORT or 8080', () => {
+    vi.stubEnv('VITE_BACKEND_URL', '')
+    vi.stubEnv('DEV', true)
+    expect(getRelayWebSocketUrl()).toBe(`ws://${window.location.hostname}:8080`)
+  })
+})
+
+describe('relayConnectionStatus (status modal, no probe socket)', () => {
+  const WS_URL = 'ws://192.168.1.10:8080'
+  const statusCheck = (running) => vi.fn(async () => ({ running }))
+
+  it('no relay for the page: not available, nothing asked', async () => {
+    const getStatus = statusCheck(true)
+    expect(await relayConnectionStatus({ wsUrl: null, ws: null, getStatus })).toMatchObject({ status: 'not_available' })
+    expect(getStatus).not.toHaveBeenCalled()
+  })
+
+  it("the scorer's own open socket answers without a request", async () => {
+    const getStatus = statusCheck(false)
+    expect(await relayConnectionStatus({ wsUrl: WS_URL, ws: { readyState: 1 }, getStatus })).toMatchObject({ status: 'connected' })
+    expect(getStatus).not.toHaveBeenCalled()
+  })
+
+  it('no open socket (home page, reconnect pending): the HTTP status check decides', async () => {
+    expect(await relayConnectionStatus({ wsUrl: WS_URL, ws: null, getStatus: statusCheck(true) }))
+      .toMatchObject({ status: 'connected', message: 'WebSocket server is reachable' })
+    expect(await relayConnectionStatus({ wsUrl: WS_URL, ws: { readyState: 3 }, getStatus: statusCheck(false) }))
+      .toMatchObject({ status: 'disconnected', details: `Relay: ${WS_URL}` })
+    expect(await relayConnectionStatus({ wsUrl: WS_URL, ws: { readyState: 0 }, getStatus: statusCheck(false) }))
+      .toMatchObject({ status: 'connecting' })
+  })
+
+  it('by default asks GET /api/server/status and never opens a WebSocket', async () => {
+    const OrigWS = globalThis.WebSocket
+    const wsCtor = vi.fn()
+    globalThis.WebSocket = wsCtor
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      headers: { get: () => 'application/json' },
+      json: async () => ({ running: true })
+    })
+    try {
+      expect(await relayConnectionStatus({ wsUrl: WS_URL, ws: null })).toMatchObject({ status: 'connected' })
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+      expect(String(fetchSpy.mock.calls[0][0])).toMatch(/\/api\/server\/status$/)
+      expect(wsCtor).not.toHaveBeenCalled()
+    } finally {
+      fetchSpy.mockRestore()
+      globalThis.WebSocket = OrigWS
+    }
+  })
+})
+
+describe('scorerRelayUrl (App and Scoreboard attach to the same url)', () => {
+  afterEach(() => {
+    resetScorerRelayUrl()
+    localStorage.clear()
+    vi.unstubAllEnvs()
+  })
+
+  it('remembers the LAN relay\'s WS port: a remount without a status keeps the url', () => {
+    vi.stubEnv('VITE_BACKEND_URL', '')
+    vi.stubEnv('DEV', false)
+    const host = window.location.hostname
+    const withPort = scorerRelayUrl({ wsPort: 8181 })
+    expect(withPort).toBe(`ws://${host}:8181`)
+    // Scoreboard remounted: no server status yet
+    expect(scorerRelayUrl()).toBe(withPort)
+    expect(scorerRelayUrl({ wsPort: null })).toBe(withPort)
+  })
+
+  it('two users attaching with urls from it share one socket (no flapping)', () => {
+    vi.stubEnv('VITE_BACKEND_URL', '')
+    vi.stubEnv('DEV', false)
+    const sockets = []
+    const relay = createScorerRelay({
+      createSocket: (url) => {
+        const s = { url, readyState: 0, send: vi.fn(), close: vi.fn() }
+        sockets.push(s)
+        return s
+      },
+      setTimer: () => 0,
+      clearTimer: () => {},
+      events: null,
+      doc: null
+    })
+    const detachApp = relay.attach(scorerRelayUrl({ wsPort: 8181 }), {})
+    const detachBoard = relay.attach(scorerRelayUrl(), {})
+    expect(sockets).toHaveLength(1)
+    expect(sockets[0].url).toBe(`ws://${window.location.hostname}:8181`)
+    detachBoard()
+    detachApp()
+  })
+})
+
+describe('live-state order marks (what a relay sync records)', () => {
+  it('marks the last number issued and the session, before the reads', () => {
+    const order = createLiveStateOrder({ session: 'abc', now: () => 42 })
+    expect(order.mark()).toEqual({ seq: 0, session: 'abc', at: 42 })
+    order.next()
+    order.next()
+    expect(order.mark()).toEqual({ seq: 2, session: 'abc', at: 42 })
+    expect(order.current()).toBe(2)
+  })
+
+  it('each order has its own session id', () => {
+    expect(createLiveStateOrder().session).not.toBe(createLiveStateOrder().session)
+    expect(typeof createLiveStateOrder().session).toBe('string')
+  })
+})
+
+// National peak load test 2026-10-26: the scorer sent every event with its
+// undo snapshot (stateSnapshot on every point, stateBefore on rally starts,
+// rotations, substitutions) twice per rally; no relay subscriber reads them.
+describe('relayEvents (what sync-match-data carries of the events)', () => {
+  it('leaves the undo snapshots out, everything else as it is', () => {
+    const snap = { pointsA: 3, pointsB: 2, lineupA: { I: 1 } }
+    const events = [
+      { id: 1, matchId: 4, seq: 1, setIndex: 1, type: 'rally_start', payload: {}, ts: '2026-11-29T10:00:00.000Z', stateBefore: snap },
+      { id: 2, matchId: 4, seq: 2, setIndex: 1, type: 'point', payload: { team: 'home' }, ts: '2026-11-29T10:00:20.000Z', stateSnapshot: snap },
+      { id: 3, matchId: 4, seq: 3, setIndex: 1, type: 'timeout', payload: { team: 'away' }, ts: '2026-11-29T10:01:00.000Z' }
+    ]
+    const out = relayEvents(events)
+    expect(out).toEqual([
+      { id: 1, matchId: 4, seq: 1, setIndex: 1, type: 'rally_start', payload: {}, ts: '2026-11-29T10:00:00.000Z' },
+      { id: 2, matchId: 4, seq: 2, setIndex: 1, type: 'point', payload: { team: 'home' }, ts: '2026-11-29T10:00:20.000Z' },
+      events[2]
+    ])
+    // the device's own events are untouched (copies only)
+    expect(events[0].stateBefore).toBe(snap)
+    expect(events[1].stateSnapshot).toBe(snap)
+    expect(relayEvents(null)).toEqual([])
+  })
+})

@@ -1,0 +1,295 @@
+/**
+ * Formats of the printed scoresheet and its PDF (docs/scoresheet/field-spec.md
+ * 12.3 and 13): dates, names, the game number, short team names and the PDF
+ * file name. Pure functions, no React: unit-tested in
+ * utils/__tests__/sheetFormat.test.ts.
+ */
+import { officialsToArray } from '../../src/domain/officials.js'
+import { ID_SHEET_HEADING, idModeOf } from '../../src/domain/idMode.js'
+import { zonedParts } from '../../src/ui/format.js'
+import { scoresheetGameId } from './scoresheetStorage'
+
+const pad2 = (n: number) => String(n).padStart(2, '0')
+
+/** A real calendar date (rejects 31.02.2001, month 13 ...). */
+function validDate(y: number, m: number, d: number): boolean {
+  if (!(y >= 1000 && y <= 9999 && m >= 1 && m <= 12 && d >= 1 && d <= 31)) return false
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d
+}
+
+/** The 01.01.1900 "unknown" placeholder (src/utils/remoteRoster.js isKnownDob). */
+const isPlaceholderDob = (y: number, m: number, d: number) => y === 1900 && m === 1 && d === 1
+
+/**
+ * The heading of the column beside a name (src/domain/idMode.js; the person's
+ * value is the same `dob` string): "Licence" in every Swiss match (a licence
+ * number, or a date of birth when the scorer typed one); a Global match's
+ * own choice: "DoB", "ID" or "Info".
+ */
+export function idHeadingOf(match: any): string {
+  return ID_SHEET_HEADING[idModeOf(match) as keyof typeof ID_SHEET_HEADING] ?? ID_SHEET_HEADING.dob
+}
+
+/** A bench official's own name for the role (Global: "Teacher"), else ''. */
+export const roleLabelOf = (official: any): string => (typeof official?.roleLabel === 'string' ? official.roleLabel.trim().slice(0, 30) : '')
+
+/**
+ * A date of birth as printed on the sheet: `DD.MM.YYYY`.
+ * Accepts ISO `YYYY-MM-DD` (with or without a time), `D.M.YYYY`, `DD.MM.YYYY`,
+ * `DD/MM/YYYY` and `DD-MM-YYYY`. Empty for nothing and for the 01.01.1900
+ * placeholder; anything else that cannot be read is printed as it is (never
+ * "Invalid Date").
+ */
+export function formatDob(raw: unknown): string {
+  if (raw === null || raw === undefined) return ''
+  const s = String(raw).trim()
+  if (!s) return ''
+  let y: number, m: number, d: number
+  let match = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ].*)?$/)
+  if (match) {
+    [y, m, d] = [Number(match[1]), Number(match[2]), Number(match[3])]
+  } else if ((match = s.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/))) {
+    [d, m, y] = [Number(match[1]), Number(match[2]), Number(match[3])]
+  } else {
+    return s
+  }
+  if (!validDate(y, m, d)) return s
+  if (isPlaceholderDob(y, m, d)) return ''
+  return `${pad2(d)}.${pad2(m)}.${y}`
+}
+
+/**
+ * The Zürich wall clock of a stored time (ui/format zonedParts), null for
+ * nothing. The sheet prints the gym's clock whatever zone the device is in:
+ * the device's getHours printed set 1 at 11:20 for a 10:20 start on a laptop
+ * left on GMT+2 (stress test 2026-10-25).
+ */
+const zurichParts = (value: unknown) => {
+  if (value === null || value === undefined || value === '') return null
+  const p = zonedParts(value)
+  return p.valid ? p : null
+}
+
+/** A match date as printed in the header: the Zürich calendar day, `DD.MM.YYYY`. */
+export function formatSheetDate(value: unknown): string {
+  const p = zurichParts(value)
+  if (!p) return ''
+  return `${pad2(p.day)}.${pad2(p.month)}.${p.year}`
+}
+
+/** `YYYYMMDD` of the Zürich calendar day (file names). */
+export function localDateStamp(value: unknown): string {
+  const p = zurichParts(value)
+  if (!p) return ''
+  return `${p.year}${pad2(p.month)}${pad2(p.day)}`
+}
+
+/**
+ * Minutes as the result table prints a match time: `H h MM min` (field-spec 9).
+ * Empty for nothing / not positive.
+ */
+export function formatHoursMinutes(totalMinutes: number | null | undefined): string {
+  if (totalMinutes === null || totalMinutes === undefined || !Number.isFinite(totalMinutes) || totalMinutes <= 0) return ''
+  const h = Math.floor(totalMinutes / 60)
+  const m = Math.floor(totalMinutes % 60)
+  return `${h} h ${pad2(m)} min`
+}
+
+/** A Zürich clock time as the result table prints it: `HH h MM min`. */
+export function formatClockHoursMinutes(value: unknown): string {
+  const p = zurichParts(value)
+  if (!p || !p.timed) return ''
+  return `${pad2(p.hour)} h ${pad2(p.minute)} min`
+}
+
+/**
+ * The match number printed in the header and used in the file name: one rule
+ * for the header, the file name and the storage path (scoresheetGameId:
+ * gameNumber, game_n, externalId, external_id).
+ */
+export function gameNumberOf(match: any): string {
+  return scoresheetGameId(match) || ''
+}
+
+/** Placeholder team names that must never name a file or a roster (field-spec 13.4). */
+export function isPlaceholderTeamName(name: unknown): boolean {
+  if (name === null || name === undefined) return true
+  const s = String(name).trim()
+  if (!s) return true
+  return /^(home|away|team\s*[ab]|heim|gast)$/i.test(s)
+}
+
+/**
+ * The short name printed in the set boxes, the rosters and the result table:
+ * the stored short name, else the team's full name (also when the short name
+ * is a placeholder such as HOME / AWAY and a real name is known).
+ */
+export function displayShortName(shortName: unknown, fullName: unknown): string {
+  const short = shortName === null || shortName === undefined ? '' : String(shortName).trim()
+  const full = fullName === null || fullName === undefined ? '' : String(fullName).trim()
+  if (short && !isPlaceholderTeamName(short)) return short
+  if (full && !isPlaceholderTeamName(full)) return full
+  return short || full
+}
+
+const TRANSLITERATION: Record<string, string> = {
+  ä: 'ae', ö: 'oe', ü: 'ue', Ä: 'Ae', Ö: 'Oe', Ü: 'Ue', ß: 'ss',
+  é: 'e', è: 'e', ê: 'e', ë: 'e', É: 'E', È: 'E', Ê: 'E', Ë: 'E',
+  à: 'a', â: 'a', á: 'a', À: 'A', Â: 'A', Á: 'A',
+  ç: 'c', Ç: 'C', î: 'i', ï: 'i', í: 'i', ì: 'i', ô: 'o', ó: 'o', ò: 'o',
+  û: 'u', ú: 'u', ù: 'u', ñ: 'n', Ñ: 'N'
+}
+
+/**
+ * One part of a file name: transliterated (ä -> ae ...), every other
+ * character outside [A-Za-z0-9-] replaced by '-', repeated '-' collapsed and
+ * trimmed, at most `max` characters. No dots, slashes or spaces survive, so the
+ * name means the same on every platform and download handler.
+ */
+export function sanitizeFilenamePart(value: unknown, max = 30): string {
+  const s = value === null || value === undefined ? '' : String(value)
+  // Ä/Ö/Ü in an upper-case word become AE/OE/UE ("SCHÖNTAL" -> "SCHOENTAL")
+  const ascii = s
+    .replace(/[^\u0000-\u007f]/g, (ch: string, i: number) => {
+      const t = TRANSLITERATION[ch] ?? ch.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      const near = `${s[i - 1] || ''}${s[i + 1] || ''}`
+      return t.length > 1 && /^[A-Z]/.test(t) && /[A-Z]/.test(near) && !/[a-z]/.test(near) ? t.toUpperCase() : t
+    })
+  return ascii
+    .replace(/[^A-Za-z0-9-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, max)
+    .replace(/-$/, '')
+}
+
+const MAX_FILENAME = 120
+
+/** The local calendar day as `YYYY-MM-DD` (file names); empty when unknown. */
+export function localIsoDay(value: unknown): string {
+  const s = localDateStamp(value)
+  return s ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6)}` : ''
+}
+
+/**
+ * The PDF's file name: `game<gameNo>_<league>_<YYYY-MM-DD>.pdf` (owner,
+ * 2026-10-13; it was `<YYYYMMDD>_<gameNo>_<Home>_vs_<Away>.pdf`, field-spec
+ * 13.4), e.g. `game382208_2L_2026-10-07.pdf`. The manager's download of a
+ * stored scoresheet has the same name (backend lib/scoresheets.js).
+ *  - no league: left out with its `_`;
+ *  - no game number: `<Home>_vs_<Away>` in its place (the real team names:
+ *    the short name, unless it is empty or a placeholder such as HOME / AWAY
+ *    / Team A, then the full name), never "match";
+ *  - the LOCAL match date (scheduled, else the first set's start, else `now`).
+ */
+/**
+ * A league code loses its spaces in the file name: "1L D" -> "1LD", "3L B" ->
+ * "3LB" (owner 2026-10-13). Only codes (every word at most 3 characters); a
+ * name such as "Muster Volley Cup" keeps its words apart.
+ */
+export function compactLeagueCode(raw: unknown): string {
+  const s = raw === null || raw === undefined ? '' : String(raw).trim()
+  const words = s.split(/\s+/).filter(Boolean)
+  return words.length > 1 && words.every(w => w.length <= 3) ? words.join('') : s
+}
+
+export function buildScoresheetFilename(
+  data: { match?: any; homeTeam?: any; awayTeam?: any; sets?: any[] },
+  now: Date = new Date()
+): string {
+  const match = data.match || {}
+  const firstSetStart = (data.sets || []).find((s: any) => s?.index === 1)?.startTime
+  const date = localIsoDay(match.scheduledAt) || localIsoDay(firstSetStart) || localIsoDay(now)
+  const game = sanitizeFilenamePart(gameNumberOf(match), 20)
+  const league = sanitizeFilenamePart(compactLeagueCode(match.league), 30)
+  let who = game ? `game${game}` : ''
+  if (!who) {
+    const home = sanitizeFilenamePart(displayShortName(match.homeShortName, data.homeTeam?.name ?? match.homeTeamName), 30) || 'Home'
+    const away = sanitizeFilenamePart(displayShortName(match.awayShortName, data.awayTeam?.name ?? match.awayTeamName), 30) || 'Away'
+    who = `${home}_vs_${away}`
+  }
+  const stem = [who, league, date].filter(Boolean).join('_')
+  return `${stem.slice(0, MAX_FILENAME - 4)}.pdf`
+}
+
+/** The PDF's document title (metadata, field-spec 13.1). */
+export function buildScoresheetTitle(data: { match?: any; homeTeam?: any; awayTeam?: any; sets?: any[] }): string {
+  const match = data.match || {}
+  const home = data.homeTeam?.name || match.homeTeamName || displayShortName(match.homeShortName, '') || 'Home'
+  const away = data.awayTeam?.name || match.awayTeamName || displayShortName(match.awayShortName, '') || 'Away'
+  const firstSetStart = (data.sets || []).find((s: any) => s?.index === 1)?.startTime
+  const date = formatSheetDate(match.scheduledAt) || formatSheetDate(firstSetStart)
+  const game = gameNumberOf(match)
+  return `OpenVolley eScoresheet: ${home} vs ${away}${date ? `, ${date}` : ''}${game ? `, game ${game}` : ''}`
+}
+
+/** `Lastname, F.` (field-spec 12.3); the first name alone when there is no last name. */
+export function formatPersonName(lastName: unknown, firstName: unknown): string {
+  const last = lastName === null || lastName === undefined ? '' : String(lastName).trim()
+  const first = firstName === null || firstName === undefined ? '' : String(firstName).trim()
+  if (!last) return first
+  if (!first) return last
+  // initials of a compound first name: "Jean-Baptiste" -> "J.-B.", "Anna Lena" -> "A. L."
+  // An initial is the first whole character (code point): p[0] of "🏐 Max" is half
+  // the emoji, which the PDF capture cannot serialise, so Save PDF failed
+  const initials = first
+    .split(/\s+/)
+    .map(part => part.split('-').map(p => (p ? `${String.fromCodePoint(p.codePointAt(0)!).toUpperCase()}.` : '')).filter(Boolean).join('-'))
+    .filter(Boolean)
+    .join(' ')
+  return `${last}, ${initials}`
+}
+
+export interface SheetOfficial {
+  role: string
+  firstName: string
+  lastName: string
+  country: string
+  dob: string
+  name: string
+  /** The scorer's licence number (Match setup takes it instead of a date of birth). */
+  licence?: string
+}
+
+/**
+ * The match officials as one array, whatever the stored shape: the array
+ * MatchSetup writes, the older role-keyed object (domain/officials.js), and
+ * snake_case names (first_name / last_name, the cloud payload). Never throws.
+ */
+export function normalizeOfficials(raw: unknown): SheetOfficial[] {
+  let list: any[]
+  try {
+    list = officialsToArray(raw as any) as any[]
+  } catch {
+    list = []
+  }
+  return list
+    .filter(o => o && typeof o === 'object')
+    .map(o => ({
+      role: typeof o.role === 'string' ? o.role : '',
+      firstName: String(o.firstName ?? o.first_name ?? '').trim(),
+      lastName: String(o.lastName ?? o.last_name ?? '').trim(),
+      country: String(o.country ?? '').trim(),
+      dob: o.dob ?? o.date_of_birth ?? '',
+      name: String(o.name ?? '').trim(),
+      licence: String(o.licence ?? '').trim()
+    }))
+}
+
+const ROLE_ALIASES: Record<string, string[]> = {
+  '1st referee': ['1st referee', 'ref1', '1st_referee', 'referee1', 'first referee'],
+  '2nd referee': ['2nd referee', 'ref2', '2nd_referee', 'referee2', 'second referee'],
+  'scorer': ['scorer'],
+  'assistant scorer': ['assistant scorer', 'asstscorer', 'assistant_scorer', 'asst scorer']
+}
+
+/** The official of a role ('1st referee', '2nd referee', 'scorer', 'assistant scorer', 'line judge 1'...). */
+export function findOfficial(officials: SheetOfficial[], role: string): SheetOfficial | undefined {
+  const wanted = role.toLowerCase()
+  const aliases = ROLE_ALIASES[wanted] || [wanted]
+  return officials.find(o => aliases.includes(o.role.toLowerCase()))
+}
+
+/** An array, whatever was stored (null, an object, undefined). */
+export const asArray = <T = any>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : [])

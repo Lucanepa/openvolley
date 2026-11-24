@@ -1,0 +1,81 @@
+name: Roster page scroll
+
+# roster.openvolley.app scrolls to its last control at a phone (390x844), a
+# tablet (1005x600) and a desktop (1440x900) size
+# (escoresheet/frontend/scripts/roster-scroll.mjs). On 2026-11-17 the page
+# could not be scrolled at all: the app's locked full-window frame held it too.
+# The frontend suite (vitest, jsdom) has no layout and cannot see this.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'escoresheet/frontend/src/UploadRosterApp.jsx'
+      - 'escoresheet/frontend/src/upload-roster-main.jsx'
+      - 'escoresheet/frontend/upload_roster/**'
+      - 'escoresheet/frontend/src/utils/parseRosterPdf.js'
+      - 'escoresheet/frontend/src/tailwind.css'
+      - 'escoresheet/frontend/src/styles.css'
+      - 'escoresheet/frontend/src/ui/tokens.css'
+      - 'escoresheet/frontend/vite.config.js'
+      - 'escoresheet/frontend/package-lock.json'
+      - 'escoresheet/frontend/scripts/roster-scroll.mjs'
+      - '.github/workflows/roster-scroll.yml'
+  pull_request:
+    paths:
+      - 'escoresheet/frontend/src/UploadRosterApp.jsx'
+      - 'escoresheet/frontend/src/upload-roster-main.jsx'
+      - 'escoresheet/frontend/upload_roster/**'
+      - 'escoresheet/frontend/src/utils/parseRosterPdf.js'
+      - 'escoresheet/frontend/src/tailwind.css'
+      - 'escoresheet/frontend/src/styles.css'
+      - 'escoresheet/frontend/src/ui/tokens.css'
+      - 'escoresheet/frontend/vite.config.js'
+      - 'escoresheet/frontend/package-lock.json'
+      - 'escoresheet/frontend/scripts/roster-scroll.mjs'
+      - '.github/workflows/roster-scroll.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: roster-scroll-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scroll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: escoresheet/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: escoresheet/frontend
+        run: npm ci
+
+      # Playwright only for this job: not a dependency of the app (no lockfile change)
+      - name: Install Playwright and Chromium
+        working-directory: escoresheet/frontend
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.63.0
+          npx playwright install --with-deps chromium
+
+      - name: Scroll the roster page to its last control
+        working-directory: escoresheet/frontend
+        run: node scripts/roster-scroll.mjs --keep roster-scroll-out
+
+      - name: Keep the screenshots
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: roster-scroll
+          path: escoresheet/frontend/roster-scroll-out
+          retention-days: 7

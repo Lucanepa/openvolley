@@ -1,0 +1,784 @@
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
+import Modal from './Modal'
+import { getCloudApiUrl } from '../utils/backendConfig'
+import { useAlert } from '../contexts/AlertContext'
+import { useScaledLayout } from '../hooks/useScaledLayout'
+import { apiFrom } from '../lib/apiClient'
+import { selectAll } from '../lib/selectAll'
+import { AlertTriangle, ChevronDown, Loader2, Search, X } from 'lucide-react'
+import { cn, FOCUS_RING, IconButton, Select } from '../ui'
+import { dayKey, dayLabel, shiftDayKey, timeLabel, todayKey } from '../ui/format'
+import { clubVerdict } from '../lib/access'
+import { splitEarlierGames } from '../utils/scheduleEarlier'
+
+// Kit recipes: native select at h-11 (tablet), compact label, filter pills
+// (slate when on), sticky table head.
+// Kit Select size lg (h-11), in this modal's text-sm, stone-300 border and red-500 ring.
+const SELECT_CLS = 'min-w-[8rem] border-stone-300 text-sm leading-[42px] focus:border-stone-300 focus:ring-red-500 disabled:opacity-50'
+const LABEL_CLS = 'mb-1 block text-xs font-medium text-stone-500'
+const PILL_CLS = 'shrink-0 h-9 px-3.5 rounded-full border text-xs font-medium whitespace-nowrap transition-colors'
+const PILL_ON = 'bg-slate-900 border-slate-900 text-white'
+const PILL_OFF = 'bg-white border-stone-200 text-stone-600 hover:bg-stone-100'
+
+// Styles will be generated dynamically with scaleFactor
+
+/**
+ * Format league code for display
+ * - ZCM/ZCD -> "Züri Cup (♂/♀)"
+ * - Other leagues: replace M/D suffix with (♂/♀)
+ */
+function formatLeagueDisplay(code, gender) {
+  const genderSymbol = gender === 'men' ? '♂' : '♀'
+
+  // Handle Züri Cup
+  if (code.startsWith('ZC')) {
+    return `Züri Cup (${genderSymbol})`
+  }
+
+  // Display code as-is with gender symbol
+  return `${code} (${genderSymbol})`
+}
+
+// The schedule's datetime is a Zürich wall time ("2026-10-26T10:20:00", no
+// zone: backend vmSync parseVmDateTime) or an instant (ICAL leagues). Both are
+// read on the Zürich clock (ui/format zonedParts), whatever zone the device is
+// in: the device's getters, and then MatchSetup reading the digits back in the
+// device's zone, stored a 10:20 kick-off as 08:20Z on a laptop left on GMT+2
+// (stress test 2026-10-25).
+
+/**
+ * Format ISO date string to DD.MM.YYYY
+ */
+function formatDisplayDate(isoString) {
+  return dayLabel(isoString, { year: true })
+}
+
+/**
+ * Format ISO date string to HH:MM
+ */
+function formatDisplayTime(isoString) {
+  return timeLabel(isoString)
+}
+
+/**
+ * Convert ISO string to the Zürich date (YYYY-MM-DD) for input
+ */
+function toLocalDate(isoString) {
+  return dayKey(isoString)
+}
+
+/**
+ * Convert ISO string to the Zürich time (HH:MM) for input
+ */
+function toLocalTime(isoString) {
+  return timeLabel(isoString)
+}
+
+/**
+ * Check if a date is today (Zürich)
+ */
+function isToday(isoString) {
+  return !!isoString && dayKey(isoString) === todayKey()
+}
+
+/**
+ * Check if a date is tomorrow (Zürich)
+ */
+function isTomorrow(isoString) {
+  return !!isoString && dayKey(isoString) === shiftDayKey(todayKey(), 1)
+}
+
+/**
+ * Start of today (local) as an ISO string: the cutoff for "upcoming" games,
+ * shared by the league list and the match list.
+ */
+function upcomingCutoffIso() {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return today.toISOString()
+}
+
+/**
+ * A league can be picked unless it is known to have no upcoming game.
+ * ICAL leagues carry no count (no dates), so they always stay pickable.
+ */
+function isLeagueActive(l) {
+  return l.upcoming == null || l.upcoming > 0
+}
+
+/** The age levels Match setup offers (the sheet has boxes for U23, U19 and U17; others go in "Other"). */
+const SETUP_LEVELS = ['U23', 'U21', 'U19', 'U17']
+
+/**
+ * Match setup's level (type3 / type3Other) from a schedule row. The schedule
+ * says only "junior" for youth games: the age is in the league ("U23 2. Liga",
+ * "SM Quali U18", "U20 Ligamodus"), so it is read from there. An age Match
+ * setup does not offer is "other" with the age as its text. The league's age
+ * wins over the level: the sync marks a league "senior" when it does not
+ * know it as a youth one ("U21 Damen", "U13 Mixed"), and such a game printed
+ * Senior on the sheet.
+ * @param {string|null|undefined} level svrz_games.match_level
+ * @param {string|null|undefined} league svrz_games.league
+ * @returns {{ type3: string|undefined, type3Other: string }}
+ */
+export function levelFromSchedule(level, league) {
+  const age = /\bU ?(\d{2})\b/i.exec(String(league || ''))
+  if (!age) return level === 'junior' ? { type3: 'other', type3Other: '' } : { type3: level || undefined, type3Other: '' }
+  const u = `U${age[1]}`
+  return SETUP_LEVELS.includes(u) ? { type3: u, type3Other: '' } : { type3: 'other', type3Other: u }
+}
+
+/** svrz_games.match_format as Match setup's format: 3, 5 or null (unknown). */
+export function knownMatchFormat(value) {
+  const n = Number(value)
+  return value != null && (n === 3 || n === 5) ? n : null
+}
+
+/**
+ * Map a svrz_games row to the internal match format
+ */
+export function mapSupabaseToMatchFormat(row) {
+  const { type3, type3Other } = levelFromSchedule(row.match_level, row.league)
+  return {
+    gameN: row.game_number,
+    dtstart: row.datetime,
+    home: row.team_home,
+    away: row.team_away,
+    league: row.league,
+    venue: row.hall,
+    city: row.city,
+    type1: row.match_type,
+    type2: row.gender,
+    type3,
+    type3Other,
+    championshipType: row.championship_type,
+    // 3 or 5 when the schedule knows it; else none, and Match setup asks
+    // (a guessed best of 5 played a best-of-3 decider to 25 points)
+    bestOf: knownMatchFormat(row.match_format),
+    referee1First: row.referee_1_first_name,
+    referee1Last: row.referee_1_last_name,
+    // db/051: the referees' licence numbers (VolleyManager), for scorers only
+    referee1Licence: row.referee_1_licence,
+    referee2First: row.referee_2_first_name,
+    referee2Last: row.referee_2_last_name,
+    referee2Licence: row.referee_2_licence,
+    hallAddress: row.hall_address,
+    hallPostalCode: row.hall_postal_code,
+    linesman1: row.linesman_1,
+    linesman2: row.linesman_2,
+    groupDisplay: row.group_display
+  }
+}
+
+/**
+ * The match data MatchSetup's handleOfficialMatchSelect fills the form from,
+ * of one game in the internal format (mapSupabaseToMatchFormat). Also the
+ * home screen's "today's games" (TodayGamesModal).
+ */
+export function matchDataFromSchedule(match) {
+  return {
+    // Date/Time - convert to local formats for inputs
+    date: toLocalDate(match.dtstart),
+    time: toLocalTime(match.dtstart),
+
+    // Location
+    city: match.city,
+    hall: match.venue,
+
+    // Match type
+    type1: match.type1,
+    championshipType: match.championshipType,
+    type2: match.type2,
+    type3: match.type3,
+    type3Other: match.type3Other,
+
+    // Game details
+    gameN: match.gameN,
+    league: match.league,
+
+    // Teams
+    home: match.home,
+    away: match.away,
+
+    // Supabase-only fields (undefined when source is ICAL)
+    bestOf: match.bestOf,
+    referee1First: match.referee1First,
+    referee1Last: match.referee1Last,
+    referee1Licence: match.referee1Licence,
+    referee2First: match.referee2First,
+    referee2Last: match.referee2Last,
+    referee2Licence: match.referee2Licence,
+    linesman1: match.linesman1,
+    linesman2: match.linesman2,
+    groupDisplay: match.groupDisplay
+  }
+}
+
+/**
+ * `access` (db/018, owner 2026-11-11: "a logged in scorer can only load
+ * matches they can"): with the club rule on, a scorer sees only the home games
+ * of their clubs' teams, and a game of another club is never applied (the
+ * ICAL fallback, a stale list). Admins and test matches (no `access`) see all.
+ */
+export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch, access = null }) {
+  const { t } = useTranslation()
+  const { showAlert } = useAlert()
+  const { scaleFactor } = useScaledLayout()
+
+
+  // Dynamic leagues
+  const [allLeagues, setAllLeagues] = useState([])
+  const [loadingConfig, setLoadingConfig] = useState(false)
+  const [dataSource, setDataSource] = useState(null) // 'supabase' | 'ical' | null
+
+  // Filter state (simplified: just gender and league)
+  const [gender, setGender] = useState('')
+  const [league, setLeague] = useState('')
+
+  // Search and date filter state
+  const [searchQuery, setSearchQuery] = useState('')
+  const [dateFilter, setDateFilter] = useState('') // '' | 'today' | 'tomorrow'
+
+  // "Earlier matches": games that already started, closed until tapped
+  const [earlierOpen, setEarlierOpen] = useState(false)
+
+  // Data state
+  const [matches, setMatches] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+
+  // Warning popover for league dropdown
+  const [showLeagueWarning, setShowLeagueWarning] = useState(false)
+  const leagueWarningRef = useRef(null)
+
+  // Dismiss league warning on click outside
+  useEffect(() => {
+    if (!showLeagueWarning) return
+    const handler = (e) => {
+      if (leagueWarningRef.current && !leagueWarningRef.current.contains(e.target)) {
+        setShowLeagueWarning(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showLeagueWarning])
+
+  // Fetch available leagues when modal opens
+  useEffect(() => {
+    if (!open) return
+    fetchLeaguesConfig()
+  }, [open])
+
+  const fetchLeaguesFromSupabase = async () => {
+    // svrz_games holds more rows than the backend's per-select cap: read them
+    // all in pages, so no league and no upcoming game is cut off
+    const { data, error } = await selectAll(() => apiFrom('svrz_games')
+      .select('id, gender, league, datetime'))
+    if (error) throw error
+    if (!data || data.length === 0) return null
+    // datetime is TEXT in ISO form: compare it as a string, like the match
+    // query's .gte on the server does
+    const cutoff = upcomingCutoffIso()
+    // Deduplicate gender+league pairs, counting their upcoming games
+    const byKey = new Map()
+    const leagues = []
+    for (const row of data) {
+      const key = `${row.gender}-${row.league}`
+      let entry = byKey.get(key)
+      if (!entry) {
+        entry = { code: row.league, gender: row.gender, federation: 'SVRZ', upcoming: 0 }
+        byKey.set(key, entry)
+        leagues.push(entry)
+      }
+      if (typeof row.datetime === 'string' && row.datetime >= cutoff) entry.upcoming++
+    }
+    // Sort: men first, then alphabetical by code
+    leagues.sort((a, b) => {
+      if (a.gender !== b.gender) return a.gender === 'men' ? -1 : 1
+      return a.code.localeCompare(b.code)
+    })
+    return leagues
+  }
+
+  const fetchLeaguesFromIcal = async () => {
+    const apiUrl = getCloudApiUrl('/api/official-matches/leagues')
+    if (!apiUrl) return null
+    const response = await fetch(apiUrl)
+    const data = await response.json()
+    if (data.success) return data.leagues || []
+    return null
+  }
+
+  const fetchLeaguesConfig = async () => {
+    setLoadingConfig(true)
+    setError(null)
+    try {
+      // Try Supabase first
+      const supabaseLeagues = await fetchLeaguesFromSupabase()
+      if (supabaseLeagues && supabaseLeagues.length > 0) {
+        setAllLeagues(supabaseLeagues)
+        setDataSource('supabase')
+        setLoadingConfig(false)
+        return
+      }
+      console.warn('[Schedule] Supabase unavailable or returned no leagues, falling back to ICAL')
+    } catch (err) {
+      console.warn('[Schedule] Supabase failed, falling back to ICAL:', err)
+    }
+    // Fallback to ICAL
+    try {
+      const icalLeagues = await fetchLeaguesFromIcal()
+      if (icalLeagues && icalLeagues.length > 0) {
+        setAllLeagues(icalLeagues)
+        setDataSource('ical')
+      } else {
+        setError(t('loadOfficialMatch.backendNotAvailable', 'Backend server not available'))
+      }
+    } catch (err) {
+      console.error('[Schedule] ICAL fallback also failed:', err)
+      setError(t('loadOfficialMatch.fetchError', 'Failed to load matches. Check your connection.'))
+    } finally {
+      setLoadingConfig(false)
+    }
+  }
+
+  // Derive available leagues for selected gender
+  const availableLeagues = useMemo(() => {
+    if (!gender) return []
+    return allLeagues.filter(l => l.gender === gender)
+  }, [allLeagues, gender])
+
+  // Leagues with no upcoming game are listed after the others, greyed out
+  const activeLeagues = useMemo(() => availableLeagues.filter(isLeagueActive), [availableLeagues])
+  const inactiveLeagues = useMemo(() => availableLeagues.filter(l => !isLeagueActive(l)), [availableLeagues])
+
+  // Reset league when gender changes
+  useEffect(() => {
+    setLeague('')
+    setMatches([])
+    setError(null)
+  }, [gender])
+
+  // Fetch matches when league is selected
+  useEffect(() => {
+    setEarlierOpen(false)
+    if (!league) return
+    fetchMatches()
+  }, [league])
+
+  const fetchMatchesFromSupabase = async () => {
+    const { data, error } = await apiFrom('svrz_games')
+      .select('*')
+      .eq('gender', gender)
+      .eq('league', league)
+      .gte('datetime', upcomingCutoffIso())
+      .order('datetime', { ascending: true })
+    if (error) throw error
+    // An empty answer is a real answer: this league has no upcoming games
+    return (data || []).map(mapSupabaseToMatchFormat)
+  }
+
+  const fetchMatchesFromIcal = async () => {
+    const leagueInfo = allLeagues.find(l => l.code === league)
+    if (!leagueInfo) return null
+    const apiUrl = getCloudApiUrl(`/api/official-matches?federation=${leagueInfo.federation}&league=${league}`)
+    if (!apiUrl) return null
+    const response = await fetch(apiUrl)
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const data = await response.json()
+    if (data.success) return data.matches || []
+    return null
+  }
+
+  const fetchMatches = async () => {
+    setLoading(true)
+    setError(null)
+
+    // Try API first if it was our leagues source (or try anyway)
+    {
+      try {
+        const supabaseMatches = await fetchMatchesFromSupabase()
+        // The schedule answered (possibly with no upcoming games in this
+        // league): show that, instead of falling back to the old ICAL route,
+        // whose failure used to surface as "Failed to load matches".
+        setMatches(supabaseMatches)
+        setLoading(false)
+        return
+      } catch (err) {
+        console.warn(`[Schedule] Supabase match query failed for ${gender}/${league}, falling back to ICAL:`, err)
+      }
+    }
+
+    // Fallback to ICAL
+    try {
+      const icalMatches = await fetchMatchesFromIcal()
+      if (icalMatches) {
+        setMatches(icalMatches)
+      } else {
+        setError(t('loadOfficialMatch.backendNotAvailable', 'Backend server not available'))
+      }
+    } catch (err) {
+      console.error('[Schedule] ICAL fallback also failed:', err)
+      setError(t('loadOfficialMatch.fetchError', 'Failed to load matches. Check your connection.'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Filter matches by search query and date
+  const filteredMatches = useMemo(() => {
+    // the club rule: only the home games of the scorer's clubs (null verdict = may load)
+    let result = matches.filter(m => !clubVerdict(access, m.home))
+
+    // Apply date filter
+    if (dateFilter === 'today') {
+      result = result.filter(m => isToday(m.dtstart))
+    } else if (dateFilter === 'tomorrow') {
+      result = result.filter(m => isTomorrow(m.dtstart))
+    }
+
+    // Apply search filter (search in home/away team names, game number, and date)
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim()
+      result = result.filter(m =>
+        m.home?.toLowerCase().includes(query) ||
+        m.away?.toLowerCase().includes(query) ||
+        m.gameN?.toLowerCase().includes(query) ||
+        formatDisplayDate(m.dtstart).toLowerCase().includes(query)
+      )
+    }
+
+    return result
+  }, [matches, searchQuery, dateFilter, access])
+
+  // Games that already started go under "Earlier matches", after the upcoming
+  // ones (owner 2026-11-15); a search or a date filter keeps the same groups
+  const { upcoming: upcomingMatches, earlier: earlierMatches } = useMemo(
+    () => splitEarlierGames(filteredMatches, Date.now()),
+    [filteredMatches]
+  )
+  const filterActive = !!(searchQuery.trim() || dateFilter)
+
+  const clubLimited = !!(access?.clubRule && !access.isAdmin)
+
+  const handleSelectMatch = (match) => {
+    if (clubVerdict(access, match.home)) return
+    const matchData = matchDataFromSchedule(match)
+
+    onSelectMatch(matchData)
+    onClose()
+
+    // Show reminder alert after modal closes
+    setTimeout(() => {
+      showAlert(t('loadOfficialMatch.reminderAlert', 'Set teams colours and team short names'), 'info')
+    }, 100)
+  }
+
+  // Reset state when modal closes
+  useEffect(() => {
+    if (!open) {
+      setGender('')
+      setLeague('')
+      setMatches([])
+      setError(null)
+      setSearchQuery('')
+      setDateFilter('')
+      setEarlierOpen(false)
+      setDataSource(null)
+    }
+  }, [open])
+
+  const gridColumns = `${Math.round(80 * scaleFactor)}px ${Math.round(90 * scaleFactor)}px ${Math.round(55 * scaleFactor)}px 1fr`
+
+  const tableHead = (
+    <div
+      className="sg-head sticky top-0 z-10 grid items-center gap-2 border-b border-stone-200 bg-stone-50 px-2.5 py-2 text-[11px] font-bold uppercase tracking-wide text-stone-500"
+      style={{ gridTemplateColumns: gridColumns }}
+    >
+      <span className="text-center">{t('loadOfficialMatch.gameN', 'Game #')}</span>
+      <span className="text-center">{t('loadOfficialMatch.date', 'Date')}</span>
+      <span className="text-center">{t('loadOfficialMatch.time', 'Time')}</span>
+      <span>{t('loadOfficialMatch.homeVsAway', 'Home vs away')}</span>
+    </div>
+  )
+
+  const renderGameRow = (match) => (
+    <div
+      key={match.gameN}
+      onClick={() => handleSelectMatch(match)}
+      className="sg-row grid min-h-11 cursor-pointer items-center gap-2 px-2.5 py-2 text-xs tabular-nums text-stone-800 transition-colors hover:bg-stone-50"
+      style={{ gridTemplateColumns: gridColumns }}
+    >
+      <span className="sg-num text-center font-semibold">
+        {match.gameN}
+      </span>
+      <span className="sg-when text-center">
+        {formatDisplayDate(match.dtstart)}
+      </span>
+      <span className="sg-when text-center">
+        {formatDisplayTime(match.dtstart)}
+      </span>
+      {/* One line where it fits; on a phone each game is a card
+          (tailwind.css, "Load match from schedule"): game #, date
+          and time over the home team over "vs" the away team */}
+      <span className="sg-teams flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+        {/* real spaces between the words: copied text, screen
+            readers and the phone card read "home vs away" (the gap
+            and margin alone gave "vsVC Beispielstadt") */}
+        <span className="max-w-full truncate font-semibold text-stone-900">{match.home}</span>{' '}
+        <span className="max-w-full truncate">
+          <span className="text-stone-400">{t('common.vs', 'vs')}</span>{' '}
+          <span className="font-semibold text-stone-900">{match.away}</span>
+        </span>
+      </span>
+    </div>
+  )
+
+  return (
+    <Modal
+      title=""
+      open={open}
+      onClose={onClose}
+      width={650}
+      hideCloseButton={true}
+      // A flex column: header and filters stay, the games list is the one part
+      // that scrolls (it takes what the window leaves, no fixed 350px box
+      // inside a scrolling dialog); the panel's own overflow is a last resort
+      panelStyle={{ display: 'flex', flexDirection: 'column' }}
+    >
+      <div className="ov-kit flex min-h-0 flex-1 flex-col text-stone-800">
+      {/* Header */}
+      <div className="z-10 mb-4 flex shrink-0 items-center justify-between gap-3 border-b border-stone-200/70 bg-white py-2">
+        <h2 className="text-lg font-bold text-stone-900">
+          {t('loadOfficialMatch.title', 'Load match from schedule')}
+        </h2>
+        <IconButton variant="close" icon={X} label={t('common.close', 'Close')} onClick={onClose} />
+      </div>
+
+      {/* Filters - 2 Dropdowns */}
+      <div className="mb-4">
+        {loadingConfig ? (
+          <div className="flex items-center gap-2 text-sm text-stone-500">
+            <Loader2 size={14} className="animate-spin text-stone-400" aria-hidden="true" />
+            {t('loadOfficialMatch.loading', 'Loading...')}
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-end gap-3 stack:flex-col stack:items-stretch">
+            {/* Gender Dropdown */}
+            <div>
+              <label className={LABEL_CLS}>{t('loadOfficialMatch.gender', 'Gender')}</label>
+              <Select
+                size="lg"
+                value={gender}
+                onChange={e => setGender(e.target.value)}
+                aria-label={t('loadOfficialMatch.gender', 'Gender')}
+                className={cn(SELECT_CLS, 'stack:w-full')}
+              >
+                <option value="">{t('loadOfficialMatch.selectGender', 'Select...')}</option>
+                <option value="men">{t('matchSetup.men', 'Men')} ♂</option>
+                <option value="women">{t('matchSetup.women', 'Women')} ♀</option>
+              </Select>
+            </div>
+
+            {/* League Dropdown */}
+            <div>
+              <label className={LABEL_CLS}>{t('loadOfficialMatch.league', 'League')}</label>
+              <div className="flex items-center">
+                <Select
+                  size="lg"
+                  value={league}
+                  onChange={e => {
+                    // Only the placeholder or a league with upcoming games can be picked
+                    const v = e.target.value
+                    if (!v || activeLeagues.some(l => l.code === v)) setLeague(v)
+                  }}
+                  aria-label={t('loadOfficialMatch.league', 'League')}
+                  className={cn(SELECT_CLS, 'stack:min-w-0 stack:flex-1')}
+                  disabled={!gender}
+                >
+                  <option value="">{t('loadOfficialMatch.selectLeague', 'Select...')}</option>
+                  {activeLeagues.map(l => (
+                    <option key={l.code} value={l.code}>{formatLeagueDisplay(l.code, l.gender)}</option>
+                  ))}
+                  {inactiveLeagues.length > 0 && (
+                    <optgroup label={t('loadOfficialMatch.noUpcomingGames', 'No upcoming games')}>
+                      {inactiveLeagues.map(l => (
+                        <option key={l.code} value={l.code} disabled>{formatLeagueDisplay(l.code, l.gender)}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                </Select>
+                {!gender && (
+                  <span
+                    ref={showLeagueWarning ? leagueWarningRef : undefined}
+                    className="relative ml-1.5 inline-flex"
+                  >
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setShowLeagueWarning(v => !v)
+                      }}
+                      aria-expanded={showLeagueWarning}
+                      aria-label={t('warnings.clickForDetails')}
+                      className={cn('inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full stack:h-11 stack:w-11 text-amber-600 transition-colors hover:bg-amber-50', FOCUS_RING)}
+                      title={t('warnings.clickForDetails')}
+                    >
+                      <AlertTriangle size={18} aria-hidden="true" />
+                    </button>
+                    {showLeagueWarning && (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="absolute right-0 top-full z-40 mt-2 max-w-[90vw] whitespace-nowrap rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 shadow-xl"
+                      >
+                        {t('warnings.selectGenderFirst')}
+                      </div>
+                    )}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Selection path, once a league is chosen: with the gender alone it
+            was a lone "Men ♂" line under the selectors (UI tour 14.11) */}
+        {gender && league && (
+          <div className="mt-3 border-t border-stone-100 pt-2.5" data-testid="schedule-selection-path">
+            <div className="flex items-center gap-2 text-sm text-stone-700">
+              <span>
+                {gender === 'men' ? `${t('matchSetup.men', 'Men')} ♂` : `${t('matchSetup.women', 'Women')} ♀`}
+              </span>
+              <span className="text-stone-300">·</span>
+              <span className="font-semibold text-stone-900">{formatLeagueDisplay(league, gender)}</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Search and Date Filters - shown when matches are loaded */}
+      {matches.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-3 stack:flex-col stack:items-stretch">
+          {/* Search Input */}
+          <div className="relative min-w-[150px] flex-1">
+            <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" aria-hidden="true" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder={t('loadOfficialMatch.searchPlaceholder', 'Search...')}
+              aria-label={t('loadOfficialMatch.searchPlaceholder', 'Search...')}
+              className="h-11 w-full rounded-xl border border-stone-200 bg-white pl-10 pr-3 text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-red-700/20 focus:border-red-700/40"
+            />
+          </div>
+
+          {/* Date Filter Buttons */}
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              aria-pressed={dateFilter === 'today'}
+              onClick={() => setDateFilter(dateFilter === 'today' ? '' : 'today')}
+              className={cn(PILL_CLS, dateFilter === 'today' ? PILL_ON : PILL_OFF, 'h-11', FOCUS_RING)}
+            >
+              {t('loadOfficialMatch.today', 'Today')}
+            </button>
+            <button
+              type="button"
+              aria-pressed={dateFilter === 'tomorrow'}
+              onClick={() => setDateFilter(dateFilter === 'tomorrow' ? '' : 'tomorrow')}
+              className={cn(PILL_CLS, dateFilter === 'tomorrow' ? PILL_ON : PILL_OFF, 'h-11', FOCUS_RING)}
+            >
+              {t('loadOfficialMatch.tomorrow', 'Tomorrow')}
+            </button>
+            {dateFilter && (
+              <IconButton
+                variant="close"
+                icon={X}
+                label={t('loadOfficialMatch.clearFilter', 'Clear filter')}
+                onClick={() => setDateFilter('')}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Matches Table */}
+      <div className={cn('schedule-games overflow-y-auto rounded-lg border border-stone-200 empty:border-0', filteredMatches.length > 0 && 'min-h-[9rem]')} data-testid="schedule-games">
+        {loading && (
+          <div className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-sm text-stone-500">
+            <Loader2 size={20} className="animate-spin text-stone-400" aria-hidden="true" />
+            {t('loadOfficialMatch.loading', 'Loading matches...')}
+          </div>
+        )}
+
+        {error && (
+          <div role="alert" className="m-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-center text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
+        {!loading && !error && league && matches.length === 0 && (
+          <div className="px-4 py-10 text-center text-sm font-medium text-stone-500">
+            {t('loadOfficialMatch.noUpcomingMatches', 'No upcoming matches found')}
+          </div>
+        )}
+
+        {!loading && !error && matches.length > 0 && filteredMatches.length === 0 && (
+          <div className="px-4 py-10 text-center text-sm font-medium text-stone-500" data-testid="schedule-empty-filter">
+            {clubLimited
+              ? t('loadOfficialMatch.noClubGames', 'No home games of your club in this league.')
+              : t('loadOfficialMatch.noMatchesForFilter', 'No matches found for this filter')}
+          </div>
+        )}
+
+        {/* Every game shown already started: the list's empty state, with
+            "Earlier matches" below it */}
+        {!loading && !error && upcomingMatches.length === 0 && earlierMatches.length > 0 && (
+          <div className="px-4 py-10 text-center text-sm font-medium text-stone-500" data-testid="schedule-empty-upcoming">
+            {filterActive
+              ? t('loadOfficialMatch.noMatchesForFilter', 'No matches found for this filter')
+              : t('loadOfficialMatch.noUpcomingMatches', 'No upcoming matches found')}
+          </div>
+        )}
+
+        {!loading && !error && upcomingMatches.length > 0 && (
+          <div className="schedule-rows divide-y divide-stone-100">
+            {tableHead}
+            {upcomingMatches.map(renderGameRow)}
+          </div>
+        )}
+
+        {!loading && !error && earlierMatches.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setEarlierOpen(v => !v)}
+            aria-expanded={earlierOpen}
+            aria-controls="schedule-earlier-games"
+            data-testid="schedule-earlier-toggle"
+            className={cn(
+              'flex min-h-11 w-full items-center justify-between gap-2 border-t border-stone-200 bg-stone-50 px-2.5 py-2 text-left text-sm font-semibold text-stone-700 transition-colors hover:bg-stone-100',
+              FOCUS_RING
+            )}
+          >
+            <span className="min-w-0">
+              {t('loadOfficialMatch.earlierMatches', 'Earlier matches')}{' '}
+              <span className="tabular-nums font-medium text-stone-500">({earlierMatches.length})</span>
+            </span>
+            <ChevronDown size={16} aria-hidden="true" className={cn('shrink-0 text-stone-400 transition-transform', earlierOpen && 'rotate-180')} />
+          </button>
+        )}
+
+        {/* A direct child of .schedule-games, like the upcoming rows: the
+            phone card layout (tailwind.css) applies to these rows too */}
+        {!loading && !error && earlierOpen && earlierMatches.length > 0 && (
+          <div id="schedule-earlier-games" className="schedule-rows divide-y divide-stone-100 border-t border-stone-100" data-testid="schedule-earlier-games">
+            {upcomingMatches.length === 0 && tableHead}
+            {earlierMatches.map(renderGameRow)}
+          </div>
+        )}
+      </div>
+      </div>
+    </Modal>
+  )
+}

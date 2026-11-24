@@ -1,0 +1,1220 @@
+/**
+ * Tailwind v4 + volleyui tokens: LIGHT MODE ONLY (the dark and e-ink
+ * themes are filters over it, at the end of this file).
+ *
+ * Cascade order (lowest to highest):
+ *   theme -> base -> legacy -> components -> utilities -> unlayered -> inline style
+ *
+ * - Preflight (Tailwind's element reset) is still NOT imported: the legacy
+ *   styles.css owns the element rules, and the app relies on them.
+ * - styles.css is imported here, demoted into the `legacy` layer. It sits above
+ *   the kit's `base` (so its body/background/text colours still win while the
+ *   migration runs) and BELOW `utilities`, so a volleyui class on a <button>,
+ *   <input> or <p> now beats the old element rules. Inline style={{}} still
+ *   beats everything.
+ * - src/ui/tokens.css (the volleyui kit) is the base: brand red, red-600/700 =
+ *   Swiss Volley red, shadow-card, Inter Variable at opsz 32, colour-scheme
+ *   light, print and reduced-motion rules.
+ */
+@layer theme, base, legacy, components, utilities;
+
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+/* volleyui kit tokens (also pulls in @fontsource-variable/inter/opsz.css). */
+@import './ui/tokens.css';
+
+/* User-selectable score fonts (Scoreboard / Referee / Scoreboard options),
+   self-hosted so they render offline. Latin only (digits and the colon), the
+   weights the former Google Fonts link asked for. Family names are unchanged,
+   so getScoreFont() and the options keep working as they are. */
+@import '@fontsource/orbitron/latin-400.css';
+@import '@fontsource/orbitron/latin-500.css';
+@import '@fontsource/orbitron/latin-600.css';
+@import '@fontsource/orbitron/latin-700.css';
+@import '@fontsource/orbitron/latin-800.css';
+@import '@fontsource/orbitron/latin-900.css';
+@import '@fontsource/roboto-mono/latin-400.css';
+@import '@fontsource/roboto-mono/latin-500.css';
+@import '@fontsource/roboto-mono/latin-600.css';
+@import '@fontsource/roboto-mono/latin-700.css';
+@import '@fontsource/jetbrains-mono/latin-400.css';
+@import '@fontsource/jetbrains-mono/latin-500.css';
+@import '@fontsource/jetbrains-mono/latin-600.css';
+@import '@fontsource/jetbrains-mono/latin-700.css';
+@import '@fontsource/jetbrains-mono/latin-800.css';
+@import '@fontsource/space-mono/latin-400.css';
+@import '@fontsource/space-mono/latin-700.css';
+@import '@fontsource/ibm-plex-mono/latin-400.css';
+@import '@fontsource/ibm-plex-mono/latin-500.css';
+@import '@fontsource/ibm-plex-mono/latin-600.css';
+@import '@fontsource/ibm-plex-mono/latin-700.css';
+
+/* The legacy stylesheet, demoted into its layer (was: import './styles.css'
+   in each *-main.jsx). */
+@import './styles.css' layer(legacy);
+
+/* RESTYLE-SPEC R2, name collisions. Now that utilities beat the legacy layer,
+   a legacy class that is also a valid Tailwind utility would switch meaning.
+   MatchSetup's match-info editor uses w-80/90/120/140/160 (legacy: N px x
+   --scale-factor) and w-100/w-250 (no legacy rule; they relied on the legacy
+   `input { width: 100% }` beating the utility); App.jsx uses the legacy
+   `container`. Tailwind must not generate these names, so the legacy cascade
+   resolves exactly as before. Reserved until P3a/P2b rename those call sites;
+   new code uses arbitrary widths (w-[320px]) or the kit instead. */
+@source not inline("w-80 w-90 w-100 w-120 w-140 w-160 w-250 container");
+
+@theme {
+  /* Hover/pressed brand, for non-class contexts (red-700 is the class form). */
+  --color-brand-hover: #be0014;
+  --color-brand-soft-border: #fee2e2;
+}
+
+/* --ov-* tokens: the same palette for the inline style={{}} objects that
+   cannot use classes (RESTYLE-SPEC 1.2). The legacy names (--bg, --panel,
+   --text, --muted, --border, --accent ...) are still defined in styles.css and
+   keep their values until P1 re-points them at these. */
+:root {
+  /* ---- surfaces (stone neutrals) ---- */
+  --ov-page: #f5f5f4;            /* stone-100 page background */
+  --ov-page-top: #fafaf9;        /* stone-50  top of the page gradient */
+  --ov-card: #ffffff;            /* cards, modals, top bar */
+  --ov-sunken: #fafaf9;          /* stone-50  table heads, inset panels */
+  --ov-sunken-strong: #f5f5f4;   /* stone-100 hover rows, count pills */
+  --ov-hairline: #e7e5e4;        /* stone-200 card/table borders, dividers */
+  --ov-hairline-soft: rgb(231 229 228 / 0.7); /* stone-200/70 card edge */
+  --ov-hairline-strong: #d6d3d1; /* stone-300 input borders, outline buttons */
+  --ov-rule: #292524;            /* stone-800 1.5px section-head rule */
+
+  /* ---- text ---- */
+  --ov-text: #1c1917;            /* stone-900 headings, numbers */
+  --ov-text-body: #292524;       /* stone-800 body copy */
+  --ov-text-secondary: #57534e;  /* stone-600 secondary copy */
+  --ov-text-muted: #78716c;      /* stone-500 captions, labels (4.6:1 on white) */
+  --ov-text-faint: #a8a29e;      /* stone-400 placeholders, disabled, decorative only */
+  --ov-on-dark: #ffffff;
+
+  /* ---- brand / selection ---- */
+  --ov-brand: #e2001a;
+  --ov-brand-hover: #be0014;
+  --ov-brand-soft: #fef2f2;      /* red-50 */
+  --ov-brand-soft-border: #fee2e2; /* red-100 */
+  --ov-selected: #0f172a;        /* slate-900 active nav, segment on */
+  --ov-selected-hover: #1e293b;  /* slate-800 */
+
+  /* ---- focus ---- */
+  --ov-focus: #ef4444;           /* red-500, 2px ring */
+  --ov-focus-soft: rgb(190 0 20 / 0.20); /* red-700/20, large inputs */
+
+  /* ---- status ---- */
+  --ov-success: #047857;         /* emerald-700 confirm (white text 5.5:1, AA) */
+  --ov-success-hover: #065f46;   /* emerald-800 */
+  --ov-success-soft: #d1fae5;    /* emerald-100 */
+  --ov-success-text: #065f46;    /* emerald-800 */
+  --ov-warning-soft: #fffbeb;    /* amber-50 */
+  --ov-warning-border: #fef3c7;  /* amber-100 */
+  --ov-warning-strong: #fcd34d;  /* amber-300 */
+  --ov-warning-text: #92400e;    /* amber-800 */
+  --ov-warning-ink: #d97706;     /* amber-600: large bold digits only (3.2:1), a count about to run out */
+  --ov-danger: #e2001a;          /* = brand: one red for act and destroy */
+  --ov-danger-hover: #be0014;
+  --ov-danger-text: #b91c1c;     /* red-700 stock, inline errors */
+  --ov-danger-soft: #fef2f2;     /* red-50 */
+  --ov-danger-border: #fee2e2;   /* red-100 */
+  --ov-info-text: #0369a1;       /* sky-700 */
+  --ov-info-soft: #f0f9ff;       /* sky-50 */
+  --ov-info-border: #bae6fd;     /* sky-200 */
+
+  /* ---- overlays & elevation ---- */
+  --ov-overlay: rgb(28 25 23 / 0.60);      /* stone-900/60 + blur, decisions */
+  --ov-overlay-content: rgb(28 25 23 / 0.50); /* stone-900/50 + blur, content dialogs */
+  --ov-overlay-sheet: rgb(15 23 42 / 0.40);   /* slate-900/40, options sheet */
+  --ov-shadow-card: var(--shadow-card);
+  --ov-shadow-card-lg: var(--shadow-card-lg);
+  --ov-shadow-pop: 0 25px 50px -12px rgb(0 0 0 / 0.25); /* = shadow-2xl */
+  --ov-shadow-btn: 0 1px 2px 0 rgb(0 0 0 / 0.05);       /* = shadow-sm */
+
+  /* ---- radii (step down one size per nesting level) ---- */
+  --ov-radius-sm: 0.375rem;  /* rounded-md  chips, micro controls */
+  --ov-radius: 0.5rem;       /* rounded-lg  buttons, inputs, notices */
+  --ov-radius-lg: 0.75rem;   /* rounded-xl  inner blocks, toasts, h-11 controls */
+  --ov-radius-xl: 1rem;      /* rounded-2xl cards, modals */
+  --ov-radius-pill: 9999px;
+
+  /* ---- shadcn variables (src/components/ui/button.jsx and any later shadcn
+     primitive). RESTYLE-SPEC R3: --border, --muted and --accent are NOT
+     defined here. styles.css owns those names with a different meaning
+     (--muted is a TEXT colour, --accent the scoring green), and this unlayered
+     block would beat the layered legacy one. The Tailwind colour aliases below
+     map straight to --ov-* instead.
+     --primary, --foreground and --card keep their former values on purpose:
+     Scoreboard (var(--primary) fills in Manual Changes: no brand red on the
+     scoreboard, R4), MatchEnd (var(--foreground) on the frozen per-set
+     result) and CoinToss read them inline. Their owners convert those sites. */
+  --radius: 0.5rem;          /* rounded-lg/md/sm stay Tailwind's stock 8/6/4px */
+  --background: var(--ov-page);
+  --foreground: oklch(0.21 0.02 260);
+  --card: #ffffff;
+  --card-foreground: var(--ov-text-body);
+  --popover: var(--ov-card);
+  --popover-foreground: var(--ov-text-body);
+  --primary: oklch(0.62 0.19 260);
+  --primary-foreground: #ffffff;
+  --secondary: #ffffff;
+  --secondary-foreground: #44403c; /* stone-700 */
+  --muted-foreground: var(--ov-text-muted);
+  --accent-foreground: var(--ov-text);
+  --success: var(--ov-success);
+  --success-foreground: #ffffff;
+  --destructive: var(--ov-danger);
+  --destructive-foreground: #ffffff;
+  --input: var(--ov-hairline-strong);
+  --ring: var(--ov-focus);   /* legacy :focus-visible outline reads var(--ring) */
+}
+
+/* --ov-vh100: the window's full height. 100dvh (the visible height, without
+   the phone browser's toolbars) where the browser has it, else 100vh. Every
+   screen and dialog height uses it, never dvh itself: the build allows
+   WebView/Chrome 105-107 (build-target.js, browser-check.js), which has no
+   dvh, so a raw 100dvh there drops the whole declaration (an inline style
+   too) and the screen loses its height (the phone scoring screen went
+   blank). A plain `height: 100vh; height: 100dvh` fallback does not survive
+   the build either: the minifier keeps only the last one. Inline styles
+   write var(--ov-vh100, 100vh), in case they draw before the stylesheet;
+   fractions are calc(var(--ov-vh100) * 0.9). src/__tests__/viewportUnits.test.js
+   keeps raw dvh/svh/lvh out of the sources. */
+:root {
+  --ov-vh100: 100vh;
+}
+@supports (height: 100dvh) {
+  :root {
+    --ov-vh100: 100dvh;
+  }
+}
+
+/* Expose the tokens to Tailwind's utility engine (bg-background, text-foreground, ...). */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  /* R3: straight to --ov-*, never through the colliding legacy names. */
+  --color-muted: var(--ov-sunken);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--ov-sunken-strong);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--ov-hairline);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
+
+/* RESTYLE-SPEC R5, frozen print block. MatchEntry (bench tablet) renders the
+   scoresheet_pdf `Results` table, whose set rows use Tailwind `text-xs`. Before
+   styles.css was layered, the legacy `.text-xs` (13px x --scale-factor) won
+   there; keep that size inside this one block so the official layout does not
+   move. .ov-legacy-results is the wrapper MatchEntry/MatchEnd put around the
+   block (the scoresheet_pdf files themselves stay untouched). */
+.ov-legacy-results .text-xs {
+  font-size: calc(13px * var(--scale-factor));
+}
+
+/* ---------------------------------------------------------------------------
+   .ov-kit: the volleyui kit's own preflight, scoped.
+   Tailwind's preflight stays off (the legacy views rely on the browser
+   defaults plus styles.css), but the kit components were written against it.
+   Without this, the legacy element rules (`button { background: var(--accent) }`,
+   `p { color: var(--muted) }`, `h3 { margin; font-size }`, `label`, `input`,
+   `select`) reach every kit element that does not set those properties
+   itself: the confirm dialog's Cancel rendered as a green button.
+   This layer sits above `legacy` and below `utilities`, so it beats the legacy
+   rules and every kit class still beats it. Mount the kit host inside
+   `.ov-kit`; later packages wrap each converted view in the same class.
+   (The subset of Tailwind's preflight that the kit relies on.)
+   --------------------------------------------------------------------------- */
+@layer components {
+  .ov-kit {
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    line-height: 1.5;
+    letter-spacing: normal;
+    color: var(--color-stone-800);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .ov-kit,
+  .ov-kit :where(*, ::before, ::after, ::backdrop) {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    border: 0 solid;
+  }
+
+  .ov-kit :where(h1, h2, h3, h4, h5, h6) {
+    font-size: inherit;
+    font-weight: inherit;
+  }
+
+  .ov-kit :where(p, h1, h2, h3, h4, h5, h6, label) {
+    color: inherit;
+  }
+
+  .ov-kit :where(a) {
+    color: inherit;
+    text-decoration: inherit;
+  }
+
+  .ov-kit :where(ol, ul, menu) {
+    list-style: none;
+  }
+
+  .ov-kit :where(img, svg, video, canvas) {
+    display: block;
+    vertical-align: middle;
+  }
+
+  .ov-kit :where(label) {
+    display: revert;
+  }
+
+  .ov-kit :where(button, input, select, optgroup, textarea) {
+    font: inherit;
+    font-feature-settings: inherit;
+    font-variation-settings: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+    border-radius: 0;
+    background-color: transparent;
+    opacity: 1;
+    width: auto;
+    text-transform: none;
+    box-shadow: none;
+  }
+
+  .ov-kit :where(button) {
+    appearance: button;
+    cursor: pointer;
+  }
+
+  .ov-kit :where(button:disabled) {
+    cursor: default;
+  }
+
+  .ov-kit :where(textarea) {
+    resize: vertical;
+  }
+
+  .ov-kit :where(::placeholder) {
+    opacity: 1;
+    color: color-mix(in oklab, currentcolor 50%, transparent);
+  }
+
+  /* The legacy .text-sm / .text-xs add letter-spacing: .2px (and size by
+     --scale-factor); inside the kit the Tailwind utility alone applies. */
+  .ov-kit :where(.text-sm, .text-xs) {
+    letter-spacing: normal;
+  }
+
+  /* RESTYLE-SPEC R12: the confirm dialog is opened from scoring screens, so its
+     two buttons keep the 44px courtside minimum (the kit draws them ~38px). */
+  .ov-kit :where([data-testid="confirm-cancel"], [data-testid="confirm-accept"]) {
+    min-height: 44px;
+  }
+}
+
+/* The host for <UiHost /> in every *-main.jsx: <div className="ov-kit ov-kit-host">.
+   The kit's dialog is z-50 and its toasts z-[60]; the legacy overlays go to
+   z-index 1000 (Modal, MenuList), 9999, 99999 and 100000 (AlertContext). This
+   box is its own stacking context above all of them, so a confirmDialog() or
+   toast fired from inside a legacy modal shows on top of it. It is 0x0 and
+   fixed, so it takes no space and catches no taps; the dialog and toasts are
+   position: fixed to the viewport, as before. */
+.ov-kit-host {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  z-index: 100001;
+}
+
+/* ---------------------------------------------------------------------------
+   RESTYLE-SPEC R1 guard: the frozen scoring readouts keep today's type.
+   The body is Inter Variable at opsz 32 (Display cut) with true 500/600/800
+   weights. Before P0 these readouts used the static Inter 4 Text files, which
+   had only 400 and 700, so fontWeight 500 drew 400 and 600/800/900 drew 700.
+   At opsz 32 the 9-11px bench labels and official names came out cramped and
+   lighter, and MatchEnd's big 800-weight "3:0" grew until the colon touched
+   both digits.
+   'OV Readout Inter' is the same bundled variable file (no extra download)
+   declared with exactly two faces, 400 and 700. Font matching then picks
+   400 for 100-500 and 700 for 600-900, and the wght axis is clamped to the
+   face, which reproduces the old static pair. opsz 14 is the Text cut the
+   static files were, and the default glyph set (no cv02-cv11) is theirs too.
+   Score fonts picked in Options set their own family inline and are untouched.
+   --------------------------------------------------------------------------- */
+@font-face {
+  font-family: 'OV Readout Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('@fontsource-variable/inter/files/inter-latin-opsz-normal.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: 'OV Readout Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url('@fontsource-variable/inter/files/inter-latin-opsz-normal.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: 'OV Readout Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('@fontsource-variable/inter/files/inter-latin-ext-opsz-normal.woff2') format('woff2-variations');
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;
+}
+@font-face {
+  font-family: 'OV Readout Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url('@fontsource-variable/inter/files/inter-latin-ext-opsz-normal.woff2') format('woff2-variations');
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;
+}
+
+@layer components {
+  /* .court + .team-controls (the side columns: TO/SUB, bench, liberos, bench
+     officials) + .to-sub-counter + .set-score-display, as R1 lists them, plus
+     .court-wrapper (the big rally score above the court, serve box, referee
+     names, rally controls), the toolbar set-score boxes (selected by their
+     existing data-help-id, so Scoreboard.jsx is not touched),
+     the set-end modal's "A 25 : 3 B" line and winner chip (.set-end-readout),
+     MatchEnd's winner score readout and the paper-sheet Results/Sanctions
+     blocks (.ov-legacy-results, R5; MatchEnd and MatchEntry). Redefining
+     --font-sans here also reaches the legacy rules that set
+     font-family: var(--font-sans) on a descendant. */
+  :where(.court, .court-wrapper, .team-controls, .to-sub-counter, .set-score-display,
+         [data-help-id="scoreboard-set-display"], .set-end-readout, .match-end-score,
+         .ov-legacy-results) {
+    --font-sans: 'OV Readout Inter', 'Inter Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    font-family: var(--font-sans);
+    font-variation-settings: "opsz" 14;
+    font-feature-settings: normal;
+  }
+
+  /* No brand-red focus outline on the scoring controls (R4): the legacy
+     :focus-visible rule reads var(--ring), which is red-500 elsewhere. */
+  :where(.court, .team-controls, .rally-controls, .set-score-display) {
+    --ring: var(--ov-selected);
+  }
+}
+
+/* Home screen (HomePage.jsx). home-wide: a wide but short window (the
+   desktop app's ~962x601 window, a laptop, a phone on its side) puts the
+   brand and the downloads beside the actions instead of above them.
+   home-short: a short window in one column gets a smaller lockup. */
+@custom-variant home-wide {
+  @media screen and (min-width: 900px) and (max-height: 820px) {
+    @slot;
+  }
+}
+
+@custom-variant home-short {
+  @media screen and (max-width: 899.98px) and (max-height: 820px) {
+    @slot;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Portrait data entry (scorer app). A tablet held upright gets one field per
+   row: label above, full-width control, 44 px tall. Landscape is untouched:
+   every rule below sits inside the portrait media query, except .pf-label's
+   display: none (a portrait-only label, so it takes no grid cell in landscape).
+   The query is FORM_STACK_QUERY in src/utils/formLayout.js; the `stack:`
+   variant is the same query for Tailwind classes (stack:grid-cols-1 ...).
+   Screen only, so printing on portrait paper changes nothing.
+   Scope: .ov-form-stack sits on the scorer app's <body> only while the query
+   matches (watchFormStack in main.jsx; never set in landscape), so the referee,
+   bench and livescore apps are not touched, and .match-record (the scoreboard,
+   which shows its rotate-your-device overlay in portrait) is left out.
+   --------------------------------------------------------------------------- */
+@custom-variant stack {
+  @media screen and (orientation: portrait), screen and (max-width: 799.98px) {
+    @slot;
+  }
+}
+
+.pf-label {
+  display: none;
+}
+
+@media screen and (orientation: portrait), screen and (max-width: 799.98px) {
+  /* 44 px controls, 16 px text (no zoom-on-focus on tablets). */
+  .ov-form-stack :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"]), select):not(.match-record *) {
+    min-height: 44px;
+    font-size: 16px;
+  }
+  /* the kit Select's line height follows the box (44 - 2 px border) */
+  .ov-form-stack select.ov-select:not(.match-record *) {
+    line-height: 42px;
+  }
+  .ov-form-stack textarea:not(.match-record *) {
+    font-size: 16px;
+  }
+
+  /* Field label above a control in a stacked card. */
+  .ov-form-stack .pf-label {
+    display: block;
+    flex: 0 0 100%;
+    margin: 6px 0 0;
+    font-size: 12px;
+    line-height: 1.3;
+    font-weight: 500;
+    color: var(--color-stone-600);
+  }
+  .ov-form-stack .pf-label.pf-head {
+    order: 1;
+    margin-top: 0;
+  }
+
+  /* Roster and bench editors (MatchSetup): one row per player or official,
+     flat on the page card with a hairline between them. It was a card per
+     player with one field per line, a screen for every two players ("each
+     player row by row on a card rather than clumsy", the owner, 2026-10-20).
+     A row is a grid on the list's width (container query):
+       phone    # | last name     | first name | delete
+                date of birth | libero     | captain | (LFP)
+       >=600px  # | last | first | date of birth | libero | C | (LFP) | delete,
+                under the column head
+     The date of birth's track is at least # + 82 px = 136 px (the digits and
+     the calendar button), and as wide as the date at the row's text size
+     (the .dob-sizer below), so the year is never cut ("12.03.19" read as
+     2019), also at Android's larger text (136 px cut "12.03.199" and the
+     placeholder at 1.3); the libero select takes what is left of the second
+     line. The first name's track is the 3/4 of the names' room it had with
+     a 1fr : 3fr split (the calc: the line less # 48, date 82, delete 44 and
+     the gaps), a maximum, not a share: when the date grows, the last name's
+     1fr part gives the room (it took a quarter from the last name and three
+     from the first, which kept 54 px on a 360 px phone at 1.3). Bench: the
+     last name keeps its 5/6 the same way. The last name,
+     which the scoresheet prints, gets the wider share of the first. Bench:
+     role + date of birth over last + first name + delete, so the names get
+     a line (three on one line left them 80 px each, the in-match editor's
+     emulator audit of 2026-10-14 had found the same); one line from 600 px.
+     The fields go by their placeholders and aria-labels (the .pf-labels stay
+     hidden in a row), the C/L badge by the libero select and the captain
+     toggle beside it. Captain and libero rows keep their inline green / grey
+     outline and tint, which reaches a little past the fields. */
+  .ov-form-stack :is(.roster-grid, .bench-grid) {
+    display: block;
+    container-type: inline-size;
+    width: 100%;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) {
+    display: grid;
+    grid-template-columns: 48px minmax(82px, max-content) minmax(0, 1fr) minmax(0, calc((100% - 198px) * 0.75)) 44px;
+    grid-template-areas:
+      "num last last first del"
+      "dob dob lib lib cap";
+    align-items: center;
+    gap: 6px;
+    padding: 10px 0;
+    border: 0;
+    border-top: 1px solid var(--color-stone-100);
+    border-radius: 0;
+  }
+  /* LFP: the first name reaches under the captain column; the libero
+     select (MatchSetup: "-" / "L1" / "L2" on a phone here) keeps the rest */
+  .ov-form-stack .roster-grid.has-lfp .roster-grid-row {
+    grid-template-columns: 48px minmax(82px, max-content) minmax(0, 1fr) minmax(0, calc((100% - 248px) * 2 / 3)) 44px 44px;
+    grid-template-areas:
+      "num last last first first del"
+      "dob dob lib lib cap lfp";
+  }
+  /* role | date of birth (86 + 44 px) over last | first | delete: the
+     names about half the line each, the role select the rest of the first
+     (173 px on a 360 px phone: "C - Coach", "AC1 - Assistant c..."). With the
+     delete on the first line the role got 104 px ("C - Co..."). */
+  .ov-form-stack .bench-grid-row {
+    grid-template-columns: minmax(0, calc((100% - 148px) * 5 / 6)) minmax(0, 1fr) minmax(86px, max-content) 44px;
+    grid-template-areas:
+      "role role dob dob"
+      "last first first del"
+      "plays plays plays plays";
+  }
+  /* "Plays as" (a playing coach, domain/playerOfficials): a line of its
+     own with its label, also on the one-line rows from 600 px (a column of
+     its own took 112 px from the names); the head has no cell for it */
+  .ov-form-stack .bench-grid-row > .cell-plays {
+    grid-area: plays;
+    gap: 8px;
+  }
+  .ov-form-stack .bench-grid-row > .cell-plays > .plays-label {
+    display: inline;
+    flex: none;
+    font-size: 13px;
+    color: var(--ov-text-muted);
+  }
+  .ov-form-stack .bench-grid-row > .cell-plays > select {
+    flex: 0 1 16rem;
+  }
+  .ov-form-stack .bench-grid-row.grid-header > .cell-plays {
+    display: none;
+  }
+  /* the head strip names the columns of the one-line rows only */
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row).grid-header {
+    display: none;
+  }
+  .ov-form-stack :is(.roster-grid, .bench-grid) > .grid-header + * {
+    border-top-color: transparent;
+  }
+  .ov-form-stack .roster-grid-row:is(.row-captain, .row-libero) {
+    margin: 2px -8px;
+    padding-inline: 6px;
+    border-radius: var(--ov-radius);
+  }
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > :is(.pf-label, .roster-badge, div:empty) {
+    display: none;
+  }
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) :is(input, select) {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    margin: 0;
+  }
+  .ov-form-stack .roster-grid-row > .cell-head { grid-area: num; }
+  .ov-form-stack .bench-grid-row > .cell-head { grid-area: role; }
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > .cell-last { grid-area: last; }
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > .cell-first { grid-area: first; }
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > .cell-dob { grid-area: dob; }
+  .ov-form-stack .roster-grid-row > .cell-libero { grid-area: lib; }
+  .ov-form-stack .roster-grid-row > .cell-captain { grid-area: cap; }
+  .ov-form-stack .roster-grid-row > .cell-captain.cell-lfp { grid-area: lfp; }
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > .cell-action { grid-area: del; }
+  /* The date of birth's track (minmax(N px, max-content)) is as wide as a
+     hidden "DD.MM.YYYY" (the placeholder; the digits are narrower) in the
+     field's 16 px text plus its padding, border and calendar button:
+     Android's larger text (font scale 1.3) enlarges the text but no px or
+     rem width, so a fixed track cut the year. (2 px more on the right: the
+     caret's room, without it the placeholder's last Y was cut.) The date
+     cell itself counts for nothing (contain), its size="10" input would ask
+     170 px. The head rows' date label has the dob area too, so
+     auto-placement skips it. */
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) {
+    --dob-pad: 7px 31px;
+  }
+  .ov-form-stack table.ct-cards tr {
+    --dob-pad: 13px 15px;
+  }
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row):not(.bench-add-row)::after,
+  .ov-form-stack table.ct-cards tr::after {
+    content: "DD.MM.YYYY";
+    grid-area: dob;
+    align-self: start;
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+    white-space: nowrap;
+    font-size: 16px;
+    font-weight: 400;
+    letter-spacing: normal;
+    text-transform: none;
+    padding-inline: var(--dob-pad);
+    pointer-events: none;
+  }
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > .cell-dob,
+  .ov-form-stack table.ct-cards .ct-dob {
+    contain: inline-size;
+  }
+  .ov-form-stack .roster-grid-row > input.cell-head {
+    padding-inline: 4px;
+    font-size: 18px;
+  }
+  .ov-form-stack .roster-grid-row > select.cell-libero {
+    padding-left: 8px;
+  }
+  /* No libero chosen: the empty option reads "Libero" (the row has no column
+     head), small and grey as a placeholder (the owner, 2026-10-21); the list
+     keeps its normal text. Setup roster and coin toss rows (the in-match
+     editor: ReopenRosterModal). !important over the 16 px of the stacked
+     controls; back to 16 px on focus, so iOS does not zoom when it opens. */
+  .ov-form-stack select.libero-unset {
+    color: var(--ov-text-muted) !important;
+    font-size: 12px !important;
+  }
+  .ov-form-stack select.libero-unset:focus {
+    font-size: 16px !important;
+  }
+  .ov-form-stack select.libero-unset option {
+    color: var(--ov-text-body);
+  }
+  /* A smaller chevron box (14 px, 24 px of padding; the select rule's 1.9em
+     is 30 px): "Libero 1" / "Nessuno" fit the libero select on a 360 px
+     phone, "L1" with the LFP toggle beside it; the coin toss roster's
+     selects too. In the base layer: the legacy
+     layer's !important (styles.css) beats an unlayered or later one. */
+  @layer base {
+    .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > select:where(:not(.ov-select)),
+    .ov-form-stack table.ct-cards select:where(:not(.ov-select)) {
+      padding-right: 24px !important;
+      background-position: right 6px center !important;
+      background-size: 14px 14px !important;
+    }
+  }
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > :is(.cell-last, .cell-first),
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > .cell-dob input {
+    padding-inline: 6px;
+  }
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > :is(.cell-captain, .cell-action) {
+    justify-content: center;
+  }
+  /* The club shield (MatchSetup) sits beside Delete in the one-line rows
+     only: the stacked rows' delete track is one 44 px square */
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > .cell-action > .club-shield {
+    display: none;
+  }
+  /* captain, LFP and delete: 44 px squares (the toggles' size is inline) */
+  .ov-form-stack .roster-grid-row > .cell-captain > *,
+  .ov-form-stack :is(.roster-grid, .bench-grid):not(.roster-add) :is(.roster-grid-row, .bench-grid-row) > .cell-action button {
+    width: 44px !important;
+    min-width: 44px !important;
+    height: 44px !important;
+    padding: 0 !important;
+  }
+  /* "+ Add bench official" under the last official */
+  .ov-form-stack .bench-grid > .bench-add-row {
+    padding: 10px 0 0 !important;
+    border-top: 1px solid var(--color-stone-100) !important;
+  }
+  .ov-form-stack .bench-grid > .bench-add-row button {
+    min-height: 44px;
+    padding-inline: 16px;
+  }
+  /* One line: the date and the libero select as wide as their texts (136 px:
+     the digits and the calendar button; 120 px: "Libero 2", "Nessuno" and
+     the chevron), the names the rest, the last name the larger share. It was
+     150 + 150 px, which cut ordinary surnames on an 800 px tablet with LFP. */
+  @container (min-width: 600px) {
+    .ov-form-stack .roster-grid-row {
+      grid-template-columns: 56px minmax(0, 4fr) minmax(0, 3fr) minmax(136px, max-content) 120px 44px 44px;
+      grid-template-areas: "num last first dob lib cap del";
+    }
+    .ov-form-stack .roster-grid.has-lfp .roster-grid-row {
+      grid-template-columns: 56px minmax(0, 4fr) minmax(0, 3fr) minmax(136px, max-content) 120px 44px 44px 44px;
+      grid-template-areas: "num last first dob lib cap lfp del";
+    }
+    /* 232 px: "AC1 - Assistant coach 1" and the chevron; Plays as on a
+       line under the names */
+    .ov-form-stack .bench-grid-row {
+      grid-template-columns: 232px minmax(0, 1fr) minmax(0, 1fr) minmax(136px, max-content) 44px;
+      grid-template-areas:
+        "role last first dob del"
+        "plays plays plays plays plays";
+    }
+    .ov-form-stack .bench-grid-row.grid-header {
+      grid-template-areas: "role last first dob del";
+    }
+    .ov-form-stack :is(.roster-grid-row, .bench-grid-row).grid-header {
+      display: grid;
+      padding: 8px 0;
+      border-radius: 0;
+      background: transparent;
+    }
+    .ov-form-stack :is(.roster-grid, .bench-grid) > .grid-header + * {
+      border-top-color: var(--ov-hairline);
+    }
+  }
+  /* Add-player box: the same row in its own stone box (26 px narrower), the
+     captain toggle (and LFP) beside Add on a line under the fields they
+     submit, so the libero select keeps the rest of the second line (it had
+     78 px at 360). Beside the fields from 600 px. */
+  .ov-form-stack .roster-add > .roster-grid-row {
+    grid-template-areas:
+      "num last last first first"
+      "dob dob lib lib lib"
+      "cap act act act act";
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+  .ov-form-stack .roster-add.has-lfp > .roster-grid-row {
+    grid-template-areas:
+      "num last last first first first"
+      "dob dob lib lib lib lib"
+      "cap lfp act act act act";
+  }
+  .ov-form-stack .roster-add > .roster-grid-row > .cell-action {
+    grid-area: act;
+  }
+  .ov-form-stack .roster-add > .roster-grid-row > .cell-action button {
+    width: 100%;
+    min-height: 44px;
+  }
+  /* One line of fields from 600 px, the names half each; Add under them up
+     to 860 px (an upright tablet: beside them it left "Nachnar" / "Vorname"
+     in the box, 26 px narrower than the list), beside them from there. */
+  @container (min-width: 600px) {
+    .ov-form-stack .roster-add > .roster-grid-row {
+      grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr) minmax(136px, max-content) 120px 44px;
+      grid-template-areas:
+        "num last first dob lib cap"
+        "act act act act act act";
+    }
+    .ov-form-stack .roster-add.has-lfp > .roster-grid-row {
+      grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr) minmax(136px, max-content) 120px 44px 44px;
+      grid-template-areas:
+        "num last first dob lib cap lfp"
+        "act act act act act act act";
+    }
+  }
+  @container (min-width: 860px) {
+    .ov-form-stack .roster-add > .roster-grid-row {
+      grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr) minmax(136px, max-content) 120px 44px max-content;
+      grid-template-areas: "num last first dob lib cap act";
+    }
+    .ov-form-stack .roster-add.has-lfp > .roster-grid-row {
+      grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr) minmax(136px, max-content) 120px 44px 44px max-content;
+      grid-template-areas: "num last first dob lib cap lfp act";
+    }
+  }
+
+  /* Coin toss roster review (CoinToss, table.ct-cards): the same flat rows,
+     on the dialog. Each <tr> is a grid row, each <td> one cell:
+       phone    # (L1)        | name       | delete
+                date of birth | libero + C | (LFP)
+       >=560px  # | name | date of birth | libero + C | (LFP) | delete, under
+                the column head
+     The date's track is at least 64 + 56 px = 126 px (its digits) and as
+     wide as the date at the row's text size (.dob-sizer), so the year is
+     never cut; libero + C take the rest. Bench (.ct-bench): role + date of
+     birth + delete over the name, which gets the whole line. Its controls
+     are text-styled inline edits, so the field look and the 44 px / 16 px
+     sizes need !important here. */
+  .ov-form-stack table.ct-cards {
+    display: block;
+    container-type: inline-size;
+    overflow: visible;
+    border-radius: 0;
+    background: transparent;
+  }
+  .ov-form-stack table.ct-cards :is(thead, tbody) {
+    display: block;
+  }
+  .ov-form-stack table.ct-cards thead {
+    display: none;
+  }
+  .ov-form-stack table.ct-cards tr {
+    display: grid;
+    grid-template-columns: 64px minmax(56px, max-content) minmax(0, 1fr) 44px;
+    grid-template-areas:
+      "num name name del"
+      "dob dob role role";
+    align-items: center;
+    gap: 6px;
+    padding: 10px 0;
+    border-top: 1px solid var(--color-stone-100);
+  }
+  .ov-form-stack table.ct-cards.has-lfp tr {
+    grid-template-columns: 64px minmax(56px, max-content) minmax(0, 1fr) 44px 44px;
+    grid-template-areas:
+      "num name name name del"
+      "dob dob role role lfp";
+  }
+  .ov-form-stack table.ct-cards.ct-bench tr {
+    grid-template-columns: minmax(0, 1fr) minmax(126px, max-content) 44px;
+    grid-template-areas:
+      "role dob del"
+      "name name name";
+  }
+  .ov-form-stack table.ct-cards tbody tr:first-child {
+    border-top-color: transparent;
+  }
+  .ov-form-stack table.ct-cards tbody tr:hover {
+    background: transparent;
+  }
+  .ov-form-stack table.ct-cards :is(td, th) {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: auto !important;
+    min-width: 0;
+    padding: 0 !important;
+    border: 0;
+  }
+  .ov-form-stack table.ct-cards td.ct-head { grid-area: num; }
+  .ov-form-stack table.ct-cards.ct-bench td.ct-head { grid-area: role; }
+  .ov-form-stack table.ct-cards td.ct-name { grid-area: name; }
+  .ov-form-stack table.ct-cards :is(td, th).ct-dob { grid-area: dob; }
+  .ov-form-stack table.ct-cards td.ct-role { grid-area: role; }
+  .ov-form-stack table.ct-cards td.ct-lfp { grid-area: lfp; justify-content: center; }
+  .ov-form-stack table.ct-cards td.ct-action { grid-area: del; justify-content: center; }
+  .ov-form-stack table.ct-cards .pf-label {
+    display: none;
+  }
+  .ov-form-stack table.ct-cards :is(td.ct-head, td.ct-role) > div {
+    flex: 1 1 0;
+    min-width: 0;
+    gap: 6px !important;
+  }
+  .ov-form-stack table.ct-cards :is(input, select) {
+    flex: 1 1 0;
+    width: 100% !important;
+    min-width: 0;
+    height: 44px !important;
+    min-height: 44px;
+    margin: 0 !important;
+    padding: 0 12px !important;
+    font-size: 16px !important;
+    text-align: left !important;
+    color: var(--ov-text-body) !important;
+    background: var(--ov-card) !important;
+    border: 1px solid var(--ov-hairline-strong) !important;
+    border-radius: var(--ov-radius) !important;
+  }
+  /* (no `appearance: auto` here any more: every select draws the kit chevron
+     now, styles.css `select:where(:not(.ov-select))`, whose layered
+     !important background and right padding beat the two rules above) */
+  .ov-form-stack table.ct-cards select {
+    padding-left: 8px !important;
+  }
+  .ov-form-stack table.ct-cards input[type="number"] {
+    padding: 0 4px !important;
+    text-align: center !important;
+    font-size: 18px !important;
+    font-weight: 600;
+  }
+  .ov-form-stack table.ct-cards input[data-captain] {
+    border: 2px solid #059669 !important; /* emerald-600, as CaptainToggle */
+  }
+  .ov-form-stack table.ct-cards input[aria-invalid="true"] {
+    color: #b91c1c !important; /* red-700 */
+    background: #fef2f2 !important; /* red-50 */
+    border: 2px solid #f87171 !important; /* red-400 */
+  }
+  .ov-form-stack table.ct-cards .ct-libero {
+    font-size: 13px !important;
+  }
+  /* the dialog's own padding is enough: 16 px more left the second line of
+     a phone's row no room for the libero select */
+  .ov-form-stack .ct-roster-body {
+    padding: 0 !important;
+  }
+  @container (min-width: 560px) {
+    .ov-form-stack table.ct-cards thead {
+      display: block;
+      background: transparent;
+    }
+    .ov-form-stack table.ct-cards thead tr {
+      padding-block: 8px;
+      border-top: 0;
+    }
+    .ov-form-stack table.ct-cards tbody tr:first-child {
+      border-top-color: var(--ov-hairline);
+    }
+    .ov-form-stack table.ct-cards tr {
+      grid-template-columns: 64px minmax(0, 1fr) minmax(130px, max-content) 200px 44px;
+      grid-template-areas: "num name dob role del";
+    }
+    .ov-form-stack table.ct-cards.has-lfp tr {
+      grid-template-columns: 64px minmax(0, 1fr) minmax(130px, max-content) 200px 44px 44px;
+      grid-template-areas: "num name dob role lfp del";
+    }
+    .ov-form-stack table.ct-cards.ct-bench tr {
+      grid-template-columns: 232px minmax(0, 1fr) minmax(130px, max-content) 44px;
+      grid-template-areas: "role name dob del";
+    }
+  }
+  .ov-form-stack .ct-add-player :is(input, select) {
+    font-size: 16px !important;
+  }
+  .ov-form-stack :is(table.ct-cards, .ct-add-player) :is(.ct-toggle, td.ct-action button) {
+    flex: 0 0 44px;
+    width: 44px !important;
+    min-width: 44px;
+    height: 44px !important;
+    border-radius: 8px !important;
+    font-size: 14px !important;
+  }
+}
+
+/* Load match from schedule (LoadOfficialMatchModal): on a phone each game is
+   a card, game #, date and time on its first line and each team on a line
+   of its own below, so the names get the dialog's width (a row of four
+   columns cut both names, "VBC Klostera..." / "vs Volley Talb...": the owner,
+   2026-10-21). Wider, the rows keep the table and its head. */
+.schedule-games {
+  container-type: inline-size;
+}
+@container (max-width: 479.98px) {
+  .schedule-games > .schedule-rows > .sg-head {
+    display: none;
+  }
+  .schedule-games > .schedule-rows > .sg-row {
+    grid-template-columns: auto auto minmax(0, 1fr) !important;
+    row-gap: 2px;
+    column-gap: 10px;
+    padding: 10px 12px;
+  }
+  .schedule-games .sg-row > :is(.sg-num, .sg-when) {
+    text-align: left;
+  }
+  .schedule-games .sg-row > .sg-when {
+    color: var(--ov-text-muted);
+  }
+  .schedule-games .sg-row > .sg-teams {
+    grid-column: 1 / -1;
+    flex-direction: column;
+    align-items: stretch;
+    font-size: 14px;
+    line-height: 1.3;
+  }
+}
+
+/* The in-match roster editor's date of birth track (ReopenRosterModal):
+   as the setup roster's .dob-sizer above, on its own rows, which are a grid
+   in any orientation. */
+.dob-sizer::after {
+  content: "DD.MM.YYYY";
+  grid-area: dob;
+  align-self: start;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  white-space: nowrap;
+  font-size: 16px;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  padding-inline: 11px 39px;
+  pointer-events: none;
+}
+.dob-sizer > .dob-cell {
+  contain: inline-size;
+}
+
+/* ---------------------------------------------------------------------------
+   Colour themes: <html data-theme="dark|eink">, light without the attribute
+   (utils/theme.js; theme-boot.js sets it before the first paint).
+   Many colours are still literal (inline styles, the legacy sheet), so a token
+   set would leave white boxes behind. Both themes are a filter on the whole
+   page instead; on the root element it does not change what position: fixed
+   is fixed to.
+   - dark: lightness inverted, hue turned back. Pictures (the ball), flags,
+     shirts and whatever wears a team or libero colour (TEAM_COLOUR_MARK, the
+     --ov-team inline property) are inverted again, so they keep their real
+     colours: a white shirt stays white. Logos and signatures (.ov-ink) are
+     dark ink on a clear ground: they turn light with the page.
+   - eink: greyscale on a steep curve (paper white, ink black) for screens in
+     full sun. Team colours get a gentle curve instead: on the steep one a
+     mid-tone shirt sinks to the dark grey of its own text. No shadows (they
+     turn into grey smears), no motion.
+   Screen only: printing always gets the light page.
+   --------------------------------------------------------------------------- */
+@media screen {
+  html[data-theme='dark'] {
+    filter: invert(1) hue-rotate(180deg) contrast(0.92);
+  }
+  html[data-theme='dark'] :is(img:not(.ov-ink), video, canvas, .flag, .shirt, [style*='--ov-team']):not(:is(.shirt, [style*='--ov-team']) *) {
+    filter: invert(1) hue-rotate(180deg);
+  }
+  html[data-theme='dark'] *,
+  html[data-theme='dark'] *::before,
+  html[data-theme='dark'] *::after {
+    /* Inverted, Tailwind's shadow-* glow white. ring-* still draws. */
+    --tw-shadow: 0 0 #0000 !important;
+  }
+  /* Dialog scrims: a dark wash would come out light and brighten the page.
+     The same strength in white comes out dark. The kit's (classes) and the
+     scoring screen's own (inline, position: fixed). */
+  html[data-theme='dark'] .bg-slate-900\/40 { background-color: rgb(255 255 255 / 0.4); }
+  html[data-theme='dark'] .bg-stone-900\/50 { background-color: rgb(255 255 255 / 0.5); }
+  html[data-theme='dark'] .bg-stone-900\/60 { background-color: rgb(255 255 255 / 0.6); }
+  html[data-theme='dark'] .bg-stone-900\/70 { background-color: rgb(255 255 255 / 0.7); }
+  html[data-theme='dark'] .bg-stone-900\/90 { background-color: rgb(255 255 255 / 0.9); }
+  html[data-theme='dark'] [style*='position: fixed'][style*='background: rgba(0, 0, 0, 0.5)'] { background: rgb(255 255 255 / 0.5) !important; }
+  html[data-theme='dark'] [style*='position: fixed'][style*='background: rgba(0, 0, 0, 0.6)'] { background: rgb(255 255 255 / 0.6) !important; }
+  /* A white dialog turns as dark as that wash: give it an edge. */
+  html[data-theme='dark'] :is([role='dialog'], [role='alertdialog']) {
+    outline: 1px solid rgb(0 0 0 / 0.3);
+  }
+  /* The legacy danger button (Undo...) writes near-black on red-500:
+     inverted, that is pale ink on pink. It keeps its real colours instead. */
+  html[data-theme='dark'] button.danger:not(:is(.shirt, [style*='--ov-team']) *) {
+    filter: invert(1) hue-rotate(180deg);
+  }
+
+  html[data-theme='eink'] {
+    /* grey g -> 1.6 g - 0.5: page white, hairlines and labels darker */
+    filter: grayscale(1) brightness(0.8) contrast(2);
+  }
+  html[data-theme='eink'] :is(.shirt, [style*='--ov-team']):not(:is(.shirt, [style*='--ov-team']) *) {
+    /* With the page's curve after it: g -> 1.3 (g - 0.5) + 0.5, a mild
+       contrast around mid grey. The ink readableText() chose sits on the
+       other side of mid grey from its shirt, so it only gains. */
+    filter: contrast(0.65) brightness(1.25);
+  }
+  html[data-theme='eink'] *,
+  html[data-theme='eink'] *::before,
+  html[data-theme='eink'] *::after {
+    /* Tailwind's shadow-* only; ring-* (focus, chosen) still draws. */
+    --tw-shadow: 0 0 #0000 !important;
+    --tw-inset-shadow: 0 0 #0000 !important;
+    animation-duration: 0s !important;
+    transition: none !important;
+  }
+  /* The kit's track segmented controls show the chosen segment as a white
+     card with a shadow on a stone-100 track: both turn white here. Ink it. */
+  html[data-theme='eink'] [role='radio'][aria-checked='true'] {
+    outline: 2px solid #000;
+    outline-offset: -2px;
+  }
+  /* The legacy danger button (Undo...): near-black on red-500, both of
+     which the curve takes to black. White ink instead. */
+  html[data-theme='eink'] button.danger {
+    color: #fff;
+  }
+  /* The scoring court: its floor and lines are pale tints that come out
+     white, so draw its edge; the discs' drop shadows come out grey smears. */
+  html[data-theme='eink'] .court {
+    outline: 2px solid #000;
+  }
+  html[data-theme='eink'] :is(.court-player, [data-player-disc]) {
+    box-shadow: none !important;
+  }
+  html[data-theme='eink'] [data-disc-ball] {
+    filter: none !important;
+  }
+  /* Captain, game captain and libero marks on the court discs: green, amber
+     or blue on white come out pale grey on the team colour's gentle curve. */
+  /* The phone's time-out / substitution counts: red at the limit, amber
+     one before. Grey on paper white, so they also get a line under them,
+     double at the limit. */
+  html[data-theme='eink'] [data-count-state] {
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 3px;
+  }
+  html[data-theme='eink'] [data-count-state='max'] {
+    text-decoration-style: double;
+  }
+  html[data-theme='eink'] .court-player-captain {
+    background: #fff !important;
+    color: #000 !important;
+    border-color: #000 !important;
+    box-shadow: none;
+  }
+}
+
+/* Lite graphics (html.ov-lite, utils/liteGraphics.js: Options › Effects and
+   speed › Blur behind dialogs off, the default in the Android app): dialog
+   scrims dim without the backdrop blur. On the hall tablet's GPU a
+   full-screen blur is redrawn for every frame that anything under a dialog
+   changes. Unlayered, so it beats the utilities. */
+html.ov-lite :is(.backdrop-blur-sm, .backdrop-blur) {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* Animations off (html[data-no-motion], utils/lookSettings.js: Options ›
+   Effects and speed › Animations). Nothing moves: no keyframes, no
+   transitions, no smooth scrolling, also where a component sets its animation
+   or transition inline (only !important beats an inline style). Unlayered, so
+   it beats the kit's and the legacy layer's rules.
+   Only on what moves, never on every element: a rule on * (or :not(...))
+   gives every element of the page four more declarations, and each restyle
+   of the scoring screen took 20-30 % longer (6x: 40 -> 52 ms, 22.11.2026),
+   the opposite of what the switch is for. One selector per class, so the
+   browser only looks at the elements that carry it. Every class of the app
+   that animates or transitions is listed (noMotionCss.test.js checks the
+   sources); inline animations and transitions by their style attribute.
+   animation: none, not a 0 s duration: an animation that ends hidden (the
+   rally tap notice fades out, Scoreboard removes it) shows its plain style
+   instead. Spinners still turn (Loader2's animate-spin, the AppSpinner orbit,
+   the inline 'spin' rings: Chromium writes their style as "animation: 1s
+   linear 0s infinite normal none running spin", so they are told by the name
+   anywhere in it): small, only while something loads, and a wait on a slow
+   device should not look like a frozen app. Countdowns still count; their
+   bars step instead of gliding. */
+html[data-no-motion] .lineup-button,
+html[data-no-motion] .lineup-button::before,
+html[data-no-motion] .lineup-button::after,
+html[data-no-motion] .missing-signature-button::before,
+html[data-no-motion] .rally-tap-notice,
+html[data-no-motion] .status-dot,
+html[data-no-motion] .modal-wrapper-roll-down > div,
+html[data-no-motion] .modal-wrapper-roll-up > div,
+html[data-no-motion] .turn-upright-icon,
+html[data-no-motion] .animate-pulse,
+html[data-no-motion] .animate-ping,
+html[data-no-motion] .animate-bounce,
+html[data-no-motion] [style*='animation']:not([style*='spin']) {
+  animation: none !important;
+}
+
+html[data-no-motion] .transition,
+html[data-no-motion] .transition-all,
+html[data-no-motion] .transition-colors,
+html[data-no-motion] .transition-opacity,
+html[data-no-motion] .transition-transform,
+html[data-no-motion] .transition-\[filter\],
+html[data-no-motion] button.sign,
+html[data-no-motion] .lineup-pos,
+html[data-no-motion] .lineup-pos__label,
+html[data-no-motion] .lineup-chip,
+html[data-no-motion] .lineup-gcapt__choice,
+html[data-no-motion] .game-card,
+html[data-no-motion] .home-card--clickable,
+html[data-no-motion] .hold-fill,
+html[data-no-motion] [style*='transition'] {
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+}
+
+html[data-no-motion] {
+  scroll-behavior: auto !important;
+}
+
+/* A screen's loading spinner (ScreenLoading, tokens.css .ov-spinner-late)
+   keeps its short wait, so a read that answers at once still shows no
+   spinner; it then appears without the fade. */
+html[data-no-motion] .ov-spinner-late {
+  animation-duration: 0s !important;
+}
+
+/* The state cues keep a still look. The Line-up buttons on the court stay
+   green-lit: the narrow glow of the flash at rest (styles.css .lineup-button
+   ::before), the button at full opacity. */
+html[data-no-motion] .lineup-button::before {
+  opacity: 1;
+}
+
+/* Missing signature: the strong amber of the flash's peak, drawn by the button
+   itself, as under reduced motion (styles.css). */
+html[data-no-motion] .missing-signature-button {
+  background: #fcd34d;
+  border-color: #b45309;
+}
+
+html[data-no-motion] .missing-signature-button::before {
+  display: none;
+}

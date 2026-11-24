@@ -1,0 +1,327 @@
+/**
+ * Sign on phone on the cloud backend (DATABASE_URL, docs/qr-signing-spec.md
+ * 8.1): who may start (D2) and for which match (one the account writes; the
+ * phone page shows its stored teams), the shared HTTP scenario with a
+ * scorer's session, context sanitising, the start limit, CORS of the app
+ * origins, the phone page, OV_SIGN_DISABLED, and that no secret, stroke,
+ * context or PIN ever reaches the server output.
+ *
+ * Needs PG_TEST_URL (a throwaway Postgres, see tests/helpers/pgTestDb.js) or
+ * OV_E2E_DOCKER=1.
+ */
+import { describe, it, before, after } from 'node:test'
+import assert from 'node:assert/strict'
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { randomBytes } from 'node:crypto'
+import { inspect } from 'node:util'
+import pg from 'pg'
+import { SKIP, bootServer, api, provisionDatabase, sleep } from './helpers/e2eServer.js'
+import { grantRoles } from './helpers/pgTestDb.js'
+import { signHttpScenario, signPageCheck } from '../../frontend/electron/__fixtures__/signHttpScenario.mjs'
+
+const PASSWORD = 'correct-horse-battery'
+const MARKER_NAME = 'Marker Signer Zx9'
+const CTX = { home: 'VBC Musterdorf', away: 'Volley 05' }
+const INK = { pad: { w: 4000, h: 2000 }, strokes: [[0, 1888, 300, 1888]] }
+// The stroke and the game PIN are numbers, and the server output has numbers
+// of its own (ports, durations, ids, timestamps) that may hold "1888" or
+// "123456" by chance. A leak prints them the way a log does (JSON,
+// util.inspect, key=value): the stroke as its coordinate run, the PIN as a
+// value of its own, never inside a longer number or id.
+const LEAK_PATTERNS = {
+  stroke: /(?<![0-9])1888[\s,]+300[\s,]+1888(?![0-9])/,
+  'game PIN': /(?<![0-9A-Za-z])123456(?![0-9A-Za-z])/
+}
+
+describe('Sign on phone, cloud backend', { skip: SKIP }, () => {
+  let db, srv, sql, storageRoot, statusDir
+  let ipSeq = 10
+  const nextIp = () => `203.0.113.${ipSeq++}`
+  const users = {}
+  const tokensSeen = []
+
+  const env = (extra = {}) => ({
+    DATABASE_URL: db.url,
+    STORAGE_ROOT: storageRoot,
+    STATUS_DIR: statusDir,
+    TRUST_PROXY: 'cloudflare',
+    TRUST_PROXY_FROM: '127.0.0.1/32,::1/128',
+    OV_PIN_SECRET: 'p'.repeat(48),
+    STORAGE_BACKUP_MIN_FREE_MB: '1',
+    STORAGE_SCORESHEETS_MIN_FREE_MB: '1',
+    ...extra
+  })
+
+  async function account (name, roles = null) {
+    const email = `${name}-${randomBytes(3).toString('hex')}@example.ch`
+    const ip = nextIp()
+    const up = await api(srv.base, '/api/auth/sign-up', { headers: { 'cf-connecting-ip': ip }, body: { email, password: PASSWORD, metadata: { first_name: name, last_name: 'Test' } } })
+    assert.equal(up.status, 200, up.text)
+    let inn
+    for (let attempt = 0; attempt < 10; attempt++) {
+      inn = await api(srv.base, '/api/auth/sign-in', { headers: { 'cf-connecting-ip': ip }, body: { email, password: PASSWORD } })
+      if (!(inn.status === 503 && inn.json?.error?.code === 'auth_busy')) break
+      await sleep(1100)
+    }
+    assert.equal(inn.status, 200, inn.text)
+    const u = { id: inn.json.data.user.id, token: inn.json.data.session.access_token, ip }
+    if (roles) await grantRoles(sql, u.id, roles)
+    // a match this account scores, as its app syncs it
+    u.match = await storedMatch(u)
+    users[name] = u
+    return u
+  }
+  async function storedMatch (owner, { sport = 'indoor', home = CTX.home, away = CTX.away, gameN = null } = {}) {
+    const ext = `sign_${sport}_${randomBytes(4).toString('hex')}`
+    const teams = sport === 'beach' ? 'team1_data, team2_data' : 'home_team, away_team'
+    await sql.query(`INSERT INTO public.matches (external_id, status, created_by, sport_type, game_n, ${teams}) VALUES ($1, 'live', $2, $3, $4, $5, $6)`,
+      [ext, owner.id, sport, gameN, JSON.stringify({ name: home }), JSON.stringify({ name: away })])
+    return ext
+  }
+  const start = (user, body = { slot: 'scorer', matchKey: user?.match, context: CTX }, headers = {}) =>
+    api(srv.base, '/api/sign/start', { token: user?.token, body, proto: null, headers: { 'cf-connecting-ip': user?.ip || '203.0.113.250', ...headers } })
+  const phone = (endpoint, body, ip = '198.51.100.7') =>
+    api(srv.base, `/api/sign/${endpoint}`, { body, proto: null, headers: { 'cf-connecting-ip': ip } })
+  const code = (r, status, c) => {
+    assert.equal(r.status, status, r.text)
+    if (c) assert.equal(r.json?.code, c, r.text)
+  }
+
+  before(async () => {
+    db = await provisionDatabase()
+    sql = new pg.Client({ connectionString: db.url })
+    await sql.connect()
+    storageRoot = mkdtempSync(join(tmpdir(), 'ov-sign-storage-'))
+    writeFileSync(join(storageRoot, '.ovdata'), '')
+    statusDir = mkdtempSync(join(tmpdir(), 'ov-sign-status-'))
+    writeFileSync(join(statusDir, 'last_backup'), new Date().toISOString())
+    srv = await bootServer(env())
+    await account('pending')
+    await account('scorer', ['scorer'])
+    await account('referee', ['referee'])
+    await account('beachScorer', ['beach:scorer'])
+    await account('admin', ['admin'])
+    await account('manager', ['competition_manager'])
+  })
+
+  after(async () => {
+    await srv?.stop()
+    await sql?.end().catch(() => {})
+    await db?.drop()
+    if (storageRoot) rmSync(storageRoot, { recursive: true, force: true })
+    if (statusDir) rmSync(statusDir, { recursive: true, force: true })
+  })
+
+  it('start needs a session: 401 without one or with a bad one', async () => {
+    code(await start(null), 401, 'OV_AUTH_REQUIRED')
+    code(await start({ token: 'x'.repeat(40), ip: nextIp() }), 401, 'OV_AUTH_REQUIRED')
+  })
+
+  it('start needs a scorer, referee or admin account (D2)', async () => {
+    code(await start(users.pending), 403, 'OV_SIGN_FORBIDDEN')
+    code(await start(users.manager), 403, 'OV_SIGN_FORBIDDEN')
+    for (const who of ['scorer', 'referee', 'beachScorer', 'admin']) {
+      const r = await start(users[who])
+      code(r, 201)
+      tokensSeen.push(r.json.token, r.json.watch)
+      await phone('close', { watch: r.json.watch })
+    }
+  })
+
+  it('start names a stored match the account writes; the phone page shows its stored teams and game number (rollout audit be-routes-authz-A-6)', async () => {
+    const theirs = await storedMatch(users.referee, { home: 'Stored Home', away: 'Stored Away', gameN: 4242 })
+    // another account's match, a match the server does not have, or none
+    for (const matchKey of [theirs, 'not-synced-yet', undefined]) {
+      code(await start(users.scorer, { slot: 'ref1', matchKey, context: { home: 'Made Up', away: 'Names' } }), 403, 'OV_SIGN_MATCH')
+    }
+    // its creator: the request's team names and number give way to the stored ones
+    const r = await start(users.referee, { slot: 'ref1', matchKey: theirs, context: { home: 'Made Up', away: 'Names', matchNo: '1', name: 'Some Referee' } })
+    code(r, 201)
+    tokensSeen.push(r.json.token, r.json.watch)
+    const open = await phone('open', { k: r.json.token })
+    assert.deepEqual(open.json.context, { matchNo: '4242', home: 'Stored Home', away: 'Stored Away', name: 'Some Referee' })
+    await phone('close', { watch: r.json.watch })
+    // an editor of the match and an admin may too
+    await sql.query('INSERT INTO public.match_editors (match_id, user_id) SELECT id, $1 FROM public.matches WHERE external_id = $2', [users.scorer.id, theirs])
+    for (const who of ['scorer', 'admin']) {
+      const e = await start(users[who], { slot: 'ref1', matchKey: theirs, context: CTX })
+      code(e, 201)
+      tokensSeen.push(e.json.token, e.json.watch)
+      await phone('close', { watch: e.json.watch })
+    }
+    // a bad slot is still the protocol's 400, whatever the match
+    code(await start(users.scorer, { slot: 'nope', matchKey: 'not-synced-yet', context: CTX }), 400, 'OV_SIGN_SLOT')
+  })
+
+  it('the phone needs no account, and the full flow works over HTTP', async () => {
+    const failures = await signHttpScenario({
+      httpBase: srv.base,
+      matchKey: await storedMatch(users.scorer, { home: 'VBC Musterdorf', away: 'Volley 05', gameN: 4711 }),
+      startHeaders: { Authorization: `Bearer ${users.scorer.token}`, 'cf-connecting-ip': users.scorer.ip }
+    })
+    assert.deepEqual(failures, [])
+  })
+
+  it('sanitises the context the phone sees, and hands out nothing else', async () => {
+    // the stored teams are sanitised as a typed context is
+    const ctxMatch = await storedMatch(users.referee, { home: '‮VBC\u0007 Musterdorf⁦', away: 'v'.repeat(70) })
+    const r = await start(users.referee, {
+      slot: 'ref1',
+      matchKey: ctxMatch,
+      context: { home: 'Typed Home', away: 'Typed Away', name: MARKER_NAME, when: '12.10.2026 20:15', lang: 'fr', userId: users.referee.id, gamePin: '123456' }
+    })
+    code(r, 201)
+    tokensSeen.push(r.json.token, r.json.watch)
+    const open = await phone('open', { k: r.json.token })
+    code(open, 200)
+    assert.deepEqual(open.json.context, { home: 'VBC Musterdorf', away: 'v'.repeat(60), name: MARKER_NAME, when: '12.10.2026 20:15', lang: 'fr' })
+    assert.deepEqual(Object.keys(open.json).sort(), ['context', 'expiresAt', 'ok', 'slot', 'state'])
+    assert.ok(!open.text.includes(users.referee.id) && !open.text.includes('123456'))
+    code(await phone('submit', { k: r.json.token, ...INK }), 200)
+    const done = await phone('wait', { watch: r.json.watch, known: 'opened' })
+    assert.deepEqual(done.json.strokes, INK.strokes)
+    assert.ok(!done.text.includes(users.referee.id))
+    code(await phone('close', { watch: r.json.watch }), 200)
+  })
+
+  it('OpenBeach: a session of a beach match opens with app beach (the page shows OpenBeach), indoor and unknown ones without', async () => {
+    const beachExt = await storedMatch(users.beachScorer, { sport: 'beach' })
+    const indoorExt = await storedMatch(users.scorer)
+    const both = await account('bothSigner', ['scorer', 'beach:scorer'])
+    // an editor of both (it took them over with the game PIN)
+    await sql.query(`INSERT INTO public.match_editors (match_id, user_id)
+      SELECT id, $1 FROM public.matches WHERE external_id = ANY($2::text[])`, [both.id, [beachExt, indoorExt]])
+    const appOf = async (user, body) => {
+      const r = await start(user, { slot: 'ref1', context: CTX, ...body })
+      code(r, 201)
+      tokensSeen.push(r.json.token, r.json.watch)
+      // the starter learns nothing new (the same answer as before)
+      assert.deepEqual(Object.keys(r.json).sort(), ['expiresAt', 'ok', 'path', 'token', 'ttlSeconds', 'watch'])
+      const open = await phone('open', { k: r.json.token })
+      code(open, 200)
+      await phone('close', { watch: r.json.watch })
+      return open.json.app ?? null
+    }
+    // by the match's sport, whoever starts it
+    assert.equal(await appOf(users.beachScorer, { matchKey: beachExt }), 'beach')
+    assert.equal(await appOf(both, { matchKey: beachExt }), 'beach')
+    assert.equal(await appOf(users.admin, { matchKey: beachExt }), 'beach')
+    assert.equal(await appOf(both, { matchKey: indoorExt }), null)
+    assert.equal(await appOf(users.scorer, { matchKey: indoorExt }), null)
+    // the body cannot choose it
+    assert.equal(await appOf(users.scorer, { matchKey: indoorExt, app: 'beach' }), null)
+    // the token checks are as before: a wrong token is 404 and names no app
+    const bad = await phone('open', { k: 'B'.repeat(43) })
+    code(bad, 404, 'OV_SIGN_NOT_FOUND')
+    assert.equal(bad.json.app, undefined)
+    // the one page carries both marks; sign.js shows the one open names
+    const page = await fetch(`${srv.base}/sign`)
+    const html = await page.text()
+    assert.ok(html.includes('<header class="brand" data-app="openvolley">'))
+    assert.ok(html.includes('<header class="brand" data-app="beach" hidden>'))
+    assert.ok(html.includes('<span>OpenBeach</span>'))
+    assert.ok((await (await fetch(`${srv.base}/sign/sign.js`)).text()).includes("APP_NAMES = { beach: 'OpenBeach' }"))
+  })
+
+  it('submit over 64 KB: 413', async () => {
+    const r = await start(users.scorer)
+    code(r, 201)
+    tokensSeen.push(r.json.token, r.json.watch)
+    const raw = JSON.stringify({ k: r.json.token, pad: INK.pad, strokes: [[0, 0]], pad2: 'x'.repeat(65536) })
+    const res = await fetch(`${srv.base}/api/sign/submit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: raw })
+    assert.equal(res.status, 413)
+    assert.equal((await res.json()).code, 'OV_SIGN_TOO_LARGE')
+    // just under: read, then refused for its content
+    const under = JSON.stringify({ k: r.json.token, pad: INK.pad, strokes: [[0, 0]], x: 'x'.repeat(65536 - 200) })
+    assert.ok(under.length <= 65536)
+    code(await phone('submit', JSON.parse(under)), 400, 'OV_SIGN_INK_INVALID')
+    await phone('close', { watch: r.json.watch })
+  })
+
+  it('30 starts per account and 5 minutes, then 429 with Retry-After', async () => {
+    const u = await account('busyScorer', ['scorer'])
+    for (let i = 0; i < 30; i++) {
+      const r = await start(u)
+      code(r, 201)
+      tokensSeen.push(r.json.token, r.json.watch)
+      await phone('close', { watch: r.json.watch }) // live sessions stay under 20
+    }
+    const r = await start(u)
+    code(r, 429, 'OV_SIGN_RATE_LIMITED')
+    assert.ok(Number(r.headers.get('retry-after')) > 0)
+    // Another account is not affected
+    code(await start(users.admin), 201)
+  })
+
+  it('20 live sessions per account', async () => {
+    const u = await account('manyScorer', ['scorer'])
+    const watches = []
+    for (let i = 0; i < 20; i++) {
+      const r = await start(u)
+      code(r, 201)
+      tokensSeen.push(r.json.token, r.json.watch)
+      watches.push(r.json.watch)
+    }
+    code(await start(u), 429, 'OV_SIGN_RATE_LIMITED')
+    for (const watch of watches) await phone('close', { watch })
+    code(await start(u), 201)
+  })
+
+  it('the phone calls are limited per IP (120 per 5 minutes)', async () => {
+    const ip = '198.51.100.200'
+    let last
+    for (let i = 0; i < 121; i++) last = await phone('open', { k: 'A'.repeat(43) }, ip)
+    code(last, 429, 'OV_SIGN_RATE_LIMITED')
+    code(await phone('open', { k: 'A'.repeat(43) }, '198.51.100.201'), 404, 'OV_SIGN_NOT_FOUND')
+  })
+
+  it('CORS: the app origin may call start, an unknown origin may not', async () => {
+    const pre = (origin) => fetch(`${srv.base}/api/sign/start`, {
+      method: 'OPTIONS',
+      headers: { Origin: origin, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'authorization,content-type' }
+    })
+    const ok = await pre('https://app.openvolley.app')
+    assert.equal(ok.headers.get('access-control-allow-origin'), 'https://app.openvolley.app')
+    assert.match(ok.headers.get('access-control-allow-headers') || '', /Authorization/)
+    const bad = await pre('https://evil.example')
+    assert.notEqual(bad.headers.get('access-control-allow-origin'), 'https://evil.example')
+    assert.notEqual(bad.headers.get('access-control-allow-origin'), '*')
+  })
+
+  it('serves the phone page with its CSP', async () => {
+    assert.deepEqual(await signPageCheck({ httpBase: srv.base, expectBody: 'OpenVolley' }), [])
+  })
+
+  it('no token, watch secret, stroke, context or PIN in the server output', async () => {
+    await sleep(200)
+    const out = srv.output.join('')
+    assert.ok(/sign\.start ref=[0-9a-f]{8} slot=\S+ via=cloud/.test(out), 'transitions are logged')
+    assert.ok(tokensSeen.length > 40)
+    for (const secret of tokensSeen) assert.ok(!out.includes(secret), 'a sign secret reached the server output')
+    for (const marker of [MARKER_NAME, 'Musterdorf']) assert.ok(!out.includes(marker), `${marker} reached the server output`)
+    // the patterns find the stroke and the PIN as a log would print them, and
+    // not the digits inside other numbers or ids
+    const body = { k: 'x', ...INK, context: { gamePin: '123456' } }
+    for (const leak of [JSON.stringify(body), inspect(body, { depth: null }), 'gamePin=123456 strokes=0,1888,300,1888']) {
+      for (const [what, re] of Object.entries(LEAK_PATTERNS)) assert.ok(re.test(leak), `the ${what} pattern misses ${leak}`)
+    }
+    for (const noise of ['port 41888 in 1888 ms', 'ts=1763123456789 id=a123456f pid 1234567', '18881,300,1888 1888,3000,1888']) {
+      for (const [what, re] of Object.entries(LEAK_PATTERNS)) assert.ok(!re.test(noise), `the ${what} pattern matches ${noise}`)
+    }
+    for (const [what, re] of Object.entries(LEAK_PATTERNS)) assert.ok(!re.test(out), `the ${what} reached the server output`)
+  })
+
+  it('OV_SIGN_DISABLED=1 switches it off', async () => {
+    const off = await bootServer(env({ OV_SIGN_DISABLED: '1' }))
+    try {
+      const r = await api(off.base, '/api/sign/start', { token: users.scorer.token, body: { slot: 'scorer', context: CTX }, proto: null, headers: { 'cf-connecting-ip': users.scorer.ip } })
+      code(r, 503, 'OV_SIGN_UNAVAILABLE')
+      const o = await api(off.base, '/api/sign/open', { body: { k: 'A'.repeat(43) }, proto: null })
+      code(o, 503, 'OV_SIGN_UNAVAILABLE')
+    } finally {
+      await off.stop()
+    }
+  })
+})

@@ -1,0 +1,4 @@
+OpenVolley 2.4.7
+- Scoresheet: every line of the sheet meets the lines above and below; set 5's third panel sits under set 4.
+- Scoresheet: saved on an iPhone, iPad or Mac, the PDF keeps the logo and the signatures.
+- Scoresheet: the PDF's title is the scoresheet's name; names in the approval box are left-aligned.

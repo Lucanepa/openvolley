@@ -1,0 +1,8 @@
+OpenVolley 3.0.7
+- Reloading the scoring screen no longer freezes the app on Linux, macOS and iPad.
+- A Point tap right after Start rally counts.
+- Home follows your sign-in; Official game lists your club's home games of the day.
+- Club managers run their own club's invite codes and members.
+- Help on every screen (the "?") with short videos; Support & feedback becomes a ticket.
+- Test matches never reach the cloud.
+- The bench circles the captain; the 1R name sits over the net.

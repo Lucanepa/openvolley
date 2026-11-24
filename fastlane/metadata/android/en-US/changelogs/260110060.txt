@@ -1,0 +1,9 @@
+OpenVolley 26.11.6
+- Tap the Substitution box: who comes in, who goes out, several at once
+- Option "Continuous play"; technical remarks on the scoresheet
+- After a replay: the score for each possible decision
+- Players without shirt numbers are kept; coin toss waits for them
+- Scorer licence needed to create a match; Back in Match setup
+- Sending the game PIN by email fixed
+- Online switch turns grey without connection
+- Security fixes; libero, injury and sanction rules per FIVB

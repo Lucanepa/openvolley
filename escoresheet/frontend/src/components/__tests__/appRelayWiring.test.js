@@ -1,0 +1,220 @@
+import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+// App.jsx cannot be mounted in a unit test (Dexie, sync queue, relay, i18n);
+// the helpers it uses are tested in relayPublisher.test.js and
+// serverDataSync.relay.test.js. This pins how App.jsx wires them.
+const src = readFileSync(resolve(__dirname, '../../App.jsx'), 'utf8')
+const scoreboardSrc = readFileSync(resolve(__dirname, '../Scoreboard.jsx'), 'utf8')
+const bundleSrc = readFileSync(resolve(__dirname, '../../utils/relayMatchSync.js'), 'utf8')
+
+function slice(from, to) {
+  const start = src.indexOf(from)
+  expect(start).toBeGreaterThan(-1)
+  const end = src.indexOf(to, start + from.length)
+  expect(end).toBeGreaterThan(start)
+  return src.slice(start, end)
+}
+
+describe('App.jsx relay wiring', () => {
+  it('opens no WebSocket of its own: it attaches to the one scorer connection (no probe sockets)', () => {
+    expect(src).not.toMatch(/new WebSocket\(/)
+    expect(scoreboardSrc).not.toMatch(/new WebSocket\(/)
+    expect(src).toMatch(/scorerRelay\.attach\(wsUrl, \{/)
+    expect(src).toMatch(/const wsUrl = scorerRelayUrl\(\{ wsPort: serverStatus\?\.wsPort \}\)/)
+  })
+
+  it('the connection status check asks the relay over HTTP, via relayConnectionStatus', () => {
+    const body = slice('const checkConnectionStatuses = useCallback(', '\n  }, [')
+    expect(body).toMatch(/relayConnectionStatus\(\{ wsUrl, ws: scorerRelay\.socket \}\)/)
+    // the same url the shared connection is attached to
+    expect(body).toMatch(/const wsUrl = scorerRelayUrl\(\{ wsPort: relayWsPort \}\)/)
+    expect(body).not.toMatch(/new WebSocket\(/)
+  })
+
+  it('the network checks do not re-run on match writes or sync status flips', () => {
+    const start = src.indexOf('const checkConnectionStatuses = useCallback(')
+    const deps = src.slice(src.indexOf('\n  }, [', start), src.indexOf(']', src.indexOf('\n  }, [', start)) + 1)
+    expect(deps).not.toMatch(/syncStatus|currentMatch\b|serverStatus\b/)
+  })
+
+  it('sync-match-data goes under the seed key with PINs only when they change', () => {
+    const body = slice('const syncMatchData = async () => {', 'const handlePinValidationRequest')
+    // nothing under a Dexie id: no seed key, no bundle (relayMatchSync.dexie.test.js), no sync
+    expect(body).toMatch(/if \(!bundle \|\| scorerRelay\.socket !== ws \|\| currentMatchIdRef\.current !== activeMatchId\) return\n\s*const \{ relayKey \} = bundle/)
+    // the connection's one PIN tracker, shared with the Scoreboard
+    expect(body).toMatch(/scorerRelay\.pins\.payloadFor\(ws, bundle\.match, relayKey, syncMark\)/)
+    expect(body).toMatch(/matchId: relayKey,/)
+    expect(body).toMatch(/ws\.send\(JSON\.stringify\(syncPayload\)\)\n\s*commitPins\(\)/)
+    // the raw match (with game_pin / connection_pins) is never sent
+    expect(body).not.toMatch(/match: bundle\.match/)
+  })
+
+  // Audit 2026-11 (fe-shell-pwa-3): the room key, the match row, the teams
+  // and the rosters came from the newest unfinished match, the sets and events
+  // from the open one. With an official match and an older easy or test
+  // match on the device, opening the older one sent its sets and events into
+  // the official match's room.
+  it('every sync and match-data answer is one match, read whole by its id', () => {
+    expect(src).not.toMatch(/currentMatchRef/)
+    const body = slice('const syncMatchData = async () => {', 'const handlePinValidationRequest')
+    expect(body).toMatch(/relayMatchBundle\(db, activeMatchId, \{ relayUrl: scorerRelay\.url \}\)/)
+    for (const k of ['homeTeam', 'awayTeam', 'homePlayers', 'awayPlayers', 'sets', 'events']) expect(body).toMatch(new RegExp(`\\b${k}: bundle\\.${k},`))
+    expect(body).not.toMatch(/db\.(sets|events|teams|players)\./)
+    const answer = slice('const handleMatchDataRequest = async (request) => {', 'const handleGameNumberRequest')
+    expect(answer).toMatch(/relayMatchBundle\(db, activeMatchId, \{ relayUrl: scorerRelay\.url \}\)/)
+    expect(answer).toMatch(/events: bundle\.events\n/)
+    expect(answer).not.toMatch(/db\.(sets|events|teams|players)\./)
+    expect(src).toMatch(/import \{ relayMatchBundle\b[^}]*\} from '\.\/utils\/relayMatchSync'/)
+  })
+
+  // Audit 2026-11 review: the two syncs at once (a seed key from Create
+  // Match, a connection or PIN changed) were built from currentMatch, the
+  // newest unfinished match, while the effect publishes the open one. With an
+  // older match open next to a newer one, the open match's new PIN reached
+  // the relay only with the 30 s backup sync, and the tablet was refused.
+  it('the syncs at once follow the match the relay effect publishes', () => {
+    const body = slice('const openMatchRelayTrigger = useLiveQuery(', 'useEffect(() => {\n    // Keep the match on the relay')
+    expect(body).toMatch(/if \(!matchId\) return null/)
+    expect(body).toMatch(/return relaySyncTrigger\(await db\.matches\.get\(matchId\)\)/)
+    expect(body).toMatch(/\}, \[matchId\]\)/)
+    expect(body).toMatch(/const relayTrigger = matchId \? openMatchRelayTrigger : relaySyncTrigger\(currentMatch\)/)
+    expect(body).toMatch(/if \(relayTrigger != null && relaySyncRef\.current\) relaySyncRef\.current\(\)\n\s*\}, \[relayTrigger\]\)/)
+    // the same match as the effect: matchId, else currentMatch
+    expect(src).toMatch(/const activeMatchId = matchId \|\| currentMatch\?\.id/)
+    expect(src).not.toMatch(/relayMatchKey\(currentMatch\)|currentMatch\.refereePin/)
+    expect(src).toMatch(/import \{ relayMatchBundle, relaySyncTrigger \} from '\.\/utils\/relayMatchSync'/)
+  })
+
+  // Stress test 2026-10-25: the laptop a match moved away from re-synced its
+  // older copy into the room when it came back online. The cloud relay
+  // refuses a device the database does not name as the scorer, so both syncs
+  // name this installation; 2026-10-26: with its claim of the match, which
+  // the venue relays check (matchHandover relaySyncDevice).
+  it('sync-match-data names this installation and its claim, from App and Scoreboard alike', () => {
+    const body = slice('const syncMatchData = async () => {', 'const handlePinValidationRequest')
+    expect(body).toMatch(/relaySyncDevice\(db, activeMatchId, writingDevice\(\)\)/)
+    expect(body).toMatch(/\n\s*device\n\s*\}/)
+    const start = scoreboardSrc.indexOf("type: 'sync-match-data',")
+    expect(start).toBeGreaterThan(-1)
+    expect(scoreboardSrc.slice(start, scoreboardSrc.indexOf('}', start))).toMatch(/\n\s*device,\n/)
+    const reads = scoreboardSrc.slice(scoreboardSrc.lastIndexOf('await Promise.all([', start), start)
+    expect(reads).toMatch(/relaySyncDevice\(db, matchId, writingDevice\(\)\)/)
+    // a venue relay's refusal of a claim taken over is shown to the scorer
+    expect(scoreboardSrc).toMatch(/'too-many-matches', 'scorer-moved'\]\.includes\(message\.code\)/)
+    expect(scoreboardSrc).toMatch(/relayRejection\.code === 'scorer-moved'\n\s*\? t\('scoreboard\.relayRejected\.scorerMoved'/)
+  })
+
+  // National peak load test 2026-10-26: the undo snapshots were about 90% of
+  // every bundle (2.4 MB at the end of a 5-set match), sent twice per rally.
+  it('sync-match-data leaves the undo snapshots out, from App and Scoreboard alike', () => {
+    const body = slice('const syncMatchData = async () => {', 'const handlePinValidationRequest')
+    expect(body).toMatch(/events: bundle\.events,/)
+    expect(bundleSrc).toMatch(/events: relayEvents\(events\)/)
+    expect(bundleSrc).toMatch(/import \{[^}]*\brelayEvents\b[^}]*\} from '\.\/relayPublisher'/)
+    const start = scoreboardSrc.indexOf("type: 'sync-match-data',")
+    expect(scoreboardSrc.slice(start, scoreboardSrc.indexOf('}', start))).toMatch(/events: relayEvents\(freshEvents \|\| \[\]\),/)
+    expect(scoreboardSrc).toMatch(/import \{[^}]*\brelayEvents\b[^}]*\} from '\.\.\/utils\/relayPublisher'/)
+  })
+})
+
+// Stress test 2026-10-25: after a venue relay restart (live states in memory
+// only) the scorer resynced its bundle, which carries none, and pushed a live
+// state only at its next action: the livescore kept the old score meanwhile
+describe('Scoreboard relay connection', () => {
+  it('pushes the live state after the sync of every (re)connect', () => {
+    const start = scoreboardSrc.indexOf('detachRelay = scorerRelay.attach(wsUrl, {')
+    expect(start).toBeGreaterThan(-1)
+    const onOpen = scoreboardSrc.slice(start, scoreboardSrc.indexOf('onMessage:', start))
+    expect(onOpen).toMatch(/const initialSync = syncMatchData\(\)/)
+    expect(onOpen).toMatch(/initialSync\.then\(\(\) => syncLiveStateRef\.current\?\.\(RECONNECT_PUSH, null, null\)/)
+  })
+
+  // 2026-11 audit: a relay with no room for the match refused every sync
+  // ('room-limit') and the scorer saw nothing; a cloud claim the relay could
+  // not check with its database is refused now ('claim-unverified')
+  it('shows a full relay to the scorer, and sends a sync the relay could not check again', () => {
+    expect(scoreboardSrc).toMatch(/\} else if \(message\.code === 'room-limit'\) \{\n[\s\S]{0,200}setRelayRejection\(\{ code: message\.code/)
+    expect(scoreboardSrc).toMatch(/relayRejection\.code === 'room-limit'\n\s*\? t\('scoreboard\.relayRejected\.roomLimit'/)
+    expect(scoreboardSrc).toMatch(/message\.code === 'claim-unverified'\) \{[\s\S]{0,300}claimRetry = setTimeout\(\(\) => syncFunctionRef\.current\?\.\(\), 5000\)/)
+    expect(scoreboardSrc).toMatch(/detachRelay = null\n\s*clearTimeout\(claimRetry\)/)
+  })
+})
+
+describe('Scoreboard live state: a test match stays out of the cloud', () => {
+  // Scoreboard cannot be mounted here either; publishLiveState and
+  // liveStateTargets are tested in relayPublisher.test.js. This pins that every
+  // cloud step of syncLiveStateToSupabase sits inside publishLiveState's toCloud.
+  const start = scoreboardSrc.indexOf('const syncLiveStateToSupabase = useCallback(')
+  const end = scoreboardSrc.indexOf('\n  }, [', start)
+  const body = scoreboardSrc.slice(start, end)
+  const cloudAt = body.indexOf('toCloud: async () => {')
+  const catchAt = body.lastIndexOf('} catch (err) {')
+
+  it('routes through publishLiveState with the targets of liveStateTargets', () => {
+    expect(start).toBeGreaterThan(-1)
+    expect(body).toMatch(/await publishLiveState\(\{\s*targets: routeOf\(\),/)
+    expect(body).toMatch(/const routeOf = \(\) => liveStateTargets\(\{ isTest, relayKey: relayKeyRef\.current, relayUrl: scorerRelay\.url \}\)/)
+    expect(cloudAt).toBeGreaterThan(-1)
+  })
+
+  it('looks up, upserts and marks for retry only inside toCloud', () => {
+    const before = body.slice(0, cloudAt)
+    const cloud = body.slice(cloudAt, catchAt)
+    for (const step of ['apiFrom(', 'setLiveStateDirty(', 'isAuthBlocked(', 'liveOrder.write(']) {
+      expect(before, step).not.toContain(step)
+      expect(cloud, step).toContain(step)
+    }
+    // The relay push is not in toCloud
+    expect(cloud).not.toContain("type: 'live-state-update'")
+  })
+})
+
+describe('health checks', () => {
+  it('ask /api/server/status, never the match list (it grows with every published match and shares the LedBox rate limit)', () => {
+    for (const s of [src, scoreboardSrc]) expect(s).not.toMatch(/fetch\([^)]*\/api\/match\/list/)
+    expect(src).toMatch(/fetch\('\/api\/server\/status'/)
+    // The scoring screen has no check of its own any more: its 60 s one set
+    // a state nothing read (perf pass, 22.11.2026). App's check above stays.
+    expect(scoreboardSrc).not.toMatch(/\/api\/server\/status/)
+    expect(scoreboardSrc).not.toMatch(/checkConnectionStatuses/)
+  })
+})
+
+// MatchSetup cannot be mounted here either: its live-state write pinned.
+// 2026-10-26: a team colour changed on a device that continued the match
+// went out on its own clock, behind the states it had stamped ahead
+describe('MatchSetup live-state writes', () => {
+  const setupSrc = readFileSync(resolve(__dirname, '../MatchSetup.jsx'), 'utf8')
+  it('a team name, short name or colour change stamps updated_at on the match\'s live-state clock', () => {
+    const writes = []
+    for (let at = setupSrc.indexOf("await apiFrom('match_live_state')"); at > -1; at = setupSrc.indexOf("await apiFrom('match_live_state')", at + 1)) {
+      writes.push(setupSrc.slice(at, setupSrc.indexOf('.eq(', at)))
+    }
+    expect(writes).toHaveLength(3)
+    for (const write of writes) expect(write).toMatch(/updated_at: new Date\(liveStateNow\(match\)\)\.toISOString\(\)/)
+  })
+})
+
+// RefereeApp / BenchApp cannot be mounted here: the typed PIN checks pinned.
+// 2026-10-26: checked against every live match, a hall's wrong PINs for other
+// matches (one venue address) made a new referee wait 10 minutes
+describe('typed tablet PINs are checked against the match the page knows', () => {
+  const refereeSrc = readFileSync(resolve(__dirname, '../../RefereeApp.jsx'), 'utf8')
+  const benchSrc = readFileSync(resolve(__dirname, '../../BenchApp.jsx'), 'utf8')
+  it('the referee: its link, or the game picked in the list', () => {
+    // (a game picked after a link replaces it: refereeLink.test.jsx)
+    expect(refereeSrc).toMatch(/const picked = linkedMatch\?\.id \?\? \(listed\.length === 1 \? listed\[0\]\.id : null\)/)
+    expect(refereeSrc).toMatch(/const gameNumber = linkedMatch\?\.gameNumber \?\? \(selectedGameNumber \|\| null\)/)
+    expect(refereeSrc).toMatch(/validateRefereePin\(pinInput\.trim\(\), \{\n\s*matchExternalId: typeof picked === 'string' && picked \? picked : null,\n\s*gameNumber\n\s*\}\)/)
+  })
+  it('the bench: the match picked (its link or the list)', () => {
+    const at = benchSrc.indexOf('const result = await validateBenchPin(pin, selectedTeam, {')
+    expect(at).toBeGreaterThan(-1)
+    expect(benchSrc.slice(at, benchSrc.indexOf('})', at))).toMatch(/matchExternalId: picked/)
+    // and its game number, for the relay
+    expect(benchSrc.slice(at, benchSrc.indexOf('\n      })', at))).toMatch(/gameNumber: selectedMatch\?\.gameNumber \?\? null/)
+    expect(benchSrc).toMatch(/const picked = selectedMatch\?\.id/)
+  })
+})

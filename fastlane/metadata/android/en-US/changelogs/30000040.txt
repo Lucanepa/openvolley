@@ -1,0 +1,7 @@
+OpenVolley 3.0.4
+- Taking over a match on another device keeps the cloud record, signatures and live viewers right.
+- Set ends after an outage reach the cloud; sync resumes as soon as the internet is back.
+- A double tap is one tap; keys act at once and never under a dialog.
+- Tablets: one typo no longer locks a hall out; bench and referee rejoin after an outage.
+- Venue relay: safer restarts and hand-overs.
+- Scoresheet PDF and files are retried until they are in the cloud.

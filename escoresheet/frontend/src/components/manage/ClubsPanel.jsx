@@ -1,0 +1,304 @@
+import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { ArrowLeft } from 'lucide-react'
+import { admin, clubsApi } from '../../lib/accountApi'
+import { usePanelData, usePanelRoute, useOnline, OfflineBanner, PageMissing, PanelHead, InlineError, MatchStatusPill, ReasonModal, useErrorText } from './common'
+import { Banner, Button, Checkbox, Chip, EmptyInset, Field, Input, Notice, Row, RowList, RowTool, SearchInput, SkeletonRows, Switch, confirmDialog, toast } from '../../ui'
+import ClubManagersField from './ClubManagersField'
+
+/**
+ * Clubs (admins, OpenVolley; db/018, lib/clubs.js): a scorer scores the home
+ * games of its own club(s). A club is a name and the VolleyManager team names
+ * that play for it; accounts get their clubs in Accounts or through an invite
+ * code. The rule is on unless it is switched off here (db/034): then every
+ * scorer without a club is blocked from official games, so set the clubs up
+ * first. While it is off a warning says so, and the official matches that an
+ * account outside the home club holds are listed to release (with the rule
+ * on, a scorer of the home club takes over such a game still in setup).
+ * db/020: each club may have managers (they run the club's codes and members
+ * in their own My club tab), picked from the accounts linked to the club or
+ * invited with a club manager link (db/029, ClubManagersField), and a contact
+ * address (the final scoresheets of its games).
+ *
+ * A club is a page of its own (owner 2026-11-10): #clubs/<club id>, and
+ * #clubs/new for a new one (usePanelRoute).
+ */
+export default function ClubsPanel({ route = '', onRoute = null }) {
+  const { t } = useTranslation()
+  const online = useOnline()
+  const errorText = useErrorText()
+  const { data, error, loading, reload } = usePanelData(() => clubsApi.list(), [], { enabled: online })
+  const clubs = data?.clubs || []
+  const ruleOn = data?.rule?.enabled === true
+  const heldOutside = data?.held_outside || []
+  const [[pageId = null], go] = usePanelRoute(route, onRoute)
+  const setEditing = (c, opts) => go(c ? [c.id || 'new'] : [], opts)
+  const [ruleBusy, setRuleBusy] = useState(false)
+  const [releaseFor, setReleaseFor] = useState(null)
+
+  const setRule = async (enabled) => {
+    if (enabled) {
+      const ok = await confirmDialog({
+        title: t('manage.clubs.ruleOnTitle'),
+        message: t('manage.clubs.ruleOnBody'),
+        confirmLabel: t('manage.clubs.ruleOnConfirm'),
+        tone: 'danger'
+      })
+      if (!ok) return
+    }
+    setRuleBusy(true)
+    const res = await clubsApi.setRule(enabled)
+    setRuleBusy(false)
+    if (res.error) {
+      toast.error(errorText(res.error))
+      return
+    }
+    toast.success(enabled ? t('manage.clubs.ruleIsOn') : t('manage.clubs.ruleIsOff'))
+    reload()
+  }
+
+  const remove = async (club) => {
+    const ok = await confirmDialog({
+      title: t('manage.clubs.deleteTitle', { name: club.name }),
+      message: t('manage.clubs.deleteBody', { count: club.scorers }),
+      confirmLabel: t('manage.clubs.delete'),
+      tone: 'danger'
+    })
+    if (!ok) return
+    const res = await clubsApi.remove(club.id)
+    if (res.error) {
+      toast.error(errorText(res.error))
+      return
+    }
+    toast.success(t('manage.clubs.deleted'))
+    reload()
+  }
+
+  // the club's page
+  if (pageId) {
+    const club = pageId === 'new' ? null : clubs.find((c) => c.id === pageId)
+    if (pageId !== 'new' && !club) return <PageMissing loading={loading || !data} error={error} onBack={() => setEditing(null)} backLabel={t('manage.tabs.clubs')} />
+    return (
+      <ClubPage
+        key={pageId}
+        club={club}
+        online={online}
+        onBack={() => setEditing(null)}
+        onSaved={(saved) => { reload(); if (!club && saved?.id) setEditing(saved, { push: false }) }}
+      />
+    )
+  }
+
+  return (
+    <section data-testid="manage-clubs">
+      <PanelHead title={t('manage.tabs.clubs')}>
+        <Button variant="positive" size="md" disabled={!online} onClick={() => setEditing({})} data-testid="new-club">{t('manage.clubs.new')}</Button>
+      </PanelHead>
+      <OfflineBanner online={online} />
+      <div className="mb-4 flex items-start gap-3 rounded-lg border border-stone-200 bg-white px-3 py-3">
+        <Switch
+          checked={ruleOn}
+          onCheckedChange={setRule}
+          disabled={!online || ruleBusy || !data}
+          aria-labelledby="club-rule-title"
+          data-testid="club-rule-switch"
+        />
+        <div className="min-w-0">
+          <p id="club-rule-title" className="text-sm font-semibold text-stone-900">{t('manage.clubs.ruleTitle')}</p>
+          <p className="mt-0.5 text-xs text-stone-600">{ruleOn ? t('manage.clubs.ruleOnHint') : t('manage.clubs.ruleOffHint')}</p>
+        </div>
+      </div>
+      {data && !ruleOn && <Banner tone="warning" className="mb-4" data-testid="club-rule-off-warning">{t('manage.clubs.ruleOffWarning')}</Banner>}
+      {heldOutside.length > 0 && (
+        <div className="mb-4" data-testid="club-held-outside">
+          <p className="text-sm font-semibold text-stone-900">{t('manage.clubs.heldOutsideTitle')}</p>
+          <p className="mb-2 mt-0.5 text-xs text-stone-600">{t('manage.clubs.heldOutsideHint')}</p>
+          <RowList>
+            {heldOutside.map((m) => (
+              <Row
+                key={m.match_id}
+                stripe={false}
+                toolsIndent="sm:pl-2"
+                actionIndent="pl-1.5"
+                title={t('manage.clubs.heldOutsideGame', { game: m.game_n })}
+                meta={<>
+                  <span>{m.home_team}</span>
+                  <span>{m.club}</span>
+                  {m.scorer_name && <span>{m.scorer_name}</span>}
+                </>}
+                status={<MatchStatusPill status={m.status} />}
+                tools={<RowTool disabled={!online} onClick={() => setReleaseFor(m)}>{t('manage.games.releaseGame')}</RowTool>}
+              />
+            ))}
+          </RowList>
+        </div>
+      )}
+      <ReasonModal
+        open={!!releaseFor}
+        title={t('manage.games.releaseConfirmTitle', { game: releaseFor?.game_n ?? '' })}
+        body={t('manage.games.releaseConfirmBody')}
+        label={t('manage.games.reason')}
+        confirmLabel={t('manage.games.releaseGame')}
+        onClose={() => setReleaseFor(null)}
+        onSubmit={async (reason) => {
+          const res = await admin.releaseGame(releaseFor.match_id, { reason })
+          if (res.error) return errorText(res.error)
+          setReleaseFor(null)
+          reload()
+          return null
+        }}
+      />
+      {error && <Notice className="mb-3">{errorText(error)}</Notice>}
+      {error && !data ? null : loading && !data ? (
+        <SkeletonRows rows={4} pill={false} />
+      ) : clubs.length === 0 ? (
+        <EmptyInset>{t('manage.clubs.empty')}</EmptyInset>
+      ) : (
+        <RowList>
+          {clubs.map((c) => (
+            <Row
+              key={c.id}
+              stripe={false}
+              toolsIndent="sm:pl-2"
+              actionIndent="pl-1.5"
+              title={c.name}
+              meta={<>
+                <span>{t('manage.clubs.scorers', { count: c.scorers })}</span>
+                {c.managers?.length > 0 && <span>{t('manage.clubs.managersCount', { count: c.managers.length })}</span>}
+                {c.contact_email && <span>{c.contact_email}</span>}
+              </>}
+              chips={c.teams.length
+                ? c.teams.map((name) => <Chip key={name}>{name}</Chip>)
+                : <Chip tone="amber">{t('manage.clubs.noTeams')}</Chip>}
+              tools={<>
+                <RowTool disabled={!online} onClick={() => setEditing(c)}>{t('manage.clubs.edit')}</RowTool>
+                <RowTool disabled={!online} onClick={() => remove(c)}>{t('manage.clubs.delete')}</RowTool>
+              </>}
+            />
+          ))}
+        </RowList>
+      )}
+    </section>
+  )
+}
+
+/** A club's page: its name, contact, managers and VolleyManager teams (a team plays for one club). */
+function ClubPage({ club, online, onBack, onSaved }) {
+  const { t } = useTranslation()
+  const errorText = useErrorText()
+  const [name, setName] = useState(club?.name || '')
+  const [teams, setTeams] = useState(() => new Set(club?.teams || []))
+  // db/020: the contact address and the managers (picked, ClubManagersField)
+  const [contact, setContact] = useState(club?.contact_email || '')
+  // A new club once created: a later save (after an error in the contact or
+  // managers step) goes on as an edit of it, never a second create
+  const [createdId, setCreatedId] = useState(null)
+  // the stored contact: sent only when the admin changed it, so an edit never
+  // writes back the address the list held when the page opened
+  const [contactSaved, setContactSaved] = useState(club?.contact_email || '')
+  const managersBefore = (club?.managers || []).map((m) => m.user_id).sort().join(',')
+  const [managers, setManagers] = useState(() => club?.managers || [])
+  const [q, setQ] = useState('')
+  const [term, setTerm] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const found = usePanelData(() => clubsApi.vmTeams({ q: term || undefined }), [term])
+  // a short pause after typing before the server is asked
+  useEffect(() => {
+    const id = setTimeout(() => setTerm(q.trim()), 250)
+    return () => clearTimeout(id)
+  }, [q])
+  const options = useMemo(() => {
+    const list = found.data?.teams || []
+    // the club's own teams stay on top, even when the search hides them
+    const names = new Set(list.map((x) => x.name))
+    const own = [...teams].filter((n) => !names.has(n)).map((n) => ({ name: n, club_id: club?.id ?? null }))
+    return [...own, ...list]
+  }, [found.data, teams, club])
+
+  const toggle = (n) => {
+    const next = new Set(teams)
+    if (next.has(n)) next.delete(n)
+    else next.add(n)
+    setTeams(next)
+    setError('')
+  }
+  const valid = name.trim().length >= 1
+  const save = async () => {
+    if (!valid || busy) return
+    setBusy(true)
+    const body = { name: name.trim(), teams: [...teams] }
+    const contactChanged = contact.trim() !== (contactSaved || '').trim()
+    let clubId = club?.id || createdId
+    let res = clubId
+      ? await clubsApi.update(clubId, contactChanged ? { ...body, contact_email: contact.trim() || null } : body)
+      : await clubsApi.create(body)
+    if (!res.error && !clubId) {
+      clubId = res.data?.club?.id
+      if (clubId) setCreatedId(clubId)
+      // a new club: its contact address once it exists
+      if (clubId && contact.trim()) res = await clubsApi.update(clubId, { contact_email: contact.trim() })
+    }
+    if (!res.error && (contactChanged || !club)) setContactSaved(contact.trim())
+    const ids = managers.map((m) => m.user_id)
+    if (!res.error && clubId && [...ids].sort().join(',') !== managersBefore) res = await clubsApi.setManagers(clubId, ids)
+    setBusy(false)
+    if (res.error) {
+      setError(res.error.code === 'OV_TEAM_TAKEN'
+        ? t('manage.clubs.teamTaken', { teams: res.error.details || '' })
+        : res.error.code === 'OV_CLUB_EXISTS' ? t('manage.clubs.nameTaken')
+          : res.error.code === 'OV_NOT_A_CLUB_MEMBER' ? t('manage.clubs.notAMember')
+            : errorText(res.error))
+      return
+    }
+    toast.success(t('manage.clubs.saved'))
+    onSaved(res.data?.club || club || (clubId ? { id: clubId } : null))
+  }
+  return (
+    <section data-testid="club-page">
+      <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={onBack} disabled={busy} className="mb-3" data-testid="club-page-back">{t('manage.tabs.clubs')}</Button>
+      <PanelHead title={club ? club.name : t('manage.clubs.new')} />
+      <OfflineBanner online={online} />
+      <div className="space-y-3 rounded-2xl border border-stone-200/70 bg-white p-4 shadow-card sm:p-5">
+        <Field label={t('manage.clubs.name')}>
+          <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={120} required autoFocus />
+        </Field>
+        <Field label={t('manage.clubs.contact')} hint={t('manage.clubs.contactHint')}>
+          <Input type="email" value={contact} onChange={(e) => setContact(e.target.value)} maxLength={254} data-testid="club-contact" />
+        </Field>
+        <ClubManagersField club={club} picked={managers} onChange={(next) => { setManagers(next); setError('') }} disabled={busy} />
+        <Field label={t('manage.clubs.teams')} hint={t('manage.clubs.teamsHint')}>
+          <SearchInput size="md" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('manage.clubs.searchTeams')} aria-label={t('manage.clubs.searchTeams')} maxLength={80} />
+        </Field>
+        <p className="text-xs text-stone-600" data-testid="club-team-count">{t('manage.clubs.picked', { count: teams.size })}</p>
+        <div className="max-h-72 overflow-y-auto rounded-lg border border-stone-200 bg-white p-2" data-testid="club-team-options">
+          {found.loading && !found.data ? (
+            <SkeletonRows rows={3} pill={false} />
+          ) : options.length === 0 ? (
+            <p className="px-1 py-2 text-xs text-stone-500">{t('manage.clubs.noVmTeams')}</p>
+          ) : (
+            <div className="flex flex-col gap-1">
+              {options.map((o) => {
+                const elsewhere = o.club_id && o.club_id !== club?.id ? o.club_name : null
+                return (
+                  <Checkbox
+                    key={o.name}
+                    label={elsewhere ? `${o.name} · ${t('manage.clubs.inClub', { club: elsewhere })}` : o.name}
+                    checked={teams.has(o.name)}
+                    disabled={!!elsewhere && !teams.has(o.name)}
+                    onChange={() => toggle(o.name)}
+                  />
+                )
+              })}
+            </div>
+          )}
+        </div>
+        <InlineError error={error} />
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <Button variant="positive" onClick={save} loading={busy} disabled={!valid || busy || !online} data-testid="save-club">{t('manage.clubs.save')}</Button>
+          <Button variant="secondary" onClick={onBack} disabled={busy}>{t('common.cancel', 'Cancel')}</Button>
+        </div>
+      </div>
+    </section>
+  )
+}

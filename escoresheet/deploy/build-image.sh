@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# build-image.sh [--ship <ssh-host> | --ship local] [--allow-dirty] [--allow-prewiring]
+#
+# Builds openvolley-backend:<git-sha> from escoresheet/backend on the build
+# machine (lenovoserver). With --ship <ssh-host> it streams the image to
+# <ssh-host>, keeps a gzipped copy in /opt/openvolley/images/ (rollback images
+# survive `docker image prune`, e.g. Coolify's cleanup), `docker load`s it
+# there, prunes archives and image tags beyond the newest OV_KEEP_IMAGES
+# (default 5; the tag in .env is always kept), and records the tag in
+# ${OV_OPS_DIR:-~/ov-ops}/shipped-<ssh-host>.
+#
+# Production is the VPS ov-vps: build-image.sh --ship ov-vps (RUNBOOK-hetzner.md).
+#
+# The build context is the COMMITTED escoresheet/backend (git archive HEAD),
+# never the working directory: files git ignores (certificates, .dev.vars,
+# local data) cannot reach the image. --allow-dirty builds the working tree
+# instead, tagged <sha>-dirty, for local tests only (never shipped).
+#
+# --ship local: production on the build machine itself (lenovoserver from
+# 16.10.2026 until the move to ov-vps on 09.11.2026; now only a fallback;
+# no root ssh into itself). The image is already in the local Docker, so it is
+# not loaded again: the gzipped copy is written to /opt/openvolley/images/
+# (checked with gzip -t before it gets its name) and pruned there, both with
+# sudo (/opt/openvolley is root-only), and the tag is recorded in
+# ${OV_OPS_DIR}/shipped-local (restore-test.sh's default image).
+#
+# Neither restarts anything: deploying is `sudo /opt/openvolley/deploy.sh
+# openvolley-backend:<sha>` on the production host (dump, migrations, switch,
+# checks; RUNBOOK-hetzner.md, Updating).
+#
+# Refuses to build a tree without the self-host wiring (no /health/live,
+# DATABASE_URL, STORAGE_ROOT or STATUS_DIR in the backend sources): such an
+# image would run today's local relay mode, and must never reach a server.
+# --allow-prewiring builds it anyway, tagged <sha>-prewiring, for local kit
+# experiments only; it cannot be combined with --ship.
+set -euo pipefail
+
+KIT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+REPO=$(git -C "$KIT_DIR" rev-parse --show-toplevel)
+BACKEND="$REPO/escoresheet/backend"
+PLATFORM=${OV_PLATFORM:-linux/amd64}
+OV_KEEP_IMAGES=${OV_KEEP_IMAGES:-5}
+OV_OPS_DIR=${OV_OPS_DIR:-$HOME/ov-ops}
+SHIP=""
+ALLOW_DIRTY=0
+ALLOW_PREWIRING=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --ship) SHIP=${2:?--ship needs an ssh host or local}; shift 2 ;;
+    --allow-dirty) ALLOW_DIRTY=1; shift ;;
+    --allow-prewiring) ALLOW_PREWIRING=1; shift ;;
+    -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+[[ "$OV_KEEP_IMAGES" =~ ^[1-9][0-9]*$ ]] || { echo "OV_KEEP_IMAGES must be >= 1" >&2; exit 2; }
+
+SHA=$(git -C "$REPO" rev-parse --short=12 HEAD)
+if [[ -n "$(git -C "$REPO" status --porcelain -- escoresheet/backend escoresheet/deploy)" ]]; then
+  if (( ALLOW_DIRTY )); then
+    SHA="${SHA}-dirty"
+    [[ -z "$SHIP" ]] || { echo "refusing to ship a dirty build" >&2; exit 1; }
+  else
+    echo "escoresheet/backend or escoresheet/deploy has uncommitted changes (use --allow-dirty for a local test build)" >&2
+    exit 1
+  fi
+fi
+
+# --- runtime contract (README.md) must be implemented by the backend ----------
+missing=()
+for token in '/health/live' 'DATABASE_URL' 'STORAGE_ROOT' 'STATUS_DIR'; do
+  grep -rqF --include='*.js' --include='*.mjs' --include='*.cjs' \
+       --exclude-dir=node_modules --exclude-dir=tests --exclude-dir=test \
+       -- "$token" "$BACKEND" || missing+=("$token")
+done
+if (( ${#missing[@]} )); then
+  if (( ALLOW_PREWIRING )) && [[ -z "$SHIP" ]]; then
+    echo "[build-image] WARNING: backend lacks ${missing[*]}; building a LOCAL-ONLY pre-wiring image" >&2
+    SHA="${SHA}-prewiring"
+  else
+    echo "[build-image] refusing: escoresheet/backend does not implement the self-host contract (missing: ${missing[*]})." >&2
+    echo "  Such an image runs the unauthenticated local relay mode. Merge the self-host wiring first." >&2
+    echo "  (--allow-prewiring builds a local-only test image; it can never be shipped.)" >&2
+    exit 1
+  fi
+fi
+TAG="openvolley-backend:${SHA}"
+
+# Build context: the committed backend tree (git archive), so ignored and
+# untracked files of the build machine never reach the image. A dirty test
+# build (--allow-dirty, never shipped) uses the working tree.
+CONTEXT="$BACKEND"
+if [[ "$SHA" != *-dirty ]]; then
+  CONTEXT=$(mktemp -d "${TMPDIR:-/tmp}/ov-build-context.XXXXXX")
+  trap 'rm -rf "$CONTEXT"' EXIT
+  git -C "$REPO" archive --format=tar HEAD:escoresheet/backend | tar -x -C "$CONTEXT"
+fi
+
+echo "[build-image] building ${TAG} (${PLATFORM}) from ${CONTEXT}"
+docker build --platform "$PLATFORM" \
+  -f "$KIT_DIR/Dockerfile.backend" \
+  --build-arg OV_REVISION="$SHA" \
+  -t "$TAG" "$CONTEXT"
+
+if [[ "$SHIP" == local ]]; then
+  ARCHIVE="/opt/openvolley/images/openvolley-backend-${SHA}.tar.gz"
+  sudo -v   # ask for the password now, not in the middle of the pipe
+  echo "[build-image] saving ${TAG} to ${ARCHIVE} (local, sudo)"
+  # shellcheck disable=SC2016  # $1 expands in the root shell
+  docker save "$TAG" | gzip -1 | sudo sh -c \
+    'set -e; umask 077; cat > "$1.part" && gzip -t "$1.part" && mv "$1.part" "$1"' sh "$ARCHIVE"
+
+  echo "[build-image] pruning /opt/openvolley/images to the newest ${OV_KEEP_IMAGES} (plus the deployed tag)"
+  # shellcheck disable=SC2024  # the script is read as the user on purpose; root runs it
+  sudo bash -s -- "$OV_KEEP_IMAGES" /opt/openvolley/images /opt/openvolley/.env <"$KIT_DIR/prune-images.sh"
+
+  mkdir -p "$OV_OPS_DIR"
+  printf '%s\n' "$TAG" >"$OV_OPS_DIR/shipped-local.tmp" && mv -f "$OV_OPS_DIR/shipped-local.tmp" "$OV_OPS_DIR/shipped-local"
+  echo "[build-image] archived locally (recorded in ${OV_OPS_DIR}/shipped-local). Deploy: sudo /opt/openvolley/deploy.sh ${TAG} (RUNBOOK-hetzner.md, Updating)."
+elif [[ -n "$SHIP" ]]; then
+  ARCHIVE="/opt/openvolley/images/openvolley-backend-${SHA}.tar.gz"
+  echo "[build-image] shipping ${TAG} to ${SHIP}:${ARCHIVE}"
+  # shellcheck disable=SC2029  # ARCHIVE is meant to expand locally
+  # root on the host, or a user with sudo (the Infomaniak VPS: debian)
+  ROOT='$( [ "$(id -u)" = 0 ] || echo sudo -n )'
+  docker save "$TAG" | gzip -1 | ssh "$SHIP" \
+    "set -e; R=${ROOT}; \$R sh -c \"umask 077; cat > '${ARCHIVE}.part' && mv '${ARCHIVE}.part' '${ARCHIVE}' && gunzip -c '${ARCHIVE}' | docker load\""
+
+  echo "[build-image] pruning ${SHIP}:/opt/openvolley/images to the newest ${OV_KEEP_IMAGES} (plus the deployed tag)"
+  ssh "$SHIP" "R=${ROOT}; \$R bash -s -- '$OV_KEEP_IMAGES' /opt/openvolley/images /opt/openvolley/.env" <"$KIT_DIR/prune-images.sh"
+
+  mkdir -p "$OV_OPS_DIR"
+  printf '%s\n' "$TAG" >"$OV_OPS_DIR/shipped-${SHIP}.tmp" && mv -f "$OV_OPS_DIR/shipped-${SHIP}.tmp" "$OV_OPS_DIR/shipped-${SHIP}"
+  echo "[build-image] loaded on ${SHIP} (recorded in ${OV_OPS_DIR}/shipped-${SHIP}). Deploy on ${SHIP}: sudo /opt/openvolley/deploy.sh ${TAG} (RUNBOOK-hetzner.md, Updating)."
+fi
+echo "[build-image] ${TAG}"

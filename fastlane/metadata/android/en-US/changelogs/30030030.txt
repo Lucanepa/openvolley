@@ -1,0 +1,6 @@
+OpenVolley 3.3.3
+- Tablet: drag and drop for substitutions works on Android (hold a player 0.35 s); a tap still opens the menu.
+- Letters no longer cut at the bottom in the player menus.
+- Bench officials as role boxes (C, AC1…) in tablet mode; readable set count in the team bars.
+- "Improper request", "Delay warning", "Formal warning" without "Sanctioned with".
+- The header's menu button says Menu.

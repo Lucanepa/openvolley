@@ -1,0 +1,450 @@
+import Dexie from 'dexie'
+import { rewriteQueuedSyncJobs } from '../utils/syncIds'
+import { installEventHistoryHooks } from './eventHistory'
+import { installRemarksSyncHook } from './remarksSync'
+import { toolTz } from '../ui/format.js'
+import { REMARKS_MODEL } from '../domain/technicalRemarks.js'
+
+/**
+ * ============================================================================
+ * LOCAL DATABASE SCHEMA (Dexie/IndexedDB)
+ * ============================================================================
+ *
+ * This is the offline-first local database. All data is written here first,
+ * then synced to Supabase via the sync_queue mechanism.
+ *
+ * KEY TABLES:
+ * - matches: Local match data (synced to Supabase 'matches' table)
+ * - sets: Set scores and timing (synced to Supabase 'sets' table)
+ * - events: All match events with state snapshots (synced to Supabase 'events' table)
+ * - sync_queue: Pending Supabase writes (processed by useSyncQueue hook)
+ *
+ * SYNC_QUEUE TABLE:
+ * ----------------
+ * Schema: ++id, resource, action, payload, ts, status
+ *
+ * Fields:
+ * - resource: 'match' | 'set' | 'event' - determines Supabase table
+ * - action: 'insert' | 'update' | 'delete' | 'restore' - determines operation
+ * - payload: Data to sync, includes external_id for deduplication
+ * - ts: Timestamp when queued (for ordering)
+ * - status: 'queued' | 'sending' | 'sent' | 'error' | 'failed' | 'superseded' | 'dropped' - processing state
+ *   ('sending': claimed by the direct set-end sends of older versions; 'error': retried with backoff;
+ *   'failed': refused by the backend (4xx), retried only by hand; 'superseded'/'dropped': never sent)
+ *
+ * Processing order: match → set → event (respects foreign key dependencies)
+ *
+ * EXTERNAL_ID PATTERN:
+ * -------------------
+ * All synced resources use external_id as the stable identifier:
+ * - Match: seed_key (format: match_{timestamp}_{random})
+ * - Set: `${seed_key}:s:${localSetId}` (utils/syncIds.js; bare ids collided across devices)
+ * - Event: `${seed_key}:e:${localEventId}`
+ *
+ * Why external_id?
+ * - Supabase UUID isn't known until first sync
+ * - game_n (game number) is mutable and can be null
+ * - external_id is immutable → safe for upsert onConflict
+ *
+ * See: useSyncQueue.js for sync processing logic
+ * ============================================================================
+ */
+
+export const db = new Dexie('escoresheet')
+
+db.version(1).stores({
+  teams: '++id,name,createdAt',
+  players: '++id,teamId,number,name,role,createdAt',
+  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt',
+  sets: '++id,matchId,index,homePoints,awayPoints,finished',
+  events: '++id,matchId,setIndex,ts,type,payload',
+  sync_queue: '++id,resource,action,payload,ts,status' // status: queued|sent|error
+})
+
+// Version 2: Add signature fields to matches
+db.version(2).stores({
+  teams: '++id,name,createdAt',
+  players: '++id,teamId,number,name,role,createdAt',
+  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt',
+  sets: '++id,matchId,index,homePoints,awayPoints,finished',
+  events: '++id,matchId,setIndex,ts,type,payload',
+  sync_queue: '++id,resource,action,payload,ts,status'
+}).upgrade(tx => {
+  // Migration: add signature fields to existing matches
+  return tx.table('matches').toCollection().modify(match => {
+    if (!match.homeCoachSignature) match.homeCoachSignature = null
+    if (!match.homeCaptainSignature) match.homeCaptainSignature = null
+    if (!match.awayCoachSignature) match.awayCoachSignature = null
+    if (!match.awayCaptainSignature) match.awayCaptainSignature = null
+  })
+})
+
+// Version 3: Add match_setup table for storing draft data
+db.version(3).stores({
+  teams: '++id,name,createdAt',
+  players: '++id,teamId,number,name,role,createdAt',
+  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt',
+  sets: '++id,matchId,index,homePoints,awayPoints,finished',
+  events: '++id,matchId,setIndex,ts,type,payload',
+  sync_queue: '++id,resource,action,payload,ts,status',
+  match_setup: '++id,updatedAt' // Single record to store current draft
+})
+
+// Version 4: Add externalId index to matches
+db.version(4).stores({
+  teams: '++id,name,createdAt',
+  players: '++id,teamId,number,name,role,createdAt',
+  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt,externalId',
+  sets: '++id,matchId,index,homePoints,awayPoints,finished',
+  events: '++id,matchId,setIndex,ts,type,payload',
+  sync_queue: '++id,resource,action,payload,ts,status',
+  match_setup: '++id,updatedAt'
+})
+
+// Version 5: Add referees and scorers tables
+db.version(5).stores({
+  teams: '++id,name,createdAt',
+  players: '++id,teamId,number,name,role,createdAt',
+  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt,externalId',
+  sets: '++id,matchId,index,homePoints,awayPoints,finished',
+  events: '++id,matchId,setIndex,ts,type,payload',
+  sync_queue: '++id,resource,action,payload,ts,status',
+  match_setup: '++id,updatedAt',
+  referees: '++id,seedKey,lastName,createdAt',
+  scorers: '++id,seedKey,lastName,createdAt'
+})
+
+// Version 6: Add startTime and endTime to sets
+db.version(6).stores({
+  teams: '++id,name,createdAt',
+  players: '++id,teamId,number,name,role,createdAt',
+  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt,externalId',
+  sets: '++id,matchId,index,homePoints,awayPoints,finished,startTime,endTime',
+  events: '++id,matchId,setIndex,ts,type,payload',
+  sync_queue: '++id,resource,action,payload,ts,status',
+  match_setup: '++id,updatedAt',
+  referees: '++id,seedKey,lastName,createdAt',
+  scorers: '++id,seedKey,lastName,createdAt'
+})
+
+// Version 7: Add test index to matches
+db.version(7).stores({
+  teams: '++id,name,createdAt',
+  players: '++id,teamId,number,name,role,createdAt',
+  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt,externalId,test',
+  sets: '++id,matchId,index,homePoints,awayPoints,finished,startTime,endTime',
+  events: '++id,matchId,setIndex,ts,type,payload',
+  sync_queue: '++id,resource,action,payload,ts,status',
+  match_setup: '++id,updatedAt',
+  referees: '++id,seedKey,lastName,createdAt',
+  scorers: '++id,seedKey,lastName,createdAt'
+})
+
+// Version 8: Add seq (sequence) field to events for reliable ordering
+db.version(8).stores({
+  teams: '++id,name,createdAt',
+  players: '++id,teamId,number,name,role,createdAt',
+  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt,externalId,test',
+  sets: '++id,matchId,index,homePoints,awayPoints,finished,startTime,endTime',
+  events: '++id,matchId,setIndex,ts,type,payload,seq',
+  sync_queue: '++id,resource,action,payload,ts,status',
+  match_setup: '++id,updatedAt',
+  referees: '++id,seedKey,lastName,createdAt',
+  scorers: '++id,seedKey,lastName,createdAt'
+})
+
+// Version 9: Add homeTeamPin and awayTeamPin to matches
+db.version(9).stores({
+  teams: '++id,name,createdAt',
+  players: '++id,teamId,number,name,role,createdAt',
+  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt,externalId,test',
+  sets: '++id,matchId,index,homePoints,awayPoints,finished,startTime,endTime',
+  events: '++id,matchId,setIndex,ts,type,payload,seq',
+  sync_queue: '++id,resource,action,payload,ts,status',
+  match_setup: '++id,updatedAt',
+  referees: '++id,seedKey,lastName,createdAt',
+  scorers: '++id,seedKey,lastName,createdAt'
+}).upgrade(tx => {
+  // Migration: add team PIN fields to existing matches
+  return tx.table('matches').toCollection().modify(match => {
+    if (!match.homeTeamPin) match.homeTeamPin = null
+    if (!match.awayTeamPin) match.awayTeamPin = null
+  })
+})
+
+// Version 10: Add sessionId and gamePin to matches
+db.version(10).stores({
+  teams: '++id,name,createdAt',
+  players: '++id,teamId,number,name,role,createdAt',
+  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt,externalId,test',
+  sets: '++id,matchId,index,homePoints,awayPoints,finished,startTime,endTime',
+  events: '++id,matchId,setIndex,ts,type,payload,seq',
+  sync_queue: '++id,resource,action,payload,ts,status',
+  match_setup: '++id,updatedAt',
+  referees: '++id,seedKey,lastName,createdAt',
+  scorers: '++id,seedKey,lastName,createdAt'
+}).upgrade(tx => {
+  // Migration: add sessionId and gamePin fields to existing matches
+  return tx.table('matches').toCollection().modify(match => {
+    if (!match.sessionId) match.sessionId = null
+    if (!match.gamePin) match.gamePin = null
+  })
+})
+
+// Version 11: Add upload pins and pending roster data to matches
+db.version(11).stores({
+  teams: '++id,name,createdAt',
+  players: '++id,teamId,number,name,role,createdAt',
+  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt,externalId,test',
+  sets: '++id,matchId,index,homePoints,awayPoints,finished,startTime,endTime',
+  events: '++id,matchId,setIndex,ts,type,payload,seq',
+  sync_queue: '++id,resource,action,payload,ts,status',
+  match_setup: '++id,updatedAt',
+  referees: '++id,seedKey,lastName,createdAt',
+  scorers: '++id,seedKey,lastName,createdAt'
+}).upgrade(tx => {
+  // Migration: add upload pin and pending roster fields to existing matches
+  return tx.table('matches').toCollection().modify(match => {
+    if (!match.homeTeamUploadPin) match.homeTeamUploadPin = null
+    if (!match.awayTeamUploadPin) match.awayTeamUploadPin = null
+    if (!match.pendingHomeRoster) match.pendingHomeRoster = null
+    if (!match.pendingAwayRoster) match.pendingAwayRoster = null
+  })
+})
+
+// Version 12: Add post-game captain signatures (separate from pre-game coin toss signatures)
+db.version(12).stores({
+  teams: '++id,name,createdAt',
+  players: '++id,teamId,number,name,role,createdAt',
+  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt,externalId,test',
+  sets: '++id,matchId,index,homePoints,awayPoints,finished,startTime,endTime',
+  events: '++id,matchId,setIndex,ts,type,payload,seq',
+  sync_queue: '++id,resource,action,payload,ts,status',
+  match_setup: '++id,updatedAt',
+  referees: '++id,seedKey,lastName,createdAt',
+  scorers: '++id,seedKey,lastName,createdAt'
+}).upgrade(tx => {
+  // Migration: add post-game captain signature fields to existing matches
+  return tx.table('matches').toCollection().modify(match => {
+    if (!match.homePostGameCaptainSignature) match.homePostGameCaptainSignature = null
+    if (!match.awayPostGameCaptainSignature) match.awayPostGameCaptainSignature = null
+  })
+})
+
+// Version 13: Add stateSnapshot to events for snapshot-based undo system
+// Each event now stores a full state snapshot AFTER the event is applied
+// This enables trivial undo (just restore previous snapshot) instead of complex per-event logic
+db.version(13).stores({
+  teams: '++id,name,createdAt',
+  players: '++id,teamId,number,name,role,createdAt',
+  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt,externalId,test',
+  sets: '++id,matchId,index,homePoints,awayPoints,finished,startTime,endTime',
+  events: '++id,matchId,setIndex,ts,type,payload,seq,stateSnapshot',
+  sync_queue: '++id,resource,action,payload,ts,status',
+  match_setup: '++id,updatedAt',
+  referees: '++id,seedKey,lastName,createdAt',
+  scorers: '++id,seedKey,lastName,createdAt'
+})
+
+// Version 14: Add compound indexes on events for performance optimization
+// [matchId+seq] enables fast max seq lookup without full table scan
+// [matchId+setIndex] enables fast set-specific event filtering
+db.version(14).stores({
+  teams: '++id,name,createdAt',
+  players: '++id,teamId,number,name,role,createdAt',
+  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt,externalId,test',
+  sets: '++id,matchId,index,homePoints,awayPoints,finished,startTime,endTime',
+  events: '++id,matchId,setIndex,ts,type,payload,seq,stateSnapshot,[matchId+seq],[matchId+setIndex]',
+  sync_queue: '++id,resource,action,payload,ts,status',
+  match_setup: '++id,updatedAt',
+  referees: '++id,seedKey,lastName,createdAt',
+  scorers: '++id,seedKey,lastName,createdAt'
+})
+
+// Version 15: Add interaction_logs table for comprehensive logging
+// Stores all user interactions (clicks, inputs, function calls, etc.)
+// Indexed by id (unique log ID), ts (timestamp), and gameNumber for filtering
+db.version(15).stores({
+  teams: '++id,name,createdAt',
+  players: '++id,teamId,number,name,role,createdAt',
+  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt,externalId,test',
+  sets: '++id,matchId,index,homePoints,awayPoints,finished,startTime,endTime',
+  events: '++id,matchId,setIndex,ts,type,payload,seq,stateSnapshot,[matchId+seq],[matchId+setIndex]',
+  sync_queue: '++id,resource,action,payload,ts,status',
+  match_setup: '++id,updatedAt',
+  referees: '++id,seedKey,lastName,createdAt',
+  scorers: '++id,seedKey,lastName,createdAt',
+  interaction_logs: 'id,ts,gameNumber,category,sessionId'
+})
+
+// Version 16: Add bestOf field to matches (default 5 for best-of-5)
+// bestOf is not indexed — only read when a match is loaded
+db.version(16).stores({
+  teams: '++id,name,createdAt',
+  players: '++id,teamId,number,name,role,createdAt',
+  matches: '++id,homeTeamId,awayTeamId,scheduledAt,status,createdAt,externalId,test',
+  sets: '++id,matchId,index,homePoints,awayPoints,finished,startTime,endTime',
+  events: '++id,matchId,setIndex,ts,type,payload,seq,stateSnapshot,[matchId+seq],[matchId+setIndex]',
+  sync_queue: '++id,resource,action,payload,ts,status',
+  match_setup: '++id,updatedAt',
+  referees: '++id,seedKey,lastName,createdAt',
+  scorers: '++id,seedKey,lastName,createdAt',
+  interaction_logs: 'id,ts,gameNumber,category,sessionId'
+}).upgrade(tx => {
+  return tx.table('matches').toCollection().modify(match => {
+    if (match.bestOf === undefined) {
+      match.bestOf = 5
+    }
+  })
+})
+
+// Version 17: Namespace queued set/event external ids with the match seed_key.
+// Bare Dexie ids ('42') collide across devices and matches in the cloud upsert;
+// new jobs are written as `${seed}:s:${id}` / `${seed}:e:${id}` (utils/syncIds),
+// and this rewrites jobs that were already waiting in the queue. Jobs that cannot
+// be attributed to a match are marked 'dropped'. No schema change.
+// The upgrade must never reject: a failed upgrade leaves the database unopenable.
+db.version(17).stores({}).upgrade(async tx => {
+  try {
+    // events too: a legacy 'coin_toss_<seed>' job must get its local event id
+    // here, not the '<seed>:e:coin_toss' fallback (a later re-confirmed coin
+    // toss would then add a second cloud row)
+    const { rewritten, dropped, failed } = await rewriteQueuedSyncJobs({
+      queue: tx.table('sync_queue'),
+      sets: tx.table('sets'),
+      matches: tx.table('matches'),
+      events: tx.table('events')
+    })
+    if (rewritten || dropped || failed) {
+      console.log(`[db] v17: namespaced ${rewritten} queued set/event jobs, dropped ${dropped}, failed ${failed}`)
+    }
+  } catch (e) {
+    console.warn('[db] v17 queue id rewrite skipped:', e?.message)
+  }
+})
+
+// Version 18: The coin toss event was queued as 'coin_toss_<seed_key>', which the
+// backend refuses forever (400 OV_UNSCOPED_EXTERNAL_ID: the match key must be the
+// prefix). Rewrite those waiting jobs to `${seed}:e:<local event id>` and put the
+// parked ones back in the queue. No schema change; must never reject (see v17).
+db.version(18).stores({}).upgrade(async tx => {
+  try {
+    const { rewritten, dropped, failed } = await rewriteQueuedSyncJobs({
+      queue: tx.table('sync_queue'),
+      sets: tx.table('sets'),
+      matches: tx.table('matches'),
+      events: tx.table('events')
+    }, { statuses: ['queued', 'error', 'failed'], requeue: true })
+    if (rewritten || dropped || failed) {
+      console.log(`[db] v18: rewrote ${rewritten} queued coin toss/set/event jobs, dropped ${dropped}, failed ${failed}`)
+    }
+  } catch (e) {
+    console.warn('[db] v18 coin toss id rewrite skipped:', e?.message)
+  }
+})
+
+// Version 19: offline cache of the saved teams (competition manager, read by
+// scorers in MatchSetup). Two new tables, no upgrade function: nothing to
+// migrate, so the upgrade cannot reject. The rows hold DOBs and licence
+// numbers; db/savedTeams.js clears them on sign-out and account switch.
+db.version(19).stores({
+  saved_teams: 'id, competitionId, nameKey, svrzKey',
+  saved_teams_meta: 'key'
+})
+
+// Version 20: logging (docs/activity-log-spec.md).
+//  - event_history: every undo, delete and edit of a logged event (db/eventHistory.js);
+//    [matchId+seq] gives the seq high-water mark, so an undone seq is never reused.
+//  - activity_log: the match activity log, synced to the server (utils/activity).
+//  - interaction_logs: + matchId index (the diagnostic export of one match).
+// New tables and one new index, no upgrade function: nothing to migrate, so the
+// upgrade cannot reject.
+db.version(20).stores({
+  event_history: '++id, matchId, [matchId+seq], eventId, &revUid, ts',
+  activity_log: '++lid, &uid, ts, matchId, [matchId+ts], kind, synced',
+  interaction_logs: 'id, ts, gameNumber, matchId, category, sessionId'
+})
+
+// Version 21: the rosters teams sent for upcoming games (db/023,
+// db/gameRosters.js), downloaded ahead so Match Setup offers them offline.
+// key = '<game number>|<side>'. Personal data like the saved teams: only for
+// the account that loaded them (row.userId), cleared on sign-out and account
+// switch. A new table, no upgrade function: nothing to migrate.
+db.version(21).stores({
+  game_rosters: 'key, gameNumber, userId'
+})
+
+// Version 22: the licence lists of the scorer's clubs (db/024,
+// db/clubPlayers.js), downloaded ahead so Match Setup's "Add from club" works
+// offline. One row per club (key = club id): its team names, each team's
+// gender, its players list and every person of its lists once (`people`, for
+// the bench officials; licence number, names, date of birth, gender, lists:
+// a field of the row, no index, so no new version for it). Personal data
+// like the saved teams: only for the account that loaded them (row.userId),
+// cleared on sign-out and account switch. A new table, no upgrade function:
+// nothing to migrate.
+db.version(22).stores({
+  club_players: 'clubId, userId'
+})
+
+// Version 23: the scoreboard code of a match (utils/scoreboardCode.js,
+// docs/scoreboard-code-spec.md): { matchId, relayKey, code, issuedAt }, one
+// row per match, made on this device and kept with the match beyond an app
+// restart. Its own table so the code never travels in the match's sync,
+// backups or exports. A new table, no upgrade function: nothing to migrate.
+db.version(23).stores({
+  scoreboard_codes: 'matchId, relayKey'
+})
+
+// Version 24: the final uploads of a Global match that the server refused for
+// now (utils/globalPending.js; 2611 review, SR-4): { id, path, body,
+// notBefore, attempts, createdAt }, sent again once the server's Retry-After
+// has passed, for at most 7 days. A new table, no upgrade function: nothing
+// to migrate.
+db.version(24).stores({
+  global_pending: 'id, notBefore'
+})
+
+// Undo / delete / edit history of events, from Dexie hooks (see db/eventHistory.js)
+installEventHistoryHooks(db)
+
+// Every change of match.remarks is queued for the server (db/remarksSync.js, db/017)
+installRemarksSyncHook(db)
+
+// A new match keeps the zone its clocks read (domain/sheetInputs, owner
+// 2026-11-16): the tool's when it is created (Zürich in the Swiss tool, the
+// device's own in the Global tool), so every device prints its times alike.
+// A match restored from the server brings its own (localFromMatchInfo).
+// A new match also keeps its technical remarks off the scoresheet (owner
+// 22.11.2026, domain/technicalRemarks.js): it carries the remarks model of
+// this version. A match restored from a backup or the server brings its own,
+// null for an older one (backupManager), so it draws as it always did.
+db.matches.hook('creating', (_key, obj) => {
+  if (obj && (typeof obj.tz !== 'string' || !obj.tz)) obj.tz = toolTz()
+  if (obj && obj.remarksModel === undefined) obj.remarksModel = REMARKS_MODEL
+})
+
+// Request DURABLE storage for the origin. All match state lives in IndexedDB;
+// without this the browser treats it as "best-effort" and may evict it under
+// storage pressure or inactivity (e.g. iOS/Safari ~7-day eviction), which could
+// silently lose a completed-but-unsynced match on a match tablet. Feature-detected
+// and non-blocking — safe to call once at module load in every entry that uses db.
+export async function requestPersistentStorage() {
+  try {
+    if (typeof navigator === 'undefined' || !navigator.storage?.persist) return null
+    if (await navigator.storage.persisted?.()) return true
+    const granted = await navigator.storage.persist()
+    if (!granted) console.warn('[db] Persistent storage not granted — IndexedDB is evictable')
+    return granted
+  } catch (e) {
+    console.warn('[db] persist() request failed:', e?.message)
+    return null
+  }
+}
+
+// Fire once on load (does not block the module). Its answer: Home warns when
+// the browser refused while an official match has writes not sent yet
+// (audit logic-hooks-misc-2; it was only logged)
+export const persistentStorage = requestPersistentStorage()
+
+

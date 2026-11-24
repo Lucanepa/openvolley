@@ -1,0 +1,52 @@
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import ManagerApp from './ManagerApp'
+import './tailwind.css' // also brings in styles.css (legacy layer) and the volleyui tokens
+import './i18n' // Initialize i18n for localization
+import { AuthProvider } from './contexts/AuthContext'
+import ErrorBoundary from './components/ErrorBoundary'
+import { UiHost } from './ui/UiHost.jsx'
+import { stripCacheBustParam } from './hooks/useServiceWorker'
+import { takeAuthLinkFromLocation } from './utils/authLinks'
+import { ManagerBrandProvider } from './managerBrand'
+
+/**
+ * Starts the manager console of one brand (src/managerBrand.js):
+ * manager-main.jsx (OpenVolley, manager.openvolley.app) and
+ * manager-beach-main.jsx (OpenBeach, manager-beach.openvolley.app).
+ * @param {'indoor' | 'beach'} app
+ */
+export function renderManager(app) {
+  // Neither manager ships a service worker (scripts/build-subdomains.js,
+  // pwa: false): an admin console must never run a stale build from a cache.
+  stripCacheBustParam()
+
+  // #reset?token= / #confirm?token= from the account emails: read once and
+  // removed from the address bar and history before anything renders or logs.
+  const authLink = takeAuthLinkFromLocation()
+
+  // The auth calls of OpenBeach's manager carry app: 'beach' (its mails, and
+  // sign-up joins OpenBeach); OpenVolley's send what they always sent.
+  const authApp = app === 'beach' ? 'beach' : null
+
+  // The sign-in lives in this site's storage (localStorage + its IndexedDB
+  // copy): ask the browser to keep it rather than evict it as "best effort"
+  // (owner 2026-11-11: signed out every time on the phone). A browser told to
+  // forget the site on leaving still does; nothing here can change that.
+  try { void navigator.storage?.persist?.().catch(() => {}) } catch { /* no Storage API */ }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(
+    <React.StrictMode>
+      <ErrorBoundary name="manager">
+        {/* No flip to the other app's console (owner 2026-11-11): OpenBeach's
+            is its own site, manager-beach.openvolley.app */}
+        <ManagerBrandProvider app={app}>
+          <AuthProvider app={authApp}>
+            <ManagerApp authLink={authLink} />
+          </AuthProvider>
+        </ManagerBrandProvider>
+        <div className="ov-kit ov-kit-host"><UiHost /></div>
+      </ErrorBoundary>
+    </React.StrictMode>
+  )
+}

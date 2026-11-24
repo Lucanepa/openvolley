@@ -1,0 +1,116 @@
+# Legal texts (internal note)
+
+Not published. The public pages are built from `{de,en,fr,it}/*.md`:
+
+| File | Page |
+|---|---|
+| `privacy.md` | Datenschutzerklärung / Privacy policy |
+| `impressum.md` | Impressum / Legal notice |
+| `terms.md` | Nutzungsbedingungen / Terms of use |
+| `opensource.md` | Open-Source-Hinweis / Open-source notice |
+
+English is the binding version (owner, 2026-10-29; German until then);
+DE/FR/IT are translations and must be kept in step with it (same sections,
+same numbering). Cross-links are relative
+(`privacy.md`, `impressum.md`, ...); the site build maps them to page URLs.
+The facts behind the texts are in [data-map.md](data-map.md).
+
+**Where they are published:** the openvolley_home repo keeps a copy under
+`legal/<lang>/` and renders it (`legal/build.mjs`, see its `legal/README.md`
+for the copy command) at /datenschutz, /impressum, /nutzungsbedingungen,
+/open-source and /en/…, /fr/…, /it/…. After changing a text here, copy it
+there and rebuild. The converter knows a small markdown subset: end a line
+with `\` for a line break (the address blocks), and never start a wrapped
+line with "1." (it would become a list).
+
+**Where the apps link them:** one constant,
+`escoresheet/frontend/src/legal/legalLinks.js` (copy in
+`escoresheet/backend/lib/legalLinks.js`; a test keeps them equal and checks
+the static `deploy/pkgs/index.html`). OpenBeach still needs its links:
+[openbeach-links.md](openbeach-links.md).
+
+**Not legal advice.** Before go-live, have the texts and the data map
+reviewed by a Swiss lawyer and checked against the FDPIC (EDÖB) guidance for
+private operators, including the open points in data-map.md section 1
+(controller of the match records, GDPR Art. 27 EU representative).
+
+## Placeholders
+
+Leave them in these files. On the website both are filled in **once** in
+openvolley_home `legal/operator.txt` (address and place of jurisdiction for
+all four languages); until then the pages show them highlighted.
+
+- `[ADRESSE / ADDRESS]`: only in `*/impressum.md`. Privacy policy and terms
+  refer to the Impressum for the address.
+- `[GERICHTSSTAND / PLACE OF JURISDICTION]`: only in `*/terms.md`, section 10.
+
+## Statements that depend on owner facts (check before go-live)
+
+1. Server location is Switzerland, run by the operator (privacy 15, "In short"; since 16.10.2026, before: Hetzner, Germany).
+2. Migadu: "Switzerland / Europe" for the company and mail servers.
+3. Resend is listed for "match info by email" because the code can use it
+   (`RESEND_API_KEY`). If the key is not set, or the code is removed (F13),
+   drop the row and the sentence in privacy 7.
+4. Support form: privacy 13 says the report "may be forwarded" to support@,
+   because with `SMTP_LEGACY_ROUTES` unset it is only logged (F12). Once the
+   form delivers to support@, say so plainly.
+5. Cloudflare is DPF-certified and its DPA covers Pages/Tunnel/DNS (privacy
+   15); Cloudflare Web Analytics / RUM is off everywhere (privacy 3: "no
+   analytics").
+6. Backups: NAS in Switzerland, ~6-month snapshot horizon, lenovoserver in
+   Switzerland (privacy 15, 16, 18).
+7. VolleyManager: the account used by the sync is allowed to store and show
+   referee data (privacy 11, F6).
+8. Administrators: "me and people I appoint" (privacy 6, 7).
+9. Retention of finished match records: the season and 2 more seasons
+   (privacy 16, db/042 default); support requests 2 years (privacy 13).
+   Confirm the number of years (data-map Q5).
+10. Minimum age 16 for accounts (terms 3) is a rule in the terms only; the
+    sign-up does not check it.
+11. Trademarks line in the Impressum names Swiss Volley, VolleyManager, FIVB;
+    no statement is made about any affiliation with Swiss Volley. Add one if
+    there is an agreement or if independence should be stated.
+12. OpenBeach is GPL-3.0-or-later like OpenVolley (its `escoresheet/LICENSE`
+    is GPL-3.0; confirm "or later" in its README).
+13. `readvolley.openvolley.app` is a separate app with its own backend and is
+    **not covered** by these texts. Either add a section or give it its own
+    notice.
+
+## Findings that limit what the texts can promise
+
+The texts describe the code as it is (2026-10-07). When these are fixed,
+update the texts:
+
+- **F1** (fixed 2026-11-12), **F2**, **F3** (fixed 2026-11-14), **F4**
+  (fixed 2026-11-13), **F9** (fixed 2026-11): privacy 1.13 describes the
+  fixed state (dates of birth for scorers and admins, `redact-person`, the
+  season + 2 seasons retention of db/042, app logs 30 days, Android files in
+  the app folder).
+- **Retention years**: privacy 16 names the default of db/042 (the season
+  and 2 more). If the owner picks another number
+  (`app_settings.retention_years`), change section 16 and its example, and
+  the "In short" line, in all four languages.
+- **F14**: the app.openvolley.app home page calls api.github.com (privacy 12).
+- **F5, F10, F21**: no fixed retention for the change log, dormant accounts,
+  orphaned saved teams (privacy 16 says "as long as needed").
+- **F23**: the browser and Android apps send a created match (rosters
+  included) to the cloud relay's memory even without a sign-in. Privacy
+  (In short, 3, 5, 9) now says so; if the apps stop doing that, simplify
+  those passages again.
+- **F27** (fixed 2026-11-20): "deleted on request" for a referee (privacy 11
+  and 19) also holds against the daily VolleyManager sync, through the
+  register of db/052 (`redacted_people`). Should that register go, those two
+  sections need a caveat again (the sync restores names in its window).
+- **Cookies and Cloudflare's scripts (F26)**: the code sets no cookie, but
+  Cloudflare's bot check (JavaScript detections) and Email Address
+  Obfuscation inject scripts, and the bot check may set `cf_clearance`.
+  Privacy 3 and 4 (1.13) name them. Once they are turned off for the app,
+  manager and get hosts, check a page body for `/cdn-cgi/` and drop the
+  "Cloudflare's scripts" paragraph and the "(section 3 names ...)" note in
+  "In short", in all four languages.
+- **Health data (F25)**: privacy 7, 16 and 20 name remarks and injury
+  records as health data with GDPR Art. 9(2)(f); have the lawyer confirm the
+  basis.
+- Licence notices: Apache-2.0 and MIT require the notices to travel with
+  binaries. Consider shipping a generated third-party licence file with the
+  desktop and Android builds.

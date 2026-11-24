@@ -1,0 +1,13 @@
+#!/bin/sh
+# Calendar versions (20.11.2026): the version moves at release time only
+# (node escoresheet/frontend/scripts/bump-version.js); called with the message
+# file, bump-version.js does nothing. Kept so installed hooks don't fail.
+# Installed by: node escoresheet/frontend/scripts/install-hooks.js
+
+# Find repo root
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+SCRIPT="$REPO_ROOT/escoresheet/frontend/scripts/bump-version.js"
+
+if [ -f "$SCRIPT" ]; then
+  node "$SCRIPT" "$1"
+fi

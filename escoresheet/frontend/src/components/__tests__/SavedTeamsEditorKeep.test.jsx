@@ -1,0 +1,110 @@
+// Review: TeamEditor was keyed on team.updated_at, so saving the team fields
+// (or the roster) reloaded the bundle, remounted the editor and dropped the
+// other section's unsaved edits.
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+// Not *ByRole: on a loaded machine its getComputedStyle work ran past findBy's 1 s window (see buttonQueries)
+import { findButton, getButton } from '../../__tests__/buttonQueries'
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key, opts) => (typeof opts === 'string' ? opts : key), i18n: { language: 'en' } })
+}))
+
+const state = vi.hoisted(() => ({ teamName: 'Volley Alpha', updatedAt: '2026-10-01T10:00:00Z' }))
+const api = vi.hoisted(() => ({
+  savedTeamsApi: {
+    fetchBundle: vi.fn(),
+    updateTeam: vi.fn(),
+    putRoster: vi.fn()
+  }
+}))
+vi.mock('../../lib/accountApi', async (orig) => ({ ...(await orig()), savedTeamsApi: api.savedTeamsApi }))
+vi.mock('../../db/savedTeams', () => ({ storeSavedTeamsBundle: vi.fn(async () => []) }))
+vi.mock('../../lib/apiClient', () => ({
+  apiFrom: () => {
+    const b = { select: () => b, in: () => b, limit: () => b, then: (r) => Promise.resolve({ data: [], error: null }).then(r) }
+    return b
+  },
+  apiRequest: vi.fn()
+}))
+
+import SavedTeamsPanel from '../manage/SavedTeamsPanel'
+
+const COMP = { id: 'c1', name: 'Liga', season: '2026/27', gender: 'men', category: null, vm_leagues: [], archived: false, updated_at: '2026-10-01T10:00:00Z' }
+const bundle = () => ({
+  data: {
+    version: state.updatedAt,
+    competitions: [COMP],
+    teams: [{
+      id: 't1', competition_id: 'c1', name: state.teamName, short_name: null, club: null, color: null, svrz_team_name: null,
+      updated_at: state.updatedAt,
+      players: [{ id: 'p1', number: 7, first_name: 'Anna', last_name: 'Muster', dob: null, license_number: null, is_libero: false, is_captain: false, active: true, sort_order: 0 }],
+      staff: []
+    }]
+  },
+  error: null,
+  status: 200
+})
+
+describe('saved team editor keeps unsaved edits of the other section', () => {
+  it('saving the team fields does not drop an unsaved player edit', async () => {
+    api.savedTeamsApi.fetchBundle.mockImplementation(async () => bundle())
+    api.savedTeamsApi.updateTeam.mockImplementation(async (id, body) => {
+      state.teamName = body.name
+      state.updatedAt = '2026-10-02T10:00:00Z' // the touch trigger moves updated_at
+      return { data: { team: { id } }, error: null, status: 200 }
+    })
+    render(<SavedTeamsPanel userId="u1" />)
+    fireEvent.click(await findButton('Liga'))
+    fireEvent.click(await findButton('Volley Alpha'))
+
+    const lastName = await screen.findByDisplayValue('Muster')
+    fireEvent.change(lastName, { target: { value: 'Muster-Neu' } })
+    fireEvent.change(screen.getByDisplayValue('Volley Alpha'), { target: { value: 'Volley Beta' } })
+    fireEvent.click(getButton('manage.accounts.save'))
+
+    await waitFor(() => expect(api.savedTeamsApi.fetchBundle).toHaveBeenCalledTimes(2))
+    // The reloaded bundle is on screen (the heading shows the saved name) before
+    // the editor is checked: the typed name alone shows before the reload lands
+    await screen.findByText('Volley Beta', { selector: 'h1' })
+    expect(screen.getByDisplayValue('Volley Beta')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Muster-Neu')).toBeInTheDocument()
+    expect(api.savedTeamsApi.putRoster).not.toHaveBeenCalled()
+  })
+})
+
+// review of #37: the number input took '1.5' (the '.' next to the digits on a
+// tablet keypad, meant as 15), and the server refused the whole roster with a
+// generic error; the match rosters keep only the digits typed
+describe('saved team editor: shirt numbers', () => {
+  it('a number typed as 1.5 is 15, and the roster saves it', async () => {
+    api.savedTeamsApi.fetchBundle.mockImplementation(async () => bundle())
+    api.savedTeamsApi.putRoster.mockImplementation(async () => ({ data: { team: null }, error: null, status: 200 }))
+    render(<SavedTeamsPanel userId="u1" />)
+    fireEvent.click(await findButton('Liga'))
+    fireEvent.click(await findButton(state.teamName))
+
+    const number = await screen.findByDisplayValue('7')
+    fireEvent.change(number, { target: { value: '1.5' } })
+    await waitFor(() => expect(screen.getByLabelText('savedTeams.number').value).toBe('15'))
+    fireEvent.click(getButton('savedTeams.saveRoster'))
+    await waitFor(() => expect(api.savedTeamsApi.putRoster).toHaveBeenCalled())
+    expect(api.savedTeamsApi.putRoster.mock.calls[0][1].players[0].number).toBe(15)
+  })
+
+  // owner 2026-11-10: "every page there gets their own page": #teams/<competition>/<team>
+  it('a competition and a team are pages of their own (the URL opens them; Back and a deleted one)', async () => {
+    api.savedTeamsApi.fetchBundle.mockImplementation(async () => bundle())
+    const onRoute = vi.fn()
+    const { rerender } = render(<SavedTeamsPanel userId="u1" route="" onRoute={onRoute} />)
+    fireEvent.click(await findButton('Liga'))
+    expect(onRoute).toHaveBeenLastCalledWith('c1', { push: true })
+    rerender(<SavedTeamsPanel userId="u1" route="c1" onRoute={onRoute} />)
+    fireEvent.click(await findButton(state.teamName))
+    expect(onRoute).toHaveBeenLastCalledWith('c1/t1', { push: true })
+    rerender(<SavedTeamsPanel userId="u1" route="c1/t1" onRoute={onRoute} />)
+    await waitFor(() => expect(screen.getAllByTestId('player-row')).toHaveLength(1))
+    rerender(<SavedTeamsPanel userId="u1" route="c1/nope" onRoute={onRoute} />)
+    expect(await screen.findByTestId('page-missing')).toBeInTheDocument()
+  })
+})

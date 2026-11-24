@@ -1,0 +1,488 @@
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
+import { act, fireEvent, render, screen } from '@testing-library/react'
+import App from '../App_Scoresheet'
+import { LiberoControlSheet } from '../components/LiberoControlSheet'
+import { Results } from '../components/FooterSection'
+import { cssValue } from '../../src/__tests__/cssValue.js'
+
+// Fixture: best-of-3, Team A = home. Set 1 finished 25:20 with a rotation, an open
+// substitution (5 -> 9) and an exceptional one; set 2 finished; deciding set (index 5) started.
+let seq = 0
+const ev = (type: string, setIndex: number, payload: Record<string, unknown>) => ({
+  type, setIndex, seq: ++seq, ts: new Date(Date.UTC(2026, 9, 5, 18, 0, seq)).toISOString(), payload
+})
+const HOME_START = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6 }
+const AWAY_START = { I: 11, II: 12, III: 13, IV: 14, V: 15, VI: 16 }
+
+function buildMatch() {
+  seq = 0
+  const events: any[] = []
+  for (const setIndex of [1, 2, 5]) {
+    events.push(ev('lineup', setIndex, { team: 'home', lineup: HOME_START, isInitial: true }))
+    events.push(ev('lineup', setIndex, { team: 'away', lineup: AWAY_START, isInitial: true }))
+  }
+  // Set 1
+  events.push(ev('point', 1, { team: 'away' }))
+  events.push(ev('lineup', 1, { team: 'away', lineup: { I: 12, II: 13, III: 14, IV: 15, V: 16, VI: 11 } }))
+  events.push(ev('point', 1, { team: 'home' }))
+  events.push(ev('lineup', 1, { team: 'home', lineup: { I: 2, II: 3, III: 4, IV: 5, V: 6, VI: 1 } }))
+  events.push(ev('substitution', 1, { team: 'home', playerOut: 5, playerIn: 9, position: 'IV' }))
+  events.push(ev('lineup', 1, { team: 'home', lineup: { I: 2, II: 3, III: 4, IV: 9, V: 6, VI: 1 }, fromSubstitution: true }))
+  events.push(ev('substitution', 1, { team: 'home', playerOut: 3, playerIn: 17, position: 'II', isExceptional: true }))
+  events.push(ev('sanction', 1, { team: 'away', type: 'warning', playerNumber: 14 }))
+  // Deciding set: a sanction recorded there must print as set 3
+  events.push(ev('point', 5, { team: 'home' }))
+  events.push(ev('sanction', 5, { team: 'away', type: 'warning', playerNumber: 16 }))
+
+  return {
+    match: {
+      id: 'm1', status: 'live', bestOf: 3,
+      coinTossTeamA: 'home', coinTossTeamB: 'away', coinTossServeA: true, coinTossServeB: false,
+      set5LeftTeam: 'A', set5FirstServe: 'A',
+      homeShortName: 'HOM', awayShortName: 'AWY'
+    },
+    homeTeam: { name: 'Home Team' },
+    awayTeam: { name: 'Away Team' },
+    homePlayers: [1, 2, 3, 4, 5, 6, 9, 17].map(n => ({ number: n, firstName: 'H', lastName: `${n}` })),
+    awayPlayers: [11, 12, 13, 14, 15, 16].map(n => ({ number: n, firstName: 'A', lastName: `${n}` })),
+    sets: [
+      { index: 1, homePoints: 25, awayPoints: 20, finished: true, startTime: '2026-10-05T18:00:00Z', endTime: '2026-10-05T18:25:00Z' },
+      { index: 2, homePoints: 20, awayPoints: 25, finished: true, startTime: '2026-10-05T18:30:00Z', endTime: '2026-10-05T18:55:00Z' },
+      { index: 5, homePoints: 1, awayPoints: 0, finished: false, startTime: '2026-10-05T19:00:00Z' }
+    ],
+    events
+  }
+}
+
+describe('App_Scoresheet', () => {
+  beforeAll(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+  afterAll(() => vi.restoreAllMocks())
+
+  // Assertions run on the flattened sheet text, sliced between section headings.
+  const between = (text: string, from: string, to: string) => {
+    const i = text.indexOf(from)
+    const j = text.indexOf(to, i + from.length)
+    expect(i).toBeGreaterThanOrEqual(0)
+    expect(j).toBeGreaterThan(i)
+    return text.slice(i, j)
+  }
+
+  it('prints starting lineups, open substitutions, decider set number and results from the event log', () => {
+    const { container } = render(<App matchData={buildMatch()} autoAction="preview" />)
+    const text = container.querySelector('.scoresheet-container')?.textContent || ''
+
+    const set1 = between(text, 'SET1', 'SET2')
+    // Starting players row = initial lineups, not the rotated/substituted ones (2 3 4 9 6 1 / 12 ... 11)
+    expect(set1).toContain('IIIIIIIVVVI123456')
+    expect(set1).toContain('IIIIIIIVVVI111213141516')
+    expect(set1).not.toContain('IIIIIIIVVVI234961')
+    // Open substitution 5 -> 9 at 1:1 drawn under position V (starter 5); columns I-IV and VI
+    // stay empty ("::" each), so the exceptional 3 -> 17 is not drawn either
+    expect(set1).toContain('IIIIIIIVVVI123456::::::::91:1:::')
+
+    // Sanctions: set-1 warning and the deciding-set warning printed as set 3 (never 5)
+    const sanctions = between(text, 'SANCTIONS', 'REMARKS')
+    expect(sanctions).toContain('14B11:1')
+    expect(sanctions).toContain('16B30:1')
+    expect(sanctions).not.toContain('16B5')
+
+    // RESULT table: Team A set 1 = T0 S2 W1 P25 (S counts the exceptional substitution
+    // too, field-spec 9 / SC p.71: "4 standard + 1 exceptional" = 5)
+    const results = between(text, 'RESULT', 'Start')
+    expect(results).toContain('02125')
+
+    // Match not finished: final RESULT box stays empty instead of a live "1:1"
+    expect(text).toContain('WINNERRESULTAHOM')
+  })
+
+  it('prints a pre-rally line-up rectification (FIVB 7.3.4) and the later substitution of the rectified-in player', () => {
+    const data = buildMatch()
+    // Set 2: before the first rally, home rectifies position I from 1 to 17 (LineupModal mode 'manual');
+    // after a point, 17 is substituted by 9.
+    data.events.push(ev('lineup', 2, { team: 'home', lineup: { ...HOME_START, I: 17 }, isInitial: false }))
+    data.events.push(ev('point', 2, { team: 'away' }))
+    data.events.push(ev('substitution', 2, { team: 'home', playerOut: 17, playerIn: 9, position: 'I' }))
+    data.events.push(ev('lineup', 2, { team: 'home', lineup: { ...HOME_START, I: 9 }, fromSubstitution: true }))
+    const { container } = render(<App matchData={data} autoAction="preview" />)
+    const text = container.querySelector('.scoresheet-container')?.textContent || ''
+
+    const set2 = between(text, 'SET2', 'SET3')
+    expect(set2).toContain('IIIIIIIVVVI1723456')
+    expect(set2).not.toContain('IIIIIIIVVVI123456')
+    // 17 -> 9 at 0:1 drawn in column I (first column right after the starting row)
+    expect(set2).toMatch(/IIIIIIIVVVI17234569/)
+  })
+})
+
+describe('App_Scoresheet on a phone', () => {
+  const size = { w: window.innerWidth, h: window.innerHeight }
+  const setViewport = (w: number, h: number) => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: w })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: h })
+  }
+  beforeAll(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+  afterAll(() => {
+    setViewport(size.w, size.h)
+    vi.restoreAllMocks()
+  })
+
+  it('held upright: no "rotate your device" wall, the sheet is shown turned; Turn puts it upright', () => {
+    setViewport(412, 892)
+    const { container } = render(<App matchData={buildMatch()} autoAction="preview" />)
+    expect(container.textContent).not.toContain('Please Rotate Your Device')
+    const sheet = container.querySelector('.scoresheet-container') as HTMLElement
+    expect(sheet.style.transform).toContain('rotate(90deg)')
+    const box = screen.getByTestId('sheet-turn-box')
+    expect(parseFloat(box.style.width)).toBeLessThan(parseFloat(box.style.height))
+    fireEvent.click(screen.getByRole('button', { name: /Turn/ }))
+    expect(sheet.style.transform).not.toContain('rotate')
+    // upright the box takes the sheet's own scaled size, wider than high, and
+    // the sheet fits the screen: Fit may go below 30 % (emulator audit
+    // 2026-10-14: at 30 % it hung out on both sides of a 384 px phone)
+    expect(parseFloat(box.style.width)).toBeGreaterThan(parseFloat(box.style.height))
+    expect(parseFloat(box.style.width)).toBeLessThanOrEqual(412)
+    expect(sheet.style.transformOrigin).toBe(cssValue('transform-origin', 'top left'))
+  })
+
+  it('upright on a 360 px phone, the sheet still fits the width', () => {
+    setViewport(360, 780)
+    render(<App matchData={buildMatch()} autoAction="preview" />)
+    fireEvent.click(screen.getByRole('button', { name: /Turn/ }))
+    const box = screen.getByTestId('sheet-turn-box')
+    expect(parseFloat(box.style.width)).toBeLessThanOrEqual(360)
+  })
+
+  // owner 2026-11-09: on an upright tablet the referee's sheet opened at about 50 %
+  it('an upright tablet: turned too, with Turn to put it upright', () => {
+    setViewport(820, 1180)
+    const { container } = render(<App matchData={buildMatch()} autoAction="preview" />)
+    const sheet = container.querySelector('.scoresheet-container') as HTMLElement
+    expect(sheet.style.transform).toContain('rotate(90deg)')
+    fireEvent.click(screen.getByRole('button', { name: /Turn/ }))
+    expect(sheet.style.transform).not.toContain('rotate')
+  })
+
+  it('a wide screen: no Turn button, the sheet is not turned', () => {
+    setViewport(1366, 768)
+    const { container } = render(<App matchData={buildMatch()} autoAction="preview" />)
+    expect(screen.queryByRole('button', { name: /Turn/ })).toBeNull()
+    expect((container.querySelector('.scoresheet-container') as HTMLElement).style.transform).not.toContain('rotate')
+  })
+
+  it('on a Point Hub board, whose windows have no frame: a Close button; nowhere else', () => {
+    setViewport(1280, 800)
+    const close = vi.spyOn(window, 'close').mockImplementation(() => {})
+    const { unmount } = render(<App matchData={buildMatch()} autoAction="preview" />)
+    expect(screen.queryByRole('button', { name: /^(Close|scoresheetPdf\.dismiss)$/ })).toBeNull()
+    unmount()
+    ;(window as any).__OV_POINTHUB_BOARD__ = true
+    try {
+      render(<App matchData={buildMatch()} autoAction="preview" />)
+      fireEvent.click(screen.getByRole('button', { name: /^(Close|scoresheetPdf\.dismiss)$/ }))
+      expect(close).toHaveBeenCalledTimes(1)
+    } finally {
+      delete (window as any).__OV_POINTHUB_BOARD__
+      close.mockRestore()
+    }
+  })
+})
+
+// owner 2026-11-24: "the PDF actually go full picture/fullscreen when I click the fullscreen button"
+describe('App_Scoresheet fullscreen', () => {
+  const size = { w: window.innerWidth, h: window.innerHeight }
+  const setViewport = (w: number, h: number) => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: w })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: h })
+  }
+  const boxWidth = () => parseFloat(screen.getByTestId('sheet-turn-box').style.width)
+  const SHEET_W = (410 * 96) / 25.4
+  beforeAll(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+  afterAll(() => {
+    setViewport(size.w, size.h)
+    vi.restoreAllMocks()
+  })
+
+  it('the button shows an icon, asks for the platform\'s fullscreen, hides the bar and fits the sheet to the whole screen; Exit brings the bar back', async () => {
+    setViewport(1280, 800)
+    const request = vi.fn().mockResolvedValue(undefined)
+    ;(document.documentElement as any).requestFullscreen = request
+    const { container } = render(<App matchData={buildMatch()} autoAction="preview" />)
+    const open = screen.getByTestId('sheet-full-view')
+    expect(open.querySelector('svg')).not.toBeNull()
+    expect(open.textContent).toBe('')
+    const before = boxWidth()
+    await act(async () => { fireEvent.click(open) })
+    expect(request).toHaveBeenCalledTimes(1)
+    expect(screen.queryByTestId('sheet-toolbar')).toBeNull()
+    expect(container.querySelector('[data-full-view="true"]')).not.toBeNull()
+    // the bar's room is the sheet's now: bigger than the opening fit, and it fits 1280 x 800
+    expect(boxWidth()).toBeGreaterThan(before)
+    expect(boxWidth()).toBeLessThanOrEqual(1280 - 16)
+    expect(parseFloat(screen.getByTestId('sheet-turn-box').style.height)).toBeLessThanOrEqual(800 - 16)
+    await act(async () => { fireEvent.click(screen.getByTestId('sheet-exit-full-view')) })
+    expect(screen.getByTestId('sheet-toolbar')).toBeTruthy()
+    expect(container.querySelector('[data-full-view="true"]')).toBeNull()
+    expect(boxWidth()).toBeCloseTo(before, 0)
+    delete (document.documentElement as any).requestFullscreen
+  })
+
+  it('on a big screen the sheet grows past 100 %', async () => {
+    setViewport(2560, 1440)
+    render(<App matchData={buildMatch()} autoAction="preview" />)
+    expect(boxWidth()).toBeCloseTo(SHEET_W, 0)
+    await act(async () => { fireEvent.click(screen.getByTestId('sheet-full-view')) })
+    expect(boxWidth()).toBeGreaterThan(SHEET_W * 1.2)
+  })
+
+  it('without a fullscreen of its own (the Android app, a frame) the view still fills the window, and Esc ends it', async () => {
+    setViewport(1280, 800)
+    render(<App matchData={buildMatch()} autoAction="preview" />)
+    await act(async () => { fireEvent.click(screen.getByTestId('sheet-full-view')) })
+    expect(screen.queryByTestId('sheet-toolbar')).toBeNull()
+    await act(async () => { fireEvent.keyDown(window, { key: 'Escape' }) })
+    expect(screen.getByTestId('sheet-toolbar')).toBeTruthy()
+  })
+})
+
+describe('LiberoControlSheet', () => {
+  const lcsData = {
+    teamALiberos: [{ number: 7, type: 'libero1' }],
+    teamBLiberos: [{ number: 10, type: 'libero1' }],
+    sets: [1, 2, 3, 4, 5].map(setNumber => ({ setNumber, teamAReplacements: [], teamBReplacements: [], teamAReplacements_After: [], teamBReplacements_After: [] })),
+    redesignations: [
+      { team: 'A' as const, outNumber: 7, inNumber: 3, setNumber: 2, score: '4:6' },
+      { team: 'A' as const, outNumber: 3, inNumber: 9, setNumber: 5, score: '10:12' }
+    ]
+  }
+
+  it('best-of-3: prints sets 1, 2, 3 (deciding set relabelled) and every redesignation', () => {
+    const { container } = render(
+      <LiberoControlSheet match={{ bestOf: 3 }} teamAName="Home" teamBName="Away" teamAKey="home" lcsData={lcsData} bestOf={3} />
+    )
+    const text = container.textContent || ''
+    expect(text).toContain('SET 1')
+    expect(text).toContain('SET 2')
+    expect(text).toContain('SET 3')
+    expect(text).not.toContain('SET 4')
+    expect(text).not.toContain('SET 5')
+    // first redesignation in team A's slot, the second (deciding set = set 3) in the remarks line
+    expect(text).toContain('7/3')
+    expect(text).toContain('Re-designation team A: 3/9, Set 3, Points 10 : 12')
+  })
+
+  it('best-of-5: prints sets 1-5', () => {
+    const { container } = render(
+      <LiberoControlSheet teamAName="Home" teamBName="Away" teamAKey="home" lcsData={lcsData} bestOf={5} />
+    )
+    const text = container.textContent || ''
+    for (const n of [1, 2, 3, 4, 5]) expect(text).toContain(`SET ${n}`)
+    expect(text).toContain('Set 5, Points 10 : 12')
+  })
+})
+
+describe('Results', () => {
+  const setResults = [
+    { setNumber: 1, teamATimeouts: 0, teamASubstitutions: 0, teamAWon: 1, teamAPoints: 25, teamBTimeouts: 0, teamBSubstitutions: 0, teamBWon: 0, teamBPoints: 20, duration: '' },
+    { setNumber: 2, teamATimeouts: 0, teamASubstitutions: 0, teamAWon: 1, teamAPoints: 25, teamBTimeouts: 0, teamBSubstitutions: 0, teamBWon: 0, teamBPoints: 18, duration: '' }
+  ] as any
+  const resultBox = (container: HTMLElement) => {
+    const label = Array.from(container.querySelectorAll('span')).find(el => el.textContent === 'RESULT' && el.className.includes('absolute'))
+    return label?.parentElement?.textContent?.replace('RESULT', '') || ''
+  }
+
+  it('keeps the live set count by default (MatchEntry view)', () => {
+    const { container } = render(<Results setResults={setResults} bestOf={3} />)
+    expect(resultBox(container)).toBe('2:0')
+  })
+
+  it('stays blank on the official sheet until the match is finished', () => {
+    const { container } = render(<Results setResults={setResults} bestOf={3} blankResultUntilFinished />)
+    expect(resultBox(container)).toBe('')
+  })
+
+  it('prints the final result when given', () => {
+    const { container } = render(<Results setResults={setResults} bestOf={3} result="2-0" blankResultUntilFinished />)
+    expect(resultBox(container)).toBe('2:0')
+  })
+})
+
+describe('App_Scoresheet rosters', () => {
+  beforeAll(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+  afterAll(() => vi.restoreAllMocks())
+
+  const liberoRows = (container: HTMLElement, side: 'home' | 'away') =>
+    Array.from(container.querySelectorAll(`[data-testid="roster-${side}"] [data-testid="roster-libero-row"]`))
+      .map(r => (r.textContent || '').trim())
+
+  it('LIBERO box: the registered liberos after a re-designation, the re-designated one not in it (Genius)', () => {
+    const data = buildMatch()
+    data.homePlayers = [
+      ...[2, 3, 4, 5, 6, 9].map(n => ({ number: n, firstName: 'H', lastName: `${n}` })),
+      { number: 1, firstName: 'H', lastName: 'One', libero: 'unable' },
+      { number: 7, firstName: 'H', lastName: 'Seven', libero: 'redesignated' },
+      { number: 10, firstName: 'H', lastName: 'Ten', libero: 'unable' }
+    ] as any
+    data.events.push(
+      ev('libero_unable', 1, { team: 'home', liberoNumber: 1, liberoType: 'libero1' }),
+      ev('libero_unable', 2, { team: 'home', liberoNumber: 10, liberoType: 'libero2' }),
+      ev('libero_redesignation', 2, { team: 'home', unableLiberoNumber: 10, unableLiberoType: 'libero2', newLiberoNumber: 7 })
+    )
+    const { container } = render(<App matchData={data} autoAction="preview" />)
+    const rows = liberoRows(container, 'home')
+    expect(rows[0]).toContain('1')
+    expect(rows[0]).toContain('One')
+    expect(rows[1]).toContain('10')
+    expect(rows[1]).toContain('Ten')
+    // as Genius: the re-designated #7 is not in the box (remarks name him)
+    expect(container.querySelector('[data-testid="roster-home"] [data-testid="roster-libero-extra"]')).toBeNull()
+    expect(rows.join(' ')).not.toContain('Seven')
+  })
+
+  it('LIBERO box: by shirt number, not libero 1 / libero 2 (owner 2026-11-16)', () => {
+    const data = buildMatch()
+    data.homePlayers = [
+      ...[2, 3, 4, 5, 6, 9].map(n => ({ number: n, firstName: 'H', lastName: `${n}` })),
+      { number: 38, firstName: 'H', lastName: 'Vega', libero: 'libero1' },
+      { number: 19, firstName: 'H', lastName: 'Hemelmann', libero: 'libero2' }
+    ] as any
+    const { container } = render(<App matchData={data} autoAction="preview" />)
+    const rows = liberoRows(container, 'home')
+    expect(rows[0]).toContain('Hemelmann')
+    expect(rows[1]).toContain('Vega')
+  })
+
+  it('LFP marks only with LFP tracking on (owner 2026-11-16)', () => {
+    const lfpRoster = () => {
+      const data = buildMatch()
+      data.homePlayers = [1, 2, 3, 4, 5, 6].map(n => ({ number: n, firstName: 'H', lastName: `L${n}`, isLfp: true })) as any
+      return data
+    }
+    const count = (c: HTMLElement) => (c.querySelector('[data-testid="roster-home"]')?.textContent || '').split('LFP').length - 1
+    localStorage.removeItem('lfpTrackingEnabled')
+    const off = render(<App matchData={lfpRoster()} autoAction="preview" />)
+    expect(count(off.container)).toBe(0)
+    off.unmount()
+    localStorage.setItem('lfpTrackingEnabled', 'true')
+    try {
+      const on = render(<App matchData={lfpRoster()} autoAction="preview" />)
+      expect(count(on.container)).toBe(6)
+    } finally {
+      localStorage.removeItem('lfpTrackingEnabled')
+    }
+  })
+
+  it('signature boxes without a coin-toss signature are read-only on the sheet (no pad, nothing unsaved)', () => {
+    const { container } = render(<App matchData={buildMatch()} autoAction="preview" />)
+    const roster = container.querySelector('[data-testid="roster-home"]') as HTMLElement
+    expect(roster.querySelector('[title="Click to sign"]')).toBeNull()
+    const boxes = Array.from(roster.querySelectorAll('.min-h-\\[20px\\]')) as HTMLElement[]
+    expect(boxes.length).toBe(2)
+    boxes.forEach(b => fireEvent.click(b))
+    expect(document.querySelector('canvas')).toBeNull()
+    expect(screen.queryByText(/Captain Signature|Coach Signature/)).toBeNull()
+  })
+})
+
+// Global match: what the sheet carries beside a name, and a bench official's own role name
+describe('App_Scoresheet: Global id mode and role name', () => {
+  beforeAll(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+  const withMatch = (extra: Record<string, unknown>) => {
+    const data: any = buildMatch()
+    data.match = { ...data.match, ...extra }
+    data.homePlayers = data.homePlayers.map((p: any) => ({ ...p, dob: p.number === 1 ? '9b' : '' }))
+    return data
+  }
+
+  it('prints Licence in a Swiss match; a Global one: DoB for birthdates, ID for numbers, Info for text', () => {
+    for (const [extra, heading] of [
+      [{}, 'Licence'],
+      [{ idMode: 'number' }, 'Licence'], // a Swiss match has no choice
+      [{ global: true }, 'DoB'],
+      [{ global: true, idMode: 'number' }, 'ID'],
+      [{ global: true, idMode: 'text' }, 'Info']
+    ] as const) {
+      const mode = (extra as any).global ? (extra as any).idMode : undefined
+      const { container, unmount } = render(<App matchData={withMatch(extra)} autoAction="preview" />)
+      const header = container.querySelector('[data-testid="roster-home"]')?.textContent || ''
+      expect(header).toContain(heading)
+      if (mode === 'text') expect(header).toContain('9b') // the stored text is printed as it is
+      unmount()
+    }
+  })
+
+  it('prints the official\'s own role name beside the name, the slot stays', () => {
+    const { container } = render(<App matchData={withMatch({ bench_home: [{ role: 'Assistant Coach 1', firstName: 'Tina', lastName: 'Lehrer', dob: '', roleLabel: 'Teacher' }] })} autoAction="preview" />)
+    const rows = [...container.querySelectorAll('[data-testid="roster-home"] [data-testid="roster-official-row"]')].map(r => r.textContent || '')
+    expect(rows[1]).toContain('Lehrer')
+    expect(rows[1]).toContain('Teacher')
+    expect(rows[1]).toContain('TEA') // the short label of the row
+  })
+})
+
+// Sponsors on clothing (owner 2026-11-15): a marked match prints (+) / (-)
+// after every team name on the sheet; the match decides, not the device option
+describe('App_Scoresheet sponsors on clothing', () => {
+  beforeAll(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+  afterAll(() => {
+    vi.restoreAllMocks()
+    localStorage.removeItem('sponsorsOnClothing')
+  })
+
+  const sheetText = (data: any) => {
+    const { container, unmount } = render(<App matchData={data} autoAction="preview" />)
+    const text = container.querySelector('.scoresheet-container')?.textContent || ''
+    const header = {
+      home: container.querySelector('[data-testid="header-home"]')?.textContent || '',
+      away: container.querySelector('[data-testid="header-away"]')?.textContent || ''
+    }
+    unmount()
+    return { text, header }
+  }
+
+  it('a marked match: the header, the set boxes and the rosters carry the mark, even with the option off here', () => {
+    localStorage.setItem('sponsorsOnClothing', 'false')
+    const data = buildMatch()
+    data.match = { ...data.match, homeSponsors: true, awaySponsors: false, sponsorsMarked: true } as any
+    const { text, header } = sheetText(data)
+    expect(header.home).toBe('Home Team (+)')
+    expect(header.away).toBe('Away Team (-)')
+    expect(text).toContain('HOM (+)')
+    expect(text).toContain('AWY (-)')
+  })
+
+  it('a match read from the server (match_info only) prints its marks too', () => {
+    const data = buildMatch()
+    data.match = { ...data.match, match_info: { sponsors_home: false, sponsors_away: true, sponsors_marked: true } } as any
+    const { header } = sheetText(data)
+    expect(header.home).toBe('Home Team (-)')
+    expect(header.away).toBe('Away Team (+)')
+  })
+
+  it('an unmarked match prints the names alone, even with the option on here', () => {
+    localStorage.setItem('sponsorsOnClothing', 'true')
+    const data = buildMatch()
+    data.match = { ...data.match, homeSponsors: false, awaySponsors: false } as any
+    const { text, header } = sheetText(data)
+    expect(header.home).toBe('Home Team')
+    expect(text).not.toContain('(+)')
+    expect(text).not.toContain('(-)')
+  })
+})

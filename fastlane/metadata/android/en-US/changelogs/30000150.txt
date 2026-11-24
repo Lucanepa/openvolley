@@ -1,0 +1,7 @@
+OpenVolley 3.0.15
+- Referee tablet: live read-only scoresheet and rosters; held upright.
+- Scorer: warnings for requests the rules do not allow, a reason for an improper request, decision change after a sub or time-out.
+- Signatures: captain above coach; an official without a box can sign in the remarks.
+- Club licence lists from VolleyManager: "Add from club".
+- Roster import: name particles belong to the last name.
+- Privacy policy 1.10; Home links the downloads page.

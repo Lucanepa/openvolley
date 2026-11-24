@@ -1,0 +1,101 @@
+# Maintainer: Luca Canepa
+#
+# Repackages the .deb that GitHub Actions builds and releases
+# (.github/workflows/desktop.yml, tag beach-desktop-v$pkgver). Source and packaging
+# notes: https://github.com/Lucanepa/openvolley/tree/main/escoresheet/packaging/aur
+# A new release: escoresheet/packaging/aur/bump.sh openbeach <version>
+
+pkgname=openbeach-escoresheet-bin
+_pkgname=openbeach-escoresheet
+pkgver=26.11.0
+pkgrel=1
+pkgdesc='Open source beach volleyball eScoresheet: offline scoretable with a LAN server for referee and livescore tablets and court displays'
+arch=('x86_64')
+url='https://beach.openvolley.app'
+license=('GPL-3.0-or-later')
+depends=(
+  'cairo'
+  'dbus'
+  'gdk-pixbuf2'
+  'glib2'
+  'glibc'
+  'gtk3'
+  'hicolor-icon-theme'
+  'libayatana-appindicator' # the tray; loaded at run time, so namcap cannot see it
+  'libgcc'
+  'libsoup3'
+  'webkit2gtk-4.1'
+)
+optdepends=(
+  'networkmanager: the tablet Wi-Fi (hotspot) and Bluetooth network the app can start'
+  'bluez: the Bluetooth network for tablets (with NetworkManager)'
+  'dnsmasq: addresses for the tablets on the hotspot (NetworkManager shared mode)'
+  'xdg-utils: open links, the PDF and the backup folder'
+)
+provides=("$_pkgname")
+conflicts=("$_pkgname")
+options=('!strip' '!debug')
+source=("LICENSE-$pkgver::https://raw.githubusercontent.com/Lucanepa/openvolley/beach-desktop-v$pkgver/escoresheet/LICENSE")
+source_x86_64=("$_pkgname-$pkgver-amd64.deb::https://github.com/Lucanepa/openvolley/releases/download/beach-desktop-v$pkgver/${_pkgname}_${pkgver}_amd64.deb")
+noextract=("$_pkgname-$pkgver-amd64.deb")
+sha256sums=('4916eae672b6d1d5ec8d97c2bb9838815fdd4e313473d2c16ff759c51d9b7aec')
+sha256sums_x86_64=('8df524c238a50ef68a3566af037f5c39ba3cbc070699b795dbbb30ff892c46ff')
+
+# pacman updates this package, never the app itself (src-tauri/src/updater.rs):
+# - the marker file /usr/lib/$_pkgname/package-manager (package()): a release
+#   that knows it (Kind::Managed) never checks for updates and says the
+#   package manager updates it;
+# - for releases before that, the bundle type: the Tauri bundler stamps
+#   "__TAURI_BUNDLE_TYPE_VAR_DEB" into the binary, and a deb updates through
+#   APT or tells the scorer to add the APT repo. This sets it back to
+#   "unknown" (UNK, what the compiler wrote before the bundler): the app then
+#   never checks ("This build does not update itself"). Only the stamped value
+#   changes, not the "...DEB" string bundle_type() compares with (that one is
+#   directly followed by "...RPM").
+_unstamp_bundle_type() {
+  local bin=$1 marker=__TAURI_BUNDLE_TYPE_VAR_ off next
+  local -a hits=()
+  while IFS=: read -r off _; do
+    next=$(dd if="$bin" bs=1 skip=$((off + 27)) count=27 status=none)
+    [[ $next == "${marker}RPM" ]] || hits+=("$off")
+  done < <(LC_ALL=C grep -abo "${marker}DEB" "$bin")
+  if (( ${#hits[@]} != 1 )); then
+    echo "expected one bundle-type stamp in $bin, found ${#hits[@]}" >&2
+    return 1
+  fi
+  printf '%sUNK' "$marker" | dd of="$bin" bs=1 seek="${hits[0]}" conv=notrunc status=none
+}
+
+prepare() {
+  rm -rf deb
+  mkdir deb
+  bsdtar -xOf "$_pkgname-$pkgver-amd64.deb" 'data.tar.*' | bsdtar -xf - -C deb
+  _unstamp_bundle_type "deb/usr/bin/$_pkgname"
+}
+
+package() {
+  install -Dm755 "deb/usr/bin/$_pkgname" "$pkgdir/usr/bin/$_pkgname"
+  install -Dm644 "deb/usr/share/applications/$_pkgname.desktop" \
+    "$pkgdir/usr/share/applications/$_pkgname.desktop"
+  local size
+  for size in 32x32 128x128; do
+    install -Dm644 "deb/usr/share/icons/hicolor/$size/apps/$_pkgname.png" \
+      "$pkgdir/usr/share/icons/hicolor/$size/apps/$_pkgname.png"
+  done
+  # the bundler names the 256 px icon's folder 256x256@2
+  install -Dm644 "deb/usr/share/icons/hicolor/256x256@2/apps/$_pkgname.png" \
+    "$pkgdir/usr/share/icons/hicolor/256x256/apps/$_pkgname.png"
+  install -Dm644 "LICENSE-$pkgver" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -d "$pkgdir/usr/lib/$_pkgname"
+  echo aur > "$pkgdir/usr/lib/$_pkgname/package-manager"
+  chmod 644 "$pkgdir/usr/lib/$_pkgname/package-manager"
+  # The tablets' firewalld zone (src-tauri netshare/nm_settings.rs TABLET_ZONE):
+  # on a firewalld system the app starts the tablet Wi-Fi only into it, never
+  # into "trusted" (SEC-53). A release .deb without it (older) has none.
+  if [[ -f deb/usr/lib/firewalld/zones/openbeach-tablets.xml ]]; then
+    install -Dm644 deb/usr/lib/firewalld/zones/openbeach-tablets.xml \
+      "$pkgdir/usr/lib/firewalld/zones/openbeach-tablets.xml"
+  fi
+  # Not taken from the .deb: /usr/libexec/$_pkgname/apt-upgrade and its polkit
+  # action (the APT updater's root helper; pacman updates this package).
+}

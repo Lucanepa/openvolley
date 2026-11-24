@@ -1,0 +1,94 @@
+# OpenVolley eScoresheet as a snap (Snap Store name: openvolley-escoresheet).
+#
+# Repackages the released .deb (built and minisign-signed by
+# .github/workflows/desktop.yml, tag desktop-vX) instead of building from
+# source: the snap runs exactly the binary every other Linux user runs.
+# The .deb is pinned by version AND sha256 (bump.sh in the folder above
+# updates both). See ../README.md for building, the interfaces and what does
+# not work inside the snap.
+name: openvolley-escoresheet
+title: OpenVolley eScoresheet
+version: '26.11.6'
+summary: Open Source Volleyball eScoresheet
+description: |
+  Fully offline volleyball e-scoresheet. Runs the scoretable and a built-in
+  LAN server so referee, bench and livescore tablets connect over the same
+  Wi-Fi — no internet, no accounts.
+
+  The laptop can create the tablets' Wi-Fi (a hotspot) or a Bluetooth
+  network itself. For that, connect the network-manager and bluez
+  interfaces once:
+
+      sudo snap connect openvolley-escoresheet:network-manager
+      sudo snap connect openvolley-escoresheet:bluez
+
+  Updates come from the Snap Store; the app's own updater is off in the snap.
+license: GPL-3.0-or-later
+website: https://openvolley.app
+source-code: https://github.com/Lucanepa/openvolley
+issues: https://github.com/Lucanepa/openvolley/issues
+contact: https://github.com/Lucanepa/openvolley/issues
+icon: snap/gui/icon.png
+
+base: core24
+grade: stable
+confinement: strict
+platforms:
+  amd64:
+
+apps:
+  openvolley-escoresheet:
+    command: usr/bin/openvolley-escoresheet
+    # after the gnome extension's desktop-launch: app data out of the
+    # versioned $SNAP_USER_DATA (snap/local/launch)
+    command-chain: [bin/launch]
+    desktop: usr/share/applications/openvolley-escoresheet.desktop
+    common-id: com.openvolley.escoresheet
+    # GTK 3, WebKitGTK 4.1, libsoup 3, appindicator from the gnome-46-2404
+    # runtime; plugs desktop, desktop-legacy, gsettings, opengl, wayland, x11
+    extensions: [gnome]
+    plugs:
+      # the tablets' relay: HTTP :5173 and WebSocket :8080 on every interface
+      # (`network` also lets it list the laptop's addresses for "Connect
+      # tablets": a raw netlink route socket; network-observe is not needed)
+      - network
+      - network-bind
+      # the tablets' Wi-Fi hotspot and Bluetooth network (NetworkManager D-Bus)
+      - network-manager
+      # Bluetooth adapter on/discoverable for the Bluetooth network (BlueZ D-Bus)
+      - bluez
+      # PDFs and exports saved to ~/Downloads, imports from the home folder
+      - home
+      # USB sticks: the match backup copies (stick.rs) and exports (manual connect)
+      - removable-media
+
+slots:
+  # tauri-plugin-single-instance owns <identifier>.SingleInstance on the
+  # session bus: a second launch hands over to the running app instead of
+  # failing to bind the relay's ports
+  single-instance:
+    interface: dbus
+    bus: session
+    name: com.openvolley.escoresheet.SingleInstance
+
+parts:
+  openvolley-escoresheet:
+    plugin: dump
+    source: https://github.com/Lucanepa/openvolley/releases/download/desktop-v26.11.6/openvolley-escoresheet_26.11.6_amd64.deb
+    source-type: deb
+    source-checksum: sha256/4f908eda6e8672c321ad70f9105366ca01f8869acb889d468fad48d1048d7aa1
+    # GTK 3, WebKitGTK 4.1, libsoup 3 and libayatana-appindicator3 (the
+    # tray) all come from the gnome-46-2404 runtime: nothing is staged
+    prime:
+      # the .deb's APT self-update helper and its polkit action: the Snap
+      # Store updates the snap, and a snap cannot run pkexec or apt anyway
+      - -usr/libexec
+      - -usr/share/polkit-1
+
+  launcher:
+    plugin: dump
+    source: snap/local
+    organize:
+      launch: bin/launch
+    prime:
+      - bin/launch

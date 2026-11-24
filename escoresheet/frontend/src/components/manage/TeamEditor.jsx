@@ -1,0 +1,984 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { ArrowLeft, FileUp, Plus, Trash2, UserPlus, X } from 'lucide-react'
+import { savedTeamsApi, errorKeyOf, fetchPublicClubs } from '../../lib/accountApi'
+import { apiFrom } from '../../lib/apiClient'
+import { selectAll } from '../../lib/selectAll'
+import { STAFF_ROLES, validateSavedRoster, MAX_PLAYERS, MAX_STAFF, sameTypedName, savedNumberFinder, sportOf } from '../../domain/savedTeams'
+import { shirtNumberDigits } from '../../domain/roster'
+import { addClubPlayersToSquad, clubFillOf, clubPersonOf, clubPersonToPlayer, clubPlayersForGender, handTypedForClub, linkRowToClubPerson, mergeImportedRoster, officialOfRole, officialRolesOf, parsedPdfToRoster, playerFinder, setSquadOfficial, wrongGenderIndexes } from '../../domain/teamRosters'
+import ClubPlayerPickerModal from '../ClubPlayerPickerModal'
+import ClubShield from './ClubShield'
+import ClubOfferModal from './ClubOfferModal'
+import SearchSelect from './SearchSelect'
+import { InlineError } from './common'
+import { Button, Field, Input, Select, Checkbox, Switch, SectionHeader, EmptyInset, IconButton, confirmDialog, toast, cn } from '../../ui'
+
+const HEX = /^#[0-9a-f]{6}$/i
+const STAFF_ROLE_KEYS = {
+  Coach: 'benchRoles.coach',
+  'Assistant Coach 1': 'benchRoles.assistantCoach1',
+  'Assistant Coach 2': 'benchRoles.assistantCoach2',
+  Physiotherapist: 'benchRoles.physiotherapist',
+  Medic: 'benchRoles.medic'
+}
+
+let keySeq = 0
+const nextKey = () => `k${++keySeq}`
+
+function toPlayerDraft(p) {
+  return {
+    key: nextKey(),
+    id: p?.id,
+    number: p?.number ?? '',
+    first_name: p?.first_name || '',
+    last_name: p?.last_name || '',
+    license_number: p?.license_number || '',
+    is_libero: !!p?.is_libero,
+    is_captain: !!p?.is_captain,
+    active: p?.active !== false
+  }
+}
+function toStaffDraft(s) {
+  return {
+    key: nextKey(),
+    id: s?.id,
+    role: STAFF_ROLES.includes(s?.role) ? s.role : 'Coach',
+    first_name: s?.first_name || '',
+    last_name: s?.last_name || '',
+    license_number: s?.license_number || ''
+  }
+}
+
+// ── Beach (docs/beach-saved-teams-spec.md 3.6): a pair in two fixed slots, plus an optional coach ──
+const BEACH_SLOTS = [1, 2]
+
+function toSlotDraft(p, number) {
+  return {
+    number,
+    id: p?.id,
+    first_name: p?.first_name || '',
+    last_name: p?.last_name || '',
+    license_number: p?.license_number || '',
+    country: p?.country || ''
+  }
+}
+
+/** Saved players → the two slots: the player numbered n fills slot n (others the first free slot). */
+export function beachSlotsFromPlayers(players) {
+  const list = Array.isArray(players) ? players.filter(Boolean) : []
+  const slots = BEACH_SLOTS.map(n => list.find(p => Number(p.number) === n) || null)
+  for (const p of list) {
+    if (slots.includes(p)) continue
+    const free = slots.indexOf(null)
+    if (free === -1) break
+    slots[free] = p
+  }
+  return BEACH_SLOTS.map((n, i) => toSlotDraft(slots[i], n))
+}
+
+function toCoachDraft(staff) {
+  const s = (Array.isArray(staff) ? staff : []).find(x => x?.role === 'Coach')
+  return s ? { id: s.id, first_name: s.first_name || '', last_name: s.last_name || '', license_number: s.license_number || '' } : null
+}
+
+const emptyCoach = () => ({ first_name: '', last_name: '', license_number: '' })
+
+/** Beach slots + coach → the PUT roster body: the slots with a name, and the coach when named. */
+export function draftToBeachRosterBody(slots, coach) {
+  const clean = (v) => String(v ?? '').trim()
+  const players = (slots || [])
+    .filter(p => clean(p.first_name) || clean(p.last_name))
+    .map(p => {
+      const row = {
+        number: p.number,
+        first_name: clean(p.first_name),
+        last_name: clean(p.last_name),
+        license_number: clean(p.license_number) || null,
+        country: clean(p.country).toUpperCase() || null
+      }
+      if (p.id) row.id = p.id
+      return row
+    })
+  const staff = coach && (clean(coach.first_name) || clean(coach.last_name))
+    ? [{
+        ...(coach.id ? { id: coach.id } : {}),
+        role: 'Coach',
+        first_name: clean(coach.first_name),
+        last_name: clean(coach.last_name),
+        license_number: clean(coach.license_number) || null
+      }]
+    : []
+  return { players, staff }
+}
+
+/**
+ * The squad in shirt-number order, what Save keeps (the server stores this order
+ * as sort_order, so scorers load it the same way): a player without a number
+ * goes last, players keep their order among equals.
+ */
+export function sortPlayersByNumber(players) {
+  const num = (p) => {
+    const n = String(p?.number ?? '').trim()
+    return n === '' || !Number.isFinite(Number(n)) ? Infinity : Number(n)
+  }
+  return (players || []).map((p, i) => [p, i]).sort((a, b) => (num(a[0]) - num(b[0])) || (a[1] - b[1])).map(([p]) => p)
+}
+
+/** Draft rows → the PUT roster body (sort_order is set by the server). */
+export function draftToRosterBody(players, staff) {
+  const clean = (v) => String(v ?? '').trim()
+  return {
+    players: players.map(p => {
+      const n = clean(p.number)
+      const row = {
+        number: n === '' ? null : Number(n),
+        first_name: clean(p.first_name),
+        last_name: clean(p.last_name),
+        license_number: clean(p.license_number) || null,
+        is_libero: !!p.is_libero,
+        is_captain: !!p.is_captain,
+        active: !!p.active
+      }
+      if (p.id) row.id = p.id
+      return row
+    }),
+    staff: staff.map(s => {
+      const row = {
+        role: s.role,
+        first_name: clean(s.first_name),
+        last_name: clean(s.last_name),
+        license_number: clean(s.license_number) || null
+      }
+      if (s.id) row.id = s.id
+      return row
+    })
+  }
+}
+
+const sameName = (a, b) => String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase()
+
+/**
+ * The Club dropdown's options: "No club", the clubs (by name: the saved team
+ * keeps the name, as it always did), and the team's current club when it is
+ * not one of them (kept, never dropped by opening the form).
+ */
+export function clubFieldOptions(clubs, current, t) {
+  const names = [...new Set((clubs || []).map((c) => c.name).filter(Boolean))].sort((a, b) => a.localeCompare(b))
+  const out = [{ value: '', label: t('savedTeams.noClub') }, ...names.map((n) => ({ value: n, label: n }))]
+  const cur = String(current ?? '').trim()
+  if (cur && !names.some((n) => sameName(n, cur))) out.push({ value: current, label: t('savedTeams.clubNotListed', { name: cur }) })
+  return out
+}
+
+/**
+ * The VolleyManager names the dropdown offers: the chosen club's teams when
+ * it has some in OpenVolley (club_teams) and `all` is off, else every team of
+ * the schedule (`scheduleNames`). { names, narrowed }.
+ */
+export function vmNameOptions({ clubs, clubName, scheduleNames, all = false }) {
+  const club = (clubs || []).find((c) => sameName(c.name, clubName))
+  const teams = (club?.teams || []).map((x) => x.name).filter(Boolean)
+  if (teams.length && !all) return { names: [...teams].sort((a, b) => a.localeCompare(b)), narrowed: true, club: club.name }
+  return { names: scheduleNames || [], narrowed: false, club: club?.name || null }
+}
+
+// The people Save offered for the club's lists and the user left unticked:
+// not asked again for this team while the page is open (a convenience only).
+// In memory, never on the device: the keys hold licence numbers, which a
+// shared laptop must not keep after sign-out (delta-fe-manage-6).
+const declinedByTeam = new Map()
+function readDeclined(teamId) {
+  return declinedByTeam.get(teamId) || new Set()
+}
+function addDeclined(teamId, keys) {
+  if (!keys.length) return
+  const all = new Set(readDeclined(teamId))
+  for (const k of keys) all.add(k)
+  declinedByTeam.set(teamId, all)
+}
+// What an older version kept on the device (ov_club_offer_declined:<team id>): removed
+const DECLINED_STORED = 'ov_club_offer_declined:'
+export function dropStoredDeclined(storage = globalThis.localStorage) {
+  try {
+    for (let i = storage.length - 1; i >= 0; i--) {
+      const k = storage.key(i)
+      if (k && k.startsWith(DECLINED_STORED)) storage.removeItem(k)
+    }
+  } catch { /* no storage: nothing kept */ }
+}
+
+// Small labels: shown above each input on phones (one input per row), and
+// as the column heads from sm on.
+const CELL_LABEL = 'mb-0.5 block text-[11px] font-medium text-stone-500 sm:sr-only'
+const HEAD = 'hidden sm:grid text-[11px] font-bold uppercase tracking-wide text-stone-500'
+// one card per player or official (owner 2026-11-10: "at least border of the item to avoid confusion")
+const ROW_CARD = 'rounded-xl border border-stone-200 bg-white p-2 shadow-card'
+// The column heads line up with the card's inputs (its padding and border);
+// the last column holds the remove button, and the shield before it with the club's lists
+const HEAD_PAD = 'px-[9px] pb-1'
+const PLAYER_COLS = { plain: 'grid-cols-[7rem_4rem_1fr_1fr_2.25rem]', club: 'grid-cols-[7rem_4rem_1fr_1fr_4.75rem]' }
+const PLAYER_COLS_SM = { plain: 'sm:grid-cols-[7rem_4rem_1fr_1fr_2.25rem]', club: 'sm:grid-cols-[7rem_4rem_1fr_1fr_4.75rem]' }
+const STAFF_COLS = { plain: 'grid-cols-[11rem_1fr_1fr_8rem_2.25rem]', club: 'grid-cols-[11rem_1fr_1fr_8rem_4.75rem]' }
+const STAFF_COLS_SM = { plain: 'sm:grid-cols-[11rem_1fr_1fr_8rem_2.25rem]', club: 'sm:grid-cols-[11rem_1fr_1fr_8rem_4.75rem]' }
+
+/**
+ * Edit one saved team: its fields (PATCH), its players and team officials
+ * (PUT roster) or delete it. Writes need a connection; the parent refreshes
+ * the offline cache after each one.
+ *
+ * A team manager's squad (db/023, MyTeamsPanel): `saveRoster(body)` writes
+ * the roster instead (PUT /api/team/:id/squad), `fixedFields` leaves out the
+ * team's fields and Delete (its name, club and VolleyManager name are the
+ * club's), `pdfImport` adds Import Einsatzliste to the players.
+ * `clubPlayers` (db/024, GET /api/team/:id/club-players: { players, gender,
+ * people, search? }) adds "Add from club": players of the club's players list
+ * of the team's gender to the players, anyone of the club's lists (either
+ * gender) to an official's role (`search(q)`: the server's name search, owner
+ * decision 2). Save refuses a player of the players list with the
+ * other gender than the team's (the server too: OV_WRONG_GENDER); officials
+ * are never checked. With the club's lists each row has a shield (ClubShield):
+ * green in a list uploaded from VolleyManager, gray typed by hand (also when
+ * kept in the club's lists by hand; it links the row to someone of the club). `onAddToClub(people)` (POST /api/team/:id/club-people): Save
+ * first asks whether the ones typed by hand with a licence number go into
+ * the club's lists too (`clubName` names the club there).
+ */
+export default function TeamEditor({ team, competition, online, onBack, onChanged, onDeleted, saveRoster: saveRosterWith = null, fixedFields = false, pdfImport = false, clubPlayers = null, onAddToClub = null, clubName = '' }) {
+  const { t } = useTranslation()
+  useEffect(() => { dropStoredDeclined() }, [])
+  const pdfInput = useRef(null)
+  const [importing, setImporting] = useState(false)
+  const [clubPicker, setClubPicker] = useState(false)
+  const [officialPicker, setOfficialPicker] = useState(false)
+  // the row the gray shield links: { list: 'players' | 'staff', key, query }
+  const [linking, setLinking] = useState(null)
+  // Save's question for the club's lists: { offer, noLicence, body, ordered }
+  const [clubOffer, setClubOffer] = useState(null)
+  const beach = sportOf(competition) === 'beach'
+  const [fields, setFields] = useState(() => ({
+    name: team.name || '',
+    short_name: team.short_name || '',
+    club: team.club || '',
+    color: team.color || '',
+    svrz_team_name: team.svrz_team_name || ''
+  }))
+  const [players, setPlayers] = useState(() => (team.players || []).map(toPlayerDraft))
+  const [staff, setStaff] = useState(() => (team.staff || []).map(toStaffDraft))
+  const [slots, setSlots] = useState(() => beachSlotsFromPlayers(team.players))
+  const [coach, setCoach] = useState(() => toCoachDraft(team.staff))
+  const [savingFields, setSavingFields] = useState(false)
+  const [savingRoster, setSavingRoster] = useState(false)
+  const [fieldsError, setFieldsError] = useState('')
+  const [rosterError, setRosterError] = useState('')
+  const [rowErrors, setRowErrors] = useState({})
+  const [svrzNames, setSvrzNames] = useState([])
+  // The team as last loaded. A newer copy (saved in another tab, which the
+  // console shows again with a fresh load) starts the drafts afresh while
+  // they hold no unsaved edits; unsaved edits stay (owner 2026-11-10: the
+  // officials' licences saved in My teams were missing in Competitions)
+  const loaded = useRef(team)
+  useEffect(() => {
+    const prev = loaded.current
+    if (team === prev) return
+    loaded.current = team
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
+    if (beach) {
+      if (same(draftToBeachRosterBody(slots, coach), draftToBeachRosterBody(beachSlotsFromPlayers(prev.players), toCoachDraft(prev.staff)))) {
+        setSlots(beachSlotsFromPlayers(team.players))
+        setCoach(toCoachDraft(team.staff))
+      }
+    } else if (same(draftToRosterBody(players, staff), draftToRosterBody((prev.players || []).map(toPlayerDraft), (prev.staff || []).map(toStaffDraft)))) {
+      setPlayers((team.players || []).map(toPlayerDraft))
+      setStaff((team.staff || []).map(toStaffDraft))
+    }
+    const keys = ['name', 'short_name', 'club', 'color', 'svrz_team_name']
+    if (keys.every((k) => (fields[k] || '') === (prev[k] || ''))) {
+      setFields(Object.fromEntries(keys.map((k) => [k, team[k] || ''])))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [team])
+  // The Club dropdown and the VolleyManager names (owner: "why are these not
+  // dropdowns"): the clubs with their teams (GET /api/public/clubs) and the
+  // schedule's team names (GET /api/saved-teams/vm-teams). null: not loaded
+  // (offline, an older server): the plain fields as before.
+  const [clubs, setClubs] = useState(null)
+  const [scheduleNames, setScheduleNames] = useState(null)
+  const [allVmNames, setAllVmNames] = useState(false)
+  const withLists = !beach && !fixedFields
+  useEffect(() => {
+    if (!online || !withLists) return undefined
+    let alive = true
+    // never throws into the effect: without a list the plain field stays
+    Promise.resolve().then(() => fetchPublicClubs()).then((res) => {
+      if (alive && !res?.error && Array.isArray(res?.data?.clubs)) setClubs(res.data.clubs)
+    }).catch(() => {})
+    Promise.resolve().then(() => savedTeamsApi.vmTeams()).then((res) => {
+      if (!alive || res?.error || !Array.isArray(res?.data?.teams)) return
+      setScheduleNames([...new Set(res.data.teams.map((x) => x.name).filter(Boolean))].sort((a, b) => a.localeCompare(b)))
+    }).catch(() => {})
+    return () => { alive = false }
+  }, [online, withLists])
+
+  // VolleyManager team names of the competition's leagues, for the datalist
+  // (and the dropdown when the server has no list of every name)
+  const leagues = beach ? [] : (competition?.vm_leagues || [])
+  useEffect(() => {
+    if (!online || !leagues.length) return undefined
+    let alive = true
+    // Every game of these leagues (paged past the server's row cap)
+    selectAll(() => apiFrom('svrz_games').select('id, team_home, team_away').in('league', leagues)).then(({ data }) => {
+      if (!alive || !Array.isArray(data)) return
+      const names = new Set()
+      for (const g of data) {
+        if (g.team_home) names.add(g.team_home)
+        if (g.team_away) names.add(g.team_away)
+      }
+      setSvrzNames([...names].sort((a, b) => a.localeCompare(b)))
+    })
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online, leagues.join('|')])
+
+  const setField = (k) => (e) => { setFields(f => ({ ...f, [k]: e.target.value })); setFieldsError('') }
+  // A VolleyManager name picked from the list names an unnamed team too (still editable)
+  const pickVmName = (name) => {
+    setFields(f => ({ ...f, svrz_team_name: name, name: f.name.trim() ? f.name : name }))
+    setFieldsError('')
+  }
+  const vm = vmNameOptions({ clubs, clubName: fields.club, scheduleNames: scheduleNames || svrzNames, all: allVmNames })
+  const fieldKeys = beach ? ['name', 'short_name', 'club', 'color'] : ['name', 'short_name', 'club', 'color', 'svrz_team_name']
+  const fieldsDirty = fieldKeys.some(k => (fields[k] || '') !== (team[k] || ''))
+
+  const saveFields = async () => {
+    if (!fields.name.trim() || savingFields) return
+    if (fields.color && !HEX.test(fields.color)) {
+      setFieldsError(`${t('savedTeams.color')}: #rrggbb`)
+      return
+    }
+    setSavingFields(true)
+    const sent = {
+      name: fields.name.trim(),
+      short_name: fields.short_name.trim() || null,
+      club: fields.club.trim() || null,
+      color: fields.color ? fields.color.toLowerCase() : null
+    }
+    if (!beach) sent.svrz_team_name = fields.svrz_team_name.trim() || null
+    const res = await savedTeamsApi.updateTeam(team.id, sent)
+    setSavingFields(false)
+    if (res.error) {
+      setFieldsError(t(errorKeyOf(res.error)))
+      return
+    }
+    // Only this section takes the saved values; unsaved players and
+    // officials stay as they are (the editor is not remounted).
+    setFields(f => ({ ...f, ...Object.fromEntries(Object.entries(sent).map(([k, v]) => [k, v ?? ''])) }))
+    toast.success(t('manage.accounts.saved'))
+    onChanged?.()
+  }
+
+  const updatePlayer = (key, patch) => {
+    setPlayers(list => list.map(p => {
+      if (p.key === key) return { ...p, ...patch }
+      // One captain: ticking a captain clears the others
+      if (patch.is_captain) return { ...p, is_captain: false }
+      return p
+    }))
+    setRosterError('')
+    setRowErrors({})
+  }
+  const updateStaff = (key, patch) => {
+    setStaff(list => list.map(s => (s.key === key ? { ...s, ...patch } : s)))
+    setRosterError('')
+    setRowErrors({})
+  }
+
+  const updateSlot = (number, patch) => {
+    setSlots(list => list.map(p => (p.number === number ? { ...p, ...patch } : p)))
+    setRosterError('')
+    setRowErrors({})
+  }
+  const updateCoach = (patch) => {
+    setCoach(c => ({ ...(c || emptyCoach()), ...patch }))
+    setRosterError('')
+    setRowErrors({})
+  }
+
+  const saveRoster = async () => {
+    if (savingRoster) return
+    const ordered = beach ? players : sortPlayersByNumber(players)
+    const body = beach ? draftToBeachRosterBody(slots, coach) : draftToRosterBody(ordered, staff)
+    const problems = validateSavedRoster(body, { sport: beach ? 'beach' : 'indoor' })
+    // db/024: a player can't play in the wrong gender (the server checks the same)
+    if (!beach && clubPlayers) {
+      for (const i of wrongGenderIndexes(body.players, clubPlayers.players, clubPlayers.gender)) {
+        problems.push({ list: 'players', index: i, key: 'manage.licences.wrongGender', params: {} })
+      }
+    }
+    if (problems.length) {
+      const map = {}
+      for (const pr of problems) {
+        if (pr.index === null) continue
+        // beach: errors point at the slot (by number) and the coach, not the body index
+        // indoor: the body is in number order, the rows on screen not yet
+        const row = pr.list === 'players' ? players.indexOf(ordered[pr.index]) : pr.index
+        const key = !beach ? `${pr.list}:${row}` : pr.list === 'players' ? `slot:${body.players[pr.index]?.number}` : 'coach'
+        map[key] = t(pr.key, pr.params)
+      }
+      setRowErrors(map)
+      setRosterError(t(problems[0].key, problems[0].params))
+      return
+    }
+    // typed by hand, with a licence number: Save asks whether they go into
+    // the club's lists too (owner 2026-11-10); those left unticked once are
+    // not asked again for this team on this device
+    if (!beach && clubPlayers && onAddToClub) {
+      const found = handTypedForClub(body.players, body.staff, people, clubPlayers.gender)
+      const declined = readDeclined(team.id)
+      const ask = found.offer.filter((o) => !declined.has(o.key))
+      if (ask.length) {
+        setClubOffer({ offer: ask, noLicence: found.noLicence, body, ordered })
+        return
+      }
+    }
+    await writeRoster(body, ordered)
+  }
+
+  // the roster (and then the ones ticked for the club's lists) to the server
+  const writeRoster = async (body, ordered, toClub = []) => {
+    setSavingRoster(true)
+    const res = saveRosterWith ? await saveRosterWith(body) : await savedTeamsApi.putRoster(team.id, body)
+    if (res.error) {
+      setSavingRoster(false)
+      // the server's gender check names the player by its index in the body
+      if (res.error.code === 'OV_WRONG_GENDER' && Number.isInteger(res.error.index) && !beach) {
+        setRowErrors({ [`players:${players.indexOf(ordered[res.error.index])}`]: t(errorKeyOf(res.error)) })
+      }
+      setRosterError(res.error.code === 'OV_INVALID_REQUEST' && res.error.details ? `${t('manage.errors.generic')} (${res.error.details})` : t(errorKeyOf(res.error)))
+      return
+    }
+    toast.success(t('savedTeams.rosterSaved'))
+    if (toClub.length) {
+      // the roster is saved either way; the club's lists are a second step
+      const added = await onAddToClub(toClub.map((o) => ({ list: o.list, ...o.person })))
+      if (added?.error) toast.error(t('clubPlayers.offer.failed'))
+      else toast.success(t('clubPlayers.offer.added', { count: added?.data?.added ?? toClub.length }))
+    }
+    setSavingRoster(false)
+    const saved = res.data?.team
+    if (!saved && !beach) setPlayers(ordered)
+    if (saved) {
+      setPlayers((saved.players || []).map(toPlayerDraft))
+      setStaff((saved.staff || []).map(toStaffDraft))
+      setSlots(beachSlotsFromPlayers(saved.players))
+      setCoach(toCoachDraft(saved.staff))
+    }
+    onChanged?.()
+  }
+
+  // Import Einsatzliste: the PDF's players and officials merged into the
+  // drafts (same name: its number and licence; else added). Saving
+  // stays the user's step.
+  const importPdf = async (file) => {
+    if (!file || importing) return
+    setImporting(true)
+    setRosterError('')
+    try {
+      const { parseRosterPdf } = await import('../../utils/parseRosterPdf')
+      const imported = parsedPdfToRoster(await parseRosterPdf(file))
+      if (!imported.players.length && !imported.staff.length) {
+        setRosterError(t('manage.myTeams.pdfEmpty'))
+        return
+      }
+      // a new player gets the number the saved team (as stored) has for them
+      const merged = mergeImportedRoster(players, staff, imported, toPlayerDraft, toStaffDraft, team)
+      setPlayers(merged.players)
+      setStaff(merged.staff)
+      setRowErrors({})
+      toast.success(t('manage.myTeams.pdfImported', { added: merged.added, updated: merged.updated }))
+    } catch (err) {
+      console.warn('[TeamEditor] Einsatzliste import failed:', err?.message)
+      setRosterError(err?.code === 'pdf-timeout' /* parseRosterPdf PDF_TIMEOUT_CODE */ ? t('rosterPdf.tooSlow') : t('manage.myTeams.pdfFailed'))
+    } finally {
+      setImporting(false)
+      if (pdfInput.current) pdfInput.current.value = ''
+    }
+  }
+
+  // fe-manage-2: a team with players or officials goes only with its name
+  // typed; the server checks it too and audits the delete
+  const deleteTeam = async () => {
+    const withPeople = (team.players || []).length + (team.staff || []).length > 0
+    const answer = await confirmDialog({
+      title: t('savedTeams.deleteTeamConfirmTitle', { name: team.name }),
+      message: t('savedTeams.deleteTeamConfirmBody'),
+      confirmLabel: t('savedTeams.deleteTeam'),
+      cancelLabel: t('common.cancel', 'Cancel'),
+      tone: 'danger',
+      ...(withPeople ? { input: { label: t('savedTeams.typeNameToDelete', { name: team.name }), placeholder: team.name } } : {})
+    })
+    if (answer === false) return
+    if (withPeople && !sameTypedName(answer, team.name)) {
+      setFieldsError(t('savedTeams.confirmNameMismatch'))
+      return
+    }
+    setFieldsError('')
+    const res = await savedTeamsApi.deleteTeam(team.id, { confirm: withPeople ? answer : undefined })
+    if (res.error) {
+      setFieldsError(t(errorKeyOf(res.error)))
+      return
+    }
+    onDeleted?.()
+  }
+
+  const listId = useMemo(() => `svrz-names-${team.id}`, [team.id])
+
+  // db/024: "Add from club": the club's players of the team's gender, merged
+  // as an import is (the same licence, else name: nobody twice)
+  const offered = useMemo(() => clubPersonOffer(clubPlayers), [clubPlayers])
+  const finder = useMemo(() => playerFinder(players), [players])
+  // the picker shows the number the saved team has for each person
+  const savedNumberOf = useMemo(() => {
+    const numberOf = savedNumberFinder(team, { inactive: true })
+    return (c) => numberOf({ licence: c.sv_number, firstName: c.first_name, lastName: c.last_name })
+  }, [team])
+  const addFromClub = (chosen) => {
+    setClubPicker(false)
+    const merged = addClubPlayersToSquad(players, staff, chosen, toPlayerDraft, toStaffDraft, team)
+    setPlayers(merged.players)
+    setRosterError('')
+    setRowErrors({})
+    toast.success(t('clubPlayers.added', { count: merged.added }))
+  }
+  // An official from anyone of the club's lists, of either gender: the role's
+  // row takes the person (or a row of that role is added)
+  const people = useMemo(() => clubPeopleOf(clubPlayers), [clubPlayers])
+  const staffRoles = STAFF_ROLES.map((r) => ({ value: r, label: t(STAFF_ROLE_KEYS[r], r) }))
+  const named = (s) => (s ? `${s.first_name || ''} ${s.last_name || ''}`.trim() : '')
+  const officialFromClub = ([c], role) => {
+    setOfficialPicker(false)
+    if (!c || !role) return
+    setStaff((list) => setSquadOfficial(list, role, c, toStaffDraft).staff)
+    setRosterError('')
+    setRowErrors({})
+    toast.success(t('clubPlayers.officialSet', { role: t(STAFF_ROLE_KEYS[role], role), name: `${c.first_name || ''} ${c.last_name}`.trim() }))
+  }
+  // The gray shield: the row typed by hand takes the names and licence number
+  // of someone uploaded from VolleyManager (green then)
+  const shieldOf = (row) => (clubPlayers ? clubPersonOf(row, people) : null)
+  // an official's row links to anyone uploaded of the club's lists: the server's search
+  const searchUploaded = clubPlayers?.search
+    ? async (q) => {
+      const r = await clubPlayers.search(q)
+      const d = r?.data ?? r
+      return { people: (Array.isArray(d?.people) ? d.people : []).filter((c) => !c.manual), more: d?.more === true, limited: d?.limited === true }
+    }
+    : null
+  const cols = clubPlayers ? 'club' : 'plain'
+  const linkRow = ([c]) => {
+    const target = linking
+    setLinking(null)
+    if (!c || !target) return
+    if (target.list === 'players') setPlayers((list) => list.map((x) => (x.key === target.key ? linkRowToClubPerson(x, c) : x)))
+    else setStaff((list) => list.map((x) => (x.key === target.key ? linkRowToClubPerson(x, c) : x)))
+    setRosterError('')
+    setRowErrors({})
+    toast.success(t('clubPlayers.linked', { name: `${c.first_name || ''} ${c.last_name}`.trim() }))
+  }
+  const answerOffer = async (ticked, unticked) => {
+    const o = clubOffer
+    if (!o) return
+    addDeclined(team.id, unticked)
+    await writeRoster(o.body, o.ordered, o.offer.filter((x) => ticked.includes(x.key)))
+    setClubOffer(null)
+  }
+
+  return (
+    <div className="space-y-5">
+      {onBack && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={onBack}>{competition?.name || t('savedTeams.teams')}</Button>
+        </div>
+      )}
+
+      {/* Team fields */}
+      {!fixedFields && (
+      <section className="rounded-2xl border border-stone-200/70 bg-white p-4 shadow-card sm:p-5">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label={t('savedTeams.teamName')}>
+            <Input value={fields.name} onChange={setField('name')} maxLength={120} required />
+          </Field>
+          <Field label={t('savedTeams.shortName')}>
+            <Input value={fields.short_name} onChange={setField('short_name')} maxLength={20} />
+          </Field>
+          <Field label={t('savedTeams.club')}>
+            {clubs
+              ? <Select block value={fields.club} onChange={setField('club')} options={clubFieldOptions(clubs, fields.club, t)} data-testid="team-club-select" />
+              : <Input value={fields.club} onChange={setField('club')} maxLength={120} />}
+          </Field>
+          <Field label={t('savedTeams.color')}>
+            <div className="flex gap-2">
+              <input
+                type="color"
+                value={HEX.test(fields.color) ? fields.color : '#e2001a'}
+                onChange={e => { setFields(f => ({ ...f, color: e.target.value })); setFieldsError('') }}
+                aria-label={t('savedTeams.color')}
+                className="h-9 w-12 shrink-0 cursor-pointer rounded-lg border border-stone-300 bg-white p-1"
+              />
+              <Input value={fields.color} onChange={setField('color')} maxLength={7} placeholder="#rrggbb" className="font-mono" aria-label={`${t('savedTeams.color')} (hex)`} />
+            </div>
+          </Field>
+          {/* Field takes exactly one control (Children.only): the datalist sits beside it */}
+          {!beach && (
+            <div className="min-w-0 sm:col-span-2">
+              {clubs || scheduleNames ? (
+                <Field label={t('savedTeams.svrzTeamName')} hint={t('savedTeams.svrzTeamNameHint')}>
+                  <SearchSelect
+                    value={fields.svrz_team_name}
+                    onChange={(v) => { setFields(f => ({ ...f, svrz_team_name: v })); setFieldsError('') }}
+                    onPick={pickVmName}
+                    options={vm.names}
+                    maxLength={120}
+                    placeholder={t('savedTeams.svrzPlaceholder')}
+                    listLabel={t('savedTeams.svrzOptions')}
+                    openLabel={t('savedTeams.svrzOpen')}
+                    emptyText={t('savedTeams.svrzNoMatch')}
+                    data-testid="team-vm-name"
+                  />
+                </Field>
+              ) : (
+                <>
+                  <Field label={t('savedTeams.svrzTeamName')} hint={t('savedTeams.svrzTeamNameHint')}>
+                    <Input value={fields.svrz_team_name} onChange={setField('svrz_team_name')} maxLength={120} list={listId} />
+                  </Field>
+                  <datalist id={listId}>{svrzNames.map(n => <option key={n} value={n} />)}</datalist>
+                </>
+              )}
+              {(vm.narrowed || allVmNames) && vm.club && (
+                <button
+                  type="button"
+                  onClick={() => setAllVmNames(a => !a)}
+                  className="mt-1 min-h-8 rounded text-xs font-medium text-red-600 underline decoration-red-300 underline-offset-2 hover:text-red-700"
+                  data-testid="team-vm-scope"
+                >
+                  {allVmNames ? t('savedTeams.svrzClubOnly', { club: vm.club }) : t('savedTeams.svrzShowAll')}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <Button variant="positive" onClick={saveFields} loading={savingFields} disabled={!online || !fieldsDirty || !fields.name.trim() || savingFields}>{t('manage.accounts.save')}</Button>
+          <InlineError error={fieldsError} />
+          <Button variant="danger-outline" icon={Trash2} className="ml-auto" onClick={deleteTeam} disabled={!online}>{t('savedTeams.deleteTeam')}</Button>
+        </div>
+      </section>
+      )}
+
+      {beach && (
+        <BeachRoster
+          slots={slots}
+          coach={coach}
+          rowErrors={rowErrors}
+          onSlot={updateSlot}
+          onClearSlot={(number) => updateSlot(number, { first_name: '', last_name: '', license_number: '', country: '' })}
+          onCoach={updateCoach}
+          onAddCoach={() => setCoach(emptyCoach())}
+          onRemoveCoach={() => { setCoach(null); setRosterError(''); setRowErrors({}) }}
+        />
+      )}
+
+      {/* Players */}
+      {!beach && (
+        <section>
+          <SectionHeader title={t('savedTeams.players')} count={players.length} action={
+            <div className="flex flex-wrap items-center gap-1">
+              {pdfImport && (
+                <>
+                  <input ref={pdfInput} type="file" accept=".pdf,application/pdf" className="hidden" data-testid="squad-pdf-input" onChange={e => importPdf(e.target.files?.[0])} />
+                  <Button variant="ghost" size="sm" icon={FileUp} loading={importing} onClick={() => pdfInput.current?.click()} data-testid="squad-pdf-import">{t('manage.myTeams.importPdf')}</Button>
+                </>
+              )}
+              {clubPlayers && (
+                <Button variant="ghost" size="sm" icon={UserPlus} onClick={() => setClubPicker(true)} data-testid="squad-add-from-club">{t('clubPlayers.add')}</Button>
+              )}
+              <Button variant="ghost" size="sm" icon={Plus} disabled={players.length >= MAX_PLAYERS} onClick={() => setPlayers(list => [...list, toPlayerDraft(null)])}>{t('savedTeams.addPlayer')}</Button>
+            </div>
+          } />
+          {players.length === 0 ? (
+            <EmptyInset>{t('savedTeams.emptyRoster')}</EmptyInset>
+          ) : (
+            <div>
+              <div className={cn(HEAD, PLAYER_COLS[cols], 'gap-2', HEAD_PAD)}>
+                <span>{t('savedTeams.license')}</span>
+                <span>{t('savedTeams.number')}</span>
+                <span>{t('savedTeams.firstName')}</span>
+                <span>{t('savedTeams.lastName')}</span>
+                <span />
+              </div>
+              <div className="space-y-2">
+                {players.map((p, i) => {
+                  const club = shieldOf(p)
+                  const fill = club && !club.manual ? clubFillOf(p, club) : {}
+                  return (
+                  <div key={p.key} className={cn(ROW_CARD, !p.active && 'opacity-60')} data-testid="player-row">
+                    <div className={cn('grid grid-cols-1 gap-2 sm:items-center', PLAYER_COLS_SM[cols])}>
+                      <label className="block">
+                        <span className={CELL_LABEL}>{t('savedTeams.license')}</span>
+                        <Input value={p.license_number} onChange={e => updatePlayer(p.key, { license_number: e.target.value })} aria-label={t('savedTeams.license')} maxLength={40} className="tabular-nums" />
+                      </label>
+                      <label className="block">
+                        <span className={CELL_LABEL}>{t('savedTeams.number')}</span>
+                        <Input type="number" inputMode="numeric" numeric min={0} max={99} value={p.number} onChange={e => updatePlayer(p.key, { number: shirtNumberDigits(e.target.value) })} aria-label={t('savedTeams.number')} className="tabular-nums" />
+                      </label>
+                      <label className="block">
+                        <span className={CELL_LABEL}>{t('savedTeams.firstName')}</span>
+                        <Input value={p.first_name} onChange={e => updatePlayer(p.key, { first_name: e.target.value })} aria-label={t('savedTeams.firstName')} />
+                      </label>
+                      <label className="block">
+                        <span className={CELL_LABEL}>{t('savedTeams.lastName')}</span>
+                        <Input value={p.last_name} onChange={e => updatePlayer(p.key, { last_name: e.target.value })} aria-label={t('savedTeams.lastName')} invalid={!!rowErrors[`players:${i}`]} required />
+                      </label>
+                      <div className="flex items-center justify-end gap-1">
+                        {clubPlayers && (
+                          <ClubShield
+                            person={club}
+                            fill={fill}
+                            onFill={() => updatePlayer(p.key, fill)}
+                            onLink={() => setLinking({ list: 'players', key: p.key, query: p.last_name })}
+                          />
+                        )}
+                        <IconButton icon={X} label={`${t('common.delete', 'Delete')} ${p.last_name || ''}`.trim()} onClick={() => setPlayers(list => list.filter(x => x.key !== p.key))} />
+                      </div>
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
+                      <Checkbox variant="dense" label={t('savedTeams.libero')} checked={p.is_libero} onChange={e => updatePlayer(p.key, { is_libero: e.target.checked })} />
+                      <Checkbox variant="dense" label={t('savedTeams.captain')} checked={p.is_captain} onChange={e => updatePlayer(p.key, { is_captain: e.target.checked })} />
+                      <span className="inline-flex items-center gap-2 text-sm text-stone-700">
+                        <Switch checked={p.active} onCheckedChange={(v) => updatePlayer(p.key, { active: v, ...(v ? {} : { is_captain: false }) })} aria-label={t('savedTeams.active')} />
+                        {t('savedTeams.active')}
+                      </span>
+                      <InlineError error={rowErrors[`players:${i}`]} />
+                    </div>
+                  </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Team officials */}
+      {!beach && (
+        <section>
+          <SectionHeader title={t('savedTeams.staff')} count={staff.length} action={
+            <div className="flex flex-wrap items-center gap-1">
+              {clubPlayers && (
+                <Button variant="ghost" size="sm" icon={UserPlus} onClick={() => setOfficialPicker(true)} data-testid="staff-add-from-club">{t('clubPlayers.add')}</Button>
+              )}
+              <Button variant="ghost" size="sm" icon={Plus} disabled={staff.length >= MAX_STAFF} onClick={() => setStaff(list => [...list, toStaffDraft(null)])}>{t('savedTeams.addStaff')}</Button>
+            </div>
+          } />
+          {staff.length > 0 && (
+            <div>
+              <div className={cn(HEAD, STAFF_COLS[cols], 'gap-2', HEAD_PAD)}>
+                <span>{t('savedTeams.role')}</span>
+                <span>{t('savedTeams.firstName')}</span>
+                <span>{t('savedTeams.lastName')}</span>
+                <span>{t('savedTeams.license')}</span>
+                <span />
+              </div>
+              <div className="space-y-2">
+                {staff.map((s, i) => {
+                  const club = shieldOf(s)
+                  const fill = club && !club.manual ? clubFillOf(s, club) : {}
+                  return (
+                  <div key={s.key} className={ROW_CARD} data-testid="staff-row">
+                    <div className={cn('grid grid-cols-1 gap-2 sm:items-center', STAFF_COLS_SM[cols])}>
+                      <label className="block">
+                        <span className={CELL_LABEL}>{t('savedTeams.role')}</span>
+                        <Select value={s.role} onChange={e => updateStaff(s.key, { role: e.target.value })} aria-label={t('savedTeams.role')}>
+                          {STAFF_ROLES.map(r => <option key={r} value={r}>{t(STAFF_ROLE_KEYS[r], r)}</option>)}
+                        </Select>
+                      </label>
+                      <label className="block">
+                        <span className={CELL_LABEL}>{t('savedTeams.firstName')}</span>
+                        <Input value={s.first_name} onChange={e => updateStaff(s.key, { first_name: e.target.value })} aria-label={t('savedTeams.firstName')} />
+                      </label>
+                      <label className="block">
+                        <span className={CELL_LABEL}>{t('savedTeams.lastName')}</span>
+                        <Input value={s.last_name} onChange={e => updateStaff(s.key, { last_name: e.target.value })} aria-label={t('savedTeams.lastName')} invalid={!!rowErrors[`staff:${i}`]} required />
+                      </label>
+                      <label className="block">
+                        <span className={CELL_LABEL}>{t('savedTeams.license')}</span>
+                        <Input value={s.license_number} onChange={e => updateStaff(s.key, { license_number: e.target.value })} aria-label={t('savedTeams.license')} maxLength={40} />
+                      </label>
+                      <div className="flex items-center justify-end gap-1">
+                        {clubPlayers && (
+                          <ClubShield
+                            person={club}
+                            fill={fill}
+                            onFill={() => updateStaff(s.key, fill)}
+                            onLink={() => setLinking({ list: 'staff', key: s.key, query: s.last_name })}
+                          />
+                        )}
+                        <IconButton icon={X} label={`${t('common.delete', 'Delete')} ${s.last_name || ''}`.trim()} onClick={() => setStaff(list => list.filter(x => x.key !== s.key))} />
+                      </div>
+                    </div>
+                    <InlineError error={rowErrors[`staff:${i}`]} className="mt-1" />
+                  </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="positive" onClick={saveRoster} loading={savingRoster} disabled={!online || savingRoster} data-testid="save-roster">{t('savedTeams.saveRoster')}</Button>
+        <InlineError error={rosterError} />
+      </div>
+      <ClubPlayerPickerModal
+        open={clubPicker}
+        onClose={() => setClubPicker(false)}
+        onPick={addFromClub}
+        players={offered}
+        isTaken={(c) => finder.find(clubPersonToPlayer(c)) !== undefined}
+        numberOf={savedNumberOf}
+      />
+      <ClubPlayerPickerModal
+        open={officialPicker}
+        mode="officials"
+        onClose={() => setOfficialPicker(false)}
+        onPick={officialFromClub}
+        players={people}
+        search={clubPlayers?.search || null}
+        roles={staffRoles}
+        initialRole={STAFF_ROLES.find((r) => !officialOfRole(staff, r)) || STAFF_ROLES[0]}
+        rolesOf={(c) => officialRolesOf(staff, c)}
+        holderOf={(role) => named(officialOfRole(staff, role)) || null}
+      />
+      <ClubPlayerPickerModal
+        open={!!linking}
+        mode="link"
+        onClose={() => setLinking(null)}
+        onPick={linkRow}
+        players={(linking?.list === 'players' ? offered : people).filter((c) => !c.manual)}
+        search={linking?.list === 'players' ? null : searchUploaded}
+        initialQuery={linking?.query || ''}
+      />
+      <ClubOfferModal
+        open={!!clubOffer}
+        offer={clubOffer?.offer}
+        noLicence={clubOffer?.noLicence}
+        clubName={clubName}
+        busy={savingRoster}
+        onCancel={() => setClubOffer(null)}
+        onSave={answerOffer}
+      />
+    </div>
+  )
+}
+
+/** The club's players offered to a team's player rows: the players list, of the team's gender (and those without one). */
+export function clubPersonOffer(clubPlayers) {
+  return clubPlayersForGender(clubPlayers?.players || [], clubPlayers?.gender ?? null)
+}
+
+/**
+ * Everyone of the club's lists once, with `lists`, for the team officials (no
+ * gender filter); a server before `people` gives the players list only.
+ */
+export function clubPeopleOf(clubPlayers) {
+  if (Array.isArray(clubPlayers?.people)) return clubPlayers.people
+  return (clubPlayers?.players || []).map((p) => ({ ...p, lists: ['players'] }))
+}
+
+/**
+ * The beach pair: two fixed slots (player 1 and player 2, no libero, captain
+ * or active flags; the captain is chosen per match in OpenBeach) and at most
+ * one coach. One input per row on phones, the indoor row grid from sm on.
+ */
+function BeachRoster({ slots, coach, rowErrors, onSlot, onClearSlot, onCoach, onAddCoach, onRemoveCoach }) {
+  const { t } = useTranslation()
+  return (
+    <>
+      <section>
+        <SectionHeader title={t('savedTeams.players')} count={slots.filter(p => p.first_name.trim() || p.last_name.trim()).length} />
+        <p className="mb-1 mt-2 text-sm text-stone-500">{t('savedTeams.beachTeamHint')}</p>
+        <div className="divide-y divide-stone-100">
+          {slots.map(p => {
+            const error = rowErrors[`slot:${p.number}`]
+            const hintId = `beach-country-hint-${p.number}`
+            return (
+              <div key={p.number} className="py-2" data-testid="beach-slot">
+                <p className="mb-1 text-[13px] font-semibold text-stone-800">{t('savedTeams.beachPlayer', { number: p.number })}</p>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_8rem_5rem_auto] sm:items-center">
+                  <label className="block">
+                    <span className={CELL_LABEL}>{t('savedTeams.firstName')}</span>
+                    <Input value={p.first_name} onChange={e => onSlot(p.number, { first_name: e.target.value })} aria-label={`${t('savedTeams.firstName')} ${p.number}`} maxLength={80} />
+                  </label>
+                  <label className="block">
+                    <span className={CELL_LABEL}>{t('savedTeams.lastName')}</span>
+                    <Input value={p.last_name} onChange={e => onSlot(p.number, { last_name: e.target.value })} aria-label={`${t('savedTeams.lastName')} ${p.number}`} maxLength={80} invalid={!!error} />
+                  </label>
+                  <label className="block">
+                    <span className={CELL_LABEL}>{t('savedTeams.license')}</span>
+                    <Input value={p.license_number} onChange={e => onSlot(p.number, { license_number: e.target.value })} aria-label={`${t('savedTeams.license')} ${p.number}`} maxLength={40} />
+                  </label>
+                  <label className="block">
+                    <span className={CELL_LABEL}>{t('savedTeams.country')}</span>
+                    <Input
+                      value={p.country}
+                      onChange={e => onSlot(p.number, { country: e.target.value.toUpperCase() })}
+                      aria-label={`${t('savedTeams.country')} ${p.number}`}
+                      aria-describedby={hintId}
+                      title={t('savedTeams.countryHint')}
+                      placeholder="CHE"
+                      maxLength={3}
+                      className="font-mono uppercase"
+                    />
+                  </label>
+                  <div className="flex items-center justify-end">
+                    <IconButton icon={X} label={t('savedTeams.clearPlayer', { number: p.number })} onClick={() => onClearSlot(p.number)} />
+                  </div>
+                </div>
+                <p id={hintId} className="mt-1 text-[11px] text-stone-400">{t('savedTeams.countryHint')}</p>
+                <InlineError error={error} className="mt-1" />
+              </div>
+            )
+          })}
+        </div>
+      </section>
+
+      <section>
+        <SectionHeader title={t('savedTeams.coach')} action={!coach && (
+          <Button variant="ghost" size="sm" icon={Plus} onClick={onAddCoach}>{t('savedTeams.addCoach')}</Button>
+        )} />
+        {coach && (
+          <div className="py-2" data-testid="beach-coach">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_8rem_auto] sm:items-center">
+              <label className="block">
+                <span className={CELL_LABEL}>{t('savedTeams.firstName')}</span>
+                <Input value={coach.first_name} onChange={e => onCoach({ first_name: e.target.value })} aria-label={`${t('savedTeams.coach')}: ${t('savedTeams.firstName')}`} maxLength={80} />
+              </label>
+              <label className="block">
+                <span className={CELL_LABEL}>{t('savedTeams.lastName')}</span>
+                <Input value={coach.last_name} onChange={e => onCoach({ last_name: e.target.value })} aria-label={`${t('savedTeams.coach')}: ${t('savedTeams.lastName')}`} maxLength={80} invalid={!!rowErrors.coach} />
+              </label>
+              <label className="block">
+                <span className={CELL_LABEL}>{t('savedTeams.license')}</span>
+                <Input value={coach.license_number} onChange={e => onCoach({ license_number: e.target.value })} aria-label={`${t('savedTeams.coach')}: ${t('savedTeams.license')}`} maxLength={40} />
+              </label>
+              <div className="flex items-center justify-end">
+                <IconButton icon={X} label={t('savedTeams.removeCoach')} onClick={onRemoveCoach} />
+              </div>
+            </div>
+            <InlineError error={rowErrors.coach} className="mt-1" />
+          </div>
+        )}
+      </section>
+    </>
+  )
+}

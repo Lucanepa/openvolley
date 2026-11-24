@@ -1,0 +1,4 @@
+OpenVolley 2.4.3
+- Security update of the Android app runtime (Capacitor 8.5.3).
+- Pages load faster: the PDF code only loads when a PDF is made.
+- Updated libraries and build tools.

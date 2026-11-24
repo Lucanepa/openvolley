@@ -1,0 +1,98 @@
+import { describe, it, expect, beforeEach } from 'vitest'
+import { isLiveCode, normalizeLiveCode, newLiveCode, formatLiveCode, liveCodeUrl, localTvUrl, courtTokenFor, getLiveCode, setLiveCode, liveCodeForMatch, liveCodeFromUrl, LIVE_CODE_ALPHABET } from '../globalLive.js'
+
+beforeEach(() => { localStorage.clear() })
+
+describe('globalLive codes', () => {
+  it('makes 8-character codes from the alphabet without look-alikes', () => {
+    for (let i = 0; i < 50; i++) {
+      const c = newLiveCode()
+      expect(isLiveCode(c)).toBe(true)
+      expect([...c].every(ch => LIVE_CODE_ALPHABET.includes(ch))).toBe(true)
+    }
+    expect(LIVE_CODE_ALPHABET).not.toMatch(/[01IO]/)
+  })
+
+  it('takes what a person types', () => {
+    expect(normalizeLiveCode(' abcd-2345 ')).toBe('ABCD2345')
+    expect(normalizeLiveCode('abcd 2345')).toBe('ABCD2345')
+    expect(normalizeLiveCode('ABCD234O')).toBe(null) // O is not in the alphabet
+    expect(normalizeLiveCode('short')).toBe(null)
+    expect(formatLiveCode('ABCD2345')).toBe('ABCD 2345')
+    expect(liveCodeUrl('ABCD2345')).toBe('https://openvolley.app/tv/ABCD2345')
+    expect(liveCodeUrl('bad')).toBe(null)
+  })
+
+  it('every match carries the device\'s code once it opted in', () => {
+    expect(liveCodeForMatch({ global: true })).toBe(null)
+    setLiveCode('ABCD2345')
+    expect(getLiveCode()).toBe('ABCD2345')
+    expect(liveCodeForMatch({ global: true, test: true })).toBe('ABCD2345')
+    expect(liveCodeForMatch({ test: true })).toBe('ABCD2345')
+    expect(liveCodeForMatch({})).toBe('ABCD2345')
+    expect(liveCodeForMatch(null)).toBe(null)
+    setLiveCode(null)
+    expect(liveCodeForMatch({ global: true })).toBe(null)
+    setLiveCode('not a code')
+    expect(getLiveCode()).toBe(null)
+  })
+
+  it('a code saved by the first version (Global only) is moved over once', () => {
+    localStorage.setItem('ov.globalLive.code', 'WXYZ2345')
+    expect(getLiveCode()).toBe('WXYZ2345')
+    expect(localStorage.getItem('ov.liveScreen.code')).toBe('WXYZ2345')
+    expect(localStorage.getItem('ov.globalLive.code')).toBe(null)
+  })
+
+  it('reads the code a livescore URL asks for', () => {
+    expect(liveCodeFromUrl('?t=abcd2345')).toBe('ABCD2345')
+    expect(liveCodeFromUrl('?match=1')).toBe(null)
+    expect(liveCodeFromUrl('?t=<script>')).toBe(null)
+  })
+})
+
+describe('TV links and court tokens', () => {
+  it('a venue relay serves the same TV page at its own address', () => {
+    expect(localTvUrl('http://192.168.1.20:8080/', 'ABCD2345')).toBe('http://192.168.1.20:8080/tv/ABCD2345')
+    expect(localTvUrl('javascript:alert(1)', 'ABCD2345')).toBe(null)
+    expect(localTvUrl('http://x', 'bad')).toBe(null)
+  })
+
+  it('a match\'s court token is 32 hex characters from its own secret key, the same every time', async () => {
+    const a = await courtTokenFor({ globalKey: 'k'.repeat(22) })
+    expect(a).toMatch(/^[0-9a-f]{32}$/)
+    expect(await courtTokenFor({ globalKey: 'k'.repeat(22) })).toBe(a)
+    expect(await courtTokenFor({ globalKey: 'j'.repeat(22) })).not.toBe(a)
+    expect(await courtTokenFor({})).toBe(null)
+  })
+})
+
+describe('the court of this device', () => {
+  it('is optional, 1-99, and gives a TV address for that court alone', async () => {
+    const { getLiveCourt, setLiveCourt, liveCourtUrl } = await import('../globalLive.js')
+    expect(getLiveCourt()).toBe(null)
+    setLiveCourt('3')
+    expect(getLiveCourt()).toBe(3)
+    expect(liveCourtUrl('ABCD2345', 3)).toBe('https://openvolley.app/tv/ABCD2345/3')
+    setLiveCourt(0)
+    expect(getLiveCourt()).toBe(3) // refused, kept
+    setLiveCourt(null)
+    expect(getLiveCourt()).toBe(null)
+    expect(liveCourtUrl('ABCD2345', null)).toBe(null)
+  })
+})
+
+describe('the public livescore list (opt-out per device)', () => {
+  beforeEach(() => localStorage.clear())
+  it('lists a Global match unless the device turned it off; never a league, test or Easy match', async () => {
+    const { getLiveListed, setLiveListed, liveListedForMatch } = await import('../globalLive.js')
+    expect(getLiveListed()).toBe(true)
+    expect(liveListedForMatch({ global: true })).toBe(true)
+    for (const m of [{ test: true }, { test: true, easy: true }, { test: false, seed_key: 'g' }, null]) expect(liveListedForMatch(m)).toBe(false)
+    setLiveListed(false)
+    expect(getLiveListed()).toBe(false)
+    expect(liveListedForMatch({ global: true })).toBe(false)
+    setLiveListed(true)
+    expect(liveListedForMatch({ global: true })).toBe(true)
+  })
+})

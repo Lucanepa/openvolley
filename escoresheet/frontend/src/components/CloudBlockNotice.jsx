@@ -1,0 +1,117 @@
+import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { CloudOff } from 'lucide-react'
+import { openRestore } from '../utils/manageNav'
+import { isStaleClosedCopy } from '../utils/matchReopen'
+import { RESTORE_REFUSED, splitRefusedRestore } from '../utils/refusedRestore'
+import { cn, FOCUS_RING } from '../ui'
+
+/**
+ * The text of a match's cloud block (set by the sync queue when the server
+ * refused the match for good, spec 6.7).
+ * @returns {{key: string, params: object, join: boolean, parts?: boolean}|null}
+ *   parts: the refused restore can be sent in parts (splitRefusedRestore)
+ */
+export function cloudBlockMessage(block, match, t) {
+  if (!block?.code) return null
+  const claim = block.claim || null
+  const game = claim?.game_n ?? match?.gameN ?? match?.game_n ?? match?.matchInfo?.gameN ?? ''
+  switch (block.code) {
+    case 'OV_SCORER_REQUIRED':
+      return { key: 'cloudBlock.scorerRequired', params: {}, join: false }
+    // A copy still scored here differs from the server's closed one (it was
+    // reopened or restored after the close, 2026-10-23): say what to do.
+    // Match End of a copy that ended here keeps the plain sentence.
+    case 'OV_MATCH_CLOSED':
+      return { key: isStaleClosedCopy(match) ? 'cloudBlock.matchClosedDiffers' : 'cloudBlock.matchClosed', params: {}, join: false }
+    // db/019: another device scores the match now (ScorerMovedModal on the scoring screens)
+    case 'OV_SCORER_MOVED':
+      return { key: 'cloudBlock.scorerMoved', params: {}, join: false }
+    // db/018: the home games of the account's clubs only
+    case 'OV_CLUB_REQUIRED':
+      return { key: 'cloudBlock.clubRequired', params: {}, join: false }
+    case 'OV_NOT_YOUR_CLUB':
+      return { key: 'cloudBlock.notYourClub', params: { game }, join: false }
+    case 'OV_GAME_NOT_IN_SCHEDULE':
+      return { key: 'cloudBlock.gameNotInSchedule', params: { game }, join: false }
+    case 'OV_GAME_TAKEN':
+      if (claim?.mine) return { key: 'cloudBlock.gameTakenMine', params: { game }, join: true }
+      if (claim) {
+        return {
+          key: 'cloudBlock.gameTaken',
+          params: {
+            game,
+            name: claim.scorer_name || t('manage.games.unknownScorer'),
+            status: claim.status ? t(`manage.status.${claim.status}`, claim.status) : '–'
+          },
+          join: true
+        }
+      }
+      return { key: 'cloudBlock.gameTakenUnknown', params: {}, join: true }
+    // A restore the server refused with its own code holds the match's later
+    // writes (useSyncQueue recordRestoreRefused): which game, and what to do.
+    // Parts only where the refusal is about its size (block.parts)
+    case RESTORE_REFUSED: {
+      const reason = block.reason || '–'
+      const parts = block.parts === true
+      return game !== ''
+        ? { key: 'cloudBlock.restoreNotSent', params: { game, reason }, join: false, parts }
+        : { key: 'cloudBlock.restoreNotSentNoGame', params: { reason }, join: false, parts }
+    }
+    default:
+      return null
+  }
+}
+
+/** Amber notice "Not synced: …" for a match the server refused. */
+export default function CloudBlockNotice({ match, className = '' }) {
+  const { t } = useTranslation()
+  // The block the parts were queued for (its `at`): a part refused again
+  // records a new one, and the button is there again to split it further
+  const [partsFor, setPartsFor] = useState(null)
+  const blockAt = match?.cloudBlock?.at ?? 0
+  const sendingParts = partsFor !== null && partsFor === blockAt
+  const msg = cloudBlockMessage(match?.cloudBlock, match, t)
+  if (!msg) return null
+  const gameN = match?.cloudBlock?.claim?.game_n ?? match?.gameN ?? match?.game_n ?? null
+  return (
+    <div className={cn('ov-kit', className)}>
+      {/* Wraps: where the text and the button do not both fit (a phone), the
+          button goes under the text instead of squeezing it into a column */}
+      <div role="status" data-testid="cloud-block-notice" className="flex flex-wrap items-start gap-x-2 gap-y-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+        <span className="flex min-w-0 flex-[1_1_14rem] items-start gap-2">
+          <CloudOff size={14} aria-hidden="true" className="mt-0.5 shrink-0" />
+          <span className="min-w-0 flex-1">{msg.parts ? `${t(msg.key, msg.params)} ${t('cloudBlock.restoreNotSentParts')}` : t(msg.key, msg.params)}</span>
+        </span>
+        {msg.join && (
+          <button
+            type="button"
+            onClick={() => openRestore({ gameN })}
+            className={cn('ml-auto shrink-0 rounded border border-amber-300 bg-white px-2 py-0.5 font-semibold text-amber-800 hover:bg-amber-100', FOCUS_RING)}
+          >
+            {t('cloudBlock.joinWithPin')}
+          </button>
+        )}
+        {msg.parts && match?.seed_key && (
+          <button
+            type="button"
+            disabled={sendingParts}
+            onClick={async () => {
+              setPartsFor(blockAt)
+              try {
+                // (none queued: the restore is being retried right now)
+                if (await splitRefusedRestore(match.seed_key) === 0) setPartsFor(null)
+              } catch (err) {
+                console.warn('[CloudBlockNotice] Could not queue the restore in parts:', err?.message)
+                setPartsFor(null)
+              }
+            }}
+            className={cn('ml-auto shrink-0 rounded border border-amber-300 bg-white px-2 py-0.5 font-semibold text-amber-800 hover:bg-amber-100 disabled:cursor-default disabled:opacity-60', FOCUS_RING)}
+          >
+            {sendingParts ? t('cloudBlock.sendingInParts') : t('cloudBlock.sendInParts')}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}

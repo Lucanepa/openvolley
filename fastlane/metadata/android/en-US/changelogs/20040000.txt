@@ -1,0 +1,12 @@
+OpenVolley 2.4.0
+- Scoresheet: new logo, actual times, no T marks.
+- Sign on a phone via a QR code.
+- Officials approve the result with account and PIN.
+- Corrections: guided match changes.
+- Activity log and undo history, synced.
+- Connect tablets in 3 steps.
+- Every action updates all screens at once.
+- Fixes: substitution limit, time-outs, set 5.
+- Rosters show positions and sanctions.
+- Line-up with optional game captain; grouped menu.
+- New date/time pickers; open or share the saved PDF.

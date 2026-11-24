@@ -1,0 +1,183 @@
+/**
+ * Native auto-backup for the OpenVolley apps (desktop Tauri, Android Capacitor).
+ * One engine per app session, shared by useAutoBackup (App) and the scoreboard
+ * Options modal.
+ */
+
+import { useEffect, useMemo, useSyncExternalStore } from 'react'
+import { detectBackupPlatform, isNativeBackupPlatform, createPlatformStore, capacitorOs } from './platform'
+import { createNativeBackupEngine } from './engine'
+import { isContinuedElsewhere } from '../matchReopen'
+
+export { detectBackupPlatform, isNativeBackupPlatform } from './platform'
+export { subscribeMatchWrites } from './matchWriteHook'
+
+let enginePromise = null
+let engine = null
+const EMPTY_STATUS = { folder: null, lastBackup: null, lastFile: null, error: null, count: 0 }
+
+/** The app's backup engine, or null in a browser. */
+export function getNativeBackupEngine() {
+  if (!isNativeBackupPlatform(detectBackupPlatform())) return Promise.resolve(null)
+  if (!enginePromise) {
+    enginePromise = (async () => {
+      const [store, { exportMatchData }, { db }, sealer] = await Promise.all([
+        createPlatformStore(),
+        import('../backupManager'),
+        import('../../db/db'),
+        import('../backupFile').then(m => m.sessionSealer())
+      ])
+      // No new file of a copy another device went on with: its state is older
+      // than the match's (2026-10-29, match 406970). The match row alone gives
+      // the PINs whose keys are derived when the match is opened. The session's
+      // sealer: the cloud copy and the downloads share the match's PIN keys.
+      engine = createNativeBackupEngine({
+        store,
+        exportMatch: exportMatchData,
+        readMatch: (matchId) => db.matches.get(matchId),
+        sealer,
+        skipMatch: isContinuedElsewhere,
+        // Every file also goes to the USB sticks plugged in (desktop; utils/stickBackup)
+        onWritten: (matchId, written) => import('../stickBackup').then(m => m.mirrorWrittenToSticks(matchId, written))
+      })
+      engine.subscribe(emit)
+      emit()
+      return engine
+    })().catch((e) => {
+      console.error('[NativeBackup] cannot start:', e)
+      enginePromise = null
+      return null
+    })
+  }
+  return enginePromise
+}
+
+// useSyncExternalStore plumbing (works before the engine has loaded)
+const listeners = new Set()
+function emit() {
+  for (const l of listeners) l()
+}
+function subscribe(listener) {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
+}
+const getSnapshot = () => (engine ? engine.getStatus() : EMPTY_STATUS)
+const noSubscribe = () => () => {}
+
+/**
+ * Live backup status { folder, lastBackup, lastFile, error, count } for the UI.
+ * paused: no re-render at each backup file (App while scoring, where nothing
+ * of it is shown); the status as it was when it paused, read fresh again
+ * once unpaused.
+ */
+export function useNativeBackupStatus({ paused = false } = {}) {
+  const frozen = useMemo(() => {
+    if (!paused) return null
+    const snapshot = getSnapshot()
+    return () => snapshot
+  }, [paused])
+  const status = useSyncExternalStore(frozen ? noSubscribe : subscribe, frozen || getSnapshot, frozen || getSnapshot)
+  useEffect(() => {
+    getNativeBackupEngine().then(e => e?.loadFolder())
+  }, [])
+  return status
+}
+
+/** How long the app's quit waits at most for the last backup file. */
+export const QUIT_BACKUP_WAIT_MS = 1500
+
+/**
+ * Before the app quits (appLifecycle), and on Android when it goes to the
+ * background: the backups queued now are written at once (the last scoring
+ * write's file, still in its quiet window or being written); resolves when
+ * they are, or after timeoutMs at the latest, so a quit never waits longer,
+ * whatever the disk does. At once in a browser and when the engine never
+ * started. Never throws.
+ */
+export async function flushNativeBackups(timeoutMs = QUIT_BACKUP_WAIT_MS) {
+  if (!enginePromise) return
+  let timer
+  try {
+    await Promise.race([
+      enginePromise.then(e => e?.flush({ writesOnly: true })),
+      new Promise(resolve => { timer = setTimeout(resolve, timeoutMs) })
+    ])
+  } catch (e) {
+    console.warn('[NativeBackup] last backup before quitting:', e?.message || e)
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+// After the start's own work (the database, the first screen)
+export const HOUSEKEEPING_DELAY_MS = 5000
+
+/**
+ * At app start (main.jsx), a few seconds in: in the Android and iOS apps the
+ * files older versions left in the Documents folder are moved into the app's
+ * own folder (once per install, androidFiles.moveLegacyFiles; iOS:
+ * Library/NoCloud, owner decision 9) and the saved scoresheet PDFs older
+ * than the backups' 30 days are deleted; on every app the rotation of the
+ * backup folders runs (it waited for the first backup of a session, so a
+ * tablet that was only switched on kept every old file). Nothing in a
+ * browser. Never throws.
+ * Only in an app that says which OS it runs on: on iOS Documents, Data and
+ * External are one folder, so the move needs the iOS app folder
+ * (platform.appFilesDirectories) as its target.
+ */
+export async function startNativeFileHousekeeping({
+  delayMs = HOUSEKEEPING_DELAY_MS,
+  platform = detectBackupPlatform(),
+  win = typeof window !== 'undefined' ? window : undefined
+} = {}) {
+  if (!isNativeBackupPlatform(platform)) return
+  await new Promise(resolve => setTimeout(resolve, delayMs))
+  try {
+    const os = platform === 'capacitor' ? capacitorOs(win) : null
+    if (os === 'android' || os === 'ios') {
+      const [fs, { moveLegacyFiles, pruneScoresheetPdfs }] = await Promise.all([
+        import('@capacitor/filesystem'),
+        import('./androidFiles')
+      ])
+      await moveLegacyFiles(fs, { os }).catch(e => console.warn('[AndroidFiles] moving the old files:', e?.message || e))
+      await pruneScoresheetPdfs(fs, { os }).catch(e => console.warn('[AndroidFiles] PDF clean-up:', e?.message || e))
+    }
+    const engine = await getNativeBackupEngine()
+    await engine?.cleanup()
+  } catch (e) {
+    console.warn('[NativeBackup] start-up clean-up:', e?.message || e)
+  }
+}
+
+/**
+ * Options, Export to Documents (Android): each match's newest backup and the
+ * saved PDFs copied to a new Documents/OpenVolley/export-<time> folder.
+ * Resolves to androidFiles.exportToDocuments's result (a file that could
+ * not be copied is counted in `failed`); throws when Documents cannot be
+ * written at all.
+ */
+export async function exportNativeFilesToDocuments() {
+  const [fs, { exportToDocuments }] = await Promise.all([
+    import('@capacitor/filesystem'),
+    import('./androidFiles')
+  ])
+  return exportToDocuments(fs)
+}
+
+/** Opens the backup folder in the file manager (desktop). */
+export async function openNativeBackupFolder() {
+  const e = await getNativeBackupEngine()
+  if (!e?.store?.canOpenFolder) return false
+  return e.store.openFolder()
+}
+
+/**
+ * Native file picker opened on the backup folder (desktop). Resolves to the
+ * parsed backup, null when cancelled, or undefined when the platform has no
+ * native picker (use the browser file input instead).
+ */
+export async function pickNativeBackupFile() {
+  const e = await getNativeBackupEngine()
+  if (!e?.store?.canPickFile) return undefined
+  return e.store.pickFile()
+}

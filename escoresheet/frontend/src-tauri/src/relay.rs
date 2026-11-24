@@ -1,0 +1,6128 @@
+//! In-process LAN relay (Rust / axum) for the Tauri desktop app.
+//!
+//! The Rust counterpart of the Node relay `server.js`: an HTTP server that
+//! serves the embedded frontend + `/api/*` match endpoints, plus a WebSocket
+//! relay so the desktop scoretable can push live match data and referee/bench/
+//! livescore tablets on the LAN can subscribe.
+//!
+//! Ports mirror the JS relay so the existing client code connects unchanged:
+//!   - HTTP on 5173 (static site + API)
+//!   - WebSocket on 8080
+//! (OpenBeach: 5174 / 8081, src/flavour.rs, so both apps run on one laptop.)
+//!
+//! The WS message protocol and the `/api/*` shapes are a port of
+//! `electron/lanRelayCore.cjs` (shared by `server.js` and the Vite dev
+//! plugin) — clients talk to all of them interchangeably, so keep
+//! them in sync. In short:
+//!   - match-full-data / match-data-update are FLAT bundles with PIN-free `match`;
+//!   - match ids are always strings;
+//!   - a socket proves the scoreboard role for a match with the match's game PIN
+//!     (first sync of a new match claims it); only proven sockets may write,
+//!     send actions / live-state, delete or clear (their own) matches;
+//!   - PINs are validated by the relay from its own store, never by a WS client,
+//!     and /api/match/validate-pin + by-game-number are rate limited per IP;
+//!   - an id nobody owns is reusable after 60 s when its match is finished, after
+//!     10 min otherwise, and its displaced game PIN may reclaim it once; wrong-PIN
+//!     claims are limited per IP / connection and a LAN IP may own few ids;
+//!   - a sync names its device with its claim of the match (`device` { id,
+//!     claim }); once another device's sync took the room over, a sync that
+//!     still carries a claim it took over is refused ('scorer-moved'), until
+//!     the device that took it over has been gone as long as a stale takeover
+//!     waits; the sockets of the previous device stop owning the room and are
+//!     told ({ type: 'scorer-moved' }). A sync without a claim is not checked;
+//!     the claims a sync names as the copies its device continued the match
+//!     from (`device.supersedes`, a backup restore) are refused the same way,
+//!     and since every sync of the newer copy names them, a restart of the
+//!     relay does not forget them;
+//!   - the liveState is kept across syncs only for the same owner / game PIN and
+//!     is mirrored as `data: { liveState }` for the LedBox bridge;
+//!   - only the relay host itself may take / release the main-instance lock, a
+//!     lock of the "/" page only: several courts share one relay, each scorer
+//!     claims its own match, /api/match/list lists them all, and a LAN browser
+//!     opts in to score another court with `/?court=other`;
+//!   - openbeach's team1 / team2 names (teams, players, PINs, bench connections)
+//!     are taken as home / away, its PINs are secret, and validate-pin
+//!     `{ sport: "beach" }` finds beach matches only;
+//!   - subscribers get the bundle (rosters, events) and match-actions only after
+//!     proving a PIN of the match (subscribe-match `pin`, or the X-OV-Match-Pin
+//!     header on GET /api/match/:id): the referee PIN, an enabled bench PIN or
+//!     the game PIN. Everyone else gets the public summary (`access: "summary"`:
+//!     teams, status, set scores, live state). Wrong PINs are limited per
+//!     connection / IP.
+//!   - `scorer-presence` { matchId, present, timestamp }: whether an open socket
+//!     holds the room's scoreboard claim (an accepted sync, match-data /
+//!     match-update answer); last in the answer to subscribe-match (false for
+//!     a room not on the relay yet), and to the room's subscribers, not its
+//!     scoreboards, when it flips (after the match-data-update of the sync that
+//!     proved it; the last claiming socket closed or lost the claim). Takeovers
+//!     keep it true, no repeats; a deleted room says match-deleted only.
+//!   - Sign on phone (`sign.rs`, docs/qr-signing-spec.md 4): POST /api/sign/start|
+//!     open|submit|wait|close and the phone page at /sign with its strict CSP.
+//!     `start` from the relay host itself, or with X-OV-Match-Pin = the game PIN of
+//!     the body's matchKey (wrong PINs counted with GET /api/match/:id's).
+
+use std::collections::{HashMap, HashSet};
+use std::net::{IpAddr, SocketAddr};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
+
+use axum::{
+    body::Body,
+    extract::{
+        connect_info::ConnectInfo,
+        ws::{Message, WebSocket, WebSocketUpgrade},
+        Path, Query, State,
+    },
+    http::{HeaderMap, HeaderValue, Method, Request, StatusCode, Uri},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
+    routing::{get, post},
+    Json, Router,
+};
+use futures_util::{SinkExt, StreamExt};
+use rust_embed::RustEmbed;
+use serde_json::{json, Value};
+use tokio::sync::{mpsc, oneshot, Mutex};
+
+/// The frontend this app serves: OpenVolley's ../dist, or the openbeach
+/// build for OpenBeach (build.rs sets OV_DIST from the Tauri config).
+#[derive(RustEmbed)]
+#[folder = "$OV_DIST"]
+struct Assets;
+
+/// PIN/secret fields that must never be returned to a client. The team1* /
+/// team2* ones are openbeach's names for the bench and upload PINs (team1Pin,
+/// older builds team1TeamPin); matchPin is openbeach's PIN that protects the
+/// match on the scorer's device. Same list as lanRelayCore.cjs / backend server.js.
+const MATCH_SECRET_FIELDS: &[&str] = &[
+    "refereePin",
+    "homeTeamPin",
+    "awayTeamPin",
+    "homeTeamUploadPin",
+    "awayTeamUploadPin",
+    "connection_pins",
+    "connectionPins",
+    "game_pin",
+    "gamePin",
+    "team1Pin",
+    "team2Pin",
+    "team1TeamPin",
+    "team2TeamPin",
+    "team1UploadPin",
+    "team2UploadPin",
+    "team1TeamUploadPin",
+    "team2TeamUploadPin",
+    "matchPin",
+];
+
+/// Personal data the relay never hands out. Subscribing needs no PIN and the
+/// room key is the match's public external_id, so every match object and
+/// bundle that leaves the relay is public (only the scorer, who sent it, has
+/// the full bundle). The match and team objects are the scorer's free-form
+/// rows, so they leave through allowlists. One list for the three relays:
+/// ../shared/relayPrivateFields.json (lanRelayCore.cjs keeps a checked copy,
+/// backend publicColumns.js follows it).
+struct RelayFields {
+    person_private: Vec<String>,
+    match_private: Vec<String>,
+    match_roster: Vec<String>,
+    match_person: Vec<String>,
+    match_team: Vec<String>,
+    public_match: Vec<String>,
+    public_team: Vec<String>,
+    team_people: Vec<String>,
+}
+
+static RELAY_FIELDS: std::sync::LazyLock<RelayFields> = std::sync::LazyLock::new(|| {
+    let v: Value = serde_json::from_str(include_str!("../../shared/relayPrivateFields.json")).expect("relayPrivateFields.json");
+    let list = |k: &str| -> Vec<String> {
+        v.get(k).and_then(|l| l.as_array()).expect(k).iter().filter_map(|x| x.as_str().map(str::to_string)).collect()
+    };
+    RelayFields {
+        person_private: list("personPrivateFields"),
+        match_private: list("matchPrivateFields"),
+        match_roster: list("matchRosterFields"),
+        match_person: list("matchPersonFields"),
+        match_team: list("matchTeamFields"),
+        public_match: list("publicMatchFields"),
+        public_team: list("publicTeamFields"),
+        team_people: list("teamPeopleFields"),
+    }
+});
+
+/// What a subscriber without a PIN gets of a match (lanRelayCore
+/// `relaySummaryBundle`, backend publicColumns.js): allowlists.
+const SUMMARY_MATCH_FIELDS: &[&str] = &[
+    "id", "status", "gameNumber", "gameN", "game_n", "seed_key", "seedKey", "external_id", "externalId",
+    "scheduledAt", "scheduled_at", "sport_type", "sportType", "test", "league", "best_of", "bestOf",
+    "coinTossTeamA", "coinTossTeamB", "homeShortName", "awayShortName", "homeTeamName", "awayTeamName",
+    "refereeConnectionEnabled", "homeTeamConnectionEnabled", "awayTeamConnectionEnabled",
+    "_syncedAt", "_syncedSeq", "_syncSession",
+];
+const SUMMARY_TEAM_FIELDS: &[&str] = &["name", "shortName", "short_name", "color"];
+const SUMMARY_SET_FIELDS: &[&str] = &[
+    "id", "index", "homePoints", "awayPoints", "home_points", "away_points", "finished", "startTime", "endTime",
+];
+/// Wrong PINs offered for a match's bundle per connection / IP per window.
+const PIN_FAILURE_LIMIT: u32 = 5;
+const MAX_ACCESS_KEYS: usize = 16;
+
+/// Same cap as the Node relays / cloud relay.
+const WS_MAX_MESSAGE: usize = 10 * 1024 * 1024;
+const MAX_MATCH_ID_LEN: usize = 128;
+/// A FINISHED match whose scoreboard left this long ago may be claimed by
+/// another scoreboard (Dexie ids restart at 1 on every device). Far longer than
+/// a Wi-Fi blip, so a live scoreboard is never displaced.
+const ORPHAN_TAKEOVER: Duration = Duration::from_secs(60);
+/// An UNFINISHED match is claimable only after this long without an owner.
+const STALE_TAKEOVER: Duration = Duration::from_secs(10 * 60);
+/// Ping of every connection (the Node relays' HEARTBEAT_MS, the cloud relay's
+/// createHeartbeat): one that has not answered the previous ping is ended. A
+/// phone that leaves the hall's Wi-Fi (or sleeps) sends no close, and its
+/// connection kept its rooms, and a scoreboard's its matches (no stale
+/// takeover could start), until TCP gave up, minutes or hours later.
+/// Browsers, the desktop apps and the LedBox bridge answer pings on their own.
+#[cfg(not(test))]
+const HEARTBEAT: Duration = Duration::from_secs(30);
+#[cfg(test)]
+const HEARTBEAT: Duration = Duration::from_millis(300);
+/// Devices a room remembers as having lost it to another (sync `device.claim`).
+const MAX_MOVED_DEVICES: usize = 16;
+const MAX_CLAIM_LEN: usize = 64;
+/// Claims a sync names as the copies it continued from (`device.supersedes`),
+/// and those a room remembers.
+const MAX_SUPERSEDED_CLAIMS: usize = 8;
+const MAX_SUPERSEDED_PER_ROOM: usize = 32;
+/// Rate-limit window shared by every per-IP / per-connection counter.
+const RATE_WINDOW: Duration = Duration::from_secs(60);
+/// Wrong game-PIN claims per IP / connection per window before claims needing
+/// proof are refused without comparing the PIN (no guessing oracle). One limit
+/// for both on purpose: on the venue LAN every scorer device has its own
+/// address, unlike the cloud relay behind venue NATs (per-IP limit 20 there).
+const CLAIM_FAILURE_LIMIT: u32 = 5;
+/// Distinct match ids one (non-loopback) IP may own, and new ids per window.
+/// Sized for a venue with several courts: every court tablet has its own
+/// address, the relay host (loopback) is exempt, and a tablet keeps the ids of
+/// the matches it scored on one connection until it releases them
+/// (clear-all-matches / delete-match) or reconnects, so 8 covers a block of
+/// matches on one court. Same value as lanRelayCore.cjs (the cloud relay: 20).
+const MAX_OWNED_PER_IP: usize = 8;
+const NEW_CLAIM_LIMIT: u32 = 10;
+/// Same per-IP budgets as the Node relays' HTTP endpoints.
+const VALIDATE_PIN_LIMIT: u32 = 60;
+const BY_GAME_NUMBER_LIMIT: u32 = 60;
+const FINISHED_STATUSES: &[&str] = &["final", "ended", "completed", "finished"];
+
+/// Sockets the relay takes in all and from one address, before the upgrade
+/// (lanRelayCore MAX_SOCKETS / MAX_SOCKETS_PER_IP). The relay host itself
+/// (loopback) has its own budget of the per-address size.
+const MAX_SOCKETS: usize = 500;
+const MAX_SOCKETS_PER_IP: usize = 50;
+/// Bytes a connection may have waiting to be sent: a client that falls this
+/// far behind (a socket that does not read) is dropped, not buffered for.
+const MAX_QUEUED_BYTES: usize = 16 * 1024 * 1024;
+/// Messages a (non-loopback) connection may send per window; past it they are
+/// refused. A scorer sends a few per rally.
+const MESSAGE_LIMIT: u32 = 600;
+const MAX_SUBSCRIPTIONS_PER_CONN: usize = 32;
+/// Room store bounds (lanRelayCore MAX_ROOMS ...): rooms in all, rooms and
+/// synced bytes per creating address (counted also after its socket closed),
+/// and how long a room of a LAN device with no scoreboard and no subscriber
+/// is kept.
+const MAX_ROOMS: usize = 200;
+const MAX_ROOMS_PER_IP: usize = 16;
+const MAX_ROOM_BYTES_PER_IP: usize = 64 * 1024 * 1024;
+const ROOM_IDLE_EVICT: Duration = Duration::from_secs(30 * 60);
+/// Wrong PINs for one match from every address together, and for all
+/// matches, per PIN_BUDGET_WINDOW: a device that changes its address (or
+/// opens many sockets) gets no fresh budget.
+const MATCH_PIN_FAILURE_LIMIT: u32 = 30;
+const GLOBAL_PIN_FAILURE_LIMIT: u32 = 300;
+const PIN_BUDGET_WINDOW: Duration = Duration::from_secs(10 * 60);
+/// POST /api/match/validate-pin: wrong PINs per address per PIN_BUDGET_WINDOW
+/// (backend: 20 per address and type), and all checks per address per minute.
+const VALIDATE_PIN_FAILURES: u32 = 10;
+/// GET /api/match/:id for a match the relay does not hold (asks the
+/// scoreboards) and PATCH /api/match/:id, per address per minute; an id no
+/// scoreboard had is answered 404 for MISS_CACHE without asking again.
+const MATCH_REQUEST_LIMIT: u32 = 30;
+const PATCH_LIMIT: u32 = 10;
+const MISS_CACHE: Duration = Duration::from_secs(10);
+/// GET /api/global/live/<code> per address and minute (server.js
+/// GLOBAL_LIVE_RATE_LIMIT_MAX): a TV polls about every 5 s.
+const GLOBAL_LIVE_LIMIT: u32 = 600;
+
+/// A connection's outgoing queue: unbounded channel with a byte count; over
+/// MAX_QUEUED_BYTES the message is refused and the connection is cut.
+#[derive(Clone)]
+struct Tx {
+    inner: mpsc::UnboundedSender<Message>,
+    queued: Arc<AtomicUsize>,
+    cut: Arc<tokio::sync::Notify>,
+}
+
+fn message_len(m: &Message) -> usize {
+    match m {
+        Message::Text(t) => t.len(),
+        Message::Binary(b) => b.len(),
+        _ => 0,
+    }
+}
+
+impl Tx {
+    fn send(&self, msg: Message) -> Result<(), ()> {
+        let n = message_len(&msg);
+        if self.queued.fetch_add(n, Ordering::SeqCst) + n > MAX_QUEUED_BYTES {
+            self.queued.fetch_sub(n, Ordering::SeqCst);
+            self.cut.notify_one();
+            return Err(());
+        }
+        self.inner.send(msg).map_err(|_| {
+            self.queued.fetch_sub(n, Ordering::SeqCst);
+        })
+    }
+}
+
+fn tx_pair() -> (Tx, mpsc::UnboundedReceiver<Message>) {
+    let (inner, rx) = mpsc::unbounded_channel::<Message>();
+    (Tx { inner, queued: Arc::new(AtomicUsize::new(0)), cut: Arc::new(tokio::sync::Notify::new()) }, rx)
+}
+
+/// Who created a stored room and what it synced (MAX_ROOMS_PER_IP ...).
+struct Room {
+    ip: IpAddr,
+    bytes: usize,
+    idle_since: Option<std::time::Instant>,
+}
+
+/// A relay -> scoreboard request waiting for its answer.
+struct Pending {
+    tx: oneshot::Sender<Value>,
+    /// Response type that may answer it (e.g. "match-data-response").
+    response_type: String,
+    match_id: Option<String>,
+    /// Only these (proven scoreboard) connections were asked and may answer.
+    targets: HashSet<u64>,
+}
+
+/// What the relay knows about one WebSocket connection.
+struct ConnMeta {
+    ip: IpAddr,
+    /// 'subscriber' | 'referee' | 'bench' | 'livescore' (subscribe-match `device`
+    /// label, `role` is the old name): a label for /api/server/connections only.
+    role: String,
+    /// 'home' | 'away' (subscribe-match `team`), label only
+    team: Option<String>,
+    /// id this connection synced under (its Dexie id) -> room key (seed_key)
+    aliases: HashMap<String, String>,
+    /// room keys this connection sent PINs for, oldest first (see 'pins-required')
+    pin_keys: Vec<String>,
+    /// room key -> (PIN offered in subscribe-match, verified against the match yet)
+    access: HashMap<String, (String, bool)>,
+    connected_at: String,
+    /// the device its syncs named with a claim (see `note_scorer`)
+    scorer_device: Option<String>,
+    /// a display's announcement (subscribe-match device 'display'): its
+    /// settings page as kept (`display_settings_url`) and its order
+    display: Option<(Option<String>, u64)>,
+}
+
+const MAX_ALIASES: usize = 16;
+
+/// One fixed-window counter.
+struct Window {
+    count: u32,
+    start: std::time::Instant,
+}
+
+/// How a scoreboard claim was granted (see `claim`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ClaimKind {
+    Owner,
+    Proved,
+    New,
+    Open,
+    Takeover,
+    Reclaim,
+}
+
+pub struct AppState {
+    /// matchId -> bundle { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events, liveState? }
+    matches: Mutex<HashMap<String, Value>>,
+    main_instance: Mutex<Option<String>>,
+    clients: Mutex<HashMap<u64, Tx>>,
+    subs: Mutex<HashMap<String, HashSet<u64>>>,
+    /// connection id -> match ids it proved the scoreboard role for
+    owners: Mutex<HashMap<u64, HashSet<String>>>,
+    /// match id -> when its last owning connection left
+    orphaned_since: Mutex<HashMap<String, std::time::Instant>>,
+    /// connection id -> ip / role / connected time
+    conn_meta: Mutex<HashMap<u64, ConnMeta>>,
+    /// fixed-window counters: "fail:ip:..", "fail:ws:..", "new:..", "pin:..", "gn:.."
+    limits: Mutex<HashMap<String, Window>>,
+    /// match id -> game PIN an unfinished match had before a stale takeover
+    displaced: Mutex<HashMap<String, String>>,
+    /// match id -> (device id, claim) whose sync scores the room (sync `device.claim`)
+    scorers: Mutex<HashMap<String, (String, String)>>,
+    /// match id -> (device id, claim) another device's sync took the room over from, oldest first
+    moved_claims: Mutex<HashMap<String, Vec<(String, String)>>>,
+    /// match id -> claims the scorers' copies were continued from (sync `device.supersedes`), oldest first
+    superseded_claims: Mutex<HashMap<String, Vec<String>>>,
+    pending: Mutex<HashMap<String, Pending>>,
+    /// match id -> its open and recently answered bench requests, oldest first
+    bench: Mutex<HashMap<String, Vec<crate::bench_requests::BenchEntry>>>,
+    /// room key -> whether its subscribers were last told a scorer is in it
+    /// ('scorer-presence'; no entry: not present)
+    presence: Mutex<HashMap<String, bool>>,
+    /// room key -> display state its scoreboards were last told
+    /// ('display-presence'; no entry: no display)
+    display_told: Mutex<HashMap<String, String>>,
+    display_seq: AtomicU64,
+    next_id: AtomicU64,
+    /// open sockets per address (taken before the upgrade, see `SocketSlot`)
+    sockets: std::sync::Mutex<HashMap<IpAddr, usize>>,
+    /// room key -> who created it / its bytes / idle since (room budgets)
+    rooms: Mutex<HashMap<String, Room>>,
+    /// 10-minute PIN failure budgets: "m:<match id>", "all", "vp:<ip>"
+    pin_budgets: Mutex<HashMap<String, Window>>,
+    /// match ids no scoreboard had (GET /api/match/:id), with when
+    misses: Mutex<HashMap<String, std::time::Instant>>,
+    /// hashes of the rooms' game PINs, kept across restarts
+    claims: std::sync::Mutex<ClaimFile>,
+    /// Sign on phone sessions (memory only; the sweeper starts with the first one)
+    sign: Arc<crate::sign::SignSessions>,
+    /// Pair a phone (pair.rs): the remote keyboards, memory only
+    pair: Arc<crate::pair::PairSessions>,
+    /// The Global tool's live page for TVs: a court summary per tournament
+    /// code (global_live.rs), memory only
+    global_live: std::sync::Mutex<crate::global_live::GlobalLive>,
+    /// Scoreboard codes (display_code.rs): code hash -> room, memory only
+    display_codes: std::sync::Mutex<crate::display_code::DisplayCodes>,
+    /// room key -> connection -> the hash of the code it follows the room by
+    /// (subscribe-match { code }): those get the public live state only, and
+    /// leave the room when that code ends
+    display_followers: Mutex<HashMap<String, HashMap<u64, String>>>,
+    pub http_port: u16,
+    pub ws_port: u16,
+}
+
+pub fn new_state(http_port: u16, ws_port: u16) -> Arc<AppState> {
+    Arc::new(AppState {
+        matches: Mutex::new(HashMap::new()),
+        main_instance: Mutex::new(None),
+        clients: Mutex::new(HashMap::new()),
+        subs: Mutex::new(HashMap::new()),
+        owners: Mutex::new(HashMap::new()),
+        orphaned_since: Mutex::new(HashMap::new()),
+        conn_meta: Mutex::new(HashMap::new()),
+        limits: Mutex::new(HashMap::new()),
+        displaced: Mutex::new(HashMap::new()),
+        scorers: Mutex::new(HashMap::new()),
+        moved_claims: Mutex::new(HashMap::new()),
+        superseded_claims: Mutex::new(HashMap::new()),
+        pending: Mutex::new(HashMap::new()),
+        bench: Mutex::new(HashMap::new()),
+        presence: Mutex::new(HashMap::new()),
+        display_told: Mutex::new(HashMap::new()),
+        display_seq: AtomicU64::new(1),
+        next_id: AtomicU64::new(1),
+        sockets: std::sync::Mutex::new(HashMap::new()),
+        rooms: Mutex::new(HashMap::new()),
+        pin_budgets: Mutex::new(HashMap::new()),
+        misses: Mutex::new(HashMap::new()),
+        claims: std::sync::Mutex::new(ClaimFile::load(claim_file_path(http_port))),
+        sign: crate::sign::SignSessions::lan(),
+        pair: crate::pair::PairSessions::lan(),
+        global_live: std::sync::Mutex::new(crate::global_live::GlobalLive::default()),
+        display_codes: std::sync::Mutex::new(crate::display_code::DisplayCodes::lan()),
+        display_followers: Mutex::new(HashMap::new()),
+        http_port,
+        ws_port,
+    })
+}
+
+/// IPv4-mapped IPv6 (`::ffff:a.b.c.d`) as plain IPv4.
+fn canonical_ip(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V6(v6) => v6.to_ipv4_mapped().map(IpAddr::V4).unwrap_or(ip),
+        v4 => v4,
+    }
+}
+
+/// The request comes from the relay host itself: loopback, or one of its own
+/// interface addresses (the desktop app calls the relay on its LAN IP).
+fn is_local(addr: &SocketAddr) -> bool {
+    let ip = canonical_ip(addr.ip());
+    if ip.is_loopback() {
+        return true;
+    }
+    local_ip_address::list_afinet_netifas()
+        .map(|list| list.iter().any(|(_, a)| canonical_ip(*a) == ip))
+        .unwrap_or(false)
+}
+
+fn window_count(map: &HashMap<String, Window>, key: &str) -> u32 {
+    match map.get(key) {
+        Some(w) if w.start.elapsed() <= RATE_WINDOW => w.count,
+        _ => 0,
+    }
+}
+
+/// Count one more hit for `key` and return the count in the current window.
+fn window_bump(map: &mut HashMap<String, Window>, key: &str) -> u32 {
+    if map.len() > 10_000 {
+        map.retain(|_, w| w.start.elapsed() <= RATE_WINDOW);
+        if map.len() > 10_000 {
+            map.clear(); // bound memory under a flood
+        }
+    }
+    let w = map
+        .entry(key.to_string())
+        .or_insert(Window { count: 0, start: std::time::Instant::now() });
+    if w.start.elapsed() > RATE_WINDOW {
+        w.count = 0;
+        w.start = std::time::Instant::now();
+    }
+    w.count += 1;
+    w.count
+}
+
+async fn http_rate_limited(state: &Arc<AppState>, prefix: &str, addr: &SocketAddr, limit: u32) -> bool {
+    let key = format!("{prefix}:{}", canonical_ip(addr.ip()));
+    window_bump(&mut *state.limits.lock().await, &key) > limit
+}
+
+/// `window_count` / `window_bump` for a window of `dur` (the PIN budgets).
+fn budget_count(map: &HashMap<String, Window>, key: &str, dur: Duration) -> u32 {
+    match map.get(key) {
+        Some(w) if w.start.elapsed() <= dur => w.count,
+        _ => 0,
+    }
+}
+
+fn budget_bump(map: &mut HashMap<String, Window>, key: &str, dur: Duration) {
+    if map.len() > 2_000 {
+        map.retain(|_, w| w.start.elapsed() <= dur);
+    }
+    if map.len() > 2_000 && !map.contains_key(key) {
+        return; // bounded: the "all" budget still counts every failure
+    }
+    let w = map.entry(key.to_string()).or_insert(Window { count: 0, start: std::time::Instant::now() });
+    if w.start.elapsed() > dur {
+        w.count = 0;
+        w.start = std::time::Instant::now();
+    }
+    w.count += 1;
+}
+
+/// Is the match's (or the relay's) wrong-PIN budget spent? Then no PIN is
+/// compared for it (no oracle), whatever the address.
+async fn match_budget_spent(state: &Arc<AppState>, match_id: &str) -> bool {
+    let b = state.pin_budgets.lock().await;
+    budget_count(&b, &format!("m:{match_id}"), PIN_BUDGET_WINDOW) >= MATCH_PIN_FAILURE_LIMIT
+        || budget_count(&b, "all", PIN_BUDGET_WINDOW) >= GLOBAL_PIN_FAILURE_LIMIT
+}
+
+async fn spend_match_budget(state: &Arc<AppState>, match_id: &str) {
+    let mut b = state.pin_budgets.lock().await;
+    budget_bump(&mut b, "all", PIN_BUDGET_WINDOW);
+    budget_bump(&mut b, &format!("m:{match_id}"), PIN_BUDGET_WINDOW);
+}
+
+/// A room key that is a seed key / external id, not a bare Dexie number
+/// (lanRelayCore `isSeedRoom`): those are the same match on every device.
+fn is_seed_room(match_id: &str) -> bool {
+    !match_id.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// Hashes of the rooms' game PINs (salted SHA-256), kept across restarts of
+/// the app: after a restart a room's game PIN still decides who may claim it,
+/// as in frontend/server.js `createClaimFileStore`. `local`: the relay host
+/// published it.
+struct ClaimFile {
+    path: Option<std::path::PathBuf>,
+    salt: String,
+    rooms: serde_json::Map<String, Value>,
+}
+
+const CLAIM_KEEP_MS: u64 = 7 * 24 * 60 * 60 * 1000;
+const MAX_STORED_CLAIMS: usize = 2000;
+
+fn claim_file_path(http_port: u16) -> Option<std::path::PathBuf> {
+    if cfg!(test) {
+        return None;
+    }
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
+    Some(std::path::PathBuf::from(home).join(".openvolley-relay").join(format!("desktop-claims-{http_port}.json")))
+}
+
+impl ClaimFile {
+    fn load(path: Option<std::path::PathBuf>) -> ClaimFile {
+        let read = path
+            .as_ref()
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .and_then(|t| serde_json::from_str::<Value>(&t).ok());
+        let salt = read.as_ref().and_then(|v| v.get("salt")).and_then(|v| v.as_str()).map(str::to_string);
+        let rooms = read.as_ref().and_then(|v| v.get("rooms")).and_then(|v| v.as_object()).cloned();
+        let mut f = match (salt, rooms) {
+            (Some(salt), Some(rooms)) => ClaimFile { path, salt, rooms },
+            _ => ClaimFile {
+                path,
+                salt: rand::random::<[u8; 16]>().iter().map(|b| format!("{b:02x}")).collect(),
+                rooms: serde_json::Map::new(),
+            },
+        };
+        f.prune();
+        f
+    }
+
+    fn digest(&self, match_id: &str, pin: &str) -> String {
+        use sha2::{Digest, Sha256};
+        Sha256::digest(format!("{}\0{match_id}\0{pin}", self.salt).as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    fn entry(&self, match_id: &str) -> Option<&Value> {
+        self.rooms.get(match_id).filter(|r| now_ms().saturating_sub(r.get("at").and_then(|v| v.as_u64()).unwrap_or(0)) < CLAIM_KEEP_MS)
+    }
+
+    /// None: room unknown; else does `pin` match its game PIN?
+    fn check(&self, match_id: &str, pin: Option<&str>) -> Option<bool> {
+        let r = self.entry(match_id)?;
+        let Some(pin) = pin else { return Some(false) };
+        Some(ct_eq(&self.digest(match_id, pin), r.get("h").and_then(|v| v.as_str()).unwrap_or("")))
+    }
+
+    /// Did the relay host publish this room (and so wins it)?
+    fn is_local(&self, match_id: &str) -> bool {
+        self.entry(match_id).and_then(|r| r.get("local")).and_then(|v| v.as_bool()) == Some(true)
+    }
+
+    fn remember(&mut self, match_id: &str, pin: &str, local: bool) {
+        let h = self.digest(match_id, pin);
+        let local = local || (self.is_local(match_id) && self.check(match_id, Some(pin)) == Some(true));
+        if let Some(r) = self.entry(match_id) {
+            let fresh = now_ms().saturating_sub(r.get("at").and_then(|v| v.as_u64()).unwrap_or(0)) < 60 * 60 * 1000;
+            if fresh && r.get("h").and_then(|v| v.as_str()) == Some(h.as_str()) && r.get("local").and_then(|v| v.as_bool()) == Some(local) {
+                return;
+            }
+        }
+        self.rooms.insert(match_id.to_string(), json!({ "h": h, "at": now_ms(), "local": local }));
+        self.prune();
+        self.save();
+    }
+
+    fn forget(&mut self, match_id: &str) {
+        if self.rooms.remove(match_id).is_some() {
+            self.save();
+        }
+    }
+
+    fn prune(&mut self) {
+        let now = now_ms();
+        let at = |r: &Value| r.get("at").and_then(|v| v.as_u64()).unwrap_or(0);
+        let mut list: Vec<(String, Value)> =
+            std::mem::take(&mut self.rooms).into_iter().filter(|(_, r)| now.saturating_sub(at(r)) < CLAIM_KEEP_MS).collect();
+        list.sort_by(|a, b| at(&b.1).cmp(&at(&a.1)));
+        list.truncate(MAX_STORED_CLAIMS);
+        self.rooms = list.into_iter().collect();
+    }
+
+    fn save(&self) {
+        let Some(path) = &self.path else { return };
+        let text = json!({ "salt": self.salt, "rooms": self.rooms }).to_string();
+        let tmp = path.with_extension("json.tmp");
+        let ok = path.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|_| std::fs::write(&tmp, text)).and_then(|_| std::fs::rename(&tmp, path));
+        if let Err(e) = ok {
+            eprintln!("[Relay] could not save the room claims: {e}");
+        }
+    }
+}
+
+// --- Origin and Host rule (lanRelayCore isTrustedRelayOrigin / isAllowedRelayHost,
+// backend/lib/cors.js LAN side): a page may use the relay from the app's own
+// sites and shells, the relay's own pages and pages of the venue network;
+// callers without an Origin (the apps, the board) are not browsers and pass.
+
+const RELAY_ALLOWED_ORIGINS: &[&str] = &[
+    "https://openvolley.app", "https://www.openvolley.app", "https://localhost", "capacitor://localhost",
+    "tauri://localhost", "http://tauri.localhost", "https://tauri.localhost",
+];
+
+/// Is this host name (IPv6 without brackets) this machine or the venue network?
+fn is_lan_host_name(hostname: &str) -> bool {
+    let h = hostname.trim_end_matches('.').to_ascii_lowercase();
+    if h.is_empty() {
+        return false;
+    }
+    if h == "localhost" || h.ends_with(".localhost") {
+        return true;
+    }
+    if let Ok(ip) = h.parse::<IpAddr>() {
+        return match canonical_ip(ip) {
+            IpAddr::V4(v4) => v4.is_loopback() || v4.is_private() || v4.is_link_local(),
+            IpAddr::V6(v6) => {
+                let first = v6.segments()[0];
+                v6.is_loopback() || (first & 0xfe00) == 0xfc00 || (first & 0xffc0) == 0xfe80
+            }
+        };
+    }
+    h.ends_with(".local")
+        && h.len() > 6
+        && h.split('.').all(|l| !l.is_empty() && l.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-'))
+}
+
+/// The host name of a `host[:port]` / `[v6]:port` text, lowercase.
+fn host_name_of(host: &str) -> Option<String> {
+    let h = host.trim().to_ascii_lowercase();
+    if let Some(rest) = h.strip_prefix('[') {
+        return rest.split(']').next().map(str::to_string);
+    }
+    if h.matches(':').count() > 1 {
+        return Some(h); // a bare IPv6 address
+    }
+    h.split(':').next().map(str::to_string).filter(|n| !n.is_empty())
+}
+
+/// May a request with this Host reach the relay? Only by a name no outside
+/// party can point at it (a DNS-rebinding page sends its own name).
+fn is_allowed_relay_host(host: Option<&str>) -> bool {
+    let Some(host) = host.filter(|h| !h.is_empty()) else { return true };
+    if host.len() > 300 {
+        return false;
+    }
+    let Some(name) = host_name_of(host) else { return false };
+    name.parse::<IpAddr>().is_ok() || is_lan_host_name(&name) || !name.contains('.') || name == "openvolley.app" || name.ends_with(".openvolley.app")
+}
+
+/// May a page with this Origin use the relay (`host`: the request's Host)?
+fn is_trusted_relay_origin(origin: Option<&str>, host: Option<&str>) -> bool {
+    let Some(origin) = origin.filter(|o| !o.is_empty()) else { return true };
+    if origin.len() > 300 {
+        return false;
+    }
+    if RELAY_ALLOWED_ORIGINS.contains(&origin) {
+        return true;
+    }
+    if let Some(sub) = origin.strip_prefix("https://").and_then(|r| r.strip_suffix(".openvolley.app")) {
+        if !sub.is_empty() && sub.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-') {
+            return true;
+        }
+    }
+    let Some(rest) = origin.strip_prefix("http://").or_else(|| origin.strip_prefix("https://")) else { return false };
+    // an origin is scheme://host[:port], nothing after it, lowercase
+    if rest.is_empty() || rest.contains(['/', '?', '#', '@']) || rest != rest.to_ascii_lowercase() {
+        return false;
+    }
+    if host.map_or(false, |h| !h.is_empty() && h.to_ascii_lowercase() == rest) {
+        return true;
+    }
+    host_name_of(rest).map_or(false, |n| is_lan_host_name(&n))
+}
+
+/// A WebSocket upgrade or a state-changing request: why it is refused, if it is.
+fn relay_request_refusal(headers: &HeaderMap) -> Option<&'static str> {
+    let get = |k: &str| headers.get(k).and_then(|v| v.to_str().ok());
+    if !is_allowed_relay_host(get("host")) {
+        return Some("host-not-allowed");
+    }
+    if headers.get("origin").is_some() && get("origin").is_none() {
+        return Some("origin-not-allowed");
+    }
+    if !is_trusted_relay_origin(get("origin"), get("host")) {
+        return Some("origin-not-allowed");
+    }
+    None
+}
+
+/// One open socket of an address (MAX_SOCKETS / MAX_SOCKETS_PER_IP), given
+/// back when the connection ends or its upgrade fails.
+struct SocketSlot {
+    state: Arc<AppState>,
+    ip: IpAddr,
+}
+
+impl SocketSlot {
+    fn take(state: &Arc<AppState>, ip: IpAddr) -> Option<SocketSlot> {
+        let mut sockets = state.sockets.lock().unwrap_or_else(|e| e.into_inner());
+        let total: usize = sockets.values().sum();
+        let own = sockets.get(&ip).copied().unwrap_or(0);
+        if own >= MAX_SOCKETS_PER_IP || (!ip.is_loopback() && total >= MAX_SOCKETS) {
+            return None;
+        }
+        *sockets.entry(ip).or_insert(0) += 1;
+        Some(SocketSlot { state: state.clone(), ip })
+    }
+}
+
+impl Drop for SocketSlot {
+    fn drop(&mut self) {
+        let mut sockets = self.state.sockets.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(n) = sockets.get_mut(&self.ip) {
+            *n -= 1;
+            if *n == 0 {
+                sockets.remove(&self.ip);
+            }
+        }
+    }
+}
+
+fn retry_after(status: StatusCode, value: Value, secs: u64) -> Response {
+    let mut r = json_response(status, value);
+    if let Ok(v) = HeaderValue::from_str(&secs.to_string()) {
+        r.headers_mut().insert("Retry-After", v);
+    }
+    r
+}
+
+fn is_finished(m: Option<&Value>) -> bool {
+    let status = m
+        .and_then(|m| m.get("status"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    FINISHED_STATUSES.contains(&status.as_str())
+}
+
+/// RFC 3339 UTC timestamp (like JS `toISOString()`), without a date crate.
+fn iso_now() -> String {
+    let ms = now_ms();
+    let secs = ms / 1000;
+    let (days, rem) = (secs / 86_400, secs % 86_400);
+    // Civil-from-days (Howard Hinnant), valid for the Unix era.
+    let z = days as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
+    format!(
+        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}.{:03}Z",
+        rem / 3600,
+        (rem % 3600) / 60,
+        rem % 60,
+        ms % 1000
+    )
+}
+
+/// A person without its personal keys.
+fn strip_person(p: &mut Value) {
+    if let Some(o) = p.as_object_mut() {
+        for k in &RELAY_FIELDS.person_private {
+            o.remove(k);
+        }
+    }
+}
+
+/// Remove the personal keys of every person in a roster array.
+fn strip_people(list: &mut Value) {
+    if let Some(arr) = list.as_array_mut() {
+        arr.iter_mut().for_each(strip_person);
+    }
+}
+
+/// A team row as a bundle carries it: publicTeamFields, its people without
+/// personal keys (lanRelayCore `publicTeam`).
+fn public_team(team: &Value) -> Value {
+    let Some(obj) = team.as_object() else { return team.clone() };
+    let f = &*RELAY_FIELDS;
+    let mut out = serde_json::Map::new();
+    for k in &f.public_team {
+        if let Some(v) = obj.get(k) {
+            let mut v = v.clone();
+            if f.team_people.contains(k) {
+                if v.is_array() { strip_people(&mut v) } else { strip_person(&mut v) }
+            }
+            out.insert(k.clone(), v);
+        }
+    }
+    Value::Object(out)
+}
+
+/// Make a match object public (lanRelayCore `publicMatch`): publicMatchFields
+/// only, never a PIN, a private key or a signature key; rosters, people and
+/// team objects without personal keys.
+fn strip_secrets(m: &mut Value) {
+    let Some(obj) = m.as_object() else { return };
+    let f = &*RELAY_FIELDS;
+    let mut out = serde_json::Map::new();
+    for k in &f.public_match {
+        let Some(v) = obj.get(k) else { continue };
+        if MATCH_SECRET_FIELDS.contains(&k.as_str()) || f.match_private.contains(k) || k.to_ascii_lowercase().contains("signature") {
+            continue;
+        }
+        let mut v = v.clone();
+        if f.match_roster.contains(k) {
+            strip_people(&mut v);
+        } else if f.match_person.contains(k) {
+            if v.is_array() { strip_people(&mut v) } else { strip_person(&mut v) }
+        } else if f.match_team.contains(k) && !v.is_string() {
+            v = public_team(&v);
+        }
+        out.insert(k.clone(), v);
+    }
+    *m = Value::Object(out);
+}
+
+/// A bundle as the relay hands it out (lanRelayCore `toWireBundle`): public
+/// match and teams, players without personal keys, sets, events, liveState.
+fn strip_bundle_secrets(bundle: &Value) -> Value {
+    let mut out = json!({
+        "match": bundle.get("match").cloned().unwrap_or(Value::Null),
+        "homeTeam": bundle.get("homeTeam").map(public_team).unwrap_or(Value::Null),
+        "awayTeam": bundle.get("awayTeam").map(public_team).unwrap_or(Value::Null),
+        "homePlayers": bundle.get("homePlayers").cloned().unwrap_or(json!([])),
+        "awayPlayers": bundle.get("awayPlayers").cloned().unwrap_or(json!([])),
+        "sets": bundle.get("sets").cloned().unwrap_or(json!([])),
+        "events": bundle.get("events").cloned().unwrap_or(json!([])),
+    });
+    strip_secrets(&mut out["match"]);
+    for k in ["homePlayers", "awayPlayers"] {
+        strip_people(&mut out[k]);
+    }
+    if let Some(live) = bundle.get("liveState") {
+        out["liveState"] = live.clone();
+    }
+    out
+}
+
+/// A scorer's undo snapshots are not relayed (backend server.js, the 3.0.15
+/// scorer drops them itself; older ones send about 2.5 KB a point).
+fn strip_event_snapshots(bundle: &mut Value) {
+    if let Some(events) = bundle.get_mut("events").and_then(|e| e.as_array_mut()) {
+        for e in events.iter_mut().filter_map(|e| e.as_object_mut()) {
+            e.remove("stateSnapshot");
+            e.remove("stateBefore");
+        }
+    }
+}
+
+/// Room / store key for a match id: always a string (Dexie ids are numbers).
+fn norm_id(v: Option<&Value>) -> Option<String> {
+    let s = match v? {
+        Value::String(s) => s.trim().to_string(),
+        Value::Number(n) => n.to_string(),
+        _ => return None,
+    };
+    if s.is_empty() || s.len() > MAX_MATCH_ID_LEN {
+        None
+    } else {
+        Some(s)
+    }
+}
+
+/// Room key of a synced match: its seed_key when it carries one, else the id the
+/// scoreboard sent (lanRelayCore `relayKeyOf`). Every device's first match is
+/// Dexie id 1, and the tablets know the seed key.
+fn relay_key_of(raw: Option<String>, m: Option<&Value>) -> Option<String> {
+    let seed = m.and_then(|m| m.get("seed_key").or_else(|| m.get("seedKey")));
+    match seed {
+        Some(v @ Value::String(_)) => norm_id(Some(v)).or(raw),
+        _ => raw,
+    }
+}
+
+/// True when the match object carries a game PIN field at all (even empty).
+fn has_game_pin_field(m: Option<&Value>) -> bool {
+    m.and_then(|m| m.as_object()).map_or(false, |o| o.contains_key("gamePin") || o.contains_key("game_pin"))
+}
+
+/// True when the match object carries any PIN field at all (even empty).
+fn has_any_pin_field(m: Option<&Value>) -> bool {
+    m.and_then(|m| m.as_object()).map_or(false, |o| MATCH_SECRET_FIELDS.iter().any(|k| o.contains_key(*k)))
+}
+
+/// A scoreboard that already proved the match sends its PINs only when they
+/// change: fields it leaves out keep the stored values.
+fn carry_match_secrets(prev: Option<&Value>, bundle: &mut Value) {
+    let Some(prev) = prev.and_then(|p| p.as_object()) else { return };
+    let Some(next) = bundle.get_mut("match").and_then(|m| m.as_object_mut()) else { return };
+    for k in MATCH_SECRET_FIELDS {
+        if !next.contains_key(*k) {
+            if let Some(v) = prev.get(*k) {
+                next.insert((*k).to_string(), v.clone());
+            }
+        }
+    }
+}
+
+/// The room key for an id a connection sends (its Dexie id is an alias of the seed_key).
+async fn resolve_key(state: &Arc<AppState>, conn_id: u64, raw: Option<String>) -> Option<String> {
+    let raw = raw?;
+    let meta = state.conn_meta.lock().await;
+    Some(meta.get(&conn_id).and_then(|m| m.aliases.get(&raw).cloned()).unwrap_or(raw))
+}
+
+/// The match's game PIN as a comparable string; None for matches without one.
+fn game_pin_of(m: Option<&Value>) -> Option<String> {
+    let m = m?;
+    let v = match m.get("gamePin") {
+        Some(v) if !v.is_null() && v.as_str() != Some("") => v,
+        _ => m.get("game_pin")?,
+    };
+    let s = match v {
+        Value::String(s) => s.trim().to_string(),
+        Value::Number(n) => n.to_string(),
+        _ => return None,
+    };
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
+}
+
+/// Is this sync from openbeach? It sends its teams as team1Team / team2Team /
+/// team1Players / team2Players (before its home/away wire adapter) or names the
+/// sport on the match (lanRelayCore `isBeachSync`, backend handleSyncMatchData).
+fn is_beach_sync(src: &Value, m: &Value) -> bool {
+    let truthy = |k: &str| src.get(k).map_or(false, |v| !matches!(v, Value::Null | Value::Bool(false)));
+    ["team1Team", "team2Team", "team1Players", "team2Players"].iter().any(|k| truthy(k))
+        || m.get("sportType").and_then(|v| v.as_str()) == Some("beach")
+        || m.get("sport_type").and_then(|v| v.as_str()) == Some("beach")
+}
+
+/// The sport of a stored bundle: "beach" or "indoor".
+fn bundle_sport(bundle: &Value) -> &'static str {
+    if bundle.get("sportType").and_then(|v| v.as_str()) == Some("beach") {
+        "beach"
+    } else {
+        "indoor"
+    }
+}
+
+/// Build the stored bundle from a sync (flat or `{ matchData }`) or response payload.
+/// `sportType` ("beach" only, when the sync says so) is the relay's own note
+/// for POST /api/match/validate-pin `{ sport }` and the `sportType` of its
+/// GET /api/match/list row: it is not part of any bundle sent out
+/// (`strip_bundle_secrets`, `summary_bundle`).
+fn bundle_from(src: &Value) -> Option<Value> {
+    let src = match src.get("matchData") {
+        Some(md) if md.is_object() => md,
+        _ => src,
+    };
+    let m = src.get("match")?;
+    if !m.is_object() {
+        return None;
+    }
+    let arr = |k: &str| match src.get(k) {
+        Some(v) if v.is_array() => v.clone(),
+        _ => json!([]),
+    };
+    // The first array among `keys` (openbeach: team1Players / team2Players)
+    let players = |keys: &[&str]| {
+        keys.iter()
+            .find_map(|k| src.get(*k).filter(|v| v.is_array()).cloned())
+            .unwrap_or_else(|| json!([]))
+    };
+    // openbeach names its teams team1Team / team2Team (team1 / team2)
+    let team = |keys: &[&str]| {
+        keys.iter()
+            .find_map(|k| src.get(*k).filter(|v| !v.is_null()).cloned())
+            .unwrap_or(Value::Null)
+    };
+    let mut bundle = json!({
+        "match": m.clone(),
+        "homeTeam": team(&["homeTeam", "team1Team", "team1"]),
+        "awayTeam": team(&["awayTeam", "team2Team", "team2"]),
+        "homePlayers": players(&["homePlayers", "team1Players"]),
+        "awayPlayers": players(&["awayPlayers", "team2Players"]),
+        "sets": arr("sets"),
+        "events": arr("events"),
+    });
+    if is_beach_sync(src, m) {
+        bundle["sportType"] = json!("beach");
+    }
+    Some(bundle)
+}
+
+/// A flat, PIN-free match message: `{ type, matchId, match, homeTeam, ..., liveState? }`.
+/// A stored liveState is mirrored as `data: { liveState }` (nothing else under
+/// `data`) for the LedBox bridge, which reads `msg.data.liveState`.
+#[cfg(test)]
+fn bundle_message(msg_type: &str, match_id: &str, bundle: &Value, sb_ts: Option<Value>) -> Value {
+    bundle_message_access(msg_type, match_id, bundle, sb_ts, true)
+}
+
+/// Only `keys` of an object; anything else as it is (null when missing).
+fn pick_fields(v: Option<&Value>, keys: &[&str]) -> Value {
+    match v {
+        Some(Value::Object(o)) => {
+            let mut out = serde_json::Map::new();
+            for k in keys {
+                if let Some(x) = o.get(*k) {
+                    out.insert((*k).to_string(), x.clone());
+                }
+            }
+            Value::Object(out)
+        }
+        Some(other) => other.clone(),
+        None => Value::Null,
+    }
+}
+
+/// The public summary of a bundle (no PIN proved): same shape, rosters and
+/// events empty, `access: "summary"` (lanRelayCore `relaySummaryBundle`).
+fn summary_bundle(bundle: &Value) -> Value {
+    let sets: Vec<Value> = bundle
+        .get("sets")
+        .and_then(|s| s.as_array())
+        .map(|a| a.iter().map(|s| pick_fields(Some(s), SUMMARY_SET_FIELDS)).collect())
+        .unwrap_or_default();
+    let mut out = json!({
+        "access": "summary",
+        "match": pick_fields(bundle.get("match"), SUMMARY_MATCH_FIELDS),
+        "homeTeam": pick_fields(bundle.get("homeTeam"), SUMMARY_TEAM_FIELDS),
+        "awayTeam": pick_fields(bundle.get("awayTeam"), SUMMARY_TEAM_FIELDS),
+        "homePlayers": [],
+        "awayPlayers": [],
+        "sets": sets,
+        "events": [],
+    });
+    if let Some(live) = bundle.get("liveState") {
+        out["liveState"] = live.clone();
+    }
+    out
+}
+
+fn pin_text(v: Option<&Value>) -> Option<String> {
+    match v {
+        Some(Value::String(s)) if !s.trim().is_empty() => Some(s.trim().to_string()),
+        Some(Value::Number(n)) => Some(n.to_string()),
+        _ => None,
+    }
+}
+
+/// Constant time for equal lengths.
+fn ct_eq(a: &str, b: &str) -> bool {
+    a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
+/// Does `pin` prove access to the match: the referee PIN (referee connection
+/// on), a bench PIN (that bench connection on; beach: team1 / team2) or the
+/// game PIN? A match without any of them grants nothing (lanRelayCore
+/// `pinGrantsAccess`).
+fn pin_grants_access(m: Option<&Value>, pin: &str) -> bool {
+    let p = pin.trim();
+    let Some(m) = m.filter(|m| m.is_object()) else { return false };
+    if p.is_empty() {
+        return false;
+    }
+    let on = |k: &str| m.get(k).and_then(|v| v.as_bool()) == Some(true);
+    let mut candidates = Vec::new();
+    if on("refereeConnectionEnabled") {
+        candidates.push(pin_text(m.get("refereePin")));
+    }
+    if on("homeTeamConnectionEnabled") {
+        candidates.push(pin_text(m.get("homeTeamPin")));
+    }
+    if on("awayTeamConnectionEnabled") {
+        candidates.push(pin_text(m.get("awayTeamPin")));
+    }
+    // Beach (openbeach) benches: team1 / team2 (team1Pin, older builds team1TeamPin)
+    let first_pin = |keys: &[&str]| keys.iter().find_map(|k| pin_text(m.get(*k)));
+    if on("team1TeamConnectionEnabled") {
+        candidates.push(first_pin(&["team1Pin", "team1TeamPin"]));
+    }
+    if on("team2TeamConnectionEnabled") {
+        candidates.push(first_pin(&["team2Pin", "team2TeamPin"]));
+    }
+    candidates.push(game_pin_of(Some(m)));
+    let mut ok = false;
+    for c in candidates.into_iter().flatten() {
+        if ct_eq(&c, p) {
+            ok = true;
+        }
+    }
+    ok
+}
+
+/// A match message with the full (PIN-free) bundle, or the summary.
+fn bundle_message_access(msg_type: &str, match_id: &str, bundle: &Value, sb_ts: Option<Value>, full: bool) -> Value {
+    let mut out = if full {
+        let mut b = strip_bundle_secrets(bundle);
+        if let Some(obj) = b.as_object_mut() {
+            obj.insert("access".into(), json!("full"));
+        }
+        b
+    } else {
+        summary_bundle(bundle)
+    };
+    if let Some(obj) = out.as_object_mut() {
+        let now = now_ms();
+        obj.insert("type".into(), json!(msg_type));
+        obj.insert("matchId".into(), json!(match_id));
+        obj.insert("_timestamp".into(), json!(now));
+        obj.insert("_scoreboardTimestamp".into(), sb_ts.unwrap_or(json!(now)));
+        if let Some(live) = obj.get("liveState").cloned() {
+            obj.insert("data".into(), json!({ "liveState": live }));
+        }
+    }
+    out
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Numeric ids stay numbers in HTTP responses (clients compare them to Dexie ids).
+fn public_id(key: &str) -> Value {
+    if !key.is_empty() && key.chars().all(|c| c.is_ascii_digit()) {
+        if let Ok(n) = key.parse::<i64>() {
+            return json!(n);
+        }
+    }
+    json!(key)
+}
+
+fn json_response(status: StatusCode, value: Value) -> Response {
+    (status, [("content-type", "application/json")], value.to_string()).into_response()
+}
+
+// ---------------------------------------------------------------------------
+// Serve both listeners (pre-bound in main to avoid a load race with the window)
+// ---------------------------------------------------------------------------
+
+pub async fn serve(
+    state: Arc<AppState>,
+    http_listener: std::net::TcpListener,
+    ws_listener: std::net::TcpListener,
+) {
+    serve_all(state, vec![http_listener], vec![ws_listener]).await
+}
+
+/// The relay on several sockets per port: the desktop app's IPv4 one and its
+/// [::1] one (main.rs bind_loopback_v6), the same routes and state on each.
+/// Returns when one of them stops.
+pub async fn serve_all(
+    state: Arc<AppState>,
+    http_listeners: Vec<std::net::TcpListener>,
+    ws_listeners: Vec<std::net::TcpListener>,
+) {
+    let tokio_listener = |l: std::net::TcpListener| {
+        l.set_nonblocking(true).ok();
+        tokio::net::TcpListener::from_std(l).expect("relay listener")
+    };
+    let http_app = http_router(state.clone());
+    let ws_app = Router::new()
+        .route("/", get(ws_handler))
+        .with_state(state.clone());
+
+    let mut servers = tokio::task::JoinSet::new();
+    for l in http_listeners {
+        let app = http_app.clone().into_make_service_with_connect_info::<SocketAddr>();
+        let l = tokio_listener(l);
+        servers.spawn(async move {
+            let _ = axum::serve(l, app).await;
+        });
+    }
+    for l in ws_listeners {
+        let app = ws_app.clone().into_make_service_with_connect_info::<SocketAddr>();
+        let l = tokio_listener(l);
+        servers.spawn(async move {
+            let _ = axum::serve(l, app).await;
+        });
+    }
+    servers.join_next().await;
+}
+
+fn http_router(state: Arc<AppState>) -> Router {
+    Router::new()
+        .route("/health", get(health))
+        .route("/api/health", get(health))
+        .route("/api/server/status", get(server_status))
+        .route("/api/server/register-main", post(register_main))
+        .route("/api/server/unregister-main", post(unregister_main))
+        .route("/api/match/validate-pin", post(validate_pin))
+        .route("/api/match/list", get(match_list))
+        .route("/api/match/by-game-number", get(by_game_number))
+        .route("/api/match/{id}", get(match_get).patch(match_patch))
+        .route("/api/server/connections", get(server_connections))
+        .route("/api/sign/start", post(sign_api))
+        .route("/api/sign/open", post(sign_api))
+        .route("/api/sign/submit", post(sign_api))
+        .route("/api/sign/wait", post(sign_api))
+        .route("/api/sign/close", post(sign_api))
+        .route("/api/pair/start", post(pair_api))
+        .route("/api/pair/wait", post(pair_api))
+        .route("/api/pair/focus", post(pair_api))
+        .route("/api/pair/close", post(pair_api))
+        .route("/api/pair/join", post(pair_api))
+        .route("/api/pair/poll", post(pair_api))
+        .route("/api/pair/input", post(pair_api))
+        // Scoreboard codes (display_code.rs): read-only, CORS *, any page
+        .route("/api/display/lookup", post(display_api))
+        .route("/api/display/live", post(display_api))
+        .route("/api/global/live/game/{n}", get(global_live_game))
+        .route("/api/global/live/{code}", get(global_live_page))
+        .route("/tv", get(tv_entry))
+        .route("/tv/", get(tv_entry))
+        .route("/tv/go", get(tv_go))
+        .route("/tv/tv.js", get(tv_script))
+        .route("/tv/{code}", get(tv_page))
+        .route("/tv/{code}/", get(tv_page))
+        .route("/tv/{code}/{screen}", get(tv_screen_page))
+        .route("/tv/{code}/{screen}/", get(tv_screen_page))
+        .fallback(static_handler)
+        .layer(middleware::from_fn(add_headers))
+        .with_state(state)
+}
+
+// ---------------------------------------------------------------------------
+// Middleware: security headers + LAN CORS + OPTIONS short-circuit
+// ---------------------------------------------------------------------------
+
+async fn add_headers(req: Request<Body>, next: Next) -> Response {
+    let origin = req
+        .headers()
+        .get("origin")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+    let host = req.headers().get("host").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
+    let is_options = req.method() == Method::OPTIONS;
+    // Host on every relay route, Origin on the ones that change something
+    // (lanRelayCore handleHttp): a foreign page gets neither
+    let api = req.uri().path().starts_with("/api/");
+    // /api/display/lookup and /live (scoreboard codes) are for any page and any
+    // third-party board: read-only, no credentials, CORS *. No Origin check
+    // (the Host one stays) and their own preflight.
+    let display = crate::display_code::endpoint_of(req.uri().path()).is_some();
+    let changes = !matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS);
+    let refusal = if api && changes && !display {
+        relay_request_refusal(req.headers())
+    } else if api && !is_allowed_relay_host(host.as_deref()) {
+        Some("host-not-allowed")
+    } else {
+        None
+    };
+
+    let mut res = if let Some(why) = refusal {
+        let error = if why == "host-not-allowed" { "Host not allowed" } else { "Origin not allowed" };
+        json_response(StatusCode::FORBIDDEN, json!({ "success": false, "error": error }))
+    } else if is_options && display {
+        let mut r = StatusCode::NO_CONTENT.into_response();
+        for (k, v) in crate::display_code::DISPLAY_PREFLIGHT_HEADERS {
+            r.headers_mut().insert(*k, HeaderValue::from_static(v));
+        }
+        r
+    } else if is_options {
+        StatusCode::OK.into_response()
+    } else {
+        next.run(req).await
+    };
+
+    let h = res.headers_mut();
+    h.insert("X-Content-Type-Options", HeaderValue::from_static("nosniff"));
+    h.insert("X-Frame-Options", HeaderValue::from_static("SAMEORIGIN"));
+    // The phone signing page sets its own (no-referrer)
+    if !h.contains_key("Referrer-Policy") {
+        h.insert(
+            "Referrer-Policy",
+            HeaderValue::from_static("strict-origin-when-cross-origin"),
+        );
+    }
+    // A route that answers any page (Access-Control-Allow-Origin: *) keeps it
+    if let Some(o) = origin.filter(|_| !h.contains_key("Access-Control-Allow-Origin")) {
+        if is_trusted_relay_origin(Some(&o), host.as_deref()) {
+            if let Ok(val) = HeaderValue::from_str(&o) {
+                h.insert("Access-Control-Allow-Origin", val);
+            }
+        }
+    }
+    if !display {
+        h.insert(
+            "Access-Control-Allow-Methods",
+            HeaderValue::from_static("GET, POST, PATCH, OPTIONS"),
+        );
+        h.insert(
+            "Access-Control-Allow-Headers",
+            HeaderValue::from_static("Content-Type, X-Instance-ID, X-OV-Match-Pin, X-OV-Match-Token"),
+        );
+    }
+    res
+}
+
+// ---------------------------------------------------------------------------
+// HTTP handlers
+// ---------------------------------------------------------------------------
+
+async fn health() -> Response {
+    json_response(StatusCode::OK, json!({ "status": "ok", "running": true }))
+}
+
+async fn server_status(ConnectInfo(addr): ConnectInfo<SocketAddr>, State(state): State<Arc<AppState>>) -> Response {
+    let interfaces = crate::netifs::tablet_interfaces();
+    let ip = crate::netifs::preferred_ip(&interfaces, local_ip_address::local_ip().ok().map(|ip| ip.to_string()));
+    let p = state.http_port;
+    let ws = state.ws_port;
+    let main = state.main_instance.lock().await.clone();
+    json_response(
+        StatusCode::OK,
+        json!({
+            "running": true,
+            // the id the scoretable gate compares: the relay host's only
+            "mainInstanceId": if is_local(&addr) { main.clone() } else { None },
+            "hasMainInstance": main.is_some(),
+            "protocol": "http",
+            "wsProtocol": "ws",
+            "hostname": "localhost",
+            "localIP": ip,
+            "port": p,
+            "wsPort": ws,
+            // every address a tablet may open, with its network: hotspot,
+            // wifi, ethernet, bluetooth, other (netifs.rs)
+            "interfaces": interfaces,
+            "urls": {
+                "main": format!("http://{ip}:{p}/"),
+                "mainIP": format!("http://{ip}:{p}/"),
+                "referee": format!("http://{ip}:{p}/referee"),
+                "refereeIP": format!("http://{ip}:{p}/referee"),
+                "bench": format!("http://{ip}:{p}/bench"),
+                "benchIP": format!("http://{ip}:{p}/bench"),
+                "livescore": format!("http://{ip}:{p}/livescore"),
+                "livescoreIP": format!("http://{ip}:{p}/livescore"),
+                "websocket": format!("ws://{ip}:{ws}"),
+                "websocketIP": format!("ws://{ip}:{ws}"),
+            }
+        }),
+    )
+}
+
+/// Main-instance lock: only the relay host itself may take (and always
+/// re-take) or release it, so a LAN device can never lock the scoretable out
+/// of "/". Same rule as lanRelayCore's createMainInstanceGate.
+async fn register_main(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Response {
+    if !is_local(&addr) {
+        return json_response(
+            StatusCode::FORBIDDEN,
+            json!({ "success": false, "error": "Only the scoretable machine can register the main instance" }),
+        );
+    }
+    let instance_id = headers
+        .get("x-instance-id")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| format!("instance-{}", state.next_id.fetch_add(1, Ordering::Relaxed)));
+    *state.main_instance.lock().await = Some(instance_id.clone());
+    json_response(StatusCode::OK, json!({ "success": true, "instanceId": instance_id }))
+}
+
+async fn unregister_main(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
+) -> Response {
+    if !is_local(&addr) {
+        return json_response(
+            StatusCode::FORBIDDEN,
+            json!({ "success": false, "error": "Not the registered instance" }),
+        );
+    }
+    *state.main_instance.lock().await = None;
+    json_response(StatusCode::OK, json!({ "success": true }))
+}
+
+async fn validate_pin(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<Value>,
+) -> Response {
+    // Wrong PINs are limited (VALIDATE_PIN_FAILURES per address in ten
+    // minutes, no PIN compared beyond), right ones only by a generous cap on
+    // all checks: tablets recheck their stored PIN on every reload.
+    let fail_key = format!("vp:{}", canonical_ip(addr.ip()));
+    if budget_count(&*state.pin_budgets.lock().await, &fail_key, PIN_BUDGET_WINDOW) >= VALIDATE_PIN_FAILURES {
+        return retry_after(StatusCode::TOO_MANY_REQUESTS, json!({ "success": false, "error": "Too many wrong PINs. Wait a minute." }), 600);
+    }
+    if http_rate_limited(&state, "pin", &addr, VALIDATE_PIN_LIMIT).await {
+        return retry_after(
+            StatusCode::TOO_MANY_REQUESTS,
+            json!({ "success": false, "error": "Too many attempts. Please wait a minute before trying again." }),
+            60,
+        );
+    }
+    let pin = match body.get("pin") {
+        Some(Value::String(p)) => p.trim().to_string(),
+        Some(Value::Number(n)) => n.to_string(),
+        _ => String::new(),
+    };
+    let typ = body.get("type").and_then(|v| v.as_str()).unwrap_or("referee").to_string();
+    // The asking app's sport (openbeach: "beach"; left out: "indoor"): a PIN
+    // never finds a match of the other sport (lanRelayCore `validatePin`).
+    let sport = match body.get("sport") {
+        None | Some(Value::Null) => "indoor",
+        Some(Value::String(s)) if s == "indoor" => "indoor",
+        Some(Value::String(s)) if s == "beach" => "beach",
+        _ => return json_response(StatusCode::BAD_REQUEST, json!({ "success": false, "error": "Invalid request" })),
+    };
+    if pin.len() != 6 || !pin.bytes().all(|b| b.is_ascii_digit()) {
+        return json_response(StatusCode::BAD_REQUEST, json!({ "success": false, "error": "Invalid PIN format" }));
+    }
+    let (pin_field, enabled_field) = match typ.as_str() {
+        "referee" => ("refereePin", "refereeConnectionEnabled"),
+        "homeTeam" => ("homeTeamPin", "homeTeamConnectionEnabled"),
+        "awayTeam" => ("awayTeamPin", "awayTeamConnectionEnabled"),
+        _ => return json_response(StatusCode::BAD_REQUEST, json!({ "success": false, "error": "Invalid PIN type" })),
+    };
+
+    // The relay answers from its own store (filled by the scoreboard's syncs).
+    // It never asks — or tells — a WS client about a PIN.
+    let matches = state.matches.lock().await;
+    for (id, bundle) in matches.iter() {
+        let Some(m) = bundle.get("match") else { continue };
+        if bundle_sport(bundle) != sport {
+            continue;
+        }
+        let match_pin = match m.get(pin_field) {
+            Some(Value::String(p)) => Some(p.trim().to_string()),
+            Some(Value::Number(n)) => Some(n.to_string()),
+            _ => None,
+        };
+        let enabled = m.get(enabled_field).and_then(|v| v.as_bool()).unwrap_or(false);
+        let status = m.get("status").and_then(|v| v.as_str()).unwrap_or("");
+        if match_pin.as_deref().map_or(false, |p| ct_eq(p, &pin)) && enabled && status != "final" {
+            let mut found = m.clone();
+            strip_secrets(&mut found);
+            if let Some(obj) = found.as_object_mut() {
+                obj.insert("id".to_string(), public_id(id));
+                // A beach answer names its sport (the indoor answer is unchanged)
+                if sport == "beach" {
+                    obj.insert("sportType".to_string(), json!("beach"));
+                }
+            }
+            return json_response(StatusCode::OK, json!({ "success": true, "match": found }));
+        }
+    }
+    drop(matches);
+    budget_bump(&mut *state.pin_budgets.lock().await, &fail_key, PIN_BUDGET_WINDOW);
+    json_response(
+        StatusCode::NOT_FOUND,
+        json!({ "success": false, "error": "No match found with this PIN. Make sure the main scoresheet is running and connected." }),
+    )
+}
+
+/// Path match id, normalised like every WS match id (trimmed, length-capped).
+fn path_match_id(raw: String) -> Option<String> {
+    norm_id(Some(&Value::String(raw)))
+}
+
+fn bad_match_id() -> Response {
+    json_response(StatusCode::BAD_REQUEST, json!({ "success": false, "error": "Match ID required" }))
+}
+
+/// GET /api/match/:id: the bundle when the X-OV-Match-Pin header carries a PIN
+/// that grants the match, the public summary otherwise.
+async fn match_get(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    let Some(id) = path_match_id(id) else { return bad_match_id() };
+    let offered = headers
+        .get("x-ov-match-pin")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let fail_key = format!("pinfail:ip:{}", canonical_ip(addr.ip()));
+    if offered.is_some()
+        && (window_count(&*state.limits.lock().await, &fail_key) >= PIN_FAILURE_LIMIT || match_budget_spent(&state, &id).await)
+    {
+        return json_response(
+            StatusCode::TOO_MANY_REQUESTS,
+            json!({ "success": false, "error": "Too many wrong PINs. Wait a minute." }),
+        );
+    }
+    let answer = |bundle: &Value, full: bool| {
+        let mut out = if full {
+            let mut b = strip_bundle_secrets(bundle);
+            if let Some(obj) = b.as_object_mut() {
+                obj.insert("access".into(), json!("full"));
+            }
+            b
+        } else {
+            summary_bundle(bundle)
+        };
+        if let Some(obj) = out.as_object_mut() {
+            obj.insert("success".to_string(), json!(true));
+        }
+        json_response(StatusCode::OK, out)
+    };
+    let stored = state.matches.lock().await.get(&id).cloned();
+    let found = match stored {
+        Some(b) => Some(b),
+        None => {
+            // Asking the scoreboards runs on the scoring page: limited per
+            // address, and an id none had is not asked for again at once
+            let missed = {
+                let mut misses = state.misses.lock().await;
+                misses.retain(|_, t| t.elapsed() < MISS_CACHE);
+                misses.contains_key(&id)
+            };
+            if missed || http_rate_limited(&state, "mg", &addr, MATCH_REQUEST_LIMIT).await {
+                return json_response(
+                    StatusCode::NOT_FOUND,
+                    json!({ "success": false, "error": "Match data not found. Make sure the main scoresheet is running and connected." }),
+                );
+            }
+            let rid = format!("match-data-request-{}", state.next_id.fetch_add(1, Ordering::Relaxed));
+            let req_msg = json!({ "type": "match-data-request", "requestId": rid, "matchId": id });
+            // The WS side validates the answer (proven scoreboard, game PIN) and stores it.
+            let found = ws_roundtrip(&state, req_msg, &rid, "match-data-response", Some(id.clone())).await;
+            if found.is_none() {
+                let mut misses = state.misses.lock().await;
+                if misses.len() < 1_000 {
+                    misses.insert(id.clone(), std::time::Instant::now());
+                }
+            }
+            found
+        }
+    };
+    let Some(bundle) = found else {
+        return json_response(
+            StatusCode::NOT_FOUND,
+            json!({ "success": false, "error": "Match data not found. Make sure the main scoresheet is running and connected." }),
+        );
+    };
+    let full = offered.as_deref().map_or(false, |p| pin_grants_access(bundle.get("match"), p));
+    if offered.is_some() && !full {
+        window_bump(&mut *state.limits.lock().await, &fail_key);
+        spend_match_budget(&state, &id).await;
+    }
+    answer(&bundle, full)
+}
+
+/// A team's display name: the bundle's team (object or plain string), else `None`.
+fn team_name(team: Option<&Value>) -> Option<&str> {
+    let name = match team {
+        Some(Value::String(s)) => Some(s.as_str()),
+        Some(t) => t.get("name").and_then(|v| v.as_str()),
+        None => None,
+    };
+    name.filter(|n| !n.trim().is_empty())
+}
+
+/// One GET /api/match/list row for a stored bundle, or `None` when the match is
+/// not listed (lanRelayCore `matchListEntry`). Listed: status "scheduled" or
+/// "live" (none counts as "scheduled"), whatever the referee connection:
+/// display devices (the point-hub LedBox bridge) need no PIN and pick their
+/// match from this list; with `include_finished` (`?finished=1`, the
+/// livescore) a finished one too. Public fields only: no PINs, no people.
+fn match_list_entry(id: &str, bundle: &Value, include_finished: bool) -> Option<Value> {
+    let empty = json!({});
+    let m = bundle.get("match").filter(|m| m.is_object()).unwrap_or(&empty);
+    let status = match m.get("status") {
+        None | Some(Value::Null) => "scheduled".to_string(),
+        Some(Value::String(s)) if s.is_empty() => "scheduled".to_string(),
+        Some(Value::String(s)) => s.clone(),
+        Some(other) => other.to_string(),
+    };
+    let finished = FINISHED_STATUSES.contains(&status.to_ascii_lowercase().as_str());
+    if status != "scheduled" && status != "live" && !(include_finished && finished) {
+        return None;
+    }
+    let home = team_name(bundle.get("homeTeam")).or_else(|| team_name(m.get("homeTeamName"))).unwrap_or("Home");
+    let away = team_name(bundle.get("awayTeam")).or_else(|| team_name(m.get("awayTeamName"))).unwrap_or("Away");
+    let truthy = |v: Option<&Value>| v.map_or(false, |v| !matches!(v, Value::Null | Value::Bool(false)) && *v != json!(0) && *v != json!(""));
+    let game_number = ["gameNumber", "game_n"]
+        .iter()
+        .find_map(|k| m.get(*k).filter(|v| truthy(Some(v))).cloned())
+        .unwrap_or_else(|| json!(id));
+    Some(json!({
+        "id": public_id(id),
+        "gameNumber": game_number,
+        "homeTeam": home,
+        "awayTeam": away,
+        "scheduledAt": m.get("scheduledAt").cloned().unwrap_or(Value::Null),
+        // No display string here (no time zone data): clients format scheduledAt
+        "dateTime": Value::Null,
+        "status": status,
+        // "beach" (openbeach) or "indoor": each app lists its own sport's matches
+        "sportType": bundle_sport(bundle),
+        "test": m.get("test") == Some(&json!(true)),
+        // PINs intentionally NOT returned: validated via /api/match/validate-pin
+        "refereeConnectionEnabled": m.get("refereeConnectionEnabled") == Some(&json!(true)),
+        // The referee / bench apps offer only the matches they can join
+        "homeTeamConnectionEnabled": m.get("homeTeamConnectionEnabled") == Some(&json!(true)),
+        "awayTeamConnectionEnabled": m.get("awayTeamConnectionEnabled") == Some(&json!(true)),
+    }))
+}
+
+/// Every match a scorer currently publishes here (match_list_entry), newest
+/// first: not one whose scoreboard left longer ago than an unfinished match
+/// is held for it (STALE_TAKEOVER). Finished ones only with
+/// `include_finished`. Takes one lock at a time.
+async fn match_list_rows(state: &Arc<AppState>, include_finished: bool) -> Vec<Value> {
+    let stale: HashSet<String> = {
+        let owners = state.owners.lock().await;
+        let orphaned = state.orphaned_since.lock().await;
+        orphaned
+            .iter()
+            .filter(|(id, t)| t.elapsed() >= STALE_TAKEOVER && !owners.values().any(|o| o.contains(*id)))
+            .map(|(id, _)| id.clone())
+            .collect()
+    };
+    let matches = state.matches.lock().await;
+    let mut list: Vec<Value> = matches
+        .iter()
+        .filter(|(id, _)| !stale.contains(*id))
+        .filter_map(|(id, bundle)| match_list_entry(id, bundle, include_finished))
+        .collect();
+    drop(matches);
+    // Newest first (ISO dates sort lexically; none last)
+    list.sort_by(|a, b| {
+        let ka = a.get("scheduledAt").and_then(|v| v.as_str()).unwrap_or("");
+        let kb = b.get("scheduledAt").and_then(|v| v.as_str()).unwrap_or("");
+        kb.cmp(ka)
+    });
+    list
+}
+
+/// GET /api/match/list (`?finished=1`: finished matches too, for the livescore).
+async fn match_list(State(state): State<Arc<AppState>>, Query(params): Query<HashMap<String, String>>) -> Response {
+    let include_finished = params.get("finished").map(|v| v == "1").unwrap_or(false);
+    let list = match_list_rows(&state, include_finished).await;
+    json_response(StatusCode::OK, json!({ "success": true, "matches": list }))
+}
+
+/// GET /api/match/by-game-number (lanRelayCore `findByGameNumber`): the
+/// match's public summary and its room key; the public match only with a PIN
+/// of that match (X-OV-Match-Pin: a tablet's or a team's upload PIN). Wrong
+/// PINs count like GET /api/match/:id.
+async fn by_game_number(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(params): Query<HashMap<String, String>>,
+) -> Response {
+    if http_rate_limited(&state, "gn", &addr, BY_GAME_NUMBER_LIMIT).await {
+        return json_response(StatusCode::TOO_MANY_REQUESTS, json!({ "success": false, "error": "Too many requests" }));
+    }
+    let game_number = params.get("gameNumber").map(|s| s.trim().to_string()).unwrap_or_default();
+    if game_number.is_empty() {
+        return json_response(StatusCode::BAD_REQUEST, json!({ "success": false, "error": "Game number required" }));
+    }
+    let offered = header_pin(&headers);
+    let fail_key = format!("pinfail:ip:{}", canonical_ip(addr.ip()));
+    if offered.is_some() && window_count(&*state.limits.lock().await, &fail_key) >= PIN_FAILURE_LIMIT {
+        return json_response(StatusCode::TOO_MANY_REQUESTS, json!({ "success": false, "error": "Too many wrong PINs. Wait a minute." }));
+    }
+    let text = |v: Option<&Value>| match v {
+        Some(Value::String(s)) => Some(s.trim().to_string()),
+        Some(Value::Number(n)) => Some(n.to_string()),
+        _ => None,
+    };
+    let held = {
+        let matches = state.matches.lock().await;
+        matches.iter().find_map(|(id, bundle)| {
+            let m = bundle.get("match")?;
+            let hit = text(m.get("gameNumber")).as_deref() == Some(game_number.as_str())
+                || text(m.get("game_n")).as_deref() == Some(game_number.as_str())
+                || id == &game_number;
+            hit.then(|| (m.clone(), id.clone(), bundle.clone()))
+        })
+    };
+    let (m, id, bundle) = match held {
+        Some(x) => x,
+        None => {
+            let rid = format!("game-number-request-{}", state.next_id.fetch_add(1, Ordering::Relaxed));
+            let req_msg = json!({ "type": "game-number-request", "requestId": rid, "gameNumber": game_number });
+            let found = ws_roundtrip(&state, req_msg, &rid, "game-number-response", None).await;
+            let Some((m, Some(id))) = found.and_then(|v| Some((v.get("match")?.clone(), norm_id(v.get("matchId"))))) else {
+                return json_response(StatusCode::NOT_FOUND, json!({ "success": false, "error": "Match not found with this game number" }));
+            };
+            let bundle = state.matches.lock().await.get(&id).cloned().unwrap_or_else(|| json!({}));
+            (m, id, bundle)
+        }
+    };
+    // A spent match (or relay) budget: no PIN is compared, whatever the address
+    let spent = offered.is_some() && match_budget_spent(&state, &id).await;
+    let full = !spent && offered.as_deref().map_or(false, |p| any_match_pin_grants(Some(&m), p));
+    if offered.is_some() && !full && !spent {
+        window_bump(&mut *state.limits.lock().await, &fail_key);
+        spend_match_budget(&state, &id).await;
+    }
+    if full {
+        let mut mm = m;
+        strip_secrets(&mut mm);
+        return json_response(StatusCode::OK, json!({ "success": true, "access": "full", "match": mm, "matchId": id }));
+    }
+    let mut b = bundle;
+    b["match"] = m;
+    let summary = summary_bundle(&b);
+    json_response(
+        StatusCode::OK,
+        json!({ "success": true, "access": "summary", "match": summary["match"], "homeTeam": summary["homeTeam"], "awayTeam": summary["awayTeam"], "matchId": id }),
+    )
+}
+
+/// PATCH /api/match/:id: the one key a roster upload may set, with the team
+/// whose upload PIN it needs (lanRelayCore ROSTER_UPLOAD_FIELDS).
+const ROSTER_UPLOAD_FIELDS: &[(&str, &[&str])] = &[
+    ("pendingHomeRoster", &["homeTeamUploadPin"]),
+    ("pendingAwayRoster", &["awayTeamUploadPin"]),
+    ("pendingTeam1Roster", &["team1UploadPin", "team1TeamUploadPin"]),
+    ("pendingTeam2Roster", &["team2UploadPin", "team2TeamUploadPin"]),
+];
+
+/// Is `pin` the upload PIN of the team whose roster `field` holds?
+fn upload_pin_grants(m: Option<&Value>, field: &str, pin: &str) -> bool {
+    let Some(keys) = ROSTER_UPLOAD_FIELDS.iter().find(|(f, _)| *f == field).map(|(_, k)| *k) else { return false };
+    let p = pin.trim();
+    let expected = m.and_then(|m| keys.iter().find_map(|k| pin_text(m.get(*k))));
+    !p.is_empty() && expected.map_or(false, |e| ct_eq(&e, p))
+}
+
+/// Any PIN of the match: a tablet's or a team's upload PIN.
+fn any_match_pin_grants(m: Option<&Value>, pin: &str) -> bool {
+    pin_grants_access(m, pin) || ROSTER_UPLOAD_FIELDS.iter().any(|(f, _)| upload_pin_grants(m, f, pin))
+}
+
+fn header_pin(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("x-ov-match-pin")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// PATCH /api/match/:id { pendingHomeRoster | ... }: a team's roster upload with
+/// that team's upload PIN (X-OV-Match-Pin), handed only to the scoreboards
+/// that own the match; done when one answers with the match's bundle
+/// (lanRelayCore `updateMatch`).
+async fn match_patch(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(updates): Json<Value>,
+) -> Response {
+    let Some(id) = path_match_id(id) else { return bad_match_id() };
+    if http_rate_limited(&state, "patch", &addr, PATCH_LIMIT).await {
+        return retry_after(StatusCode::TOO_MANY_REQUESTS, json!({ "success": false, "error": "Too many requests" }), 60);
+    }
+    let field = updates
+        .as_object()
+        .filter(|o| o.len() == 1)
+        .and_then(|o| o.keys().next())
+        .filter(|k| ROSTER_UPLOAD_FIELDS.iter().any(|(f, _)| f == k))
+        .cloned();
+    let Some(field) = field.filter(|f| updates[f].is_object()) else {
+        return json_response(StatusCode::BAD_REQUEST, json!({ "success": false, "error": "Only a team roster can be uploaded here" }));
+    };
+    let Some(offered) = header_pin(&headers) else {
+        return json_response(StatusCode::UNAUTHORIZED, json!({ "success": false, "error": "Upload PIN required" }));
+    };
+    let fail_key = format!("pinfail:ip:{}", canonical_ip(addr.ip()));
+    if window_count(&*state.limits.lock().await, &fail_key) >= PIN_FAILURE_LIMIT || match_budget_spent(&state, &id).await {
+        return retry_after(StatusCode::TOO_MANY_REQUESTS, json!({ "success": false, "error": "Too many wrong PINs. Wait a minute." }), 60);
+    }
+    let bundle = state.matches.lock().await.get(&id).cloned();
+    let owners: HashSet<u64> = state.owners.lock().await.iter().filter(|(_, o)| o.contains(&id)).map(|(c, _)| *c).collect();
+    let Some(bundle) = bundle.filter(|_| !owners.is_empty()) else {
+        return json_response(StatusCode::NOT_FOUND, json!({ "success": false, "error": "Match not found. Make sure the main scoresheet is running and connected." }));
+    };
+    if !upload_pin_grants(bundle.get("match"), &field, &offered) {
+        window_bump(&mut *state.limits.lock().await, &fail_key);
+        spend_match_budget(&state, &id).await;
+        return json_response(StatusCode::FORBIDDEN, json!({ "success": false, "error": "Invalid upload PIN" }));
+    }
+    if is_finished(bundle.get("match")) {
+        return json_response(StatusCode::CONFLICT, json!({ "success": false, "error": "This match has already ended" }));
+    }
+    let rid = format!("match-update-{}", state.next_id.fetch_add(1, Ordering::Relaxed));
+    let req_msg = json!({ "type": "match-update-request", "requestId": rid, "matchId": id, "updates": { field.clone(): updates[&field] } });
+    match ws_roundtrip_to(&state, owners, req_msg, &rid, "match-update-response", Some(id.clone())).await {
+        Some(_) => json_response(StatusCode::OK, json!({ "success": true })),
+        None => json_response(StatusCode::INTERNAL_SERVER_ERROR, json!({ "success": false, "error": "Update request timeout. Make sure the main scoresheet is running." })),
+    }
+}
+
+/// Devices connected over the network (the tray's "2 tablets connected"):
+/// WebSocket connections from another machine. The scoretable on this
+/// computer (loopback or one of its own addresses) does not count.
+pub async fn tablet_count(state: &Arc<AppState>) -> usize {
+    let ips: Vec<IpAddr> = state.conn_meta.lock().await.values().map(|m| m.ip).collect();
+    if ips.is_empty() {
+        return 0;
+    }
+    let own: Vec<IpAddr> = local_ip_address::list_afinet_netifas()
+        .map(|list| list.into_iter().map(|(_, a)| canonical_ip(a)).collect())
+        .unwrap_or_default();
+    count_remote(&ips, &own)
+}
+
+fn count_remote(ips: &[IpAddr], own: &[IpAddr]) -> usize {
+    ips.iter()
+        .map(|ip| canonical_ip(*ip))
+        .filter(|ip| !ip.is_loopback() && !own.contains(ip))
+        .count()
+}
+
+/// GET /api/server/connections: the list of tablets (addresses, roles,
+/// matches) only for the relay host itself or with a PIN of the asked match
+/// (X-OV-Match-Pin, wrong ones counted); anyone else gets counts only, and
+/// the subscriber count of the asked match only.
+async fn server_connections(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(params): Query<HashMap<String, String>>,
+) -> Response {
+    let filter = params.get("matchId").and_then(|f| norm_id(Some(&Value::String(f.clone()))));
+    let local = is_local(&addr);
+    let mut listed = local;
+    if let (false, Some(pin), Some(id)) = (local, header_pin(&headers), filter.as_ref()) {
+        let fail_key = format!("pinfail:ip:{}", canonical_ip(addr.ip()));
+        if window_count(&*state.limits.lock().await, &fail_key) < PIN_FAILURE_LIMIT && !match_budget_spent(&state, id).await {
+            let m = state.matches.lock().await.get(id).and_then(|b| b.get("match").cloned());
+            listed = any_match_pin_grants(m.as_ref(), &pin);
+            if !listed {
+                window_bump(&mut *state.limits.lock().await, &fail_key);
+                spend_match_budget(&state, id).await;
+            }
+        }
+    }
+    let mut clients: Vec<Value> = Vec::new();
+    let mut counts = serde_json::Map::new();
+    let (mut referees, mut benches) = (0, 0);
+    {
+        let owners = state.owners.lock().await;
+        let subs = state.subs.lock().await;
+        let meta = state.conn_meta.lock().await;
+        for (match_id, set) in subs.iter() {
+            if local || filter.as_deref() == Some(match_id.as_str()) {
+                counts.insert(match_id.clone(), json!(set.len()));
+            }
+            if filter.as_deref().map_or(false, |f| f != match_id) {
+                continue;
+            }
+            for conn in set {
+                // Scoreboards are not dashboards.
+                if owners.get(conn).map_or(false, |o| !o.is_empty()) {
+                    continue;
+                }
+                let m = meta.get(conn);
+                let role = m.map_or("subscriber", |m| m.role.as_str());
+                match role {
+                    "referee" => referees += 1,
+                    "bench" => benches += 1,
+                    _ => {}
+                }
+                if !listed {
+                    clients.push(Value::Null); // counted, not listed
+                    continue;
+                }
+                clients.push(json!({
+                    "id": format!("c{conn}"),
+                    "ip": m.map(|m| m.ip.to_string()),
+                    "role": role,
+                    "team": m.and_then(|m| m.team.clone()),
+                    "matchId": match_id,
+                    "connectedAt": m.map(|m| m.connected_at.clone()),
+                }));
+            }
+        }
+    }
+    let total = state.clients.lock().await.len();
+    let dashboard = clients.len();
+    clients.retain(|c| !c.is_null());
+    json_response(
+        StatusCode::OK,
+        json!({
+            "totalClients": total,
+            "dashboardClients": dashboard,
+            "referees": referees,
+            "benches": benches,
+            "clients": clients,
+            "matchSubscriptions": counts,
+        }),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Static file serving (embedded dist) with SPA fallback + main-instance gate
+// ---------------------------------------------------------------------------
+
+/// "Score another court on this device": the "already running" page links to
+/// `/?court=other`, which sets this cookie and redirects to "/"; a browser that
+/// carries it gets the scoresheet while the main instance is registered (a
+/// page navigation cannot send X-Instance-ID). Same names as lanRelayCore.cjs.
+const OTHER_COURT_COOKIE: &str = "ov_other_court";
+
+/// The policy of the "already running" page (SEC-47): its links and inline
+/// style, nothing else (lanRelayCore.cjs MAIN_INSTANCE_PAGE_CSP).
+pub const MAIN_INSTANCE_PAGE_CSP: &str =
+    "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
+
+/// The Content-Security-Policy of the app's own pages (SEC-47): frontend/csp.js
+/// relayPageCsp (the app's policy and Tauri's ipc: for this window's native
+/// commands), written to shared/relayPageCsp.txt, which the frontend's
+/// nativeShellHardening.test.js keeps equal to it. The scoretable window and
+/// every tablet page this server hands out get it.
+const APP_PAGE_CSP: &str = include_str!("../../shared/relayPageCsp.txt");
+
+/// The app page policy for a served file of this app, or None: not an HTML
+/// page, a phone page (its own policy), or OpenBeach's build, whose inline
+/// scripts and policy are the OpenBeach repository's.
+fn app_page_csp(path: &str, content_type: Option<&HeaderValue>, f: &crate::flavour::Flavour) -> Option<HeaderValue> {
+    if f.key != "openvolley" || crate::sign::is_sign_page_path(path) || crate::pair::is_pair_page_path(path) {
+        return None;
+    }
+    let html = content_type.and_then(|v| v.to_str().ok()).is_some_and(|t| t.starts_with("text/html"));
+    if !html {
+        return None;
+    }
+    HeaderValue::from_str(APP_PAGE_CSP.trim_end()).ok()
+}
+
+/// The "already running" page: links to the role pages this app has
+/// (OpenBeach has no bench page).
+fn main_instance_page(f: &crate::flavour::Flavour) -> String {
+    let links: String = [("referee", "Referee App"), ("bench", "Bench App"), ("livescore", "Livescore App")]
+        .iter()
+        .filter(|(role, _)| f.role_pages.iter().any(|(r, _)| r == role))
+        .map(|(role, label)| format!("<li><a href=\"/{role}\">{label}</a></li>"))
+        .collect();
+    format!(
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\">\
+<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Main Instance Already Running</title>\
+<style>body{{font-family:Arial,sans-serif;text-align:center;padding:50px 16px}}h1{{color:#ef4444}}p{{color:#666}}ul{{list-style:none;padding:0}}li{{margin:8px 0}}</style>\
+</head><body><h1>Main Scoresheet Already Running</h1>\
+<p>Another scoretable is active on this server.</p>\
+<p>You can still open:</p>\
+<ul>{links}</ul>\
+<p>Scoring a match on another court?</p>\
+<ul><li><a href=\"/?court=other\">Open the scoresheet for another court on this device</a></li></ul>\
+</body></html>"
+    )
+}
+
+/// Does the query string carry `court=other`?
+fn is_other_court_query(query: &str) -> bool {
+    query.split('&').any(|kv| kv == "court=other")
+}
+
+/// Does the Cookie header carry the other-court opt-in?
+fn has_other_court_cookie(headers: &HeaderMap) -> bool {
+    let want = format!("{OTHER_COURT_COOKIE}=1");
+    headers
+        .get_all("cookie")
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .any(|v| v.split(';').any(|c| c.trim() == want))
+}
+
+async fn static_handler(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    uri: Uri,
+) -> Response {
+    let path = uri.path();
+
+    // Unknown API routes get JSON, not the SPA's index.html with a 200.
+    if path.starts_with("/api/") {
+        return json_response(StatusCode::NOT_FOUND, json!({ "success": false, "error": "Not found" }));
+    }
+
+    // Single main-instance gate — skipped for the desktop app itself, for a
+    // request that presents the registered instance id and for a browser that
+    // opted in to score another court (lanRelayCore `createMainInstanceGate`:
+    // a page lock, not a match lock; the game PIN decides who scores a match).
+    if path == "/" || path == "/index.html" {
+        if uri.query().map_or(false, is_other_court_query) {
+            return (
+                StatusCode::FOUND,
+                [
+                    ("location", "/".to_string()),
+                    ("set-cookie", format!("{OTHER_COURT_COOKIE}=1; Path=/; Max-Age=43200; SameSite=Lax")),
+                    ("cache-control", "no-store".to_string()),
+                ],
+            )
+                .into_response();
+        }
+        if !is_local(&addr) && !has_other_court_cookie(&headers) {
+            let main = state.main_instance.lock().await.clone();
+            let presented = headers.get("x-instance-id").and_then(|v| v.to_str().ok());
+            if main.is_some() && presented != main.as_deref() {
+                return (
+                    StatusCode::FORBIDDEN,
+                    [
+                        ("content-type", "text/html; charset=utf-8"),
+                        ("cache-control", "no-store"),
+                        ("content-security-policy", MAIN_INSTANCE_PAGE_CSP),
+                    ],
+                    main_instance_page(crate::flavour::CURRENT),
+                )
+                    .into_response();
+            }
+        }
+    }
+
+    let mut res = serve_asset(path);
+    if let Some(csp) = app_page_csp(path, res.headers().get("content-type"), crate::flavour::CURRENT) {
+        res.headers_mut().insert("Content-Security-Policy", csp);
+    }
+    if crate::sign::is_sign_page_path(path) || crate::pair::is_pair_page_path(path) {
+        // The phone pages (/sign, spec 4.7; /pair, Pair a phone): strict CSP, no referrer, no-cache
+        let h = res.headers_mut();
+        h.insert("Content-Security-Policy", HeaderValue::from_static(crate::sign::SIGN_PAGE_CSP));
+        h.insert("Referrer-Policy", HeaderValue::from_static("no-referrer"));
+        h.insert("Cache-Control", HeaderValue::from_static("no-cache"));
+    }
+    res
+}
+
+// ---------------------------------------------------------------------------
+// The Global tool's live page for TVs (global_live.rs, server.js the same
+// routes): a laptop without internet drives the TVs on its own Wi-Fi
+// ---------------------------------------------------------------------------
+
+/// The `<code>` of `/<prefix><code>` or `/<prefix><code>/` as the raw path has
+/// it (not percent-decoded, like Node's url.pathname), 1..=40 bytes.
+fn raw_segment<'a>(uri: &'a Uri, prefix: &str, slash: bool) -> Option<&'a str> {
+    let rest = uri.path().strip_prefix(prefix)?;
+    let rest = if slash { rest.strip_suffix('/').unwrap_or(rest) } else { rest };
+    (!rest.is_empty() && rest.len() <= 40 && !rest.contains('/')).then_some(rest)
+}
+
+/// GET /api/global/live/<code>: the courts of a tournament code, score
+/// summaries only, for any page (CORS *).
+async fn global_live_page(ConnectInfo(addr): ConnectInfo<SocketAddr>, State(state): State<Arc<AppState>>, uri: Uri) -> Response {
+    let Some(code) = raw_segment(&uri, "/api/global/live/", false) else {
+        // longer than a code: server.js answers it from /api/global/* (POST only)
+        return json_response(StatusCode::METHOD_NOT_ALLOWED, json!({ "data": null, "error": { "message": "Method not allowed", "code": "OV_METHOD" } }));
+    };
+    let mut res = if http_rate_limited(&state, "global-live", &addr, GLOBAL_LIVE_LIMIT).await {
+        let mut r = json_response(StatusCode::TOO_MANY_REQUESTS, json!({ "data": null, "error": { "message": "Too many requests", "code": "OV_RATE_LIMITED" } }));
+        r.headers_mut().insert("Retry-After", HeaderValue::from_static("60"));
+        r
+    } else if !crate::global_live::is_live_code(code) {
+        let mut r = json_response(StatusCode::NOT_FOUND, json!({ "data": null, "error": { "message": "Not found", "code": "OV_NOT_FOUND" } }));
+        r.headers_mut().insert("Cache-Control", HeaderValue::from_static("no-store"));
+        r
+    } else {
+        let body = {
+            let mut store = state.global_live.lock().unwrap_or_else(|e| e.into_inner());
+            let screen = uri.query().and_then(|q| q.split('&').find_map(|p| p.strip_prefix("screen="))).and_then(|v| crate::global_live::screen_number(Some(&Value::String(v.to_string()))));
+            crate::global_live::page_body(&mut store, code, now_ms(), screen)
+        };
+        let mut r = json_response(StatusCode::OK, body);
+        r.headers_mut().insert("Cache-Control", HeaderValue::from_static("no-store"));
+        r
+    };
+    let h = res.headers_mut();
+    h.insert("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
+    h.insert("Cross-Origin-Resource-Policy", HeaderValue::from_static("cross-origin"));
+    res
+}
+
+/// GET /tv and /tv/: the code entry form (backend/lib/tv/entry.html), with a
+/// hint after a wrong code (?wrong=1).
+async fn tv_entry(uri: Uri) -> Response {
+    let wrong = uri.query().map(|q| q.split('&').any(|p| p == "wrong=1")).unwrap_or(false);
+    (
+        StatusCode::OK,
+        [("content-type", "text/html; charset=utf-8"), ("cache-control", "no-store"), ("referrer-policy", "no-referrer")],
+        crate::global_live::tv_entry_html(wrong),
+    )
+        .into_response()
+}
+
+/// GET /tv/go?code=…: the form's answer, to /tv/<code> or back to the form.
+async fn tv_go(uri: Uri) -> Response {
+    let raw = uri
+        .query()
+        .and_then(|q| q.split('&').find_map(|p| p.strip_prefix("code=")))
+        .map(|v| percent_decode_plus(v))
+        .unwrap_or_default();
+    let code = crate::global_live::tv_code_of(&raw);
+    let court = uri
+        .query()
+        .and_then(|q| q.split('&').find_map(|p| p.strip_prefix("court=")))
+        .and_then(|v| crate::global_live::screen_number(Some(&Value::String(percent_decode_plus(v)))));
+    // a live screen code (with a court, if given), or a league game number
+    let to = if crate::global_live::is_live_code(&code) {
+        match court { Some(n) => format!("/tv/{code}/{n}"), None => format!("/tv/{code}") }
+    } else if !code.is_empty() && code.len() <= 7 && code.bytes().all(|b| b.is_ascii_digit()) {
+        format!("/tv/{code}")
+    } else {
+        "/tv/?wrong=1".to_string()
+    };
+    (StatusCode::FOUND, [("location", to), ("cache-control", "no-store".to_string())]).into_response()
+}
+
+/// A form value as a browser sends it: '+' for a space, %XX escapes.
+fn percent_decode_plus(v: &str) -> String {
+    let bytes = v.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'+' => { out.push(b' '); i += 1 }
+            b'%' if i + 2 < bytes.len() => {
+                let h = std::str::from_utf8(&bytes[i + 1..i + 3]).ok().and_then(|s| u8::from_str_radix(s, 16).ok());
+                match h { Some(b) => { out.push(b); i += 3 } None => { out.push(b'%'); i += 1 } }
+            }
+            b => { out.push(b); i += 1 }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// GET /tv/<code>/<court>: one court of a live screen (the court number its
+/// scorer device set), full screen.
+async fn tv_screen_page(uri: Uri) -> Response {
+    let path = uri.path().trim_start_matches("/tv/").trim_end_matches('/');
+    let mut parts = path.splitn(2, '/');
+    let code = crate::global_live::tv_code_of(parts.next().unwrap_or(""));
+    let screen = parts.next().and_then(|n| crate::global_live::screen_number(Some(&Value::String(n.to_string()))));
+    match screen {
+        Some(n) if crate::global_live::is_live_code(&code) => (
+            StatusCode::OK,
+            [("content-type", "text/html; charset=utf-8"), ("cache-control", "no-store"), ("referrer-policy", "no-referrer")],
+            crate::global_live::tv_page_html_for(&code, Some(n), None),
+        )
+            .into_response(),
+        _ => (StatusCode::FOUND, [("location", "/tv/?wrong=1"), ("cache-control", "no-store")]).into_response(),
+    }
+}
+
+/// GET /api/global/live/game/<n>: one league game from the relay's own room
+/// with that game number and a live state (backend: the public live row on
+/// the cloud, the room on a venue relay).
+async fn global_live_game(ConnectInfo(addr): ConnectInfo<SocketAddr>, State(state): State<Arc<AppState>>, uri: Uri) -> Response {
+    let n = uri.path().trim_start_matches("/api/global/live/game/").to_string();
+    let mut res = if http_rate_limited(&state, "global-live", &addr, GLOBAL_LIVE_LIMIT).await {
+        let mut r = json_response(StatusCode::TOO_MANY_REQUESTS, json!({ "data": null, "error": { "message": "Too many requests", "code": "OV_RATE_LIMITED" } }));
+        r.headers_mut().insert("Retry-After", HeaderValue::from_static("60"));
+        r
+    } else if n.is_empty() || n.len() > 7 || !n.bytes().all(|b| b.is_ascii_digit()) {
+        json_response(StatusCode::NOT_FOUND, json!({ "data": null, "error": { "message": "Not found", "code": "OV_NOT_FOUND" } }))
+    } else {
+        let text = |v: Option<&Value>| match v {
+            Some(Value::String(s)) => Some(s.trim().to_string()),
+            Some(Value::Number(x)) => Some(x.to_string()),
+            _ => None,
+        };
+        let court = {
+            let matches = state.matches.lock().await;
+            matches.values().find_map(|bundle| {
+                let m = bundle.get("match")?;
+                let hit = ["gameN", "gameNumber", "game_n"].iter().any(|k| text(m.get(*k)).as_deref() == Some(n.as_str()));
+                let live = bundle.get("liveState").filter(|v| v.is_object())?;
+                hit.then(|| {
+                    let mut c = crate::global_live::court_summary(live, bundle, &crate::global_live::iso_now());
+                    c["id"] = json!(format!("game-{n}"));
+                    c["screen"] = Value::Null;
+                    c
+                })
+            })
+        };
+        let updated = court.as_ref().map(|c| c["updatedAt"].clone()).unwrap_or(Value::Null);
+        let courts: Vec<Value> = court.into_iter().collect();
+        let mut r = json_response(StatusCode::OK, json!({ "data": { "code": format!("game/{n}"), "updatedAt": updated, "courts": courts }, "error": null }));
+        r.headers_mut().insert("Cache-Control", HeaderValue::from_static("no-store"));
+        r
+    };
+    let h = res.headers_mut();
+    h.insert("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
+    h.insert("Cross-Origin-Resource-Policy", HeaderValue::from_static("cross-origin"));
+    res
+}
+
+/// GET /tv/tv.js: the TV page's script (backend/lib/tv/tv.js).
+async fn tv_script() -> Response {
+    (
+        StatusCode::OK,
+        [("content-type", "text/javascript; charset=utf-8"), ("cache-control", "public, max-age=300")],
+        crate::global_live::TV_JS,
+    )
+        .into_response()
+}
+
+/// GET /tv/<code>: the live page for any screen, smart TVs included; the code
+/// upper-cased, dashes and spaces left out.
+async fn tv_page(uri: Uri) -> Response {
+    let raw = raw_segment(&uri, "/tv/", true).unwrap_or_default();
+    // 1-7 digits: a league game number (a code is always 8 characters)
+    if !raw.is_empty() && raw.len() <= 7 && raw.bytes().all(|b| b.is_ascii_digit()) {
+        return (
+            StatusCode::OK,
+            [("content-type", "text/html; charset=utf-8"), ("cache-control", "no-store"), ("referrer-policy", "no-referrer")],
+            crate::global_live::tv_page_html_for("", None, Some(raw)),
+        )
+            .into_response();
+    }
+    let code = crate::global_live::tv_code_of(raw);
+    if !crate::global_live::is_live_code(&code) {
+        // back to the form, with a hint (a TV user typed it with a remote)
+        return (StatusCode::FOUND, [("location", "/tv/?wrong=1"), ("cache-control", "no-store")]).into_response();
+    }
+    (
+        StatusCode::OK,
+        [("content-type", "text/html; charset=utf-8"), ("cache-control", "no-store"), ("referrer-policy", "no-referrer")],
+        crate::global_live::tv_page_html(&code),
+    )
+        .into_response()
+}
+
+// ---------------------------------------------------------------------------
+// Sign on phone (sign.rs): POST /api/sign/*
+// ---------------------------------------------------------------------------
+
+fn sign_response(a: crate::sign::Answer) -> Response {
+    let status = StatusCode::from_u16(a.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    let mut res = (status, [("content-type", "application/json"), ("cache-control", "no-store")], a.body.to_string()).into_response();
+    if let Some(secs) = a.retry_after {
+        if let Ok(v) = HeaderValue::from_str(&secs.to_string()) {
+            res.headers_mut().insert("Retry-After", v);
+        }
+    }
+    if a.status == 413 {
+        res.headers_mut().insert("Connection", HeaderValue::from_static("close"));
+    }
+    res
+}
+
+/// Who may start a session here (spec D3): the relay host itself ("local"), or
+/// a device that proves the game PIN of a match this relay holds
+/// ("pin:<address>": the caps are the caller's address's, not one set per
+/// match it names). Wrong PINs count toward the per-IP wrong-PIN limit.
+async fn sign_owner(state: &Arc<AppState>, addr: &SocketAddr, headers: &HeaderMap, body: &Value) -> Result<String, crate::sign::Answer> {
+    use crate::sign::sign_error;
+    if is_local(addr) {
+        return Ok("local".into());
+    }
+    let pin: String = headers
+        .get("x-ov-match-pin")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().chars().take(32).collect())
+        .unwrap_or_default();
+    if pin.is_empty() {
+        return Err(sign_error(403, "OV_SIGN_FORBIDDEN"));
+    }
+    let fail_key = format!("pinfail:ip:{}", canonical_ip(addr.ip()));
+    if window_count(&*state.limits.lock().await, &fail_key) >= PIN_FAILURE_LIMIT {
+        return Err(crate::sign::Answer { retry_after: Some(60), ..sign_error(429, "OV_SIGN_RATE_LIMITED") });
+    }
+    let key = body.get("matchKey").filter(|v| v.is_string()).and_then(|v| norm_id(Some(v)));
+    let stored = match &key {
+        Some(k) => state.matches.lock().await.get(k).and_then(|b| game_pin_of(b.get("match"))),
+        None => None,
+    };
+    let Some(stored) = stored else { return Err(sign_error(403, "OV_SIGN_FORBIDDEN")) };
+    if !ct_eq(&stored, &pin) {
+        window_bump(&mut *state.limits.lock().await, &fail_key);
+        return Err(sign_error(403, "OV_SIGN_PIN_INVALID"));
+    }
+    // The session caps are the caller's address's, however many matches it names
+    Ok(format!("pin:{}", canonical_ip(addr.ip())))
+}
+
+async fn sign_api(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
+    uri: Uri,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    use crate::sign::sign_error;
+    let Some(endpoint) = crate::sign::endpoint_of(uri.path()) else {
+        return sign_response(sign_error(404, "OV_SIGN_NOT_FOUND"));
+    };
+    let is_json = headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .map(|ct| {
+            let ct = ct.trim_start().to_ascii_lowercase();
+            ct.strip_prefix("application/json").map_or(false, |rest| !rest.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_'))
+        })
+        .unwrap_or(false);
+    if !is_json {
+        return sign_response(sign_error(400, "OV_SIGN_BAD_REQUEST"));
+    }
+    let limit = crate::sign::body_limit(endpoint);
+    let declared = headers.get("content-length").and_then(|v| v.to_str().ok()).and_then(|v| v.parse::<usize>().ok());
+    if declared.map_or(false, |n| n > limit) {
+        return sign_response(sign_error(413, "OV_SIGN_TOO_LARGE"));
+    }
+    // Reads at most `limit` bytes and stops
+    let Ok(bytes) = axum::body::to_bytes(body, limit).await else {
+        return sign_response(sign_error(413, "OV_SIGN_TOO_LARGE"));
+    };
+    let Ok(body) = serde_json::from_slice::<Value>(&bytes) else {
+        return sign_response(sign_error(400, "OV_SIGN_BAD_REQUEST"));
+    };
+    let ip_key = canonical_ip(addr.ip()).to_string();
+    let sessions = state.sign.clone();
+    let answer = match endpoint {
+        "start" => match sign_owner(&state, &addr, &headers, &body).await {
+            Ok(owner) => sessions.start(&body, &owner),
+            Err(a) => a,
+        },
+        "open" => sessions.open(&body, &ip_key),
+        "submit" => sessions.submit(&body, &ip_key),
+        "close" => sessions.close(&body),
+        // A dropped request drops this future, and the waiter with it
+        _ => sessions.wait(&body).await,
+    };
+    sign_response(answer)
+}
+
+// ---------------------------------------------------------------------------
+// Pair a phone (pair.rs, docs/phone-keyboard-spec.md): POST /api/pair/*
+// ---------------------------------------------------------------------------
+
+async fn pair_api(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
+    uri: Uri,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    use crate::pair::pair_error;
+    let Some(endpoint) = crate::pair::endpoint_of(uri.path()) else {
+        return sign_response(pair_error(404, "OV_PAIR_NOT_FOUND"));
+    };
+    let is_json = headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .map(|ct| {
+            let ct = ct.trim_start().to_ascii_lowercase();
+            ct.strip_prefix("application/json").map_or(false, |rest| !rest.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_'))
+        })
+        .unwrap_or(false);
+    if !is_json {
+        return sign_response(pair_error(400, "OV_PAIR_BAD_REQUEST"));
+    }
+    let limit = crate::pair::body_limit(endpoint);
+    let declared = headers.get("content-length").and_then(|v| v.to_str().ok()).and_then(|v| v.parse::<usize>().ok());
+    if declared.map_or(false, |n| n > limit) {
+        return sign_response(pair_error(413, "OV_PAIR_TOO_LARGE"));
+    }
+    let Ok(bytes) = axum::body::to_bytes(body, limit).await else {
+        return sign_response(pair_error(413, "OV_PAIR_TOO_LARGE"));
+    };
+    let Ok(body) = serde_json::from_slice::<Value>(&bytes) else {
+        return sign_response(pair_error(400, "OV_PAIR_BAD_REQUEST"));
+    };
+    let ip_key = canonical_ip(addr.ip()).to_string();
+    let sessions = state.pair.clone();
+    let answer = match endpoint {
+        // the /api/sign/start rule (the relay host, or the game PIN of a match it holds)
+        "start" => match sign_owner(&state, &addr, &headers, &body).await {
+            Ok(owner) => sessions.start(&body, &owner),
+            Err(a) => {
+                let code = a.body["code"].as_str().unwrap_or("OV_SIGN_FORBIDDEN").replacen("OV_SIGN_", "OV_PAIR_", 1);
+                crate::sign::Answer { retry_after: a.retry_after, ..pair_error(a.status, &code) }
+            }
+        },
+        "focus" => sessions.focus(&body),
+        "close" => sessions.close(&body),
+        "join" => sessions.join(&body, &ip_key),
+        "input" => sessions.input(&body, &ip_key),
+        // A dropped request drops these futures, and the waiter with them
+        "poll" => sessions.poll(&body, &ip_key).await,
+        _ => sessions.wait(&body).await,
+    };
+    sign_response(answer)
+}
+
+// ---------------------------------------------------------------------------
+// Scoreboard codes (display_code.rs, docs/scoreboard-code-spec.md): POST
+// /api/display/lookup | live { code } for boards that poll
+// ---------------------------------------------------------------------------
+
+fn display_response(a: crate::display_code::HttpAnswer) -> Response {
+    let status = StatusCode::from_u16(a.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    let mut res = (status, [("content-type", "application/json")], a.body.to_string()).into_response();
+    for (k, v) in &a.headers {
+        if let (Ok(k), Ok(v)) = (axum::http::HeaderName::from_bytes(k.as_bytes()), HeaderValue::from_str(v)) {
+            res.headers_mut().insert(k, v);
+        }
+    }
+    if a.status == 413 {
+        res.headers_mut().insert("Connection", HeaderValue::from_static("close"));
+    }
+    res
+}
+
+async fn display_api(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
+    uri: Uri,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    use crate::display_code::{display_error, BODY_MAX};
+    let endpoint = crate::display_code::endpoint_of(uri.path()).unwrap_or("");
+    let declared = headers.get("content-length").and_then(|v| v.to_str().ok()).and_then(|v| v.parse::<usize>().ok());
+    if declared.is_some_and(|n| n > BODY_MAX) {
+        return display_response(display_error(413, "OV_DISPLAY_TOO_LARGE", &[]));
+    }
+    // Reads at most BODY_MAX bytes and stops
+    let Ok(bytes) = axum::body::to_bytes(body, BODY_MAX).await else {
+        return display_response(display_error(413, "OV_DISPLAY_TOO_LARGE", &[]));
+    };
+    let text = String::from_utf8_lossy(&bytes);
+    let content_type = headers.get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("");
+    let ip_key = crate::display_code::ip_key(addr.ip());
+    let (answer, ended) = {
+        let matches = state.matches.lock().await;
+        let mut table = display_table(&state);
+        let a = table.http(endpoint, content_type, &text, &ip_key, |room| matches.get(room).map(summary_bundle));
+        (a, table.take_ended())
+    };
+    end_display_codes(&state, ended).await;
+    display_response(answer)
+}
+
+fn serve_asset(req_path: &str) -> Response {
+    let exists = |p: &str| Assets::get(p).is_some();
+    match resolve_asset(req_path, crate::flavour::CURRENT, &exists).and_then(|p| try_file(&p)) {
+        Some(r) => r,
+        None => (StatusCode::NOT_FOUND, "Not Found").into_response(),
+    }
+}
+
+/// The pages the relay hands out by name (server_status urls, the QR codes,
+/// the "already running" page) in either app. One of them that the running
+/// app does not have is a 404: a tablet must never get the scoretable for it.
+const ROLE_PATHS: &[&str] = &["referee", "bench", "livescore", "scoreboard", "scoresheet", "upload_roster"];
+
+/// Which embedded file answers `req_path` (None: 404). The file itself;
+/// a role page (/referee, /referee/, /referee.html) from the flavour's
+/// role_pages; folder pages (x/ -> x/index.html, x -> x.html | x/index.html,
+/// legacy x.html -> x/index.html); else the single-page fallback (index).
+fn resolve_asset(req_path: &str, f: &crate::flavour::Flavour, exists: &dyn Fn(&str) -> bool) -> Option<String> {
+    let index = || f.index_pages.iter().find(|p| exists(p)).map(|p| p.to_string());
+    let p = req_path.trim_start_matches('/');
+    if p.is_empty() {
+        return index();
+    }
+    if exists(p) {
+        return Some(p.to_string());
+    }
+    let role = p.strip_suffix('/').or_else(|| p.strip_suffix(".html")).unwrap_or(p);
+    if ROLE_PATHS.contains(&role) {
+        let own = f.role_pages.iter().find(|(r, _)| *r == role).map(|(_, file)| *file);
+        if let Some(file) = own.filter(|file| exists(file)) {
+            return Some(file.to_string());
+        }
+    }
+    let candidates: Vec<String> = if p.ends_with('/') {
+        vec![format!("{p}index.html")]
+    } else if !p.contains('.') {
+        vec![format!("{p}.html"), format!("{p}/index.html")]
+    } else if let Some(stem) = p.strip_suffix(".html") {
+        // Legacy /referee.html links: Vite builds folder pages (referee/index.html).
+        vec![format!("{stem}/index.html")]
+    } else {
+        vec![]
+    };
+    if let Some(found) = candidates.into_iter().find(|c| exists(c)) {
+        return Some(found);
+    }
+    if ROLE_PATHS.contains(&role) {
+        return None;
+    }
+    // A role page's own sub-path (/livescore/board, the scoreboard page,
+    // docs/scoreboard-code-spec.md): that role's page, as frontend/server.js
+    let sub = p.strip_suffix('/').unwrap_or(p);
+    if let Some((head, rest)) = sub.split_once('/') {
+        if ROLE_PATHS.contains(&head) && !rest.is_empty() && !rest.contains('/') && !rest.contains('.') {
+            let page = format!("{head}/index.html");
+            if exists(&page) {
+                return Some(page);
+            }
+        }
+    }
+    // SPA fallback
+    index()
+}
+
+/// Cache-Control of a file of the built app. Only Vite's content-hashed files
+/// (`assets/...`: a new build means a new name) may be kept for a year; every
+/// other file keeps its name across versions (`ball.png`, `openvolley_logo.png`,
+/// `favicon.ico`, the pages, the service worker), so the webview must ask again
+/// (no-cache: it revalidates). A year-long cache of the unhashed `/ball.png`
+/// kept showing the old green ball after an update.
+pub fn cache_control_for(path: &str) -> &'static str {
+    let path = path.trim_start_matches('/');
+    if path.starts_with("assets/") {
+        "public, max-age=31536000, immutable"
+    } else {
+        "no-cache"
+    }
+}
+
+fn try_file(path: &str) -> Option<Response> {
+    Assets::get(path).map(|file| {
+        let mime = mime_guess::from_path(path).first_or_octet_stream();
+        let cache = cache_control_for(path);
+        Response::builder()
+            .status(StatusCode::OK)
+            .header("content-type", mime.as_ref())
+            .header("cache-control", cache)
+            .body(Body::from(file.data.into_owned()))
+            .unwrap()
+    })
+}
+
+// ---------------------------------------------------------------------------
+// WebSocket relay
+// ---------------------------------------------------------------------------
+
+/// The upgrade: Origin / Host rule first, then a socket slot of the address
+/// (MAX_SOCKETS / MAX_SOCKETS_PER_IP), both before any socket is opened.
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Response {
+    if let Some(why) = relay_request_refusal(&headers) {
+        return json_response(StatusCode::FORBIDDEN, json!({ "success": false, "error": why }));
+    }
+    let ip = canonical_ip(addr.ip());
+    let Some(slot) = SocketSlot::take(&state, ip) else {
+        return retry_after(StatusCode::SERVICE_UNAVAILABLE, json!({ "success": false, "error": "Too many connections" }), 10);
+    };
+    ws.max_message_size(WS_MAX_MESSAGE).on_upgrade(move |socket| async move {
+        handle_socket(socket, state, ip).await;
+        drop(slot);
+    })
+}
+
+async fn send_to(state: &Arc<AppState>, conn_id: u64, msg: &Value) {
+    if let Some(tx) = state.clients.lock().await.get(&conn_id) {
+        let _ = tx.send(Message::Text(msg.to_string().into()));
+    }
+}
+
+fn send_error(tx: &Tx, code: &str, message: &str, match_id: Option<&str>) {
+    let mut err = json!({ "type": "error", "code": code, "message": message });
+    if let Some(id) = match_id {
+        err["matchId"] = json!(id);
+    }
+    let _ = tx.send(Message::Text(err.to_string().into()));
+}
+
+/// Connections that proved the scoreboard role for at least one match.
+async fn scoreboard_ids(state: &Arc<AppState>) -> HashSet<u64> {
+    state
+        .owners
+        .lock()
+        .await
+        .iter()
+        .filter(|(_, owned)| !owned.is_empty())
+        .map(|(id, _)| *id)
+        .collect()
+}
+
+/// Ask the connected scoreboards; returns the validated result (see
+/// `on_response`) or None on timeout / no scoreboard / every one declined.
+async fn ws_roundtrip(
+    state: &Arc<AppState>,
+    request_msg: Value,
+    request_id: &str,
+    response_type: &str,
+    match_id: Option<String>,
+) -> Option<Value> {
+    let targets = scoreboard_ids(state).await;
+    ws_roundtrip_to(state, targets, request_msg, request_id, response_type, match_id).await
+}
+
+/// `ws_roundtrip` to these scoreboards only.
+async fn ws_roundtrip_to(
+    state: &Arc<AppState>,
+    targets: HashSet<u64>,
+    request_msg: Value,
+    request_id: &str,
+    response_type: &str,
+    match_id: Option<String>,
+) -> Option<Value> {
+    if targets.is_empty() {
+        return None;
+    }
+    let (tx, rx) = oneshot::channel();
+    state.pending.lock().await.insert(
+        request_id.to_string(),
+        Pending { tx, response_type: response_type.to_string(), match_id, targets: targets.clone() },
+    );
+    for id in targets {
+        send_to(state, id, &request_msg).await;
+    }
+    match tokio::time::timeout(Duration::from_secs(5), rx).await {
+        Ok(Ok(v)) => Some(v),
+        _ => {
+            state.pending.lock().await.remove(request_id);
+            None
+        }
+    }
+}
+
+async fn handle_socket(socket: WebSocket, state: Arc<AppState>, ip: IpAddr) {
+    let (mut sink, mut stream) = socket.split();
+    let conn_id = state.next_id.fetch_add(1, Ordering::Relaxed);
+    let (tx, mut rx) = tx_pair();
+    let (queued, cut) = (tx.queued.clone(), tx.cut.clone());
+    state.clients.lock().await.insert(conn_id, tx.clone());
+    state.conn_meta.lock().await.insert(
+        conn_id,
+        ConnMeta {
+            ip,
+            role: "subscriber".to_string(),
+            team: None,
+            aliases: HashMap::new(),
+            pin_keys: Vec::new(),
+            access: HashMap::new(),
+            connected_at: iso_now(),
+            scorer_device: None,
+            display: None,
+        },
+    );
+
+    let send_task = tokio::spawn(async move {
+        while let Some(msg) = rx.recv().await {
+            let n = message_len(&msg);
+            let sent = sink.send(msg).await;
+            queued.fetch_sub(n, Ordering::SeqCst);
+            if sent.is_err() {
+                break;
+            }
+        }
+    });
+
+    let _ = tx.send(Message::Text(
+        json!({ "type": "connected", "message": "Connected to eScoresheet WebSocket server", "timestamp": now_ms() }).to_string().into(),
+    ));
+
+    let mut heartbeat = tokio::time::interval(HEARTBEAT);
+    heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    heartbeat.tick().await; // (the first tick is at once)
+    let mut answered = true;
+    loop {
+        tokio::select! {
+            msg = stream.next() => match msg {
+                Some(Ok(Message::Text(t))) => {
+                    // A LAN connection's messages per window (the relay host's are not limited)
+                    if !ip.is_loopback() && window_bump(&mut *state.limits.lock().await, &format!("msg:{conn_id}")) > MESSAGE_LIMIT {
+                        send_error(&tx, "rate-limited", "Too many messages. Wait a minute.", None);
+                        continue;
+                    }
+                    handle_ws_message(&state, conn_id, &tx, &t).await
+                }
+                Some(Ok(Message::Pong(_))) => answered = true,
+                Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
+                Some(Ok(_)) => {}
+            },
+            // a client that stopped reading: its queue is full (`Tx::send`)
+            _ = cut.notified() => break,
+            _ = heartbeat.tick() => {
+                // missed the previous ping: gone (the cleanup below as on a close)
+                if !answered {
+                    break;
+                }
+                answered = false;
+                let _ = tx.send(Message::Ping(Default::default()));
+            }
+        }
+    }
+
+    forget_connection(&state, conn_id).await;
+    send_task.abort();
+}
+
+/// A connection that closed (or was ended): its state goes, the rooms it
+/// scored lose their scorer (subscribers told when that was the last one).
+async fn forget_connection(state: &Arc<AppState>, conn_id: u64) {
+    state.clients.lock().await.remove(&conn_id);
+    let was_display = state.conn_meta.lock().await.remove(&conn_id).is_some_and(|m| m.display.is_some());
+    state.limits.lock().await.remove(&format!("fail:ws:{conn_id}"));
+    state.limits.lock().await.remove(&format!("bench:{conn_id}"));
+    state.limits.lock().await.remove(&format!("msg:{conn_id}"));
+    let left: Vec<String> = {
+        let mut owners = state.owners.lock().await;
+        let owned = owners.remove(&conn_id).unwrap_or_default();
+        let now = std::time::Instant::now();
+        let mut orphaned = state.orphaned_since.lock().await;
+        for id in &owned {
+            if !owners.values().any(|o| o.contains(id)) {
+                orphaned.insert(id.clone(), now);
+            }
+        }
+        owned.into_iter().collect()
+    };
+    let followed: Vec<String> = {
+        let mut subs = state.subs.lock().await;
+        let followed = subs.iter().filter(|(_, set)| set.contains(&conn_id)).map(|(id, _)| id.clone()).collect();
+        subs.retain(|_, set| {
+            set.remove(&conn_id);
+            !set.is_empty()
+        });
+        followed
+    };
+    state.display_followers.lock().await.retain(|_, m| {
+        m.remove(&conn_id);
+        !m.is_empty()
+    });
+    // A display gone: the scoreboards of the rooms it followed are told
+    if was_display {
+        for id in &followed {
+            note_displays(state, id).await;
+        }
+    }
+    // A scoreboard that left can no longer answer pending requests.
+    {
+        let mut pending = state.pending.lock().await;
+        pending.retain(|_, p| {
+            p.targets.remove(&conn_id);
+            !p.targets.is_empty()
+        });
+    }
+    for id in left {
+        update_presence(state, &id, None).await;
+    }
+}
+
+async fn is_owner(state: &Arc<AppState>, conn_id: u64, match_id: &str) -> bool {
+    state
+        .owners
+        .lock()
+        .await
+        .get(&conn_id)
+        .map_or(false, |o| o.contains(match_id))
+}
+
+/// Squatting limits for a connection about to own an id it did not own.
+fn new_claim_denied(
+    owners: &HashMap<u64, HashSet<String>>,
+    meta: &HashMap<u64, ConnMeta>,
+    limits: &mut HashMap<String, Window>,
+    ip: Option<IpAddr>,
+    match_id: &str,
+) -> Option<&'static str> {
+    let ip = match ip {
+        Some(ip) if !ip.is_loopback() => ip, // the scoretable machine itself is exempt
+        _ => return None,
+    };
+    let mut ids: HashSet<&String> = HashSet::new();
+    for (cid, owned) in owners.iter() {
+        if meta.get(cid).map(|m| m.ip) == Some(ip) {
+            ids.extend(owned.iter().filter(|id| id.as_str() != match_id));
+        }
+    }
+    if ids.len() >= MAX_OWNED_PER_IP {
+        return Some("too-many-matches");
+    }
+    if window_bump(limits, &format!("new:{ip}")) > NEW_CLAIM_LIMIT {
+        return Some("rate-limited");
+    }
+    None
+}
+
+fn claim_error_message(code: &str) -> &'static str {
+    match code {
+        "not-match-owner" => "Match is owned by another scoreboard (game PIN mismatch)",
+        "rate-limited" => "Too many failed scoreboard claims. Wait a minute.",
+        "too-many-matches" => "This device already drives the maximum number of matches",
+        "too-large" => "This device has synced too much data to the relay",
+        "relay-full" => "The relay holds the maximum number of matches",
+        "pins-required" => "Send this match again with its PINs (the relay lost it, or this connection has not proved it yet)",
+        "scorer-moved" => "This match is now scored on another device",
+        _ => "Refused",
+    }
+}
+
+/// Prove the scoreboard role for `match_id` with the match's own game PIN
+/// (port of lanRelayCore `claim`):
+/// - a match new to the relay is claimed by its first scoreboard;
+/// - a stored match with a game PIN needs the same PIN;
+/// - a stored match without one (test match) may be written by anyone, but
+///   only an existing owner may attach a PIN to it;
+/// - a match nobody has owned for ORPHAN_TAKEOVER (finished) / STALE_TAKEOVER
+///   (in play) may be taken over; an unfinished one taken over with another
+///   PIN may be reclaimed once by its own PIN.
+/// A connection that never proved the match and leaves the game PIN out is
+/// asked for it ('pins-required'), not counted. Wrong-PIN claims (only claims
+/// carrying a PIN) are limited per IP and per connection, and per match from
+/// every address (the device that scores the room is not held by the budget
+/// others spent): over the limit a claim needing proof is refused BEFORE the
+/// PIN is compared (no oracle).
+/// Across restarts a seed room's game PIN still decides (`ClaimFile`). The
+/// relay host (loopback: the desktop app) always wins a seed room a LAN
+/// device published: its scorer is the one the venue relies on.
+async fn claim(
+    state: &Arc<AppState>,
+    conn_id: u64,
+    match_id: &str,
+    incoming: Option<&Value>,
+) -> Result<ClaimKind, &'static str> {
+    claim_as(state, conn_id, match_id, incoming, None).await
+}
+
+async fn claim_as(
+    state: &Arc<AppState>,
+    conn_id: u64,
+    match_id: &str,
+    incoming: Option<&Value>,
+    device: Option<&(String, String)>,
+) -> Result<ClaimKind, &'static str> {
+    let stored = {
+        let matches = state.matches.lock().await;
+        matches.get(match_id).map(|b| (game_pin_of(b.get("match")), is_finished(b.get("match"))))
+    };
+    let incoming_pin = game_pin_of(incoming);
+    let seed = is_seed_room(match_id);
+    let known = if seed { state.claims.lock().unwrap_or_else(|e| e.into_inner()).check(match_id, incoming_pin.as_deref()) } else { None };
+    // A seed room the relay host published before (kept in the claim file)
+    let host_room = seed && state.claims.lock().unwrap_or_else(|e| e.into_inner()).is_local(match_id);
+    let lan_room = host_room && state.rooms.lock().await.get(match_id).map_or(false, |r| !r.ip.is_loopback());
+    let is_scorer = device.is_some() && state.scorers.lock().await.get(match_id) == device;
+    let budget_spent = !is_scorer && match_budget_spent(state, match_id).await;
+    // Fixed lock order: owners -> orphaned -> conn_meta -> limits -> displaced.
+    let mut owners = state.owners.lock().await;
+    let mut orphaned = state.orphaned_since.lock().await;
+    let meta = state.conn_meta.lock().await;
+    let mut limits = state.limits.lock().await;
+    let mut displaced = state.displaced.lock().await;
+    let ip = meta.get(&conn_id).map(|m| m.ip);
+    let loopback = ip.map_or(false, |ip| ip.is_loopback());
+    let was_owner = owners.get(&conn_id).map_or(false, |o| o.contains(match_id));
+    let mut keys = vec![format!("fail:ws:{conn_id}")];
+    if let Some(ip) = ip {
+        keys.push(format!("fail:ip:{ip}"));
+    }
+    let over_limit = |limits: &HashMap<String, Window>| {
+        keys.iter().any(|k| window_count(limits, k) >= CLAIM_FAILURE_LIMIT) || (!loopback && budget_spent)
+    };
+
+    let grant = |owners: &mut HashMap<u64, HashSet<String>>,
+                 orphaned: &mut HashMap<String, std::time::Instant>,
+                 kind: ClaimKind| {
+        owners.entry(conn_id).or_default().insert(match_id.to_string());
+        orphaned.remove(match_id);
+        Ok(kind)
+    };
+
+    let Some((stored_pin, finished)) = stored else {
+        // A room this relay held before (a restart, an evicted room)
+        if let (Some(known), false, false) = (known, was_owner, loopback) {
+            if !has_game_pin_field(incoming) {
+                return Err("pins-required");
+            }
+            if over_limit(&limits) {
+                return Err("rate-limited");
+            }
+            if known {
+                return grant(&mut owners, &mut orphaned, ClaimKind::Proved);
+            }
+            for k in &keys {
+                window_bump(&mut limits, k);
+            }
+            drop((owners, orphaned, meta, limits, displaced));
+            spend_match_budget(state, match_id).await;
+            return Err("not-match-owner");
+        }
+        if !was_owner {
+            if let Some(code) = new_claim_denied(&owners, &meta, &mut limits, ip, match_id) {
+                return Err(code);
+            }
+        }
+        return grant(&mut owners, &mut orphaned, if was_owner { ClaimKind::Owner } else { ClaimKind::New });
+    };
+    if stored_pin.is_none() && (incoming_pin.is_none() || was_owner) {
+        if !was_owner {
+            if let Some(code) = new_claim_denied(&owners, &meta, &mut limits, ip, match_id) {
+                return Err(code);
+            }
+        }
+        return grant(&mut owners, &mut orphaned, if was_owner { ClaimKind::Owner } else { ClaimKind::Open });
+    }
+    // An owner re-sending its own PIN proved it already: never rate limited.
+    // Leaving the PIN out is fine too (PINs are sent only when they change).
+    if was_owner && stored_pin.is_some() && (incoming_pin == stored_pin || !has_game_pin_field(incoming)) {
+        return grant(&mut owners, &mut orphaned, ClaimKind::Owner);
+    }
+    // Proof takes the game PIN. A connection that leaves it out (the scorer
+    // after a reconnect) is asked for it: nothing compared, nothing counted.
+    if stored_pin.is_some() && !has_game_pin_field(incoming) {
+        return Err("pins-required");
+    }
+    // The relay host wins back a seed room it published before and a LAN
+    // device holds now, never one another local window holds. A room a LAN
+    // device published first stays with it: the host's own copy of the same
+    // scheduled game must not take a live match away from its scorer.
+    if loopback && lan_room && incoming_pin.is_some() && incoming_pin != stored_pin {
+        let local_owner = owners.iter().any(|(cid, o)| *cid != conn_id && o.contains(match_id) && meta.get(cid).map_or(false, |m| m.ip.is_loopback()));
+        if !local_owner {
+            for (cid, owned) in owners.iter_mut() {
+                if *cid != conn_id {
+                    owned.remove(match_id);
+                }
+            }
+            displaced.remove(match_id);
+            return grant(&mut owners, &mut orphaned, ClaimKind::Takeover);
+        }
+    }
+    if over_limit(&limits) {
+        return Err("rate-limited");
+    }
+    if let (Some(a), Some(b)) = (&stored_pin, &incoming_pin) {
+        if ct_eq(a, b) {
+            return grant(&mut owners, &mut orphaned, ClaimKind::Proved);
+        }
+    }
+    if incoming_pin.is_some() && displaced.get(match_id) == incoming_pin.as_ref() {
+        displaced.remove(match_id);
+        for (cid, owned) in owners.iter_mut() {
+            if *cid != conn_id {
+                owned.remove(match_id);
+            }
+        }
+        return grant(&mut owners, &mut orphaned, ClaimKind::Reclaim);
+    }
+    let grace = if finished { ORPHAN_TAKEOVER } else { STALE_TAKEOVER };
+    let abandoned = !owners.values().any(|o| o.contains(match_id))
+        && orphaned.get(match_id).map_or(false, |t| t.elapsed() >= grace);
+    if abandoned {
+        if let Some(code) = new_claim_denied(&owners, &meta, &mut limits, ip, match_id) {
+            return Err(code);
+        }
+        match &stored_pin {
+            Some(p) if incoming_pin.as_ref() != Some(p) && !finished => {
+                displaced.insert(match_id.to_string(), p.clone());
+            }
+            _ => {
+                displaced.remove(match_id);
+            }
+        }
+        return grant(&mut owners, &mut orphaned, ClaimKind::Takeover);
+    }
+    // Only a claim with a PIN is a guess (a null PIN proves nothing either way)
+    if incoming_pin.is_some() {
+        for k in &keys {
+            window_bump(&mut limits, k);
+        }
+        drop((owners, orphaned, meta, limits, displaced));
+        if !loopback {
+            spend_match_budget(state, match_id).await;
+        }
+    }
+    Err("not-match-owner")
+}
+
+/// The scoring device a sync names with its claim of the match (`device`
+/// { id, claim }: the app's random id of this device's claim, new each time it
+/// continues the match), or None: no device, or one without a claim (older
+/// apps), is not checked. Port of lanRelayCore `syncDeviceClaim`.
+fn sync_device_claim(v: Option<&Value>) -> Option<(String, String)> {
+    let d = v?.as_object()?;
+    let id = d.get("id")?.as_str()?;
+    let claim = d.get("claim")?.as_str()?;
+    let uuid = id.len() == 36
+        && id.bytes().enumerate().all(|(i, c)| if matches!(i, 8 | 13 | 18 | 23) { c == b'-' } else { c.is_ascii_hexdigit() });
+    if !uuid || claim.is_empty() || claim.len() > MAX_CLAIM_LEN {
+        return None;
+    }
+    Some((id.to_ascii_lowercase(), claim.to_string()))
+}
+
+/// The claims a sync names as the copies its device continued the match from
+/// (`device.supersedes`, a backup restore): older copies of the room's match,
+/// never its own claim; empty when none. Port of lanRelayCore `syncDeviceClaim`.
+fn sync_superseded_claims(v: Option<&Value>, own: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let Some(list) = v.and_then(|d| d.get("supersedes")).and_then(|l| l.as_array()) else {
+        return out;
+    };
+    for c in list.iter().take(MAX_SUPERSEDED_CLAIMS).filter_map(|c| c.as_str()) {
+        if !c.is_empty() && c.len() <= MAX_CLAIM_LEN && c != own && !out.iter().any(|o| o == c) {
+            out.push(c.to_string());
+        }
+    }
+    out
+}
+
+/// The room moved away from `device`'s claim: another device's sync took it
+/// over, and this one has not continued the match since (a new claim). The
+/// game PIN cannot tell (every device the match was scored on knows it). Once
+/// the device that took it over has been gone as long as a stale takeover
+/// waits, the match is the old one's again. Also moved: a claim the room's
+/// scorers name as one their copy was continued from (`device.supersedes`):
+/// the takeovers live in memory only, and after a restart of the relay a
+/// laptop's older copy synced after the phone that had continued the match
+/// took the room from it for good (2026-10-27). Port of lanRelayCore `isMovedClaim`.
+async fn is_moved_claim(state: &Arc<AppState>, match_id: &str, device: &(String, String)) -> bool {
+    let finished = is_finished(state.matches.lock().await.get(match_id).and_then(|b| b.get("match")));
+    // Lock order: owners -> orphaned -> (conn_meta -> limits -> displaced) -> scorers -> moved_claims -> superseded_claims
+    let owners = state.owners.lock().await;
+    let orphaned = state.orphaned_since.lock().await;
+    let scorers = state.scorers.lock().await;
+    let moved = state.moved_claims.lock().await;
+    let superseded = state.superseded_claims.lock().await;
+    if !matches!(scorers.get(match_id), Some((id, _)) if *id != device.0) {
+        return false;
+    }
+    if !moved.get(match_id).map_or(false, |list| list.iter().any(|m| *m == *device))
+        && !superseded.get(match_id).map_or(false, |list| list.iter().any(|c| *c == device.1))
+    {
+        return false;
+    }
+    let grace = if finished { ORPHAN_TAKEOVER } else { STALE_TAKEOVER };
+    let abandoned = !owners.values().any(|o| o.contains(match_id))
+        && orphaned.get(match_id).map_or(false, |t| t.elapsed() >= grace);
+    !abandoned
+}
+
+/// A granted sync of `device` (with a claim): it scores the room. When it took
+/// it over from another device, that device's claim is remembered as moved and
+/// its connections stop owning the room; returns them, to be told
+/// ('scorer-moved'). A takeover by another match (a reused id) starts afresh.
+/// The claims its copy was continued from (`supersedes`) are older copies from
+/// now on, its own claim never. Port of lanRelayCore `noteScorer`.
+async fn note_scorer(state: &Arc<AppState>, conn_id: u64, match_id: &str, device: (String, String), supersedes: Vec<String>, kind: ClaimKind) -> Vec<u64> {
+    let fresh = matches!(kind, ClaimKind::Takeover | ClaimKind::New);
+    let mut owners = state.owners.lock().await;
+    let mut meta = state.conn_meta.lock().await;
+    let mut scorers = state.scorers.lock().await;
+    let mut moved = state.moved_claims.lock().await;
+    let mut superseded = state.superseded_claims.lock().await;
+    if fresh {
+        moved.remove(match_id);
+        superseded.remove(match_id);
+    }
+    if !supersedes.is_empty() || superseded.contains_key(match_id) {
+        let older = superseded.entry(match_id.to_string()).or_default();
+        older.retain(|c| *c != device.1 && !supersedes.contains(c));
+        // re-added as the newest
+        older.extend(supersedes);
+        while older.len() > MAX_SUPERSEDED_PER_ROOM {
+            older.remove(0);
+        }
+    }
+    if let Some(m) = meta.get_mut(&conn_id) {
+        m.scorer_device = Some(device.0.clone());
+    }
+    let prev = if fresh { None } else { scorers.get(match_id).cloned() };
+    if let Some(list) = moved.get_mut(match_id) {
+        list.retain(|(id, _)| *id != device.0);
+    }
+    let mut told = Vec::new();
+    let new_id = device.0.clone();
+    scorers.insert(match_id.to_string(), device);
+    let Some(prev) = prev.filter(|p| p.0 != new_id) else {
+        return told;
+    };
+    let list = moved.entry(match_id.to_string()).or_default();
+    list.retain(|(id, _)| *id != prev.0);
+    list.push(prev.clone());
+    while list.len() > MAX_MOVED_DEVICES {
+        list.remove(0);
+    }
+    for (cid, owned) in owners.iter_mut() {
+        if *cid == conn_id || meta.get(cid).and_then(|m| m.scorer_device.as_deref()) != Some(prev.0.as_str()) {
+            continue;
+        }
+        if owned.remove(match_id) {
+            told.push(*cid);
+        }
+    }
+    told
+}
+
+/// Store a bundle. A sync carries no liveState: the last one pushed is kept
+/// only while the same scoreboard / game PIN keeps the match — never across a
+/// takeover, reclaim or PIN change (it would describe another match).
+async fn store_bundle(state: &Arc<AppState>, match_id: &str, mut bundle: Value, kind: ClaimKind) -> Value {
+    strip_event_snapshots(&mut bundle);
+    let mut matches = state.matches.lock().await;
+    if let Some(prev) = matches.get(match_id) {
+        if matches!(kind, ClaimKind::Owner | ClaimKind::Proved) {
+            carry_match_secrets(prev.get("match"), &mut bundle);
+            // A sync without its teams keeps the sport the same scorer set before
+            if bundle.get("sportType").is_none() {
+                if let Some(sport) = prev.get("sportType").cloned() {
+                    bundle["sportType"] = sport;
+                }
+            }
+        }
+        let same_pin = game_pin_of(prev.get("match")) == game_pin_of(bundle.get("match"));
+        if matches!(kind, ClaimKind::Owner | ClaimKind::Proved) && same_pin && bundle.get("liveState").is_none() {
+            if let Some(prev_live) = prev.get("liveState").cloned() {
+                bundle["liveState"] = prev_live;
+            }
+        }
+    }
+    matches.insert(match_id.to_string(), bundle.clone());
+    drop(matches);
+    if is_seed_room(match_id) {
+        if let Some(pin) = game_pin_of(bundle.get("match")) {
+            let local = state.rooms.lock().await.get(match_id).map_or(false, |r| r.ip.is_loopback());
+            state.claims.lock().unwrap_or_else(|e| e.into_inner()).remember(match_id, &pin, local);
+        }
+    }
+    bundle
+}
+
+/// Rooms with no scoreboard and no subscriber (idle), with since when;
+/// marks newly idle rooms and clears rooms that are in use again.
+async fn idle_rooms(state: &Arc<AppState>) -> Vec<(String, std::time::Instant, bool)> {
+    let keys: Vec<String> = state.matches.lock().await.keys().cloned().collect();
+    let owned: HashSet<String> = state.owners.lock().await.values().flatten().cloned().collect();
+    let subbed: HashSet<String> = state.subs.lock().await.iter().filter(|(_, s)| !s.is_empty()).map(|(k, _)| k.clone()).collect();
+    let now = std::time::Instant::now();
+    let mut rooms = state.rooms.lock().await;
+    let mut idle = Vec::new();
+    for k in keys {
+        let r = rooms.entry(k.clone()).or_insert(Room { ip: IpAddr::from([127, 0, 0, 1]), bytes: 0, idle_since: None });
+        if owned.contains(&k) || subbed.contains(&k) {
+            r.idle_since = None;
+            continue;
+        }
+        let since = *r.idle_since.get_or_insert(now);
+        idle.push((k, since, r.ip.is_loopback()));
+    }
+    idle
+}
+
+/// Drop a room without telling anyone (nobody is in it); its game PIN stays
+/// in the claim file, so a later sync still has to prove it.
+async fn drop_room(state: &Arc<AppState>, match_id: &str) {
+    state.subs.lock().await.remove(match_id);
+    state.matches.lock().await.remove(match_id);
+    state.rooms.lock().await.remove(match_id);
+    state.orphaned_since.lock().await.remove(match_id);
+    state.displaced.lock().await.remove(match_id);
+    state.scorers.lock().await.remove(match_id);
+    state.moved_claims.lock().await.remove(match_id);
+    state.superseded_claims.lock().await.remove(match_id);
+    state.bench.lock().await.remove(match_id);
+    state.presence.lock().await.remove(match_id);
+    state.display_told.lock().await.remove(match_id);
+    // Its scoreboard code ends (nobody follows an idle room, but its lookups answer 'ended')
+    let ended = {
+        let mut t = display_table(state);
+        t.drop_room(match_id);
+        t.take_ended()
+    };
+    end_display_codes(state, ended).await;
+    state.display_followers.lock().await.remove(match_id);
+}
+
+/// May this sync (of `bytes`) be stored (lanRelayCore `roomBudgetDenied`)?
+/// Idle rooms of LAN devices go after ROOM_IDLE_EVICT; a new room needs space
+/// in the store (MAX_ROOMS: the room idle the longest goes first); the
+/// creating address may hold MAX_ROOMS_PER_IP rooms and MAX_ROOM_BYTES_PER_IP
+/// synced bytes. The relay host is not limited per address.
+async fn room_budget_denied(state: &Arc<AppState>, ip: Option<IpAddr>, match_id: &str, bytes: usize) -> Option<&'static str> {
+    let idle = idle_rooms(state).await;
+    for (k, since, local) in &idle {
+        if !local && since.elapsed() >= ROOM_IDLE_EVICT && k != match_id {
+            drop_room(state, k).await;
+        }
+    }
+    let (is_new, len) = {
+        let m = state.matches.lock().await;
+        (!m.contains_key(match_id), m.len())
+    };
+    if is_new && len >= MAX_ROOMS {
+        let held: HashSet<String> = state.matches.lock().await.keys().cloned().collect();
+        let oldest = idle.iter().filter(|(k, _, _)| held.contains(k)).min_by_key(|(_, since, _)| *since);
+        match oldest {
+            Some((k, _, _)) => drop_room(state, k).await,
+            None => return Some("relay-full"),
+        }
+    }
+    let ip = ip.filter(|ip| !ip.is_loopback())?;
+    let rooms = state.rooms.lock().await;
+    let (mut count, mut total) = (0, bytes);
+    for (k, r) in rooms.iter() {
+        if r.ip == ip && k != match_id {
+            count += 1;
+            total += r.bytes;
+        }
+    }
+    if is_new && count >= MAX_ROOMS_PER_IP {
+        return Some("too-many-matches");
+    }
+    if total > MAX_ROOM_BYTES_PER_IP {
+        return Some("too-large");
+    }
+    None
+}
+
+/// A stored sync: the room's creator (kept) and its latest size.
+async fn note_room(state: &Arc<AppState>, match_id: &str, ip: IpAddr, bytes: usize) {
+    let mut rooms = state.rooms.lock().await;
+    let r = rooms.entry(match_id.to_string()).or_insert(Room { ip, bytes: 0, idle_since: None });
+    r.bytes = bytes;
+    r.idle_since = None;
+    if ip.is_loopback() {
+        r.ip = ip; // the relay host took the room: its own from now on
+    }
+}
+
+async fn delete_match(state: &Arc<AppState>, match_id: &str) {
+    // Tell the subscribers BEFORE their room is dropped.
+    notify_subscribers(state, match_id, &json!({ "type": "match-deleted", "matchId": match_id }), None).await;
+    state.subs.lock().await.remove(match_id);
+    state.matches.lock().await.remove(match_id);
+    state.rooms.lock().await.remove(match_id);
+    state.claims.lock().unwrap_or_else(|e| e.into_inner()).forget(match_id);
+    state.orphaned_since.lock().await.remove(match_id);
+    state.displaced.lock().await.remove(match_id);
+    state.scorers.lock().await.remove(match_id);
+    state.moved_claims.lock().await.remove(match_id);
+    state.superseded_claims.lock().await.remove(match_id);
+    state.bench.lock().await.remove(match_id);
+    for owned in state.owners.lock().await.values_mut() {
+        owned.remove(match_id);
+    }
+    // (its subscribers were told 'match-deleted' and are gone: nobody to tell)
+    state.presence.lock().await.remove(match_id);
+    state.display_told.lock().await.remove(match_id);
+    // Its scoreboard code ends: the boards that followed by it are told
+    let ended = {
+        let mut t = display_table(state);
+        t.drop_room(match_id);
+        t.take_ended()
+    };
+    end_display_codes(state, ended).await;
+    state.display_followers.lock().await.remove(match_id);
+}
+
+async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &str) {
+    let data: Value = match serde_json::from_str(text) {
+        Ok(v) => v,
+        Err(_) => {
+            send_error(tx, "bad-request", "Invalid message format", None);
+            return;
+        }
+    };
+    let msg_type = data.get("type").and_then(|v| v.as_str()).unwrap_or("");
+    let match_id = norm_id(data.get("matchId"));
+
+    match msg_type {
+        "ping" => {
+            let _ = tx.send(Message::Text(json!({ "type": "pong", "timestamp": now_ms() }).to_string().into()));
+        }
+        "sync-match-data" => {
+            let bundle = bundle_from(&data);
+            let raw_id = match_id;
+            let key = relay_key_of(raw_id.clone(), bundle.as_ref().and_then(|b| b.get("match")));
+            let (Some(match_id), Some(bundle)) = (key, bundle) else {
+                send_error(tx, "bad-request", "sync-match-data needs matchId and match", None);
+                return;
+            };
+            // A scoreboard leaves its PINs out once the relay holds them. If the
+            // relay lost the match meanwhile, a PIN-less sync would recreate it
+            // without PINs (claimable by anyone): ask for them instead.
+            let sent_pins = has_any_pin_field(bundle.get("match"));
+            let held = state.matches.lock().await.contains_key(&match_id);
+            let pins_required = {
+                let mut meta = state.conn_meta.lock().await;
+                match meta.get_mut(&conn_id) {
+                    Some(m) if sent_pins => {
+                        m.pin_keys.retain(|k| *k != match_id);
+                        if m.pin_keys.len() >= MAX_ALIASES {
+                            m.pin_keys.remove(0);
+                        }
+                        m.pin_keys.push(match_id.clone());
+                        false
+                    }
+                    Some(m) => !held && m.pin_keys.contains(&match_id),
+                    None => false,
+                }
+            };
+            if pins_required {
+                send_error(tx, "pins-required", claim_error_message("pins-required"), Some(&match_id));
+                return;
+            }
+            // A claim another device took over: refused before any PIN is compared
+            let device = sync_device_claim(data.get("device"));
+            let supersedes = device.as_ref().map_or_else(Vec::new, |d| sync_superseded_claims(data.get("device"), &d.1));
+            if let Some(d) = &device {
+                if is_moved_claim(state, &match_id, d).await {
+                    if let Some(owned) = state.owners.lock().await.get_mut(&conn_id) {
+                        owned.remove(&match_id);
+                    }
+                    send_error(tx, "scorer-moved", claim_error_message("scorer-moved"), Some(&match_id));
+                    update_presence(state, &match_id, None).await;
+                    return;
+                }
+            }
+            let ip = state.conn_meta.lock().await.get(&conn_id).map(|m| m.ip);
+            if let Some(code) = room_budget_denied(state, ip, &match_id, text.len()).await {
+                send_error(tx, code, claim_error_message(code), Some(&match_id));
+                return;
+            }
+            let kind = match claim_as(state, conn_id, &match_id, bundle.get("match"), device.as_ref()).await {
+                Ok(kind) => kind,
+                Err(code) => {
+                    send_error(tx, code, claim_error_message(code), Some(&match_id));
+                    return;
+                }
+            };
+            if let Some(ip) = ip {
+                note_room(state, &match_id, ip, text.len()).await;
+            }
+            if let Some(raw) = raw_id.filter(|r| *r != match_id) {
+                if let Some(m) = state.conn_meta.lock().await.get_mut(&conn_id) {
+                    m.aliases.remove(&raw);
+                    if m.aliases.len() >= MAX_ALIASES {
+                        if let Some(k) = m.aliases.keys().next().cloned() {
+                            m.aliases.remove(&k);
+                        }
+                    }
+                    m.aliases.insert(raw, match_id.clone());
+                }
+            }
+            if let Some(d) = device {
+                for cid in note_scorer(state, conn_id, &match_id, d, supersedes, kind).await {
+                    send_to(state, cid, &json!({ "type": "scorer-moved", "matchId": match_id, "timestamp": now_ms() })).await;
+                }
+            }
+            let stored = store_bundle(state, &match_id, bundle, kind).await;
+            notify_match_data(state, &match_id, "match-data-update", &stored, data.get("_timestamp").cloned(), Some(conn_id)).await;
+            // After the update: a tablet has the match before it hears its scorer
+            // is there. A takeover (note_scorer) is complete here: it flips nothing.
+            update_presence(state, &match_id, None).await;
+            // A connection that has just proved the room hears whether a display follows it
+            if kind != ClaimKind::Owner {
+                send_display_presence(state, &match_id, tx).await;
+            }
+            // Bench requests of a set that is over go; a connection that has
+            // just (re)proved the match gets the open ones again
+            let replay = {
+                let mut bench = state.bench.lock().await;
+                if let Some(list) = bench.get_mut(&match_id) {
+                    crate::bench_requests::prune(list, crate::bench_requests::current_set_of_bundle(&stored), std::time::Instant::now());
+                }
+                if kind == ClaimKind::Owner {
+                    Vec::new()
+                } else {
+                    bench.get(&match_id).map(|l| l.iter().filter(|e| e.is_open()).cloned().collect()).unwrap_or_default()
+                }
+            };
+            for e in replay {
+                let msg = json!({ "type": "bench-request", "matchId": match_id, "team": e.team, "request": e.request, "status": e.status, "at": e.at_ms, "replay": true });
+                let _ = tx.send(Message::Text(msg.to_string().into()));
+            }
+        }
+        "subscribe-match" => {
+            // A scoreboard by its code alone (display_code.rs): no matchId, any PIN ignored
+            if match_id.is_none() && data.get("code").is_some_and(|c| !c.is_null()) {
+                subscribe_by_code(state, conn_id, tx, &data).await;
+                return;
+            }
+            let Some(match_id) = match_id else {
+                send_error(tx, "bad-request", "subscribe-match needs matchId", None);
+                return;
+            };
+            subscribe_room(state, conn_id, tx, &data, match_id, None).await;
+        }
+        "display-code-set" => on_display_code_set(state, conn_id, tx, &data, match_id).await,
+        "bench-request" => on_bench_request(state, conn_id, tx, &data).await,
+        "bench-response" => on_bench_response(state, conn_id, tx, &data).await,
+        "unsubscribe-match" => {
+            if let Some(match_id) = match_id {
+                {
+                    let mut subs = state.subs.lock().await;
+                    if let Some(set) = subs.get_mut(&match_id) {
+                        set.remove(&conn_id);
+                        if set.is_empty() {
+                            subs.remove(&match_id);
+                        }
+                    }
+                }
+                unfollow_code(state, conn_id, &match_id).await;
+                let display = state.conn_meta.lock().await.get(&conn_id).is_some_and(|m| m.display.is_some());
+                if display {
+                    note_displays(state, &match_id).await;
+                }
+            }
+        }
+        "match-action" | "live-state-update" | "delete-match" => {
+            let Some(match_id) = resolve_key(state, conn_id, match_id).await else {
+                send_error(tx, "bad-request", "matchId required", None);
+                return;
+            };
+            if !is_owner(state, conn_id, &match_id).await {
+                send_error(tx, "not-match-owner", "Only the match's scoreboard may send this", Some(&match_id));
+                return;
+            }
+            match msg_type {
+                "match-action" => {
+                    let Some(action) = data.get("action").and_then(|v| v.as_str()) else { return };
+                    let now = now_ms();
+                    // Scoreboard sends the payload as `data`; `actionData` is the legacy name.
+                    let payload = match data.get("data") {
+                        Some(d) => d.clone(),
+                        None => data.get("actionData").cloned().unwrap_or(Value::Null),
+                    };
+                    let sb_ts = data
+                        .get("_timestamp")
+                        .or_else(|| data.get("timestamp"))
+                        .cloned()
+                        .unwrap_or(json!(now));
+                    let msg = json!({
+                        "type": "match-action",
+                        "matchId": match_id,
+                        "action": action,
+                        "data": payload,
+                        "timestamp": data.get("timestamp").cloned().unwrap_or(Value::Null),
+                        "_timestamp": now,
+                        "_scoreboardTimestamp": sb_ts,
+                    });
+                    // Only to connections with access: actions carry players and sanctions
+                    notify_access_only(state, &match_id, &msg, Some(conn_id)).await;
+                }
+                "live-state-update" => {
+                    let Some(live) = data.get("liveState").filter(|v| v.is_object()).cloned() else { return };
+                    if let Some(bundle) = state.matches.lock().await.get_mut(&match_id) {
+                        bundle["liveState"] = live.clone();
+                        // The Global tool's live page for TVs (global_live.rs): a
+                        // scorer that opted in with a tournament code, any match
+                        // type; the summary only, from the state just taken from
+                        // the room's owner (checked above). One court per match
+                        // whichever way it comes (relay or the webview's push to
+                        // the cloud): the match's court token, else the room.
+                        if let Some(code) = data.get("globalLive").and_then(|v| v.as_str()) {
+                            let court = data
+                                .get("globalLiveCourt")
+                                .and_then(|v| v.as_str())
+                                .filter(|t| crate::global_live::is_court_token(t))
+                                .map(str::to_string)
+                                .unwrap_or_else(|| crate::global_live::court_token_of(&match_id));
+                            let mut store = state.global_live.lock().unwrap_or_else(|e| e.into_inner());
+                            let screen = crate::global_live::screen_of(data.get("globalLiveScreen"), bundle);
+                            store.update_room(code, &match_id, &court, &bundle["liveState"], bundle, now_ms(), screen);
+                        }
+                    }
+                    let msg = json!({ "type": "live-state-update", "matchId": match_id, "liveState": live });
+                    notify_subscribers(state, &match_id, &msg, Some(conn_id)).await;
+                }
+                _ => delete_match(state, &match_id).await,
+            }
+        }
+        "clear-all-matches" => {
+            let owned: Vec<String> = state
+                .owners
+                .lock()
+                .await
+                .get(&conn_id)
+                .map(|o| o.iter().cloned().collect())
+                .unwrap_or_default();
+            if owned.is_empty() {
+                send_error(tx, "not-scoreboard", "Only a scoreboard that synced its match may clear matches", None);
+                return;
+            }
+            let keep = resolve_key(state, conn_id, norm_id(data.get("keepMatchId"))).await;
+            for id in owned {
+                if keep.as_deref() == Some(id.as_str()) {
+                    continue;
+                }
+                // Another live socket still drives this match: just drop our claim.
+                let mut owners = state.owners.lock().await;
+                let co_owned = owners.iter().any(|(other, o)| *other != conn_id && o.contains(&id));
+                if co_owned {
+                    if let Some(o) = owners.get_mut(&conn_id) {
+                        o.remove(&id);
+                    }
+                    drop(owners);
+                    update_presence(state, &id, None).await;
+                } else {
+                    drop(owners);
+                    delete_match(state, &id).await;
+                }
+            }
+        }
+        "match-data-response" | "game-number-response" | "match-update-response" => {
+            on_response(state, conn_id, msg_type, &data).await;
+        }
+        // The relay validates PINs itself, so pin-validation-response is ignored,
+        // and there is no catch-all rebroadcast of unknown types.
+        _ => {}
+    }
+}
+
+/// Resolve a pending relay request — only from a scoreboard that was asked.
+async fn on_response(state: &Arc<AppState>, conn_id: u64, msg_type: &str, data: &Value) {
+    let Some(rid) = data.get("requestId").and_then(|v| v.as_str()) else { return };
+    let expected_match = {
+        let pending = state.pending.lock().await;
+        match pending.get(rid) {
+            Some(p) if p.response_type == msg_type && p.targets.contains(&conn_id) => p.match_id.clone(),
+            _ => return,
+        }
+    };
+    let success = data.get("success").and_then(|v| v.as_bool()) == Some(true);
+    let match_id = norm_id(data.get("matchId")).or_else(|| expected_match.clone());
+
+    let mut result: Option<Value> = None;
+    if success {
+        if msg_type == "game-number-response" {
+            if let (Some(m), Some(id)) = (data.get("match"), &match_id) {
+                if is_owner(state, conn_id, id).await {
+                    result = Some(json!({ "match": m.clone(), "matchId": id }));
+                }
+            }
+        } else {
+            // match-data-response (App.jsx sends `matchData`, Scoreboard.jsx `data`)
+            // and match-update-response carry a full bundle. Stored only under its
+            // room key (seed_key), and only when that is the id asked for: a Dexie
+            // id must not open a second, frozen room.
+            let payload = data.get("data").or_else(|| data.get("matchData")).cloned().unwrap_or(Value::Null);
+            match (bundle_from(&payload), &match_id) {
+                (Some(bundle), Some(id))
+                    if Some(id) == expected_match.as_ref()
+                        && relay_key_of(Some(id.clone()), bundle.get("match")).as_deref() == Some(id.as_str()) =>
+                {
+                    if let Ok(kind) = claim(state, conn_id, id, bundle.get("match")).await {
+                        let stored = store_bundle(state, id, bundle, kind).await;
+                        if msg_type == "match-update-response" {
+                            notify_match_data(state, id, "match-data-update", &stored, None, Some(conn_id)).await;
+                            result = Some(json!({ "data": stored }));
+                        } else {
+                            result = Some(stored);
+                        }
+                        // The answer proved the match: a claim like a sync's
+                        update_presence(state, id, None).await;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut pending = state.pending.lock().await;
+    match result {
+        Some(v) => {
+            if let Some(p) = pending.remove(rid) {
+                let _ = p.tx.send(v);
+            }
+        }
+        None => {
+            // This scoreboard declined; give up once every asked one has.
+            let exhausted = match pending.get_mut(rid) {
+                Some(p) => {
+                    p.targets.remove(&conn_id);
+                    p.targets.is_empty()
+                }
+                None => false,
+            };
+            if exhausted {
+                pending.remove(rid);
+            }
+        }
+    }
+}
+
+// --- PIN-proved access -------------------------------------------------------
+
+async fn pin_blocked(state: &Arc<AppState>, conn_id: u64, ip: IpAddr) -> bool {
+    let limits = state.limits.lock().await;
+    window_count(&limits, &format!("pinfail:ip:{}", canonical_ip(ip))) >= PIN_FAILURE_LIMIT
+        || window_count(&limits, &format!("pinfail:ws:{conn_id}")) >= PIN_FAILURE_LIMIT
+}
+
+async fn count_pin_failure(state: &Arc<AppState>, conn_id: u64, ip: IpAddr) {
+    let mut limits = state.limits.lock().await;
+    window_bump(&mut limits, &format!("pinfail:ip:{}", canonical_ip(ip)));
+    window_bump(&mut limits, &format!("pinfail:ws:{conn_id}"));
+}
+
+/// Takes back one counted failure (an offer counted ahead that was right).
+async fn refund_pin_failure(state: &Arc<AppState>, conn_id: u64, ip: IpAddr) {
+    let mut limits = state.limits.lock().await;
+    for k in [format!("pinfail:ip:{}", canonical_ip(ip)), format!("pinfail:ws:{conn_id}")] {
+        if let Some(w) = limits.get_mut(&k) {
+            w.count = w.count.saturating_sub(1);
+        }
+    }
+}
+
+/// subscribe-match `pin`: checked now when the relay holds the match (wrong:
+/// 'pin-invalid', counted), else once the match arrives. An offer for a match
+/// the relay does not hold yet is counted as a failure when it is stored (and
+/// given back when it turns out right), so one address can park no more
+/// guesses than it may make.
+async fn offer_pin(state: &Arc<AppState>, conn_id: u64, tx: &Tx, match_id: &str, raw: Option<&Value>, stored: Option<&Value>) {
+    let offered: String = match raw {
+        Some(Value::String(s)) => s.trim().chars().take(32).collect(),
+        Some(Value::Number(n)) => n.to_string(),
+        _ => String::new(),
+    };
+    if offered.is_empty() {
+        return;
+    }
+    let Some(ip) = state.conn_meta.lock().await.get(&conn_id).map(|m| m.ip) else { return };
+    if pin_blocked(state, conn_id, ip).await || match_budget_spent(state, match_id).await {
+        send_error(tx, "rate-limited", "Too many wrong PINs. Wait a minute.", Some(match_id));
+        return;
+    }
+    let m = stored.and_then(|b| b.get("match"));
+    if m.is_some() && !pin_grants_access(m, &offered) {
+        count_pin_failure(state, conn_id, ip).await;
+        spend_match_budget(state, match_id).await;
+        send_error(tx, "pin-invalid", "Wrong PIN for this match", Some(match_id));
+        return;
+    }
+    // An unverified offer this one replaces gives its count back
+    let replaced = state.conn_meta.lock().await.get(&conn_id).and_then(|c| c.access.get(match_id)).map_or(false, |a| !a.1);
+    if replaced {
+        refund_pin_failure(state, conn_id, ip).await;
+    }
+    if m.is_none() {
+        count_pin_failure(state, conn_id, ip).await;
+    }
+    if let Some(meta) = state.conn_meta.lock().await.get_mut(&conn_id) {
+        meta.access.remove(match_id);
+        if meta.access.len() >= MAX_ACCESS_KEYS {
+            if let Some(k) = meta.access.keys().next().cloned() {
+                meta.access.remove(&k);
+            }
+        }
+        meta.access.insert(match_id.to_string(), (offered, m.is_some()));
+    }
+}
+
+/// May this connection get the bundle and match actions (not just the summary)?
+async fn has_access(state: &Arc<AppState>, conn_id: u64, match_id: &str, bundle: Option<&Value>) -> bool {
+    if is_owner(state, conn_id, match_id).await {
+        return true;
+    }
+    // A board that follows by a code: the public summary only, whatever PIN it offered before
+    if is_code_follower(state, conn_id, match_id).await {
+        return false;
+    }
+    let (offered, verified, ip) = {
+        let meta = state.conn_meta.lock().await;
+        match meta.get(&conn_id).and_then(|m| m.access.get(match_id).map(|(p, v)| (p.clone(), *v, m.ip))) {
+            Some(x) => x,
+            None => return false,
+        }
+    };
+    let Some(m) = bundle.and_then(|b| b.get("match")) else { return false };
+    // Offered before the match reached the relay: checked once, and not at
+    // all once the match's budget is spent (already counted at the offer)
+    if !verified && match_budget_spent(state, match_id).await {
+        if let Some(meta) = state.conn_meta.lock().await.get_mut(&conn_id) {
+            meta.access.remove(match_id);
+        }
+        return false;
+    }
+    if pin_grants_access(Some(m), &offered) {
+        if let Some(meta) = state.conn_meta.lock().await.get_mut(&conn_id) {
+            if let Some(a) = meta.access.get_mut(match_id) {
+                a.1 = true;
+            }
+        }
+        if !verified {
+            refund_pin_failure(state, conn_id, ip).await;
+        }
+        return true;
+    }
+    if !verified {
+        if let Some(meta) = state.conn_meta.lock().await.get_mut(&conn_id) {
+            meta.access.remove(match_id);
+        }
+        spend_match_budget(state, match_id).await;
+    }
+    false
+}
+
+async fn subscriber_ids(state: &Arc<AppState>, match_id: &str, exclude: Option<u64>) -> Vec<u64> {
+    state
+        .subs
+        .lock()
+        .await
+        .get(match_id)
+        .map(|s| s.iter().copied().filter(|id| Some(*id) != exclude).collect())
+        .unwrap_or_default()
+}
+
+/// match-full-data / match-data-update to a match's subscribers: full or summary each.
+async fn notify_match_data(
+    state: &Arc<AppState>,
+    match_id: &str,
+    msg_type: &str,
+    bundle: &Value,
+    sb_ts: Option<Value>,
+    exclude: Option<u64>,
+) {
+    let mut full_ids = Vec::new();
+    let mut summary_ids = Vec::new();
+    let mut public_ids = Vec::new();
+    let coded = code_followers(state, match_id).await;
+    for id in subscriber_ids(state, match_id, exclude).await {
+        if coded.contains(&id) {
+            public_ids.push(id);
+        } else if has_access(state, id, match_id, Some(bundle)).await {
+            full_ids.push(id);
+        } else {
+            summary_ids.push(id);
+        }
+    }
+    let full = (!full_ids.is_empty())
+        .then(|| bundle_message_access(msg_type, match_id, bundle, sb_ts.clone(), true).to_string());
+    let summary = (!summary_ids.is_empty())
+        .then(|| bundle_message_access(msg_type, match_id, bundle, sb_ts.clone(), false).to_string());
+    // Boards that follow by a code: the summary with the public live state
+    let public = (!public_ids.is_empty())
+        .then(|| public_message(&bundle_message_access(msg_type, match_id, bundle, sb_ts.clone(), false)).to_string());
+    let clients = state.clients.lock().await;
+    for (ids, text) in [(full_ids, full), (summary_ids, summary), (public_ids, public)] {
+        let Some(text) = text else { continue };
+        for id in ids {
+            if let Some(tx) = clients.get(&id) {
+                let _ = tx.send(Message::Text(text.clone().into()));
+            }
+        }
+    }
+}
+
+/// A message only for the subscribers with access to the match.
+async fn notify_access_only(state: &Arc<AppState>, match_id: &str, msg: &Value, exclude: Option<u64>) {
+    let bundle = state.matches.lock().await.get(match_id).cloned();
+    let mut ids = Vec::new();
+    for id in subscriber_ids(state, match_id, exclude).await {
+        if has_access(state, id, match_id, bundle.as_ref()).await {
+            ids.push(id);
+        }
+    }
+    if ids.is_empty() {
+        return;
+    }
+    let text = msg.to_string();
+    let clients = state.clients.lock().await;
+    for id in ids {
+        if let Some(tx) = clients.get(&id) {
+            let _ = tx.send(Message::Text(text.clone().into()));
+        }
+    }
+}
+
+/// 'scorer-presence' { matchId, present, timestamp }: whether an open socket
+/// holds the scoreboard role for the room (proved it with an accepted sync).
+/// The room's subscribers, not its scorer sockets, are told when that flips,
+/// once per flip (no repeat on every sync, no timer); `joined` (a connection
+/// that just subscribed, with its queue) is told the state either way. Call
+/// after anything that changes the room's owners, once the change is complete
+/// (a takeover, new owner in before the old one out, flips nothing). Lock
+/// order: presence -> owners -> subs -> clients (one presence lock around
+/// compare, record and send: flips go out in order).
+async fn update_presence(state: &Arc<AppState>, match_id: &str, joined: Option<(u64, &Tx)>) {
+    let mut presence = state.presence.lock().await;
+    let scorers: HashSet<u64> = state.owners.lock().await.iter().filter(|(_, o)| o.contains(match_id)).map(|(id, _)| *id).collect();
+    let present = !scorers.is_empty();
+    let flipped = presence.get(match_id).copied().unwrap_or(false) != present;
+    if flipped {
+        if present {
+            presence.insert(match_id.to_string(), true);
+        } else {
+            presence.remove(match_id);
+        }
+    }
+    let ids: Vec<u64> = if flipped {
+        subscriber_ids(state, match_id, joined.map(|(id, _)| id)).await.into_iter().filter(|id| !scorers.contains(id)).collect()
+    } else {
+        Vec::new()
+    };
+    if ids.is_empty() && joined.is_none() {
+        return;
+    }
+    let text = json!({ "type": "scorer-presence", "matchId": match_id, "present": present, "timestamp": now_ms() }).to_string();
+    if let Some((_, tx)) = joined {
+        let _ = tx.send(Message::Text(text.clone().into()));
+    }
+    let clients = state.clients.lock().await;
+    for id in ids {
+        if let Some(tx) = clients.get(&id) {
+            let _ = tx.send(Message::Text(text.clone().into()));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Scoreboard displays ('display-presence', docs/scoreboard-display-spec.md):
+// a display (an LED board's controller) subscribes with device 'display' and
+// may name its settings page (`settingsUrl`), kept only when it is an http(s)
+// URL on a private-LAN address. The room's scoreboards, and only they, are
+// told whether a display follows and that page: on a connection's first
+// accepted sync of the room, and when it changes. The same rule and message
+// as backend/lib/displayPresence.js and lanRelayCore.cjs.
+// ---------------------------------------------------------------------------
+
+const DISPLAY_DEVICE: &str = "display";
+const MAX_SETTINGS_URL_LENGTH: usize = 256;
+
+/// RFC 1918 IPv4, or an IPv6 unique local address (fc00::/7), as a URL's host_str() gives them.
+fn is_private_lan_host(host: &str) -> bool {
+    if let Ok(v4) = host.parse::<std::net::Ipv4Addr>() {
+        let o = v4.octets();
+        return o[0] == 10 || (o[0] == 172 && (16..=31).contains(&o[1])) || (o[0] == 192 && o[1] == 168);
+    }
+    if let Some(inner) = host.strip_prefix('[').and_then(|h| h.strip_suffix(']')) {
+        if let Ok(v6) = inner.parse::<std::net::Ipv6Addr>() {
+            return v6.segments()[0] & 0xfe00 == 0xfc00;
+        }
+    }
+    false
+}
+
+/// A display's settings page as the relay keeps it (the normalised URL), or None.
+fn display_settings_url(raw: Option<&Value>) -> Option<String> {
+    let raw = raw?.as_str()?;
+    let len = raw.encode_utf16().count();
+    if len == 0 || len > MAX_SETTINGS_URL_LENGTH || raw.chars().any(|c| c <= ' ' || c == '\u{7f}') {
+        return None;
+    }
+    let url = tauri::Url::parse(raw).ok()?;
+    if !matches!(url.scheme(), "http" | "https") || !url.username().is_empty() || url.password().is_some() {
+        return None;
+    }
+    if !is_private_lan_host(url.host_str()?) {
+        return None;
+    }
+    let href = url.as_str();
+    (href.encode_utf16().count() <= MAX_SETTINGS_URL_LENGTH).then(|| href.to_string())
+}
+
+/// Whether a display follows the room, and the newest usable settings page.
+async fn display_state(state: &Arc<AppState>, match_id: &str) -> (bool, Option<String>) {
+    let ids: Vec<u64> = state.subs.lock().await.get(match_id).map(|s| s.iter().copied().collect()).unwrap_or_default();
+    let meta = state.conn_meta.lock().await;
+    let (mut present, mut url, mut at) = (false, None, 0u64);
+    for id in ids {
+        if let Some((page, seq)) = meta.get(&id).and_then(|m| m.display.as_ref()) {
+            present = true;
+            if let Some(page) = page {
+                if url.is_none() || *seq >= at {
+                    url = Some(page.clone());
+                    at = *seq;
+                }
+            }
+        }
+    }
+    (present, if present { url } else { None })
+}
+
+fn display_key(present: bool, url: &Option<String>) -> String {
+    if present {
+        format!("1|{}", url.as_deref().unwrap_or(""))
+    } else {
+        "0".to_string()
+    }
+}
+
+fn display_message(match_id: &str, present: bool, url: &Option<String>) -> String {
+    json!({ "type": "display-presence", "matchId": match_id, "present": present, "settingsUrl": url }).to_string()
+}
+
+/// To one connection that has just proved the room.
+async fn send_display_presence(state: &Arc<AppState>, match_id: &str, tx: &Tx) {
+    let (present, url) = display_state(state, match_id).await;
+    state.display_told.lock().await.insert(match_id.to_string(), display_key(present, &url));
+    let _ = tx.send(Message::Text(display_message(match_id, present, &url).into()));
+}
+
+/// After a display came, went or named another page: the room's scoreboards, when that changed.
+async fn note_displays(state: &Arc<AppState>, match_id: &str) {
+    let (present, url) = display_state(state, match_id).await;
+    let key = display_key(present, &url);
+    {
+        let mut told = state.display_told.lock().await;
+        if told.get(match_id).map_or("0", |k| k.as_str()) == key {
+            return;
+        }
+        if present {
+            told.insert(match_id.to_string(), key);
+        } else {
+            told.remove(match_id);
+        }
+    }
+    let owners: Vec<u64> = state.owners.lock().await.iter().filter(|(_, o)| o.contains(match_id)).map(|(id, _)| *id).collect();
+    if owners.is_empty() {
+        return;
+    }
+    let text = display_message(match_id, present, &url);
+    let clients = state.clients.lock().await;
+    for id in owners {
+        if let Some(tx) = clients.get(&id) {
+            let _ = tx.send(Message::Text(text.clone().into()));
+        }
+    }
+}
+
+async fn notify_subscribers(state: &Arc<AppState>, match_id: &str, msg: &Value, exclude: Option<u64>) {
+    let sub_ids: Vec<u64> = state
+        .subs
+        .lock()
+        .await
+        .get(match_id)
+        .map(|s| s.iter().copied().collect())
+        .unwrap_or_default();
+    if sub_ids.is_empty() {
+        return;
+    }
+    // Boards that follow by a code: the public live state
+    let coded = if msg.get("liveState").is_some() { code_followers(state, match_id).await } else { HashSet::new() };
+    let text = msg.to_string();
+    let public = (!coded.is_empty()).then(|| public_message(msg).to_string());
+    let clients = state.clients.lock().await;
+    for id in sub_ids {
+        if Some(id) == exclude {
+            continue;
+        }
+        let text = match &public {
+            Some(p) if coded.contains(&id) => p,
+            _ => &text,
+        };
+        if let Some(tx) = clients.get(&id) {
+            let _ = tx.send(Message::Text(text.clone().into()));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Scoreboard codes (display_code.rs, docs/scoreboard-code-spec.md): the
+// room's scorer socket sets a code (display-code-set); a board follows the
+// room by it (subscribe-match { code }) as a PIN-less display would, and gets
+// the public live state only (LIVE_STATE_PRIVATE_COLUMNS out) in every
+// live-state-update, match-full-data and match-data-update. When the code
+// ends (a new one, revoked, 12 h, the room deleted or dropped) its boards are
+// told (display-code ended) and leave the room. The same messages as
+// backend/server.js and lanRelayCore.cjs.
+// ---------------------------------------------------------------------------
+
+fn display_table(state: &AppState) -> std::sync::MutexGuard<'_, crate::display_code::DisplayCodes> {
+    state.display_codes.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn ws_text(v: &Value) -> Message {
+    Message::Text(v.to_string().into())
+}
+
+/// A match message as a board that follows by a code gets it: `liveState`
+/// and `data.liveState` public.
+fn public_message(msg: &Value) -> Value {
+    let mut out = msg.clone();
+    if let Some(o) = out.as_object_mut() {
+        if let Some(live) = o.get("liveState") {
+            let p = crate::display_code::public_live_state(live);
+            o.insert("liveState".into(), p);
+        }
+        if let Some(data) = o.get_mut("data").and_then(|d| d.as_object_mut()) {
+            if let Some(live) = data.get("liveState") {
+                let p = crate::display_code::public_live_state(live);
+                data.insert("liveState".into(), p);
+            }
+        }
+    }
+    out
+}
+
+/// Codes that ended: every board that followed its room by one is told and
+/// leaves the room (its scoreboards hear display-presence when that changed).
+async fn end_display_codes(state: &Arc<AppState>, ended: Vec<crate::display_code::Ended>) {
+    for e in ended {
+        let ids: Vec<u64> = {
+            let mut followers = state.display_followers.lock().await;
+            let Some(room) = followers.get_mut(&e.room) else { continue };
+            let ids: Vec<u64> = room.iter().filter(|(_, h)| **h == e.hash).map(|(id, _)| *id).collect();
+            for id in &ids {
+                room.remove(id);
+            }
+            if room.is_empty() {
+                followers.remove(&e.room);
+            }
+            ids
+        };
+        if ids.is_empty() {
+            continue;
+        }
+        {
+            let mut subs = state.subs.lock().await;
+            if let Some(set) = subs.get_mut(&e.room) {
+                for id in &ids {
+                    set.remove(id);
+                }
+                if set.is_empty() {
+                    subs.remove(&e.room);
+                }
+            }
+        }
+        send_many(state, &ids, &crate::display_code::code_ended_message(&e.room)).await;
+        note_displays(state, &e.room).await;
+    }
+}
+
+/// Every SWEEP_MS: codes that ran out end (their boards told), old tombstones go.
+fn start_display_sweeper(state: &Arc<AppState>) {
+    let weak = Arc::downgrade(state);
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(Duration::from_millis(crate::display_code::SWEEP_MS));
+        tick.tick().await;
+        loop {
+            tick.tick().await;
+            let Some(state) = weak.upgrade() else { break };
+            let ended = {
+                let mut t = display_table(&state);
+                t.sweep();
+                t.take_ended()
+            };
+            end_display_codes(&state, ended).await;
+        }
+    });
+}
+
+/// The connections that follow the room by a code (the room's code that ran
+/// out ends here first).
+async fn code_followers(state: &Arc<AppState>, room: &str) -> HashSet<u64> {
+    if !state.display_followers.lock().await.contains_key(room) {
+        return HashSet::new();
+    }
+    let ended = {
+        let mut t = display_table(state);
+        t.code_of_room(room);
+        t.take_ended()
+    };
+    end_display_codes(state, ended).await;
+    state.display_followers.lock().await.get(room).map(|m| m.keys().copied().collect()).unwrap_or_default()
+}
+
+async fn is_code_follower(state: &Arc<AppState>, conn_id: u64, room: &str) -> bool {
+    state.display_followers.lock().await.get(room).is_some_and(|m| m.contains_key(&conn_id))
+}
+
+/// Forget that `conn_id` follows `room` by a code.
+async fn unfollow_code(state: &Arc<AppState>, conn_id: u64, room: &str) {
+    let mut followers = state.display_followers.lock().await;
+    if let Some(m) = followers.get_mut(room) {
+        m.remove(&conn_id);
+        if m.is_empty() {
+            followers.remove(room);
+        }
+    }
+}
+
+/// display-code-set { matchId, code, issuedAt } from the room's scorer
+/// socket; the answer (display-code-state, never the code) to it only.
+async fn on_display_code_set(state: &Arc<AppState>, conn_id: u64, tx: &Tx, data: &Value, match_id: Option<String>) {
+    use crate::display_code::code_state_message;
+    let Some(room) = resolve_key(state, conn_id, match_id).await else {
+        let mut msg = code_state_message("", Err("bad-code"));
+        msg["matchId"] = Value::Null;
+        let _ = tx.send(ws_text(&msg));
+        return;
+    };
+    if !is_owner(state, conn_id, &room).await {
+        let _ = tx.send(ws_text(&code_state_message(&room, Err("not-match-owner"))));
+        return;
+    }
+    let null = Value::Null;
+    let (r, ended, sweeper) = {
+        let mut t = display_table(state);
+        let r = t.set(Some(&room), data.get("code").unwrap_or(&null), data.get("issuedAt").unwrap_or(&null), &format!("ws:{conn_id}"));
+        (r, t.take_ended(), t.take_sweeper_request())
+    };
+    let _ = tx.send(ws_text(&code_state_message(&room, r)));
+    end_display_codes(state, ended).await;
+    if sweeper {
+        start_display_sweeper(state);
+    }
+}
+
+/// subscribe-match { code } (no matchId): the code's room, followed as a
+/// PIN-less display (a PIN next to the code is ignored).
+async fn subscribe_by_code(state: &Arc<AppState>, conn_id: u64, tx: &Tx, data: &Value) {
+    use crate::display_code::code_answer_message;
+    let Some(ip) = state.conn_meta.lock().await.get(&conn_id).map(|m| m.ip) else { return };
+    let null = Value::Null;
+    let (r, ended) = {
+        let mut t = display_table(state);
+        let r = t.resolve(data.get("code").unwrap_or(&null), &crate::display_code::ip_key(ip));
+        (r, t.take_ended())
+    };
+    end_display_codes(state, ended).await;
+    match r {
+        Ok(found) => {
+            let answer = code_answer_message(&Ok(found.clone()));
+            subscribe_room(state, conn_id, tx, data, found.room, Some((found.hash, answer))).await;
+        }
+        Err(e) => {
+            let _ = tx.send(ws_text(&code_answer_message(&Err(e))));
+        }
+    }
+}
+
+/// subscribe-match: follow `match_id`. `by_code`: the board follows it by
+/// a code (its hash, and the display-code answer to send once subscribed):
+/// no PIN, device 'display', the public live state only.
+async fn subscribe_room(state: &Arc<AppState>, conn_id: u64, tx: &Tx, data: &Value, match_id: String, by_code: Option<(String, Value)>) {
+    {
+        let mut subs = state.subs.lock().await;
+        let mine = subs.values().filter(|s| s.contains(&conn_id)).count();
+        let already = subs.get(&match_id).map_or(false, |s| s.contains(&conn_id));
+        if !already && mine >= MAX_SUBSCRIPTIONS_PER_CONN {
+            drop(subs);
+            send_error(tx, "too-many-subscriptions", "This connection follows the maximum number of matches", Some(&match_id));
+            return;
+        }
+        subs.entry(match_id.clone()).or_default().insert(conn_id);
+    }
+    let coded = by_code.is_some();
+    match by_code {
+        Some((hash, answer)) => {
+            state.display_followers.lock().await.entry(match_id.clone()).or_default().insert(conn_id, hash.clone());
+            // Ended meanwhile (its end ran before this board was noted): not followed
+            let live = {
+                let mut t = display_table(state);
+                let live = t.is_live(&hash, &match_id);
+                (live, t.take_ended())
+            };
+            end_display_codes(state, live.1).await;
+            if !live.0 {
+                unfollow_code(state, conn_id, &match_id).await;
+                let mut subs = state.subs.lock().await;
+                if let Some(set) = subs.get_mut(&match_id) {
+                    set.remove(&conn_id);
+                    if set.is_empty() {
+                        subs.remove(&match_id);
+                    }
+                }
+                drop(subs);
+                let _ = tx.send(ws_text(&json!({ "type": "display-code", "ok": false, "reason": "ended" })));
+                return;
+            }
+            let _ = tx.send(ws_text(&answer));
+        }
+        // By its key: an ordinary subscriber from now on (no longer by a code)
+        None => unfollow_code(state, conn_id, &match_id).await,
+    }
+    let device = if coded { Some(DISPLAY_DEVICE) } else { data.get("device").or_else(|| data.get("role")).and_then(|v| v.as_str()) };
+    let team = data.get("team").and_then(|v| v.as_str()).filter(|t| matches!(*t, "home" | "away") && !coded);
+    if let Some(m) = state.conn_meta.lock().await.get_mut(&conn_id) {
+        if let Some(role) = device.filter(|r| matches!(*r, "referee" | "bench" | "livescore")) {
+            m.role = role.to_string();
+        }
+        if let Some(team) = team {
+            m.team = Some(team.to_string());
+        }
+    }
+    let stored = state.matches.lock().await.get(&match_id).cloned();
+    if !coded {
+        offer_pin(state, conn_id, tx, &match_id, data.get("pin"), stored.as_ref()).await;
+    }
+    if let Some(bundle) = stored {
+        let full = !coded && has_access(state, conn_id, &match_id, Some(&bundle)).await;
+        let mut msg = bundle_message_access("match-full-data", &match_id, &bundle, None, full);
+        if coded {
+            msg = public_message(&msg);
+        }
+        let _ = tx.send(ws_text(&msg));
+        // A bench: its team's requests; a referee: the open time-out / substitution requests
+        let role = if coded { None } else { role_of(state, conn_id, &match_id, &bundle).await };
+        match role {
+            Some(team @ ("home" | "away")) => {
+                let requests: Vec<Value> = state
+                    .bench
+                    .lock()
+                    .await
+                    .get(&match_id)
+                    .map(|l| l.iter().filter(|e| e.team == team).map(crate::bench_requests::bench_view).collect())
+                    .unwrap_or_default();
+                let msg = json!({ "type": "bench-request-state", "matchId": match_id, "team": team, "requests": requests });
+                let _ = tx.send(ws_text(&msg));
+            }
+            Some("referee") => {
+                let infos: Vec<Value> = state
+                    .bench
+                    .lock()
+                    .await
+                    .get(&match_id)
+                    .map(|l| {
+                        l.iter()
+                            .filter(|e| e.is_open() && e.kind() != "lineup")
+                            .map(|e| crate::bench_requests::referee_info(&match_id, e, &e.status))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                for info in infos {
+                    let _ = tx.send(ws_text(&info));
+                }
+            }
+            _ => {}
+        }
+    }
+    // Last, once the subscription is answered: is the scorer there now
+    // (false for a room not on the relay yet)
+    update_presence(state, &match_id, Some((conn_id, tx))).await;
+    // A display: its announcement, for every room it follows (their scoreboards told)
+    if device == Some(DISPLAY_DEVICE) {
+        let url = display_settings_url(data.get("settingsUrl"));
+        let seq = state.display_seq.fetch_add(1, Ordering::Relaxed);
+        if let Some(m) = state.conn_meta.lock().await.get_mut(&conn_id) {
+            m.display = Some((url, seq));
+        }
+        let followed: Vec<String> = state.subs.lock().await.iter().filter(|(_, set)| set.contains(&conn_id)).map(|(id, _)| id.clone()).collect();
+        for id in followed {
+            note_displays(state, &id).await;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Bench requests (bench_requests.rs): line-ups, time-out and substitution
+// requests from a bench to the match's scoreboard, the answer back to that
+// bench, a note of time-out / substitution requests to the referees. The same
+// messages as backend/server.js and lanRelayCore.cjs.
+// ---------------------------------------------------------------------------
+
+/// The role a connection proved for the match: "home" / "away" (that bench's
+/// PIN while its connection is on) or "referee"; None otherwise.
+async fn role_of(state: &Arc<AppState>, conn_id: u64, match_id: &str, bundle: &Value) -> Option<&'static str> {
+    if !has_access(state, conn_id, match_id, Some(bundle)).await {
+        return None;
+    }
+    let pin = state.conn_meta.lock().await.get(&conn_id).and_then(|m| m.access.get(match_id).map(|(p, _)| p.clone()))?;
+    crate::bench_requests::pin_role_of(bundle.get("match"), &pin)
+}
+
+async fn ids_with_role(state: &Arc<AppState>, match_id: &str, role: &str, bundle: &Value) -> Vec<u64> {
+    let mut out = Vec::new();
+    for id in subscriber_ids(state, match_id, None).await {
+        if role_of(state, id, match_id, bundle).await == Some(role) {
+            out.push(id);
+        }
+    }
+    out
+}
+
+async fn owner_ids(state: &Arc<AppState>, match_id: &str) -> Vec<u64> {
+    state.owners.lock().await.iter().filter(|(_, o)| o.contains(match_id)).map(|(id, _)| *id).collect()
+}
+
+async fn send_many(state: &Arc<AppState>, ids: &[u64], msg: &Value) {
+    let text = msg.to_string();
+    let clients = state.clients.lock().await;
+    for id in ids {
+        if let Some(tx) = clients.get(id) {
+            let _ = tx.send(Message::Text(text.clone().into()));
+        }
+    }
+}
+
+fn bench_refused(tx: &Tx, match_id: Option<&str>, reason: &str, id: Option<&str>) {
+    let mut err = json!({ "type": "error", "code": "bench-request-refused", "reason": reason, "message": format!("Bench request refused: {reason}") });
+    if let Some(id) = id {
+        err["id"] = json!(id);
+    }
+    if let Some(m) = match_id {
+        err["matchId"] = json!(m);
+    }
+    let _ = tx.send(Message::Text(err.to_string().into()));
+}
+
+async fn on_bench_request(state: &Arc<AppState>, conn_id: u64, tx: &Tx, data: &Value) {
+    use crate::bench_requests as br;
+    let match_id = norm_id(data.get("matchId"));
+    let mid = match_id.as_deref();
+    let id: Option<String> = data.get("request").and_then(|r| r.get("id")).and_then(|v| v.as_str()).map(|s| s.chars().take(64).collect());
+    let idr = id.as_deref();
+    let over = window_bump(&mut *state.limits.lock().await, &format!("bench:{conn_id}")) > br::BENCH_REQUESTS_PER_MINUTE;
+    if over {
+        return bench_refused(tx, mid, "rate-limited", idr);
+    }
+    let Some(match_id) = match_id.clone() else { return bench_refused(tx, None, "no-match", idr) };
+    let Some(bundle) = state.matches.lock().await.get(&match_id).cloned() else { return bench_refused(tx, mid, "no-match", idr) };
+    let team = data.get("team").and_then(|v| v.as_str()).unwrap_or("");
+    if !matches!(team, "home" | "away") {
+        return bench_refused(tx, mid, "bad-team", idr);
+    }
+    if role_of(state, conn_id, &match_id, &bundle).await != Some(team) {
+        return bench_refused(tx, mid, "not-this-bench", idr);
+    }
+    let request = match br::normalize_request(data.get("request")) {
+        Ok(r) => r,
+        Err(reason) => return bench_refused(tx, mid, reason, idr),
+    };
+    let rid = request.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let kind = request.get("kind").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let added = {
+        let mut bench = state.bench.lock().await;
+        let list = bench.entry(match_id.clone()).or_default();
+        br::prune(list, br::current_set_of_bundle(&bundle), std::time::Instant::now());
+        br::add(list, team, request.clone(), std::time::Instant::now(), now_ms())
+    };
+    let added = match added {
+        Ok(a) => a,
+        Err(reason) => return bench_refused(tx, mid, reason, Some(&rid)),
+    };
+    let owners = owner_ids(state, &match_id).await;
+    let delivered = {
+        let clients = state.clients.lock().await;
+        owners.iter().filter(|id| clients.contains_key(id)).count()
+    };
+    let status = if added.entry.is_some() { "pending" } else { "cancelled" };
+    let at = added.entry.as_ref().map_or_else(now_ms, |e| e.at_ms);
+    send_many(state, &owners, &json!({ "type": "bench-request", "matchId": match_id, "team": team, "request": request, "status": status, "at": at })).await;
+    let referees = ids_with_role(state, &match_id, "referee", &bundle).await;
+    for old in added.superseded.iter().filter(|e| e.kind() != "lineup") {
+        send_many(state, &referees, &br::referee_info(&match_id, old, "superseded")).await;
+    }
+    if let Some(c) = added.cancelled.as_ref().filter(|e| e.kind() != "lineup") {
+        send_many(state, &referees, &br::referee_info(&match_id, c, "cancelled")).await;
+    }
+    if let Some(e) = added.entry.as_ref().filter(|_| kind != "lineup") {
+        send_many(state, &referees, &br::referee_info(&match_id, e, "pending")).await;
+    }
+    let mut ack = json!({
+        "type": "bench-request-ack", "matchId": match_id, "team": team, "id": rid, "status": status,
+        "delivered": delivered, "superseded": added.superseded.iter().map(|e| e.id().to_string()).collect::<Vec<_>>(),
+    });
+    if let Some(c) = &added.cancelled {
+        ack["cancelId"] = json!(c.id());
+    }
+    let _ = tx.send(Message::Text(ack.to_string().into()));
+}
+
+async fn on_bench_response(state: &Arc<AppState>, conn_id: u64, tx: &Tx, data: &Value) {
+    use crate::bench_requests as br;
+    let Some(match_id) = resolve_key(state, conn_id, norm_id(data.get("matchId"))).await else {
+        send_error(tx, "bad-request", "bench-response needs matchId", None);
+        return;
+    };
+    if !is_owner(state, conn_id, &match_id).await {
+        send_error(tx, "not-match-owner", "Only the match's scoreboard may send bench-response", Some(&match_id));
+        return;
+    }
+    let team = data.get("team").and_then(|v| v.as_str()).unwrap_or("");
+    let (id, status, reason) = match br::normalize_response(data) {
+        Ok(r) => r,
+        Err(reason) => return bench_refused(tx, Some(&match_id), reason, None),
+    };
+    if !matches!(team, "home" | "away") {
+        return bench_refused(tx, Some(&match_id), "bad-team", None);
+    }
+    let answered = state.bench.lock().await.get_mut(&match_id).and_then(|l| br::answer(l, team, &id, &status, reason.clone()));
+    let Some(e) = answered else { return bench_refused(tx, Some(&match_id), "unknown-request", Some(&id)) };
+    let mut out = json!({ "type": "bench-response", "matchId": match_id, "team": team, "id": id, "kind": e.kind(), "setIndex": e.set_index(), "status": status });
+    if let Some(r) = &reason {
+        out["reason"] = json!(r);
+    }
+    let Some(bundle) = state.matches.lock().await.get(&match_id).cloned() else { return };
+    let benches = ids_with_role(state, &match_id, team, &bundle).await;
+    send_many(state, &benches, &out).await;
+    let others: Vec<u64> = owner_ids(state, &match_id).await.into_iter().filter(|id| *id != conn_id).collect();
+    send_many(state, &others, &out).await;
+    if e.kind() != "lineup" {
+        let referees = ids_with_role(state, &match_id, "referee", &bundle).await;
+        send_many(state, &referees, &br::referee_info(&match_id, &e, &status)).await;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests: the protocol rules shared with lanRelayCore (the full wire scenario
+// runs from vitest against a built binary, see lanRelayProtocol.test.js).
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn only_content_hashed_files_are_cached_for_long() {
+        // Vite's hashed bundle: a new build is a new name
+        assert_eq!(cache_control_for("assets/index-3f9a1c.js"), "public, max-age=31536000, immutable");
+        assert_eq!(cache_control_for("/assets/ball_fallback-ab12cd.png"), "public, max-age=31536000, immutable");
+        // same name in every version: always revalidated (the old green /ball.png stayed for a year)
+        for p in ["ball.png", "/ball.png", "openvolley_logo.png", "favicon.ico", "index.html", "scoresheet/index.html",
+                  "sw.js", "manifest.webmanifest", "version.json", "workbox-1234.js"] {
+            assert_eq!(cache_control_for(p), "no-cache", "{p}");
+        }
+    }
+    use super::*;
+
+    #[test]
+    fn tablets_are_the_other_machines() {
+        let ip = |s: &str| s.parse::<IpAddr>().unwrap();
+        let own = [ip("192.168.1.10"), ip("10.42.0.1")];
+        let conns = [
+            ip("127.0.0.1"),          // the scoretable window
+            ip("::1"),
+            ip("192.168.1.10"),       // the scoretable on its LAN address
+            ip("::ffff:10.42.0.1"),   // same, IPv4-mapped
+            ip("192.168.1.20"),       // a tablet
+            ip("::ffff:10.42.0.57"),  // a tablet on the laptop's Wi-Fi
+        ];
+        assert_eq!(count_remote(&conns, &own), 2);
+        assert_eq!(count_remote(&[], &own), 0);
+    }
+
+    fn bundle(id: u64, pin: &str, status: &str) -> Value {
+        json!({
+            "match": { "id": id, "status": status, "gamePin": pin, "refereePin": "314159" },
+            "homeTeam": null, "awayTeam": null, "homePlayers": [], "awayPlayers": [], "sets": [], "events": [],
+        })
+    }
+
+    async fn connect(state: &Arc<AppState>, id: u64, ip: &str) {
+        state.conn_meta.lock().await.insert(
+            id,
+            ConnMeta {
+                ip: ip.parse().unwrap(),
+                role: "subscriber".into(),
+                team: None,
+                aliases: HashMap::new(),
+                pin_keys: Vec::new(),
+                access: HashMap::new(),
+                connected_at: iso_now(),
+                scorer_device: None,
+                display: None,
+            },
+        );
+    }
+
+    async fn sync(state: &Arc<AppState>, conn: u64, id: &str, b: Value) -> Result<ClaimKind, &'static str> {
+        let kind = claim(state, conn, id, b.get("match")).await?;
+        store_bundle(state, id, b, kind).await;
+        Ok(kind)
+    }
+
+    /// The owner of `id` disconnects `ago` ago.
+    async fn leave(state: &Arc<AppState>, conn: u64, id: &str, ago: Duration) {
+        state.owners.lock().await.remove(&conn);
+        let when = std::time::Instant::now().checked_sub(ago).unwrap();
+        state.orphaned_since.lock().await.insert(id.to_string(), when);
+    }
+
+    #[tokio::test]
+    async fn guessing_the_game_pin_is_cut_off_without_an_oracle() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.10").await;
+        connect(&state, 2, "192.168.1.66").await;
+        assert!(sync(&state, 1, "7", bundle(7, "987654", "live")).await.is_ok());
+        for i in 0..CLAIM_FAILURE_LIMIT {
+            let wrong = format!("{}", 100000 + i);
+            assert_eq!(sync(&state, 2, "7", bundle(7, &wrong, "live")).await.err(), Some("not-match-owner"));
+        }
+        // The right PIN is refused exactly like a wrong one now
+        assert_eq!(sync(&state, 2, "7", bundle(7, "987654", "live")).await.err(), Some("rate-limited"));
+        // The proven scoreboard is unaffected
+        assert!(matches!(sync(&state, 1, "7", bundle(7, "987654", "live")).await, Ok(ClaimKind::Owner)));
+    }
+
+    #[tokio::test]
+    async fn an_unfinished_match_is_kept_for_its_scorer_and_can_be_reclaimed() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.10").await;
+        connect(&state, 2, "192.168.1.66").await;
+        connect(&state, 3, "192.168.1.10").await;
+        sync(&state, 1, "1", bundle(1, "111111", "live")).await.unwrap();
+        state.matches.lock().await.get_mut("1").unwrap()["liveState"] = json!({ "sets_won_a": 2 });
+
+        // Asleep through a set break: not claimable yet
+        leave(&state, 1, "1", Duration::from_secs(120)).await;
+        assert_eq!(sync(&state, 2, "1", bundle(1, "666666", "live")).await.err(), Some("not-match-owner"));
+
+        // Gone for longer than STALE_TAKEOVER: another scorer may reuse the id,
+        // without the old match's live-state
+        leave(&state, 1, "1", STALE_TAKEOVER + Duration::from_secs(1)).await;
+        assert!(matches!(sync(&state, 2, "1", bundle(1, "666666", "live")).await, Ok(ClaimKind::Takeover)));
+        assert!(state.matches.lock().await.get("1").unwrap().get("liveState").is_none());
+
+        // The original game PIN takes it back once
+        assert!(matches!(sync(&state, 3, "1", bundle(1, "111111", "live")).await, Ok(ClaimKind::Reclaim)));
+        assert!(!is_owner(&state, 2, "1").await);
+        assert_eq!(sync(&state, 2, "1", bundle(1, "666666", "live")).await.err(), Some("not-match-owner"));
+    }
+
+    #[tokio::test]
+    async fn a_finished_match_id_is_reusable_after_a_minute_without_reclaim() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.10").await;
+        connect(&state, 2, "192.168.1.11").await;
+        sync(&state, 1, "1", bundle(1, "111111", "final")).await.unwrap();
+        leave(&state, 1, "1", ORPHAN_TAKEOVER + Duration::from_secs(1)).await;
+        assert!(matches!(sync(&state, 2, "1", bundle(1, "222222", "live")).await, Ok(ClaimKind::Takeover)));
+        connect(&state, 3, "192.168.1.10").await;
+        assert_eq!(sync(&state, 3, "1", bundle(1, "111111", "final")).await.err(), Some("not-match-owner"));
+    }
+
+    #[tokio::test]
+    async fn live_state_is_kept_only_for_the_same_game_pin() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.10").await;
+        connect(&state, 2, "192.168.1.10").await;
+        sync(&state, 1, "7", bundle(7, "987654", "live")).await.unwrap();
+        state.matches.lock().await.get_mut("7").unwrap()["liveState"] = json!({ "points_a": 5 });
+        // Reconnected scorer (new connection, same PIN) keeps it
+        assert!(matches!(sync(&state, 2, "7", bundle(7, "987654", "live")).await, Ok(ClaimKind::Proved)));
+        let stored = state.matches.lock().await.get("7").cloned().unwrap();
+        assert_eq!(stored["liveState"], json!({ "points_a": 5 }));
+
+        // ...and every match message mirrors it for the LedBox bridge, PIN-free
+        let msg = bundle_message("match-full-data", "7", &stored, None);
+        assert_eq!(msg["data"], json!({ "liveState": { "points_a": 5 } }));
+        assert_eq!(msg["liveState"], json!({ "points_a": 5 }));
+        let text = msg.to_string();
+        assert!(!text.contains("987654") && !text.contains("314159"));
+    }
+
+    #[test]
+    fn match_messages_carry_no_personal_data() {
+        let mut b = bundle(7, "987654", "live");
+        b["match"]["officials"] = json!([{ "role": "1st referee", "lastName": "Ref", "dob": "1980-01-01" }]);
+        b["match"]["homeCoachSignature"] = json!("data:image/png;base64,SIG");
+        b["match"]["signatures"] = json!({ "home_coach": "data:image/png;base64,SIG" });
+        b["match"]["pendingHomeRoster"] = json!({ "players": [] });
+        b["match"]["bench_home"] = json!([{ "role": "Coach", "lastName": "Coach", "dob": "1970-02-02" }]);
+        b["homePlayers"] = json!([{ "number": 7, "lastName": "Player", "dob": "2000-03-03", "country": "SUI" }]);
+        let msg = bundle_message("match-data-update", "7", &b, None);
+        let text = msg.to_string();
+        for secret in ["1980-01-01", "1970-02-02", "2000-03-03", "SUI", "base64,SIG", "pendingHomeRoster", "officials"] {
+            assert!(!text.contains(secret), "{secret} leaked: {text}");
+        }
+        assert_eq!(msg["homePlayers"][0]["number"], json!(7));
+        assert_eq!(msg["match"]["bench_home"][0]["role"], json!("Coach"));
+        assert_eq!(msg["match"]["status"], json!("live"));
+    }
+
+    #[tokio::test]
+    async fn a_lan_device_cannot_squat_on_many_ids() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.66").await;
+        for id in 1..=MAX_OWNED_PER_IP as u64 {
+            assert!(sync(&state, 1, &id.to_string(), bundle(id, "000000", "live")).await.is_ok());
+        }
+        let next = (MAX_OWNED_PER_IP + 1).to_string();
+        assert_eq!(sync(&state, 1, &next, bundle(9, "000000", "live")).await.err(), Some("too-many-matches"));
+        // The scoretable machine itself is exempt
+        connect(&state, 2, "127.0.0.1").await;
+        for id in 20..30u64 {
+            assert!(sync(&state, 2, &id.to_string(), bundle(id, "000000", "live")).await.is_ok());
+        }
+    }
+
+    #[tokio::test]
+    async fn the_seed_key_is_the_room_and_pins_may_be_left_out() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.50").await;
+        connect(&state, 2, "192.168.1.51").await;
+        let seed = "match_1791215210058_aaaaaa";
+        let (tx, _rx) = tx_pair();
+        let mut m = bundle(1, "111111", "live");
+        m["match"]["seed_key"] = json!(seed);
+        m["match"]["refereePin"] = json!("314159");
+        let sync = json!({ "type": "sync-match-data", "matchId": 1, "match": m["match"].clone() });
+        handle_ws_message(&state, 1, &tx, &sync.to_string()).await;
+        assert!(state.matches.lock().await.contains_key(seed));
+        assert!(!state.matches.lock().await.contains_key("1"));
+        // The Dexie id is an alias on that connection only
+        assert_eq!(resolve_key(&state, 1, Some("1".into())).await.as_deref(), Some(seed));
+        assert_eq!(resolve_key(&state, 2, Some("1".into())).await.as_deref(), Some("1"));
+        // PINs left out are kept
+        let mut no_pins = m["match"].clone();
+        for k in MATCH_SECRET_FIELDS {
+            no_pins.as_object_mut().unwrap().remove(*k);
+        }
+        let sync2 = json!({ "type": "sync-match-data", "matchId": 1, "match": no_pins.clone() });
+        handle_ws_message(&state, 1, &tx, &sync2.to_string()).await;
+        let stored = state.matches.lock().await.get(seed).cloned().unwrap();
+        assert_eq!(stored["match"]["refereePin"], json!("314159"));
+        assert_eq!(game_pin_of(stored.get("match")).as_deref(), Some("111111"));
+        // ...but a connection that never proved the match must bring the game
+        // PIN: it is asked for it, never counted as a failed claim
+        for _ in 0..(CLAIM_FAILURE_LIMIT + 2) {
+            assert_eq!(claim(&state, 2, seed, Some(&no_pins)).await.err(), Some("pins-required"));
+        }
+        assert!(matches!(claim(&state, 2, seed, m.get("match")).await, Ok(ClaimKind::Proved)));
+    }
+
+    #[tokio::test]
+    async fn a_claim_without_a_pin_is_no_guess() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.50").await;
+        connect(&state, 2, "192.168.1.50").await;
+        let full = bundle(1, "111111", "live")["match"].clone();
+        assert!(claim(&state, 1, "1", Some(&full)).await.is_ok());
+        store_bundle(&state, "1", bundle(1, "111111", "live"), ClaimKind::New).await;
+        let mut null_pin = full.clone();
+        null_pin["gamePin"] = Value::Null;
+        for _ in 0..(CLAIM_FAILURE_LIMIT + 1) {
+            assert_eq!(claim(&state, 2, "1", Some(&null_pin)).await.err(), Some("not-match-owner"));
+        }
+        // Not rate limited: the right PIN still proves the match
+        assert!(matches!(claim(&state, 2, "1", Some(&full)).await, Ok(ClaimKind::Proved)));
+    }
+
+    #[tokio::test]
+    async fn a_pinless_sync_of_a_lost_match_asks_for_the_pins() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.50").await;
+        let seed = "match_1791215210058_bbbbbb";
+        let (tx, mut rx) = tx_pair();
+        let mut m = bundle(1, "111111", "live")["match"].clone();
+        m["seed_key"] = json!(seed);
+        handle_ws_message(&state, 1, &tx, &json!({ "type": "sync-match-data", "matchId": 1, "match": m.clone() }).to_string()).await;
+        assert!(state.matches.lock().await.contains_key(seed));
+        // The relay loses the match (deleted / expired) while the socket stays
+        delete_match(&state, seed).await;
+        while rx.try_recv().is_ok() {}
+        let mut no_pins = m.clone();
+        for k in MATCH_SECRET_FIELDS {
+            no_pins.as_object_mut().unwrap().remove(*k);
+        }
+        handle_ws_message(&state, 1, &tx, &json!({ "type": "sync-match-data", "matchId": 1, "match": no_pins }).to_string()).await;
+        assert!(!state.matches.lock().await.contains_key(seed), "no PIN-less room");
+        let Ok(Message::Text(err)) = rx.try_recv() else { panic!("expected an error") };
+        let err: Value = serde_json::from_str(&err).unwrap();
+        assert_eq!(err["code"], json!("pins-required"));
+        assert_eq!(err["matchId"], json!(seed));
+        // With the PINs it is accepted again
+        handle_ws_message(&state, 1, &tx, &json!({ "type": "sync-match-data", "matchId": 1, "match": m }).to_string()).await;
+        let stored = state.matches.lock().await.get(seed).cloned().unwrap();
+        assert_eq!(game_pin_of(stored.get("match")).as_deref(), Some("111111"));
+    }
+
+    #[tokio::test]
+    async fn a_match_asked_for_by_its_dexie_id_opens_no_second_room() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.50").await;
+        let seed = "match_1791215210058_cccccc";
+        let mut b = bundle(1, "111111", "live");
+        b["match"]["seed_key"] = json!(seed);
+        let ask = |rid: &str, id: &str| {
+            let (tx, rx) = oneshot::channel::<Value>();
+            let p = Pending {
+                tx,
+                response_type: "match-data-response".into(),
+                match_id: Some(id.into()),
+                targets: HashSet::from([1u64]),
+            };
+            (rid.to_string(), p, rx)
+        };
+        // GET /api/match/1: the scoreboard answers with its seed-keyed match
+        let (rid, p, mut rx) = ask("r1", "1");
+        state.pending.lock().await.insert(rid, p);
+        on_response(&state, 1, "match-data-response",
+            &json!({ "requestId": "r1", "matchId": "1", "success": true, "data": b.clone() })).await;
+        assert!(!state.matches.lock().await.contains_key("1"), "no room under the Dexie id");
+        assert!(!state.pending.lock().await.contains_key("r1"), "declined, request settled");
+        assert!(rx.try_recv().is_err());
+        // Asked by the seed key it is stored there
+        let (rid, p, mut rx) = ask("r2", seed);
+        state.pending.lock().await.insert(rid, p);
+        on_response(&state, 1, "match-data-response",
+            &json!({ "requestId": "r2", "matchId": seed, "success": true, "data": b })).await;
+        assert!(state.matches.lock().await.contains_key(seed));
+        assert!(rx.try_recv().is_ok());
+    }
+
+    // 2026-10-26: a phone that left the hall's Wi-Fi sent no close, and its
+    // connection kept its rooms until TCP gave up (the Node relays and the
+    // cloud relay ping, this one did not)
+    #[tokio::test]
+    async fn a_connection_that_stops_answering_pings_is_ended() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let state = new_state(0, 0);
+        let http = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let ws = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = ws.local_addr().unwrap().port();
+        let server = tokio::spawn(serve(state.clone(), http, ws));
+        let upgrade = b"GET / HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\
+            Sec-WebSocket-Key: AAAAAAAAAAAAAAAAAAAAAA==\r\nSec-WebSocket-Version: 13\r\n\r\n";
+        // (a ping from the relay: FIN + opcode 9, no payload; a client's pong is masked)
+        const PING: [u8; 2] = [0x89, 0x00];
+        const PONG: [u8; 6] = [0x8a, 0x80, 0, 0, 0, 0];
+
+        // one that answers stays (answering on its own task)
+        let mut live = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        live.write_all(upgrade).await.unwrap();
+        let answering = tokio::spawn(async move {
+            let mut pings = 0;
+            let mut chunk = [0u8; 4096];
+            loop {
+                let n = live.read(&mut chunk).await.unwrap();
+                assert!(n > 0, "a connection that answers is never ended");
+                for _ in chunk[..n].windows(2).filter(|w| *w == PING) {
+                    pings += 1;
+                    live.write_all(&PONG).await.unwrap();
+                }
+                if pings >= 6 {
+                    return pings;
+                }
+            }
+        });
+
+        // one that does not is ended after the ping it missed
+        let mut gone = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        gone.write_all(upgrade).await.unwrap();
+        let mut all = Vec::new();
+        let ended = tokio::time::timeout(HEARTBEAT * 6, gone.read_to_end(&mut all)).await;
+        assert!(ended.is_ok(), "ended");
+        assert!(String::from_utf8_lossy(&all).starts_with("HTTP/1.1 101"));
+        assert!(all.windows(2).any(|w| w == PING), "pinged first");
+        assert_eq!(state.clients.lock().await.len(), 1, "only the live connection is left");
+        // the live one goes on answering, beat after beat
+        assert!(tokio::time::timeout(HEARTBEAT * 10, answering).await.unwrap().unwrap() >= 6);
+        assert_eq!(state.clients.lock().await.len(), 1);
+        server.abort();
+    }
+
+    // 2026-10-26: the venue relays let any device with the game PIN replace
+    // the room, so a laptop back on the Wi-Fi put its older copy over the
+    // phone that had continued the match (lanRelayCore has the same rules)
+    #[tokio::test]
+    async fn a_device_whose_claim_another_device_took_over_cannot_put_its_copy_back() {
+        const LAPTOP: &str = "0a0a0a0a-1111-4111-8111-000000000001";
+        const PHONE: &str = "0b0b0b0b-2222-4222-8222-000000000002";
+        let state = new_state(0, 0);
+        let mut rxs = HashMap::new();
+        let mut txs = HashMap::new();
+        for (id, ip) in [(1u64, "192.168.1.10"), (2, "192.168.1.11"), (3, "192.168.1.20"), (4, "192.168.1.10"), (5, "192.168.1.12")] {
+            connect(&state, id, ip).await;
+            let (tx, rx) = tx_pair();
+            state.clients.lock().await.insert(id, tx.clone());
+            txs.insert(id, tx);
+            rxs.insert(id, rx);
+        }
+        let all = |rx: &mut mpsc::UnboundedReceiver<Message>| -> Vec<Value> {
+            let mut out = Vec::new();
+            while let Ok(Message::Text(t)) = rx.try_recv() {
+                out.push(serde_json::from_str(&t).unwrap());
+            }
+            out
+        };
+        let sync = |device: Value, home: u32| json!({
+            "type": "sync-match-data", "matchId": "1", "match": bundle(1, "111111", "live")["match"].clone(),
+            "sets": [{ "index": 1, "homePoints": home, "awayPoints": 0 }], "device": device
+        }).to_string();
+        let errors = |msgs: &[Value]| msgs.iter().filter(|m| m["type"] == json!("error")).map(|m| m["code"].clone()).collect::<Vec<_>>();
+        handle_ws_message(&state, 3, &txs[&3], &json!({ "type": "subscribe-match", "matchId": "1", "pin": "314159" }).to_string()).await;
+        handle_ws_message(&state, 1, &txs[&1], &sync(json!({ "id": LAPTOP, "claim": "laptop-1" }), 3)).await;
+        assert!(errors(&all(rxs.get_mut(&1).unwrap())).is_empty());
+        all(rxs.get_mut(&3).unwrap());
+
+        // the phone continues the match: the laptop's connection is told and owns it no more
+        handle_ws_message(&state, 2, &txs[&2], &sync(json!({ "id": PHONE, "claim": "phone-1" }), 5)).await;
+        assert!(errors(&all(rxs.get_mut(&2).unwrap())).is_empty());
+        assert!(all(rxs.get_mut(&1).unwrap()).iter().any(|m| m["type"] == json!("scorer-moved") && m["matchId"] == json!("1")));
+        assert!(!is_owner(&state, 1, "1").await);
+        assert_eq!(all(rxs.get_mut(&3).unwrap()).last().unwrap()["sets"][0]["homePoints"], json!(5));
+
+        // its older copy, on that connection or a new one: refused, nothing reaches the referee
+        handle_ws_message(&state, 1, &txs[&1], &sync(json!({ "id": LAPTOP, "claim": "laptop-1" }), 3)).await;
+        assert_eq!(errors(&all(rxs.get_mut(&1).unwrap())), vec![json!("scorer-moved")]);
+        handle_ws_message(&state, 4, &txs[&4], &sync(json!({ "id": LAPTOP, "claim": "laptop-1" }), 3)).await;
+        assert_eq!(errors(&all(rxs.get_mut(&4).unwrap())), vec![json!("scorer-moved")]);
+        assert!(all(rxs.get_mut(&3).unwrap()).is_empty());
+
+        // the laptop takes it back (a new claim): now the phone's claim is refused
+        handle_ws_message(&state, 4, &txs[&4], &sync(json!({ "id": LAPTOP, "claim": "laptop-2" }), 6)).await;
+        assert!(errors(&all(rxs.get_mut(&4).unwrap())).is_empty());
+        assert!(all(rxs.get_mut(&2).unwrap()).iter().any(|m| m["type"] == json!("scorer-moved")));
+        handle_ws_message(&state, 2, &txs[&2], &sync(json!({ "id": PHONE, "claim": "phone-1" }), 7)).await;
+        assert_eq!(errors(&all(rxs.get_mut(&2).unwrap())), vec![json!("scorer-moved")]);
+        assert_eq!(all(rxs.get_mut(&3).unwrap()).last().unwrap()["sets"][0]["homePoints"], json!(6));
+
+        // an older app names no claim: not checked, as before
+        handle_ws_message(&state, 5, &txs[&5], &sync(json!({ "id": PHONE }), 8)).await;
+        assert!(errors(&all(rxs.get_mut(&5).unwrap())).is_empty());
+
+        // the device that took it over gone as long as a stale takeover waits:
+        // the phone's old claim gets the room back
+        let state = new_state(0, 0);
+        for (id, ip) in [(1u64, "192.168.1.10"), (2, "192.168.1.11"), (3, "192.168.1.11")] {
+            connect(&state, id, ip).await;
+        }
+        let (tx, mut rx) = tx_pair();
+        handle_ws_message(&state, 1, &tx, &sync(json!({ "id": PHONE, "claim": "a" }), 1)).await;
+        handle_ws_message(&state, 2, &tx, &sync(json!({ "id": LAPTOP, "claim": "b" }), 2)).await;
+        all(&mut rx);
+        leave(&state, 2, "1", Duration::from_secs(120)).await;
+        handle_ws_message(&state, 3, &tx, &sync(json!({ "id": PHONE, "claim": "a" }), 3)).await;
+        assert_eq!(errors(&all(&mut rx)), vec![json!("scorer-moved")]);
+        leave(&state, 2, "1", STALE_TAKEOVER + Duration::from_secs(1)).await;
+        handle_ws_message(&state, 3, &tx, &sync(json!({ "id": PHONE, "claim": "a" }), 3)).await;
+        assert!(errors(&all(&mut rx)).is_empty());
+    }
+
+    // 2026-10-27 review: the takeover lived in memory only. After a restart
+    // of the relay (a new state) the phone that had continued the match from
+    // the laptop's backup synced first, the laptop's older copy took the
+    // room, and every later phone sync was refused ('scorer-moved')
+    #[tokio::test]
+    async fn after_a_restart_the_copy_a_device_continued_from_cannot_take_the_room() {
+        const LAPTOP: &str = "0a0a0a0a-1111-4111-8111-000000000001";
+        const PHONE: &str = "0b0b0b0b-2222-4222-8222-000000000002";
+        let all = |rx: &mut mpsc::UnboundedReceiver<Message>| -> Vec<Value> {
+            let mut out = Vec::new();
+            while let Ok(Message::Text(t)) = rx.try_recv() {
+                out.push(serde_json::from_str(&t).unwrap());
+            }
+            out
+        };
+        let sync = |device: Value, home: u32| json!({
+            "type": "sync-match-data", "matchId": "1", "match": bundle(1, "111111", "live")["match"].clone(),
+            "sets": [{ "index": 1, "homePoints": home, "awayPoints": 0 }], "device": device
+        }).to_string();
+        let errors = |msgs: &[Value]| msgs.iter().filter(|m| m["type"] == json!("error")).map(|m| m["code"].clone()).collect::<Vec<_>>();
+        // The phone restored the laptop's backup: its claim names the laptop's
+        let phone_device = json!({ "id": PHONE, "claim": "phone-1", "supersedes": ["laptop-1"] });
+        let laptop_device = json!({ "id": LAPTOP, "claim": "laptop-1" });
+
+        for phone_first in [true, false] {
+            let state = new_state(0, 0);
+            let mut rxs = HashMap::new();
+            let mut txs = HashMap::new();
+            for (id, ip) in [(1u64, "192.168.1.10"), (2, "192.168.1.11"), (3, "192.168.1.20")] {
+                connect(&state, id, ip).await;
+                let (tx, rx) = tx_pair();
+                state.clients.lock().await.insert(id, tx.clone());
+                txs.insert(id, tx);
+                rxs.insert(id, rx);
+            }
+            if phone_first {
+                handle_ws_message(&state, 2, &txs[&2], &sync(phone_device.clone(), 20)).await;
+            }
+            handle_ws_message(&state, 1, &txs[&1], &sync(laptop_device.clone(), 3)).await;
+            if !phone_first {
+                // the laptop has the room until the phone's next sync
+                handle_ws_message(&state, 2, &txs[&2], &sync(phone_device.clone(), 20)).await;
+                handle_ws_message(&state, 1, &txs[&1], &sync(laptop_device.clone(), 3)).await;
+            }
+            assert_eq!(errors(&all(rxs.get_mut(&1).unwrap())).last(), Some(&json!("scorer-moved")), "phone first: {phone_first}");
+            handle_ws_message(&state, 3, &txs[&3], &json!({ "type": "subscribe-match", "matchId": "1", "pin": "314159" }).to_string()).await;
+            all(rxs.get_mut(&3).unwrap());
+            handle_ws_message(&state, 2, &txs[&2], &sync(phone_device.clone(), 21)).await;
+            assert!(errors(&all(rxs.get_mut(&2).unwrap())).is_empty(), "phone first: {phone_first}");
+            assert_eq!(all(rxs.get_mut(&3).unwrap()).last().unwrap()["sets"][0]["homePoints"], json!(21));
+
+            // the laptop continues it again from the phone's backup: its new
+            // claim takes the room, the phone's is the older copy now
+            handle_ws_message(&state, 1, &txs[&1], &sync(json!({ "id": LAPTOP, "claim": "laptop-2", "supersedes": ["phone-1", "laptop-1"] }), 22)).await;
+            assert!(errors(&all(rxs.get_mut(&1).unwrap())).is_empty());
+            handle_ws_message(&state, 2, &txs[&2], &sync(phone_device.clone(), 21)).await;
+            assert_eq!(errors(&all(rxs.get_mut(&2).unwrap())), vec![json!("scorer-moved")]);
+            assert_eq!(all(rxs.get_mut(&3).unwrap()).last().unwrap()["sets"][0]["homePoints"], json!(22));
+        }
+    }
+
+    // 2026-11-15: a referee or bench tablet only saw a frozen score when the
+    // scorer's laptop was closed; the relay now says whether the room has its
+    // scoreboard displays ('display-presence', same as lanRelayCore and the cloud relay)
+    #[test]
+    fn a_display_settings_page_is_kept_only_on_a_private_lan() {
+        let keep = |raw: &str| display_settings_url(Some(&json!(raw)));
+        assert_eq!(keep("http://172.24.1.1:8890/#settings").as_deref(), Some("http://172.24.1.1:8890/#settings"));
+        assert_eq!(keep("http://192.168.5.1:8890/#settings").as_deref(), Some("http://192.168.5.1:8890/#settings"));
+        assert_eq!(keep("https://10.1.2.3/settings").as_deref(), Some("https://10.1.2.3/settings"));
+        assert_eq!(keep("http://[fd12:3456::1]:8890/").as_deref(), Some("http://[fd12:3456::1]:8890/"));
+        // normalised as the browsers do: what is checked is what is passed on
+        assert_eq!(keep("HTTP://172.24.1.1:8890/#settings").as_deref(), Some("http://172.24.1.1:8890/#settings"));
+        assert_eq!(keep("http://0xac.24.1.1/").as_deref(), Some("http://172.24.1.1/"));
+        assert_eq!(keep("http://192.168.5.1.").as_deref(), Some("http://192.168.5.1/"));
+        let long = format!("http://10.0.0.1/{}", "a".repeat(300));
+        for raw in [
+            "https://example.com/settings", "http://8.8.8.8/", "http://127.0.0.1:8890/", "http://localhost:8890/",
+            "http://169.254.10.1/", "http://172.32.0.1/", "http://172.15.0.1/", "http://user:pass@172.24.1.1:8890/",
+            "javascript:alert(1)", "file:///etc/passwd", "ftp://192.168.1.1/", "http://board.local/", "http://[::1]/",
+            "http://[fc::1]/", " http://172.24.1.1:8890/", "http://10.0.0.1/\n", "", long.as_str(),
+        ] {
+            assert_eq!(keep(raw), None, "{raw}");
+        }
+        assert_eq!(display_settings_url(Some(&json!(42))), None);
+        assert_eq!(display_settings_url(None), None);
+    }
+
+    #[tokio::test]
+    async fn the_scorer_is_told_when_a_display_comes_and_goes() {
+        const BOARD: &str = "http://172.24.1.1:8890/#settings";
+        let state = new_state(0, 0);
+        let mut rxs = HashMap::new();
+        let mut txs = HashMap::new();
+        for (id, ip) in [(1u64, "192.168.1.10"), (2, "192.168.1.60"), (3, "192.168.1.20"), (4, "192.168.1.61")] {
+            connect(&state, id, ip).await;
+            let (tx, rx) = tx_pair();
+            state.clients.lock().await.insert(id, tx.clone());
+            txs.insert(id, tx);
+            rxs.insert(id, rx);
+        }
+        let told = |rx: &mut mpsc::UnboundedReceiver<Message>| -> Vec<(bool, Value)> {
+            let mut out = Vec::new();
+            while let Ok(Message::Text(t)) = rx.try_recv() {
+                let m: Value = serde_json::from_str(&t).unwrap();
+                if m["type"] == json!("display-presence") {
+                    assert_eq!(m.as_object().unwrap().len(), 4, "{m}");
+                    assert_eq!(m["matchId"], json!("1"));
+                    out.push((m["present"].as_bool().unwrap(), m["settingsUrl"].clone()));
+                }
+            }
+            out
+        };
+        let sync = |home: u32| json!({
+            "type": "sync-match-data", "matchId": "1", "match": bundle(1, "111111", "live")["match"].clone(),
+            "sets": [{ "index": 1, "homePoints": home, "awayPoints": 0 }]
+        }).to_string();
+        let display = |url: &str| json!({ "type": "subscribe-match", "matchId": "1", "device": "display", "settingsUrl": url }).to_string();
+
+        // the board follows before the scorer is there: nobody to tell
+        handle_ws_message(&state, 2, &txs[&2], &display(BOARD)).await;
+        // the scorer's first sync: told at once; its next ones: nothing
+        handle_ws_message(&state, 1, &txs[&1], &sync(1)).await;
+        assert_eq!(told(rxs.get_mut(&1).unwrap()), vec![(true, json!(BOARD))]);
+        handle_ws_message(&state, 1, &txs[&1], &sync(2)).await;
+        assert!(told(rxs.get_mut(&1).unwrap()).is_empty());
+        // a referee follows: no display message for it, none for the scorer
+        handle_ws_message(&state, 3, &txs[&3], &json!({ "type": "subscribe-match", "matchId": "1", "device": "referee", "pin": "314159" }).to_string()).await;
+        assert!(told(rxs.get_mut(&1).unwrap()).is_empty());
+        // the same subscription again: nothing; a page off the LAN: never passed on, nothing changes
+        handle_ws_message(&state, 2, &txs[&2], &display(BOARD)).await;
+        handle_ws_message(&state, 4, &txs[&4], &display("https://example.com/")).await;
+        assert!(told(rxs.get_mut(&1).unwrap()).is_empty());
+        // the board unsubscribes: the other display is still there, with no page
+        handle_ws_message(&state, 2, &txs[&2], &json!({ "type": "unsubscribe-match", "matchId": "1" }).to_string()).await;
+        assert_eq!(told(rxs.get_mut(&1).unwrap()), vec![(true, Value::Null)]);
+        // the last display gone: false
+        forget_connection(&state, 4).await;
+        assert_eq!(told(rxs.get_mut(&1).unwrap()), vec![(false, Value::Null)]);
+        for id in [2u64, 3] {
+            assert!(told(rxs.get_mut(&id).unwrap()).is_empty(), "connection {id} is no scoreboard");
+        }
+        // a deleted room forgets what it told
+        assert!(state.display_told.lock().await.get("1").is_none());
+    }
+
+    // scorer ('scorer-presence', same as lanRelayCore and the cloud relay)
+    #[tokio::test]
+    async fn subscribers_are_told_when_the_scorer_comes_and_goes() {
+        const LAPTOP: &str = "0a0a0a0a-1111-4111-8111-000000000001";
+        const PHONE: &str = "0b0b0b0b-2222-4222-8222-000000000002";
+        let state = new_state(0, 0);
+        let mut rxs = HashMap::new();
+        let mut txs = HashMap::new();
+        for (id, ip) in [(1u64, "192.168.1.10"), (2, "192.168.1.11"), (3, "192.168.1.20"), (4, "192.168.1.21"), (5, "192.168.1.11")] {
+            connect(&state, id, ip).await;
+            let (tx, rx) = tx_pair();
+            state.clients.lock().await.insert(id, tx.clone());
+            txs.insert(id, tx);
+            rxs.insert(id, rx);
+        }
+        // the scorer-presence messages a connection got, as present flags
+        let told = |rx: &mut mpsc::UnboundedReceiver<Message>| -> Vec<bool> {
+            let mut out = Vec::new();
+            while let Ok(Message::Text(t)) = rx.try_recv() {
+                let m: Value = serde_json::from_str(&t).unwrap();
+                if m["type"] == json!("scorer-presence") {
+                    // nothing else in it: no PINs, devices or addresses
+                    assert_eq!(m.as_object().unwrap().len(), 4, "{m}");
+                    assert_eq!(m["matchId"], json!("1"));
+                    assert!(m["timestamp"].as_u64().unwrap() > 0);
+                    out.push(m["present"].as_bool().unwrap());
+                }
+            }
+            out
+        };
+        let sync = |device: Value, home: u32| json!({
+            "type": "sync-match-data", "matchId": "1", "match": bundle(1, "111111", "live")["match"].clone(),
+            "sets": [{ "index": 1, "homePoints": home, "awayPoints": 0 }], "device": device
+        }).to_string();
+        let subscribe = |pin: Option<&str>| match pin {
+            Some(pin) => json!({ "type": "subscribe-match", "matchId": "1", "device": "referee", "pin": pin }).to_string(),
+            None => json!({ "type": "subscribe-match", "matchId": "1", "device": "livescore" }).to_string(),
+        };
+
+        // the referee subscribes before the scorer (no room yet): not present
+        handle_ws_message(&state, 3, &txs[&3], &subscribe(Some("314159"))).await;
+        assert_eq!(told(rxs.get_mut(&3).unwrap()), vec![false]);
+
+        // the scorer syncs: present, to the referee after the update, not to the scorer itself
+        handle_ws_message(&state, 1, &txs[&1], &sync(json!({ "id": LAPTOP, "claim": "laptop-1" }), 1)).await;
+        let mut types = Vec::new();
+        while let Ok(Message::Text(t)) = rxs.get_mut(&3).unwrap().try_recv() {
+            let m: Value = serde_json::from_str(&t).unwrap();
+            types.push(m["type"].as_str().unwrap().to_string());
+            if m["type"] == json!("scorer-presence") {
+                assert_eq!(m["present"], json!(true));
+            }
+        }
+        assert_eq!(types, vec!["match-data-update", "scorer-presence"]);
+        assert!(told(rxs.get_mut(&1).unwrap()).is_empty());
+
+        // further syncs: no repeat
+        for home in 2..5 {
+            handle_ws_message(&state, 1, &txs[&1], &sync(json!({ "id": LAPTOP, "claim": "laptop-1" }), home)).await;
+        }
+        assert!(told(rxs.get_mut(&3).unwrap()).is_empty());
+
+        // a later subscriber (no PIN: the summary) gets the state at once
+        handle_ws_message(&state, 4, &txs[&4], &subscribe(None)).await;
+        assert_eq!(told(rxs.get_mut(&4).unwrap()), vec![true]);
+
+        // another device takes the room over: present throughout, no false between
+        handle_ws_message(&state, 2, &txs[&2], &sync(json!({ "id": PHONE, "claim": "phone-1" }), 5)).await;
+        assert!(!is_owner(&state, 1, "1").await);
+        assert!(told(rxs.get_mut(&3).unwrap()).is_empty());
+        assert!(told(rxs.get_mut(&4).unwrap()).is_empty());
+        // the old scorer's socket goes: the room still has its scorer
+        forget_connection(&state, 1).await;
+        assert!(told(rxs.get_mut(&3).unwrap()).is_empty());
+
+        // the scorer's socket gone (closed laptop, crashed app, lost Wi-Fi): not present, once
+        forget_connection(&state, 2).await;
+        assert_eq!(told(rxs.get_mut(&3).unwrap()), vec![false]);
+        assert_eq!(told(rxs.get_mut(&4).unwrap()), vec![false]);
+
+        // the scorer back on a new connection: present again; a socket that
+        // unsubscribed is no longer told
+        handle_ws_message(&state, 4, &txs[&4], &json!({ "type": "unsubscribe-match", "matchId": "1" }).to_string()).await;
+        handle_ws_message(&state, 5, &txs[&5], &sync(json!({ "id": PHONE, "claim": "phone-1" }), 6)).await;
+        assert_eq!(told(rxs.get_mut(&3).unwrap()), vec![true]);
+        assert!(told(rxs.get_mut(&5).unwrap()).is_empty());
+        forget_connection(&state, 5).await;
+        assert_eq!(told(rxs.get_mut(&3).unwrap()), vec![false]);
+        assert!(told(rxs.get_mut(&4).unwrap()).is_empty());
+        assert!(state.presence.lock().await.is_empty(), "nothing kept for a room without a scorer");
+
+        // a scoreboard's answer to a match-data request proves the match too
+        connect(&state, 6, "192.168.1.11").await;
+        let (tx6, mut rx6) = tx_pair();
+        state.clients.lock().await.insert(6, tx6);
+        let (ptx, _prx) = oneshot::channel::<Value>();
+        let p = Pending { tx: ptx, response_type: "match-data-response".into(), match_id: Some("1".into()), targets: HashSet::from([6u64]) };
+        state.pending.lock().await.insert("r1".into(), p);
+        on_response(&state, 6, "match-data-response",
+            &json!({ "requestId": "r1", "matchId": "1", "success": true, "data": bundle(1, "111111", "live") })).await;
+        assert!(is_owner(&state, 6, "1").await);
+        assert_eq!(told(rxs.get_mut(&3).unwrap()), vec![true]);
+        assert!(told(&mut rx6).is_empty());
+
+        // deleted: match-deleted only, no presence message
+        handle_ws_message(&state, 6, &txs[&1], &json!({ "type": "delete-match", "matchId": "1" }).to_string()).await;
+        let mut gone = Vec::new();
+        while let Ok(Message::Text(t)) = rxs.get_mut(&3).unwrap().try_recv() {
+            gone.push(serde_json::from_str::<Value>(&t).unwrap()["type"].clone());
+        }
+        assert_eq!(gone, vec![json!("match-deleted")]);
+        assert!(state.presence.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_bundle_only_after_a_pin_of_the_match() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.50").await;
+        connect(&state, 2, "192.168.1.60").await;
+        connect(&state, 3, "192.168.1.61").await;
+        let (tx1, _rx1) = tx_pair();
+        let (tx2, mut rx2) = tx_pair();
+        let (tx3, mut rx3) = tx_pair();
+        state.clients.lock().await.insert(2, tx2.clone());
+        state.clients.lock().await.insert(3, tx3.clone());
+        let mut m = bundle(1, "111111", "live")["match"].clone();
+        m["refereeConnectionEnabled"] = json!(true);
+        let players = json!([{ "number": 7, "lastName": "Player" }]);
+        handle_ws_message(&state, 1, &tx1, &json!({ "type": "sync-match-data", "matchId": "7", "match": m, "homePlayers": players }).to_string()).await;
+        let next = |rx: &mut mpsc::UnboundedReceiver<Message>| -> Value {
+            let Ok(Message::Text(t)) = rx.try_recv() else { panic!("expected a message") };
+            serde_json::from_str(&t).unwrap()
+        };
+        // No PIN: the summary, no roster
+        handle_ws_message(&state, 2, &tx2, &json!({ "type": "subscribe-match", "matchId": "7" }).to_string()).await;
+        let s = next(&mut rx2);
+        assert_eq!(s["type"], json!("match-full-data"));
+        assert_eq!(s["access"], json!("summary"));
+        assert_eq!(s["homePlayers"], json!([]));
+        assert_eq!(s["match"]["status"], json!("live"));
+        let presence = json!({ "type": "scorer-presence", "matchId": "7", "present": true });
+        let without_time = |mut m: Value| {
+            m.as_object_mut().unwrap().remove("timestamp");
+            m
+        };
+        assert_eq!(without_time(next(&mut rx2)), presence, "last, after the snapshot");
+        // The referee PIN: the bundle
+        handle_ws_message(&state, 3, &tx3, &json!({ "type": "subscribe-match", "matchId": "7", "pin": "314159" }).to_string()).await;
+        let f = next(&mut rx3);
+        assert_eq!(f["access"], json!("full"));
+        assert_eq!(f["homePlayers"][0]["number"], json!(7));
+        assert!(!f.to_string().contains("314159"));
+        assert_eq!(without_time(next(&mut rx3)), presence);
+        // Actions reach only the referee
+        handle_ws_message(&state, 1, &tx1, &json!({ "type": "match-action", "matchId": "7", "action": "timeout", "data": { "team": "home" } }).to_string()).await;
+        assert_eq!(next(&mut rx3)["type"], json!("match-action"));
+        assert!(rx2.try_recv().is_err());
+        // A wrong PIN is refused and counted; past the limit nothing is compared
+        let (tx4, mut rx4) = tx_pair();
+        connect(&state, 4, "192.168.1.62").await;
+        for _ in 0..PIN_FAILURE_LIMIT {
+            handle_ws_message(&state, 4, &tx4, &json!({ "type": "subscribe-match", "matchId": "7", "pin": "000000" }).to_string()).await;
+            assert_eq!(next(&mut rx4)["code"], json!("pin-invalid"));
+            assert_eq!(next(&mut rx4)["access"], json!("summary"));
+            assert_eq!(without_time(next(&mut rx4)), presence);
+        }
+        handle_ws_message(&state, 4, &tx4, &json!({ "type": "subscribe-match", "matchId": "7", "pin": "314159" }).to_string()).await;
+        assert_eq!(next(&mut rx4)["code"], json!("rate-limited"));
+        assert_eq!(next(&mut rx4)["access"], json!("summary"));
+        assert_eq!(without_time(next(&mut rx4)), presence);
+        // With the referee connection off the referee PIN grants nothing; the game PIN still does
+        let mut off = m.clone();
+        off["refereeConnectionEnabled"] = json!(false);
+        assert!(!pin_grants_access(Some(&off), "314159"));
+        assert!(pin_grants_access(Some(&off), "111111"));
+        assert!(!pin_grants_access(Some(&json!({ "status": "live" })), ""));
+    }
+
+    /// The livescore on the laptop's Wi-Fi / Bluetooth (utils/relayLivescore):
+    /// subscribe-match without a PIN, then the summary and every live state.
+    #[tokio::test]
+    async fn a_livescore_viewer_follows_the_score_without_a_pin() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.50").await;
+        connect(&state, 2, "192.168.1.60").await;
+        let (tx1, _rx1) = tx_pair();
+        let (tx2, mut rx2) = tx_pair();
+        state.clients.lock().await.insert(2, tx2.clone());
+        let mut m = bundle(1, "111111", "live")["match"].clone();
+        m["seed_key"] = json!("seed-1");
+        m["officials"] = json!([{ "lastName": "Ref", "dob": "1980-01-01" }]);
+        let players = json!([{ "number": 7, "lastName": "Player", "dob": "2001-04-17" }]);
+        let sets = json!([{ "index": 1, "homePoints": 25, "awayPoints": 20, "finished": true, "matchId": 1 }]);
+        let sync_msg = json!({ "type": "sync-match-data", "matchId": 1, "match": m, "homePlayers": players, "sets": sets, "homeTeam": { "name": "Home VC", "color": "#e2001a", "coach": "Cora" } });
+        handle_ws_message(&state, 1, &tx1, &sync_msg.to_string()).await;
+        let next = |rx: &mut mpsc::UnboundedReceiver<Message>| -> Value {
+            let Ok(Message::Text(t)) = rx.try_recv() else { panic!("expected a message") };
+            serde_json::from_str(&t).unwrap()
+        };
+        handle_ws_message(&state, 2, &tx2, &json!({ "type": "subscribe-match", "matchId": "seed-1", "device": "livescore" }).to_string()).await;
+        let s = next(&mut rx2);
+        assert_eq!(s["access"], json!("summary"));
+        assert_eq!(s["sets"], json!([{ "index": 1, "homePoints": 25, "awayPoints": 20, "finished": true }]));
+        assert_eq!(s["homeTeam"], json!({ "name": "Home VC", "color": "#e2001a" }));
+        let p = next(&mut rx2);
+        assert_eq!((p["type"].clone(), p["matchId"].clone(), p["present"].clone()), (json!("scorer-presence"), json!("seed-1"), json!(true)));
+        let live = json!({ "points_a": 3, "points_b": 1, "serving_team": "left", "timeouts_a": 1, "match_status": "live" });
+        handle_ws_message(&state, 1, &tx1, &json!({ "type": "live-state-update", "matchId": 1, "liveState": live }).to_string()).await;
+        let l = next(&mut rx2);
+        assert_eq!((l["type"].clone(), l["matchId"].clone(), l["liveState"].clone()), (json!("live-state-update"), json!("seed-1"), live.clone()));
+        handle_ws_message(&state, 1, &tx1, &sync_msg.to_string()).await;
+        let u = next(&mut rx2);
+        assert_eq!((u["type"].clone(), u["access"].clone(), u["liveState"].clone()), (json!("match-data-update"), json!("summary"), live));
+        let text = format!("{s}{l}{u}");
+        for secret in ["111111", "314159", "dob", "lastName", "Cora", "officials", "coach"] {
+            assert!(!text.contains(secret), "{secret} in {text}");
+        }
+    }
+
+    #[tokio::test]
+    async fn the_match_list_shows_every_published_match_for_display_devices() {
+        let state = new_state(0, 0);
+        for (conn, ip) in [(1, "192.168.1.10"), (2, "192.168.1.11"), (3, "192.168.1.12"), (4, "192.168.1.13")] {
+            connect(&state, conn, ip).await;
+        }
+        let mut a = bundle(1, "111111", "scheduled");
+        a["match"]["refereeConnectionEnabled"] = json!(false);
+        a["match"]["scheduledAt"] = json!("2026-10-05T17:00:00.000Z");
+        a["match"]["gameNumber"] = json!(4242);
+        a["match"]["homeTeamConnectionEnabled"] = json!(true);
+        a["match"]["officials"] = json!([{ "lastName": "Ref", "dob": "1980-01-01" }]);
+        a["homeTeam"] = json!({ "name": "Home VC" });
+        a["awayTeam"] = json!({ "name": "Away VC" });
+        a["homePlayers"] = json!([{ "number": 7, "lastName": "Player", "dob": "2001-04-17" }]);
+        let mut b = bundle(1, "222222", "live");
+        b["match"]["scheduledAt"] = json!("2026-10-05T19:00:00.000Z");
+        let mut t = json!({ "match": { "id": 1, "status": "live", "test": true }, "homeTeam": null, "awayTeam": null });
+        t["homePlayers"] = json!([]);
+        sync(&state, 1, "seed-a", a).await.unwrap();
+        sync(&state, 2, "seed-b", b).await.unwrap();
+        sync(&state, 3, "test-seed", t).await.unwrap();
+        sync(&state, 4, "seed-d", bundle(1, "444444", "final")).await.unwrap();
+
+        let rows = match_list_rows(&state, false).await;
+        let ids: Vec<&str> = rows.iter().map(|r| r["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, vec!["seed-b", "seed-a", "test-seed"]);
+        assert_eq!(rows[1], json!({
+            "id": "seed-a", "gameNumber": 4242, "homeTeam": "Home VC", "awayTeam": "Away VC",
+            "scheduledAt": "2026-10-05T17:00:00.000Z", "dateTime": null, "status": "scheduled", "sportType": "indoor", "test": false,
+            "refereeConnectionEnabled": false, "homeTeamConnectionEnabled": true, "awayTeamConnectionEnabled": false,
+        }));
+        assert_eq!(rows[2]["test"], json!(true));
+        let text = Value::Array(rows).to_string();
+        for secret in ["111111", "222222", "314159", "dob", "Player", "Ref"] {
+            assert!(!text.contains(secret), "{secret} in {text}");
+        }
+
+        // The livescore (?finished=1) lists the finished one too, same row shape
+        let all = match_list_rows(&state, true).await;
+        let ids: Vec<&str> = all.iter().map(|r| r["id"].as_str().unwrap()).collect();
+        assert_eq!(ids.len(), 4);
+        assert!(ids.contains(&"seed-d"));
+        let done = all.iter().find(|r| r["id"] == json!("seed-d")).unwrap();
+        assert_eq!(done["status"], json!("final"));
+        assert_eq!(done.as_object().unwrap().len(), 12);
+        assert!(!Value::Array(all.clone()).to_string().contains("444444"));
+        assert_eq!(match_list_entry("x", &bundle(1, "1", "ended"), false), None);
+        assert!(match_list_entry("x", &bundle(1, "1", "ended"), true).is_some());
+
+        // A scorer gone for longer than the relay holds its match drops out
+        leave(&state, 2, "seed-b", Duration::from_secs(120)).await;
+        assert_eq!(match_list_rows(&state, false).await.len(), 3);
+        leave(&state, 2, "seed-b", STALE_TAKEOVER + Duration::from_secs(1)).await;
+        assert_eq!(match_list_rows(&state, false).await.len(), 2);
+    }
+
+    #[test]
+    fn openbeach_teams_are_the_home_and_away_team() {
+        let b = bundle_from(&json!({
+            "match": { "id": 1, "status": "live" },
+            "team1Team": { "name": "Muster / Meier", "color": "#e2001a" },
+            "team2Team": { "name": "Rossi / Bianchi" },
+        }))
+        .unwrap();
+        let row = match_list_entry("beach-1", &b, false).unwrap();
+        assert_eq!(row["homeTeam"], json!("Muster / Meier"));
+        assert_eq!(row["awayTeam"], json!("Rossi / Bianchi"));
+        // The list row names the sport (openbeach lists only its own matches)
+        assert_eq!(row["sportType"], json!("beach"));
+        let summary = summary_bundle(&b);
+        assert_eq!(summary["homeTeam"], json!({ "name": "Muster / Meier", "color": "#e2001a" }));
+        // Its periodic sync names them team1 / team2; homeTeam wins when both are sent
+        let p = bundle_from(&json!({ "match": { "id": 1 }, "team1": { "name": "A" }, "homeTeam": { "name": "H" }, "team2": "B" })).unwrap();
+        let row = match_list_entry("beach-2", &p, false).unwrap();
+        assert_eq!((row["homeTeam"].clone(), row["awayTeam"].clone(), row["status"].clone()), (json!("H"), json!("B"), json!("scheduled")));
+        // The home/away wire shape naming its sport is beach too; none is indoor
+        let wire = bundle_from(&json!({ "match": { "id": 1, "sport_type": "beach" }, "homeTeam": { "name": "A" } })).unwrap();
+        assert_eq!(match_list_entry("beach-3", &wire, false).unwrap()["sportType"], json!("beach"));
+        let indoor = bundle_from(&json!({ "match": { "id": 1 }, "homeTeam": { "name": "A" } })).unwrap();
+        assert_eq!(match_list_entry("indoor-1", &indoor, false).unwrap()["sportType"], json!("indoor"));
+    }
+
+    /// An openbeach court as it syncs today: team1 / team2 names, its own PINs.
+    fn beach_sync(seed: &str) -> Value {
+        json!({
+            "type": "sync-match-data",
+            "matchId": 1,
+            "match": {
+                "id": 1, "seed_key": seed, "status": "live",
+                "refereeConnectionEnabled": true,
+                "team1TeamConnectionEnabled": true,
+                "team2TeamConnectionEnabled": false,
+                "gamePin": "259730", "refereePin": "360841",
+                "team1Pin": "471952", "team2Pin": "582063",
+                "team1UploadPin": "693174", "team2UploadPin": "704285",
+                "team1TeamUploadPin": "693175", "team2TeamUploadPin": "704286",
+                "team1TeamPin": "471953", "team2TeamPin": "582064",
+                "matchPin": "815396",
+            },
+            "team1Team": { "name": "Keller / Huber" },
+            "team2Team": { "name": "Weber / Frei" },
+            "team1Players": [{ "number": 1, "lastName": "Keller", "dob": "1999-03-14" }],
+            "team2Players": [{ "number": 1, "lastName": "Weber", "dob": "1999-03-14" }],
+        })
+    }
+
+    async fn body_json(r: Response) -> (StatusCode, Value) {
+        let status = r.status();
+        let bytes = axum::body::to_bytes(r.into_body(), usize::MAX).await.unwrap();
+        (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    }
+
+    #[test]
+    fn openbeach_pins_never_go_out_and_its_bench_pins_grant_the_match() {
+        let b = bundle_from(&beach_sync("beach-court-2")).unwrap();
+        assert_eq!(bundle_sport(&b), "beach");
+        assert_eq!(b["homePlayers"][0]["lastName"], json!("Keller"));
+        assert_eq!(b["awayPlayers"][0]["lastName"], json!("Weber"));
+        // The referee and the team1 bench (connection on) get in; team2 (off),
+        // the upload PINs and openbeach's match-protect PIN do not
+        let m = b.get("match");
+        assert!(pin_grants_access(m, "360841"));
+        assert!(pin_grants_access(m, "471952"));
+        assert!(pin_grants_access(m, "259730"));
+        for pin in ["582063", "693174", "815396", "000000"] {
+            assert!(!pin_grants_access(m, pin), "{pin}");
+        }
+        // Older builds: team1TeamPin when team1Pin is empty
+        let mut old = b.clone();
+        old["match"]["team1Pin"] = json!("");
+        assert!(pin_grants_access(old.get("match"), "471953"));
+        // Nothing the referee gets names a PIN (or the relay's sport note)
+        let full = bundle_message_access("match-full-data", "beach-court-2", &b, None, true);
+        let text = full.to_string();
+        for secret in ["259730", "360841", "471952", "582063", "693174", "704285", "693175", "704286", "471953", "582064", "815396", "Pin\"", "sportType", "1999-03-14"] {
+            assert!(!text.contains(secret), "{secret} in {text}");
+        }
+        assert_eq!(full["homePlayers"][0]["lastName"], json!("Keller"));
+        assert!(!summary_bundle(&b).to_string().contains("sportType"));
+        // The home/away wire shape with sport_type is beach too; indoor is not
+        let wire = bundle_from(&json!({ "match": { "id": 1, "sport_type": "beach" }, "homeTeam": { "name": "A" } })).unwrap();
+        assert_eq!(bundle_sport(&wire), "beach");
+        assert_eq!(bundle_sport(&bundle(7, "987654", "live")), "indoor");
+    }
+
+    #[tokio::test]
+    async fn a_scorer_s_team_less_sync_keeps_its_sport() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.31").await;
+        let first = bundle_from(&beach_sync("beach-court-1")).unwrap();
+        sync(&state, 1, "beach-court-1", first).await.unwrap();
+        let mut periodic = beach_sync("beach-court-1");
+        let obj = periodic.as_object_mut().unwrap();
+        for k in ["team1Team", "team2Team", "team1Players", "team2Players"] {
+            obj.remove(k);
+        }
+        obj.insert("team1".into(), json!({ "name": "Keller / Huber" }));
+        sync(&state, 1, "beach-court-1", bundle_from(&periodic).unwrap()).await.unwrap();
+        assert_eq!(bundle_sport(state.matches.lock().await.get("beach-court-1").unwrap()), "beach");
+        // and its match list row still names it a beach court
+        assert_eq!(match_list_rows(&state, false).await[0]["sportType"], json!("beach"));
+    }
+
+    #[tokio::test]
+    async fn validate_pin_finds_matches_of_the_asking_sport_only() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.31").await;
+        connect(&state, 2, "192.168.1.32").await;
+        sync(&state, 1, "beach-court-2", bundle_from(&beach_sync("beach-court-2")).unwrap()).await.unwrap();
+        let mut indoor = bundle(7, "987654", "live");
+        indoor["match"]["refereeConnectionEnabled"] = json!(true);
+        sync(&state, 2, "7", indoor).await.unwrap();
+        let addr: SocketAddr = "192.168.1.40:5000".parse().unwrap();
+        let ask = |body: Value| validate_pin(ConnectInfo(addr), State(state.clone()), Json(body));
+
+        let (status, body) = body_json(ask(json!({ "pin": "360841", "type": "referee", "sport": "beach" })).await).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["match"]["id"], json!("beach-court-2"));
+        assert_eq!(body["match"]["sportType"], json!("beach"));
+        let text = body.to_string();
+        for secret in ["259730", "471952", "582063", "693174", "815396", "Pin\""] {
+            assert!(!text.contains(secret), "{secret} in {text}");
+        }
+        // No sport: indoor only (the beach court is not found), and the reverse
+        assert_eq!(body_json(ask(json!({ "pin": "360841", "type": "referee" })).await).await.0, StatusCode::NOT_FOUND);
+        assert_eq!(body_json(ask(json!({ "pin": "314159", "type": "referee", "sport": "beach" })).await).await.0, StatusCode::NOT_FOUND);
+        let (status, body) = body_json(ask(json!({ "pin": "314159", "type": "referee" })).await).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["match"]["id"], json!(7));
+        assert!(body["match"].get("sportType").is_none());
+        assert_eq!(body_json(ask(json!({ "pin": "314159", "sport": "snow" })).await).await.0, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn the_page_lock_lets_a_browser_score_another_court() {
+        let state = new_state(0, 0);
+        *state.main_instance.lock().await = Some("desk".into());
+        let tablet: SocketAddr = "192.168.1.50:40000".parse().unwrap();
+        let page = |headers: HeaderMap, uri: &str| {
+            static_handler(ConnectInfo(tablet), State(state.clone()), headers, uri.parse::<Uri>().unwrap())
+        };
+        // Locked: the "already running" page, with the other-court link
+        let r = page(HeaderMap::new(), "/").await;
+        assert_eq!(r.status(), StatusCode::FORBIDDEN);
+        assert_eq!(r.headers().get("content-security-policy").unwrap(), MAIN_INSTANCE_PAGE_CSP);
+        let html = axum::body::to_bytes(r.into_body(), usize::MAX).await.unwrap();
+        assert!(String::from_utf8_lossy(&html).contains("/?court=other"));
+        // The link sets the opt-in cookie and goes back to "/"
+        let r = page(HeaderMap::new(), "/?court=other").await;
+        assert_eq!(r.status(), StatusCode::FOUND);
+        assert_eq!(r.headers().get("location").unwrap(), "/");
+        let cookie = r.headers().get("set-cookie").unwrap().to_str().unwrap().to_string();
+        assert!(cookie.starts_with("ov_other_court=1;"), "{cookie}");
+        // With it the tablet gets the scoresheet (reloads included)
+        let mut with_cookie = HeaderMap::new();
+        with_cookie.insert("cookie", HeaderValue::from_static("theme=light; ov_other_court=1"));
+        assert_ne!(page(with_cookie, "/").await.status(), StatusCode::FORBIDDEN);
+        // A look-alike cookie does not count, and other pages were never locked
+        let mut other = HeaderMap::new();
+        other.insert("cookie", HeaderValue::from_static("ov_other_court=10"));
+        assert_eq!(page(other, "/").await.status(), StatusCode::FORBIDDEN);
+        assert_ne!(page(HeaderMap::new(), "/referee").await.status(), StatusCode::FORBIDDEN);
+        assert!(is_other_court_query("x=1&court=other") && !is_other_court_query("court=others"));
+    }
+
+    /// The links the relay hands to tablets (/referee, /livescore) open the
+    /// role pages of the app it runs: openbeach builds flat *_beach.html
+    /// files, so /referee missed both folder lookups and fell back to the
+    /// scoretable. A role page the app lacks is a 404, never the scoretable.
+    #[test]
+    fn role_paths_open_the_role_pages_never_the_scoretable() {
+        use crate::flavour::{BEACH, OPENVOLLEY};
+        const BEACH_DIST: &[&str] = &[
+            "index.html", "referee_beach.html", "livescore_beach.html", "scoreboard_beach.html",
+            "scoresheet_beach.html", "assets/main-x.js",
+        ];
+        let has = |files: &'static [&'static str]| move |p: &str| files.contains(&p);
+        let beach = has(BEACH_DIST);
+        let r = |path: &str| resolve_asset(path, &BEACH, &beach);
+        for path in ["/referee", "/referee/", "/referee.html", "/referee_beach.html"] {
+            assert_eq!(r(path).as_deref(), Some("referee_beach.html"), "{path}");
+        }
+        assert_eq!(r("/livescore").as_deref(), Some("livescore_beach.html"));
+        assert_eq!(r("/scoreboard").as_deref(), Some("scoreboard_beach.html"));
+        assert_eq!(r("/scoresheet/").as_deref(), Some("scoresheet_beach.html"));
+        assert_eq!(r("/bench"), None, "openbeach has no bench page");
+        assert_eq!(r("/upload_roster"), None);
+        assert_eq!(r("/").as_deref(), Some("index.html"));
+        assert_eq!(r("/assets/main-x.js").as_deref(), Some("assets/main-x.js"));
+        assert_eq!(r("/some/app/route").as_deref(), Some("index.html"), "SPA fallback for other paths");
+        // openbeach's scoretable may also be index_beach.html
+        let only_beach_index = has(&["index_beach.html", "referee_beach.html"]);
+        assert_eq!(resolve_asset("/", &BEACH, &only_beach_index).as_deref(), Some("index_beach.html"));
+        assert_eq!(resolve_asset("/livescore", &BEACH, &only_beach_index), None);
+
+        // OpenVolley: its folder pages, as before
+        const OV_DIST: &[&str] = &[
+            "index.html", "referee/index.html", "bench/index.html", "livescore/index.html",
+            "scoresheet/index.html", "upload_roster/index.html",
+        ];
+        let ov = has(OV_DIST);
+        let o = |path: &str| resolve_asset(path, &OPENVOLLEY, &ov);
+        // the scoreboard page (/livescore/board) is the livescore page
+        for path in ["/livescore/board", "/livescore/board/"] {
+            assert_eq!(o(path).as_deref(), Some("livescore/index.html"), "{path}");
+        }
+        assert_eq!(o("/referee/board").as_deref(), Some("referee/index.html"));
+        assert_eq!(o("/livescore/board/x").as_deref(), Some("index.html"), "deeper paths: the SPA fallback");
+        for path in ["/referee", "/referee/", "/referee.html"] {
+            assert_eq!(o(path).as_deref(), Some("referee/index.html"), "{path}");
+        }
+        assert_eq!(o("/bench").as_deref(), Some("bench/index.html"));
+        assert_eq!(o("/scoresheet/").as_deref(), Some("scoresheet/index.html"));
+        assert_eq!(o("/upload_roster").as_deref(), Some("upload_roster/index.html"));
+        assert_eq!(o("/scoreboard"), None);
+        assert_eq!(o("/").as_deref(), Some("index.html"));
+        assert_eq!(o("/match/7").as_deref(), Some("index.html"));
+        // a build without the page (dev, partial dist): 404, not the scoretable
+        let bare = has(&["index.html"]);
+        assert_eq!(resolve_asset("/referee", &OPENVOLLEY, &bare), None);
+    }
+
+    /// The same through the handler, on the embedded build of this app.
+    #[tokio::test]
+    async fn the_referee_link_never_serves_the_scoretable() {
+        let state = new_state(0, 0);
+        let tablet: SocketAddr = "192.168.1.50:40000".parse().unwrap();
+        let body = |uri: &'static str| {
+            let state = state.clone();
+            async move {
+                let r = static_handler(ConnectInfo(tablet), State(state), HeaderMap::new(), uri.parse::<Uri>().unwrap()).await;
+                let status = r.status();
+                (status, axum::body::to_bytes(r.into_body(), usize::MAX).await.unwrap())
+            }
+        };
+        let (index_status, index) = body("/").await;
+        for uri in ["/referee", "/livescore"] {
+            let (status, page) = body(uri).await;
+            if index_status == StatusCode::OK {
+                assert_ne!(page, index, "{uri} served the scoretable");
+            }
+            let own = crate::flavour::CURRENT.role_pages.iter().find(|(r, _)| format!("/{r}") == uri).map(|(_, f)| *f).unwrap();
+            assert_eq!(status == StatusCode::OK, Assets::get(own).is_some(), "{uri}: {own}");
+        }
+        let html = main_instance_page(crate::flavour::CURRENT);
+        assert!(html.contains("href=\"/referee\"") && html.contains("href=\"/livescore\""));
+        assert_eq!(html.contains("href=\"/bench\""), crate::flavour::CURRENT.key == "openvolley");
+    }
+
+    #[test]
+    fn helpers() {
+        assert_eq!(path_match_id(" 7 ".into()).as_deref(), Some("7"));
+        assert!(path_match_id("".into()).is_none());
+        assert!(path_match_id("x".repeat(MAX_MATCH_ID_LEN + 1)).is_none());
+        let iso = iso_now();
+        assert_eq!(iso.len(), 24, "{iso}");
+        assert!(iso.ends_with('Z') && iso.as_bytes()[10] == b'T');
+        assert_eq!(canonical_ip("::ffff:127.0.0.1".parse().unwrap()), "127.0.0.1".parse::<IpAddr>().unwrap());
+        assert!(is_local(&"127.0.0.1:1".parse().unwrap()));
+        assert!(!is_local(&"203.0.113.9:1".parse().unwrap()));
+    }
+
+    // --- Pair a phone through the router (pair.rs; docs/phone-keyboard-spec.md) ---
+
+    #[tokio::test]
+    async fn pair_start_rule_flow_and_body_caps_through_the_router() {
+        let state = new_state(0, 0);
+        let local = "127.0.0.1:1";
+        let phone_addr = "192.0.2.77:1";
+        let start = json!({ "matchKey": "m", "context": { "home": "A", "away": "B" } }).to_string();
+        // another device without a PIN: the /api/sign/start rule, in OV_PAIR_* codes
+        let (st, _, body) = sign_call(&state, "/api/pair/start", start.clone(), "192.0.2.9:1", &[]).await;
+        assert_eq!((st, body["code"].as_str()), (StatusCode::FORBIDDEN, Some("OV_PAIR_FORBIDDEN")));
+        let (st, h, started) = sign_call(&state, "/api/pair/start", start, local, &[]).await;
+        assert_eq!(st, StatusCode::CREATED);
+        assert_eq!(h.get("cache-control").unwrap(), "no-store");
+        let (watch, token) = (started["watch"].clone(), started["token"].clone());
+        let (_, _, joined) = sign_call(&state, "/api/pair/join", json!({ "k": token }).to_string(), phone_addr, &[]).await;
+        assert_eq!(joined["state"], "paired");
+        let phone = joined["phone"].clone();
+        let field = json!({ "watch": watch, "field": { "id": "ov-remarks", "kind": "multiline", "text": "x".repeat(30000) } }).to_string();
+        assert_eq!(sign_call(&state, "/api/pair/focus", field, local, &[]).await.0, StatusCode::OK);
+        let huge = json!({ "watch": watch, "field": { "id": "f", "text": "x".repeat(70000) } }).to_string();
+        assert_eq!(sign_call(&state, "/api/pair/focus", huge, local, &[]).await.0, StatusCode::PAYLOAD_TOO_LARGE);
+        let typed = json!({ "phone": phone, "n": 1, "field": "ov-remarks", "text": "Typed" }).to_string();
+        assert_eq!(sign_call(&state, "/api/pair/input", typed, phone_addr, &[]).await.2["seq"], 1);
+        let (_, _, got) = sign_call(&state, "/api/pair/wait", json!({ "watch": watch, "knownState": "paired", "after": 0, "knownPhone": true }).to_string(), local, &[]).await;
+        assert_eq!(got["inputs"][0]["text"], "Typed");
+        assert_eq!(sign_call(&state, "/api/pair/close", json!({ "watch": watch }).to_string(), local, &[]).await.0, StatusCode::OK);
+        let (_, _, ended) = sign_call(&state, "/api/pair/poll", json!({ "phone": phone }).to_string(), phone_addr, &[]).await;
+        assert_eq!(ended["state"], "closed");
+        let (st, _, body) = sign_call(&state, "/api/pair/join", json!({ "k": token }).to_string(), phone_addr, &[("content-type", "text/plain")]).await;
+        assert_eq!((st, body["code"].as_str()), (StatusCode::BAD_REQUEST, Some("OV_PAIR_BAD_REQUEST")));
+    }
+
+    // --- Scoreboard codes (display_code.rs; docs/scoreboard-code-spec.md) ---
+
+    #[tokio::test]
+    async fn display_api_answers_any_page_and_its_preflight() {
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+        let state = new_state(0, 0);
+        let mut b = bundle(1, "111111", "live");
+        b["homeTeam"] = json!({ "name": "Home VC", "color": "#e2001a", "coach": "Cora" });
+        b["liveState"] = json!({ "points_a": 3, "lineup_a": [{ "number": 77 }], "subs_count_a": 1 });
+        state.matches.lock().await.insert("room-x".into(), b);
+        assert!(display_table(&state).set(Some("room-x"), &json!("ABCD2345"), &Value::Null, "t").is_ok());
+        let board = "192.0.2.50:1";
+        let page = ("origin", "https://board.example");
+        let (st, h, body) = sign_call(&state, "/api/display/live", json!({ "code": "abcd-2345" }).to_string(), board, &[page]).await;
+        assert_eq!(st, StatusCode::OK, "{body}");
+        assert_eq!(h.get("access-control-allow-origin").unwrap(), "*");
+        assert_eq!(h.get("cache-control").unwrap(), "no-store");
+        assert_eq!(body["liveState"], json!({ "points_a": 3, "subs_count_a": 1 }));
+        assert_eq!(body["match"]["status"], "live");
+        assert_eq!(body["homeTeam"], json!({ "name": "Home VC", "color": "#e2001a" }));
+        assert!(!body.to_string().contains("111111") && !body.to_string().contains("314159"));
+        // text/plain (a simple request, no preflight) too
+        let plain = [("content-type", "text/plain;charset=UTF-8"), page];
+        let (st, _, body) = sign_call(&state, "/api/display/lookup", json!({ "code": "ABCD2345" }).to_string(), board, &plain).await;
+        assert_eq!((st, body["matchId"].as_str()), (StatusCode::OK, Some("room-x")));
+        // the relay's other routes still refuse that page; a Host an outside party points at stays refused
+        assert_eq!(sign_call(&state, "/api/pair/join", json!({ "code": "ABCD2345" }).to_string(), board, &[page]).await.0, StatusCode::FORBIDDEN);
+        let rebound = [("host", "relay.attacker.example")];
+        assert_eq!(sign_call(&state, "/api/display/lookup", json!({ "code": "ABCD2345" }).to_string(), board, &rebound).await.0, StatusCode::FORBIDDEN);
+        // wrong, too large
+        let (st, _, body) = sign_call(&state, "/api/display/lookup", json!({ "code": "ZZZZZZZZ" }).to_string(), board, &[]).await;
+        assert_eq!((st, body["code"].as_str()), (StatusCode::NOT_FOUND, Some("OV_DISPLAY_NOT_FOUND")));
+        let (st, _, body) = sign_call(&state, "/api/display/lookup", json!({ "code": "x".repeat(2000) }).to_string(), board, &[]).await;
+        assert_eq!((st, body["code"].as_str()), (StatusCode::PAYLOAD_TOO_LARGE, Some("OV_DISPLAY_TOO_LARGE")));
+        // the preflight: 204 and the core's headers, not the relay's own CORS
+        let mut req = Request::builder()
+            .method("OPTIONS")
+            .uri("/api/display/live")
+            .header("origin", "https://board.example")
+            .header("access-control-request-method", "POST")
+            .body(Body::empty())
+            .unwrap();
+        req.extensions_mut().insert(ConnectInfo(board.parse::<SocketAddr>().unwrap()));
+        let res = http_router(state.clone()).oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::NO_CONTENT);
+        for (k, v) in crate::display_code::DISPLAY_PREFLIGHT_HEADERS {
+            assert_eq!(res.headers().get(*k).unwrap(), v, "{k}");
+        }
+        assert!(res.into_body().collect().await.unwrap().to_bytes().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_board_by_its_code_gets_the_public_live_state_and_leaves_when_it_ends() {
+        use crate::display_code::{DisplayCodes, LAN_CAPS, MAX_LIFE_MS};
+        let state = new_state(0, 0);
+        let clock = Arc::new(AtomicU64::new(1_000));
+        let c = clock.clone();
+        *state.display_codes.lock().unwrap() = DisplayCodes::new(LAN_CAPS, "lan", Arc::new(move || c.load(Ordering::SeqCst)), Box::new(|_| {}));
+        let drain = |rx: &mut mpsc::UnboundedReceiver<Message>| -> Vec<Value> {
+            let mut out = Vec::new();
+            while let Ok(Message::Text(t)) = rx.try_recv() {
+                out.push(serde_json::from_str(&t).unwrap());
+            }
+            out
+        };
+        let of = |msgs: &[Value], t: &str| -> Vec<Value> { msgs.iter().filter(|m| m["type"] == t).cloned().collect() };
+        let mut rxs = Vec::new();
+        let mut txs = Vec::new();
+        for id in 1..=4u64 {
+            connect(&state, id, &format!("192.168.1.{}", 50 + id)).await;
+            let (tx, rx) = tx_pair();
+            state.clients.lock().await.insert(id, tx.clone());
+            txs.push(tx);
+            rxs.push(rx);
+        }
+        let send = |id: u64, v: Value| {
+            let (state, tx) = (state.clone(), txs[id as usize - 1].clone());
+            async move { handle_ws_message(&state, id, &tx, &v.to_string()).await }
+        };
+        let mut m = bundle(1, "111111", "live")["match"].clone();
+        m["refereeConnectionEnabled"] = json!(true);
+        send(1, json!({ "type": "sync-match-data", "matchId": "7", "match": m })).await;
+        drain(&mut rxs[0]);
+        // only the room's scorer sets a code; the answer never names it
+        send(2, json!({ "type": "display-code-set", "matchId": "7", "code": "ABCD2345" })).await;
+        assert_eq!(of(&drain(&mut rxs[1]), "display-code-state")[0]["reason"], "not-match-owner");
+        send(1, json!({ "type": "display-code-set", "matchId": "7", "code": "ABCD2345", "issuedAt": 1_000 })).await;
+        let st = of(&drain(&mut rxs[0]), "display-code-state");
+        assert_eq!(st[0], json!({ "type": "display-code-state", "matchId": "7", "active": true, "endsAt": 1_000 + MAX_LIFE_MS }));
+        // 2: an ordinary PIN-less subscriber; 3: a board by the code (its PIN ignored);
+        // 4: the referee PIN first, then the code: public from then on
+        send(2, json!({ "type": "subscribe-match", "matchId": "7" })).await;
+        send(3, json!({ "type": "subscribe-match", "code": "abcd 2345", "device": "display", "pin": "314159" })).await;
+        let got = drain(&mut rxs[2]);
+        assert_eq!(got[0], json!({ "type": "display-code", "ok": true, "matchId": "7", "endsAt": 1_000 + MAX_LIFE_MS }));
+        assert_eq!(of(&got, "match-full-data")[0]["access"], "summary");
+        send(4, json!({ "type": "subscribe-match", "matchId": "7", "pin": "314159" })).await;
+        assert_eq!(of(&drain(&mut rxs[3]), "match-full-data")[0]["access"], "full");
+        send(4, json!({ "type": "subscribe-match", "code": "ABCD2345" })).await;
+        assert_eq!(of(&drain(&mut rxs[3]), "match-full-data")[0]["access"], "summary");
+        assert_eq!(of(&drain(&mut rxs[0]), "display-presence").last().unwrap()["present"], true);
+        drain(&mut rxs[1]);
+        send(1, json!({ "type": "live-state-update", "matchId": "7", "liveState": { "points_a": 4, "lineup_a": [7], "sanctions_b": [] } })).await;
+        assert_eq!(of(&drain(&mut rxs[1]), "live-state-update")[0]["liveState"]["lineup_a"], json!([7]), "ordinary subscribers as before");
+        for rx in [2, 3] {
+            assert_eq!(of(&drain(&mut rxs[rx]), "live-state-update")[0]["liveState"], json!({ "points_a": 4 }));
+        }
+        send(1, json!({ "type": "sync-match-data", "matchId": "7", "match": m })).await;
+        for rx in [2, 3] {
+            let mdu = of(&drain(&mut rxs[rx]), "match-data-update").remove(0);
+            assert_eq!((mdu["access"].clone(), mdu["liveState"].clone(), mdu["data"]["liveState"].clone()), (json!("summary"), json!({ "points_a": 4 }), json!({ "points_a": 4 })));
+        }
+        send(1, json!({ "type": "match-action", "matchId": "7", "action": "timeout", "data": {} })).await;
+        assert!(of(&drain(&mut rxs[3]), "match-action").is_empty(), "a board by a code gets no actions");
+        // 12 h on, the sweep ends the code: its boards are told and leave the room
+        clock.store(1_000 + MAX_LIFE_MS, Ordering::SeqCst);
+        let ended = {
+            let mut t = display_table(&state);
+            t.sweep();
+            t.take_ended()
+        };
+        end_display_codes(&state, ended).await;
+        for rx in [2, 3] {
+            assert_eq!(drain(&mut rxs[rx]), vec![json!({ "type": "display-code", "ok": false, "reason": "ended", "matchId": "7" })]);
+        }
+        assert_eq!(state.subs.lock().await.get("7").unwrap().iter().copied().collect::<Vec<_>>(), vec![2]);
+        assert_eq!(of(&drain(&mut rxs[0]), "display-presence").last().unwrap()["present"], false);
+        send(1, json!({ "type": "live-state-update", "matchId": "7", "liveState": { "points_a": 5 } })).await;
+        assert!(drain(&mut rxs[2]).is_empty() && drain(&mut rxs[3]).is_empty());
+        assert_eq!(of(&drain(&mut rxs[1]), "live-state-update").len(), 1);
+        // a room the relay drops ends its code too
+        send(1, json!({ "type": "display-code-set", "matchId": "7", "code": "WXYZ6789" })).await;
+        drop_room(&state, "7").await;
+        assert_eq!(display_table(&state).resolve(&json!("WXYZ6789"), "x").unwrap_err().reason, "ended");
+        assert!(state.display_followers.lock().await.is_empty());
+    }
+
+    // --- Sign on phone through the router (sign.rs; docs/qr-signing-spec.md 8.3) ---
+
+    async fn sign_call(state: &Arc<AppState>, path: &str, body: String, addr: &str, headers: &[(&str, &str)]) -> (StatusCode, HeaderMap, Value) {
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+        let mut b = Request::builder().method("POST").uri(path);
+        if !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("content-type")) {
+            b = b.header("content-type", "application/json");
+        }
+        for (k, v) in headers {
+            b = b.header(*k, *v);
+        }
+        let mut req = b.body(Body::from(body)).unwrap();
+        req.extensions_mut().insert(ConnectInfo(addr.parse::<SocketAddr>().unwrap()));
+        let res = http_router(state.clone()).oneshot(req).await.unwrap();
+        let (status, headers) = (res.status(), res.headers().clone());
+        let bytes = res.into_body().collect().await.unwrap().to_bytes();
+        (status, headers, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    }
+
+    fn sign_start_body(match_key: &str) -> String {
+        json!({ "slot": "captain-a", "matchKey": match_key, "context": { "home": "A", "away": "B" } }).to_string()
+    }
+
+    #[tokio::test]
+    async fn sign_start_from_the_relay_host_or_with_the_game_pin() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "127.0.0.1").await;
+        sync(&state, 1, "seed-1", bundle(1, "987654", "live")).await.unwrap();
+        let start = |addr: &'static str, pin: Option<&'static str>, key: &'static str| {
+            let state = state.clone();
+            async move {
+                let h: Vec<(&str, &str)> = pin.map(|p| vec![("x-ov-match-pin", p)]).unwrap_or_default();
+                sign_call(&state, "/api/sign/start", sign_start_body(key), addr, &h).await
+            }
+        };
+        let (st, h, body) = start("127.0.0.1:50000", None, "seed-1").await;
+        assert_eq!(st, StatusCode::CREATED, "{body}");
+        assert_eq!(h.get("cache-control").unwrap(), "no-store");
+        // Another machine: needs the game PIN of a match this relay holds
+        assert_eq!(start("192.0.2.50:1", None, "seed-1").await.2["code"], "OV_SIGN_FORBIDDEN");
+        assert_eq!(start("192.0.2.50:1", Some("987654"), "other").await.2["code"], "OV_SIGN_FORBIDDEN");
+        // The referee PIN proves nothing here
+        assert_eq!(start("192.0.2.50:1", Some("314159"), "seed-1").await.2["code"], "OV_SIGN_PIN_INVALID");
+        let (st, _, body) = start("192.0.2.50:1", Some(" 987654 "), "seed-1").await;
+        assert_eq!(st, StatusCode::CREATED, "{body}");
+        for i in 0..(PIN_FAILURE_LIMIT - 1) {
+            let pin: &'static str = Box::leak(format!("{}", 100000 + i).into_boxed_str());
+            assert_eq!(start("192.0.2.50:1", Some(pin), "seed-1").await.2["code"], "OV_SIGN_PIN_INVALID");
+        }
+        let (st, h, body) = start("192.0.2.50:1", Some("987654"), "seed-1").await;
+        assert_eq!((st, body["code"].clone()), (StatusCode::TOO_MANY_REQUESTS, json!("OV_SIGN_RATE_LIMITED")));
+        assert_eq!(h.get("retry-after").unwrap(), "60");
+        // The same counter as GET /api/match/:id with a wrong PIN
+        let fail_key = "pinfail:ip:192.0.2.50";
+        assert!(window_count(&*state.limits.lock().await, fail_key) >= PIN_FAILURE_LIMIT);
+        // A test match without a game PIN cannot be proven
+        sync(&state, 1, "test-1", bundle(2, "", "live")).await.unwrap();
+        assert_eq!(start("192.0.2.51:1", Some("000000"), "test-1").await.2["code"], "OV_SIGN_FORBIDDEN");
+    }
+
+    #[tokio::test]
+    async fn sign_live_sessions_are_capped_per_address_not_per_match() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "127.0.0.1").await;
+        for (i, key) in ["made-up-1", "made-up-2", "made-up-3"].iter().enumerate() {
+            sync(&state, 1, key, bundle(10 + i as u64, "111111", "live")).await.unwrap();
+        }
+        let start = |addr: &'static str, key: &'static str| {
+            let state = state.clone();
+            async move { sign_call(&state, "/api/sign/start", sign_start_body(key), addr, &[("x-ov-match-pin", "111111")]).await }
+        };
+        let keys = ["made-up-1", "made-up-2", "made-up-3"];
+        for i in 0..crate::sign::LAN_CAPS.per_owner {
+            let (st, _, body) = start("192.0.2.66:1", keys[i % 3]).await;
+            assert_eq!(st, StatusCode::CREATED, "{body}");
+        }
+        for key in keys {
+            assert_eq!(start("192.0.2.66:2", key).await.2["code"], "OV_SIGN_RATE_LIMITED");
+        }
+        // another device and the relay host are not affected
+        assert_eq!(start("192.0.2.67:1", "made-up-1").await.0, StatusCode::CREATED);
+        assert_eq!(sign_call(&state, "/api/sign/start", sign_start_body("m"), "127.0.0.1:1", &[]).await.0, StatusCode::CREATED);
+    }
+
+    #[tokio::test]
+    async fn sign_full_flow_and_body_caps_through_the_router() {
+        let state = new_state(0, 0);
+        let local = "127.0.0.1:1";
+        let (st, _, started) = sign_call(&state, "/api/sign/start", sign_start_body("m"), local, &[]).await;
+        assert_eq!(st, StatusCode::CREATED);
+        let (token, watch) = (started["token"].as_str().unwrap().to_string(), started["watch"].as_str().unwrap().to_string());
+        let phone = "192.0.2.77:1";
+        let (_, _, opened) = sign_call(&state, "/api/sign/open", json!({ "k": token }).to_string(), phone, &[]).await;
+        assert_eq!(opened["state"], "opened");
+        assert_eq!(opened["context"], json!({ "home": "A", "away": "B" }));
+        let ink = json!({ "k": token, "pad": { "w": 4000, "h": 2000 }, "strokes": [[0, 1000, 300, 1000]] }).to_string();
+        assert_eq!(sign_call(&state, "/api/sign/submit", ink.clone(), phone, &[]).await.0, StatusCode::OK);
+        assert_eq!(sign_call(&state, "/api/sign/submit", ink, phone, &[]).await.2["code"], "OV_SIGN_USED");
+        let (_, _, done) = sign_call(&state, "/api/sign/wait", json!({ "watch": watch, "known": "opened" }).to_string(), local, &[]).await;
+        assert_eq!(done["state"], "signed");
+        assert_eq!(done["strokes"], json!([[0, 1000, 300, 1000]]));
+        assert_eq!(sign_call(&state, "/api/sign/close", json!({ "watch": watch }).to_string(), local, &[]).await.0, StatusCode::OK);
+
+        // Bodies: 4 KB (64 KB for submit), JSON only
+        let big = json!({ "slot": "ref1", "context": { "home": "A", "away": "B", "name": "x".repeat(5000) } }).to_string();
+        let (st, h, body) = sign_call(&state, "/api/sign/start", big, local, &[]).await;
+        assert_eq!((st, body["code"].clone()), (StatusCode::PAYLOAD_TOO_LARGE, json!("OV_SIGN_TOO_LARGE")));
+        assert_eq!(h.get("connection").unwrap(), "close");
+        let huge = format!("{{\"k\":\"{token}\",\"x\":\"{}\"}}", "y".repeat(70_000));
+        assert_eq!(sign_call(&state, "/api/sign/submit", huge, phone, &[]).await.0, StatusCode::PAYLOAD_TOO_LARGE);
+        let (st, _, body) = sign_call(&state, "/api/sign/start", sign_start_body("m"), local, &[("content-type", "text/plain")]).await;
+        assert_eq!((st, body["code"].clone()), (StatusCode::BAD_REQUEST, json!("OV_SIGN_BAD_REQUEST")));
+        let (st, _, body) = sign_call(&state, "/api/sign/open", "{nope".into(), phone, &[]).await;
+        assert_eq!((st, body["code"].clone()), (StatusCode::BAD_REQUEST, json!("OV_SIGN_BAD_REQUEST")));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn sign_wait_long_polls_and_wakes_on_open() {
+        let state = new_state(0, 0);
+        let local = "127.0.0.1:1";
+        let started = sign_call(&state, "/api/sign/start", sign_start_body("m"), local, &[]).await.2;
+        let (token, watch) = (started["token"].as_str().unwrap().to_string(), started["watch"].as_str().unwrap().to_string());
+
+        // Nothing happens: the wait answers after 25 s with the same state
+        let t0 = tokio::time::Instant::now();
+        let r = sign_call(&state, "/api/sign/wait", json!({ "watch": watch, "known": "pending" }).to_string(), local, &[]).await.2;
+        assert_eq!(r["state"], "pending");
+        assert!(t0.elapsed() >= Duration::from_secs(25));
+
+        // The phone opens the link: the held wait answers at once
+        let t1 = tokio::time::Instant::now();
+        let (s2, w) = (state.clone(), watch.clone());
+        let held = tokio::spawn(async move {
+            sign_call(&s2, "/api/sign/wait", json!({ "watch": w, "known": "pending" }).to_string(), "127.0.0.1:1", &[]).await
+        });
+        for _ in 0..20 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(sign_call(&state, "/api/sign/open", json!({ "k": token }).to_string(), "192.0.2.77:1", &[]).await.0, StatusCode::OK);
+        let (_, _, woke) = held.await.unwrap();
+        assert_eq!(woke["state"], "opened");
+        assert!(t1.elapsed() < Duration::from_secs(1));
+    }
+
+    #[tokio::test]
+    async fn the_phone_page_is_served_with_its_csp() {
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+        let state = new_state(0, 0);
+        let has_page = Assets::get("sign/index.html").is_some();
+        for path in ["/sign", "/sign/", "/sign/sign.js", "/sign/sign.css"] {
+            let mut req = Request::builder().uri(path).body(Body::empty()).unwrap();
+            req.extensions_mut().insert(ConnectInfo("192.0.2.77:1".parse::<SocketAddr>().unwrap()));
+            let res = http_router(state.clone()).oneshot(req).await.unwrap();
+            let h = res.headers().clone();
+            assert_eq!(h.get("content-security-policy").unwrap(), crate::sign::SIGN_PAGE_CSP, "{path}");
+            assert_eq!(h.get("referrer-policy").unwrap(), "no-referrer", "{path}");
+            assert_eq!(h.get("cache-control").unwrap(), "no-cache", "{path}");
+            assert_eq!(h.get("x-content-type-options").unwrap(), "nosniff", "{path}");
+            let body = res.into_body().collect().await.unwrap().to_bytes();
+            if has_page && path.starts_with("/sign/sign.") {
+                assert!(!String::from_utf8_lossy(&body).contains("<html"), "{path}: got HTML");
+            }
+            if has_page && (path == "/sign" || path == "/sign/") {
+                assert!(String::from_utf8_lossy(&body).contains("/sign/sign.js"), "{path}: not the phone page");
+            }
+        }
+        // Other pages keep the app's referrer policy and get no sign CSP
+        let mut req = Request::builder().uri("/referee").body(Body::empty()).unwrap();
+        req.extensions_mut().insert(ConnectInfo("192.0.2.77:1".parse::<SocketAddr>().unwrap()));
+        let res = http_router(state).oneshot(req).await.unwrap();
+        assert_ne!(
+            res.headers().get("content-security-policy").map(|v| v.to_str().unwrap().to_string()),
+            Some(crate::sign::SIGN_PAGE_CSP.to_string())
+        );
+        assert_eq!(res.headers().get("referrer-policy").unwrap(), "strict-origin-when-cross-origin");
+    }
+
+    /// SEC-47: the app's pages (the scoretable window, every tablet page) are
+    /// served with the app's policy, the phone pages with their own, files
+    /// that are no page with none; the policy is csp.js's (shared file).
+    #[tokio::test]
+    async fn the_app_pages_are_served_with_the_app_policy() {
+        use tower::ServiceExt;
+        let policy = APP_PAGE_CSP.trim_end();
+        for needed in ["script-src 'self' 'wasm-unsafe-eval' 'sha256-", "connect-src 'self' https: wss: http: ws: ipc:", "object-src 'none'", "base-uri 'self'", "frame-src 'self' blob:"] {
+            assert!(policy.contains(needed), "{needed} in {policy}");
+        }
+        assert!(!policy.contains("'unsafe-eval'") && !policy.contains("frame-ancestors") && !policy.contains('\n'));
+        let state = new_state(0, 0);
+        let get = |path: &'static str| {
+            let mut req = Request::builder().uri(path).body(Body::empty()).unwrap();
+            req.extensions_mut().insert(ConnectInfo("192.0.2.77:1".parse::<SocketAddr>().unwrap()));
+            http_router(state.clone()).oneshot(req)
+        };
+        // the scoretable (SPA fallback) and a page of the build
+        for path in ["/", "/index.html", "/some/route"] {
+            let res = get(path).await.unwrap();
+            assert_eq!(res.status(), StatusCode::OK, "{path}");
+            assert_eq!(res.headers().get("content-security-policy").unwrap(), policy, "{path}");
+            assert_eq!(res.headers().get("x-frame-options").unwrap(), "SAMEORIGIN", "{path}");
+        }
+        let res = get("/sign").await.unwrap();
+        assert_eq!(res.headers().get("content-security-policy").unwrap(), crate::sign::SIGN_PAGE_CSP);
+        // the rules behind it: HTML of this app only
+        let html = HeaderValue::from_static("text/html; charset=utf-8");
+        let js = HeaderValue::from_static("text/javascript");
+        assert!(app_page_csp("/referee/", Some(&html), &crate::flavour::OPENVOLLEY).is_some());
+        assert!(app_page_csp("/assets/app.js", Some(&js), &crate::flavour::OPENVOLLEY).is_none());
+        assert!(app_page_csp("/pair/", Some(&html), &crate::flavour::OPENVOLLEY).is_none());
+        assert!(app_page_csp("/referee", Some(&html), &crate::flavour::BEACH).is_none(), "OpenBeach brings its own");
+    }
+
+    // The Global tool's live page for TVs (global_live.rs), the scenarios of
+    // backend/tests/globalLive.relay.test.js
+
+    async fn get_path(state: &Arc<AppState>, path: &str, headers: &[(&str, &str)]) -> (StatusCode, HeaderMap, String) {
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+        let mut b = Request::builder().uri(path);
+        for (k, v) in headers {
+            b = b.header(*k, *v);
+        }
+        let mut req = b.body(Body::empty()).unwrap();
+        req.extensions_mut().insert(ConnectInfo("192.168.1.80:1".parse::<SocketAddr>().unwrap()));
+        let res = http_router(state.clone()).oneshot(req).await.unwrap();
+        let (status, h) = (res.status(), res.headers().clone());
+        let body = res.into_body().collect().await.unwrap().to_bytes();
+        (status, h, String::from_utf8_lossy(&body).into_owned())
+    }
+
+    fn global_bundle(id: u64, pin: &str) -> Value {
+        json!({
+            "match": { "id": id, "status": "live", "gamePin": pin, "refereePin": "316271", "coinTossTeamA": "home", "hall": "Hall 1", "scheduledAt": "2027-11-05T09:00:00Z", "gameN": 3 },
+            "homeTeam": { "name": "Bergtal IS" }, "awayTeam": { "name": "Seeblick IS" },
+            "homePlayers": [{ "firstName": "Anna", "lastName": "Muster" }], "awayPlayers": [],
+            "sets": [{ "index": 1, "homePoints": 25, "awayPoints": 20, "finished": true }, { "index": 2, "homePoints": 3, "awayPoints": 1, "finished": false }],
+            "events": [],
+        })
+    }
+
+    fn live_msg(room: &str, extra: Value) -> String {
+        let mut m = json!({
+            "type": "live-state-update", "matchId": room,
+            "liveState": { "team_a_name": "Bergtal IS", "team_b_name": "Seeblick IS", "points_a": 3, "points_b": 1, "sets_won_a": 1, "sets_won_b": 0,
+                           "current_set": 2, "side_a": "left", "serving_team": "left", "match_status": "live", "lineup_a": { "I": 7 } },
+        });
+        for (k, v) in extra.as_object().unwrap() {
+            m[k] = v.clone();
+        }
+        m.to_string()
+    }
+
+    #[tokio::test]
+    async fn a_scorer_with_a_code_shows_its_court_summary_only_cors_star() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.10").await;
+        sync(&state, 1, "41", global_bundle(41, "515253")).await.unwrap();
+        let (tx, _rx) = tx_pair();
+        // any match type: the owner of the room and a valid code are enough
+        handle_ws_message(&state, 1, &tx, &live_msg("41", json!({ "globalLive": "ABCD2345" }))).await;
+        let (status, h, body) = get_path(&state, "/api/global/live/ABCD2345", &[("origin", "http://192.168.1.10:5173")]).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(h.get("access-control-allow-origin").unwrap(), "*");
+        assert_eq!(h.get("cache-control").unwrap(), "no-store");
+        assert_eq!(h.get("cross-origin-resource-policy").unwrap(), "cross-origin");
+        let v: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["error"], Value::Null);
+        assert_eq!(v["data"]["code"], "ABCD2345");
+        let courts = v["data"]["courts"].as_array().unwrap();
+        assert_eq!(courts.len(), 1);
+        assert_eq!(courts[0]["points"], json!({ "home": 3, "away": 1 }));
+        assert_eq!(courts[0]["sets"], json!([{ "home": 25, "away": 20 }]));
+        assert_eq!(courts[0]["home"]["name"], "Bergtal IS");
+        assert_eq!(courts[0]["hall"], "Hall 1");
+        assert_eq!(courts[0]["serving"], "home");
+        for leak in ["Anna", "Muster", "515253", "316271", "lineup", "\"41\""] {
+            assert!(!body.contains(leak), "{leak}");
+        }
+        // the same court whichever way it comes: the room's token is the default court
+        handle_ws_message(&state, 1, &tx, &live_msg("41", json!({ "globalLive": "ABCD2345", "globalLiveCourt": crate::global_live::court_token_of("41") }))).await;
+        let v: Value = serde_json::from_str(&get_path(&state, "/api/global/live/ABCD2345", &[]).await.2).unwrap();
+        assert_eq!(v["data"]["courts"].as_array().unwrap().len(), 1);
+        // a match's own court token moves the room's court, it adds none (one
+        // court per room, as the Node relay keeps it: 2611 review, SR-3, a
+        // second tablet's token left a second, frozen court on every TV)
+        let before = v["data"]["courts"][0]["id"].clone();
+        handle_ws_message(&state, 1, &tx, &live_msg("41", json!({ "globalLive": "ABCD2345", "globalLiveCourt": "a".repeat(32) }))).await;
+        let v: Value = serde_json::from_str(&get_path(&state, "/api/global/live/ABCD2345", &[]).await.2).unwrap();
+        assert_eq!(v["data"]["courts"].as_array().unwrap().len(), 1);
+        assert_ne!(v["data"]["courts"][0]["id"], before);
+        // another room (another match) is another court
+        connect(&state, 3, "192.168.1.11").await;
+        sync(&state, 3, "43", global_bundle(43, "626364")).await.unwrap();
+        handle_ws_message(&state, 3, &tx, &live_msg("43", json!({ "globalLive": "ABCD2345", "globalLiveCourt": "b".repeat(32) }))).await;
+        let v: Value = serde_json::from_str(&get_path(&state, "/api/global/live/ABCD2345", &[]).await.2).unwrap();
+        assert_eq!(v["data"]["courts"].as_array().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn nothing_from_a_socket_that_does_not_own_the_room_without_a_code_or_with_a_bad_code() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.10").await;
+        connect(&state, 2, "192.168.1.66").await;
+        sync(&state, 1, "42", global_bundle(42, "515253")).await.unwrap();
+        let (tx, _rx) = tx_pair();
+        handle_ws_message(&state, 2, &tx, &live_msg("42", json!({ "globalLive": "NNNN2345", "liveState": { "team_a_name": "FAKE" } }))).await;
+        handle_ws_message(&state, 1, &tx, &live_msg("42", json!({ "globalLive": "bad-code" }))).await;
+        handle_ws_message(&state, 1, &tx, &live_msg("42", json!({ "globalLive": 12345678 }))).await;
+        handle_ws_message(&state, 1, &tx, &live_msg("42", json!({}))).await;
+        let (status, _, body) = get_path(&state, "/api/global/live/NNNN2345", &[]).await;
+        assert_eq!(status, StatusCode::OK);
+        let v: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v, json!({ "data": { "code": "NNNN2345", "updatedAt": null, "courts": [] }, "error": null }));
+        assert_eq!(state.global_live.lock().unwrap().size(), 0);
+        let (status, h, body) = get_path(&state, "/api/global/live/bad-code", &[]).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(h.get("access-control-allow-origin").unwrap(), "*");
+        assert_eq!(serde_json::from_str::<Value>(&body).unwrap()["error"]["code"], "OV_NOT_FOUND");
+        // percent-encoding is not decoded, like Node's url.pathname
+        assert_eq!(get_path(&state, "/api/global/live/%41BCD2345", &[]).await.0, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn the_tv_page_and_its_script_are_the_backend_s_files() {
+        let state = new_state(0, 0);
+        let (status, h, body) = get_path(&state, "/tv/tvpg-2345", &[]).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(h.get("content-type").unwrap().to_str().unwrap().starts_with("text/html"));
+        assert_eq!(h.get("cache-control").unwrap(), "no-store");
+        assert_eq!(h.get("referrer-policy").unwrap(), "no-referrer");
+        assert!(body.contains("data-code=\"TVPG2345\""));
+        assert_eq!(body, crate::global_live::tv_page_html("TVPG2345"));
+        assert_eq!(get_path(&state, "/tv/ABCD2345/", &[]).await.0, StatusCode::OK);
+        let (status, h, js) = get_path(&state, "/tv/tv.js", &[]).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(h.get("content-type").unwrap().to_str().unwrap().contains("javascript"));
+        assert_eq!(h.get("cache-control").unwrap(), "public, max-age=300");
+        assert_eq!(js, include_str!("../../../backend/lib/tv/tv.js"));
+        let (status, h, _) = get_path(&state, "/tv/nope", &[]).await;
+        assert_eq!(status, StatusCode::FOUND);
+        assert_eq!(h.get("location").unwrap(), "/tv/?wrong=1");
+    }
+
+    #[tokio::test]
+    async fn a_league_game_by_its_number_and_one_court_page() {
+        let state = new_state(0, 0);
+        state.matches.lock().await.insert(
+            "match_77".to_string(),
+            json!({
+                "match": { "gameN": 77, "coinTossTeamA": "home", "hall": "Hall 1" },
+                "homeTeam": { "name": "Home VC" }, "awayTeam": { "name": "Away VC" },
+                "sets": [], "liveState": { "team_a_name": "Home VC", "team_b_name": "Away VC", "points_a": 5, "points_b": 3, "match_status": "live" }
+            }),
+        );
+        let (status, h, body) = get_path(&state, "/api/global/live/game/77", &[]).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(h.get("access-control-allow-origin").unwrap(), "*");
+        let v: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["data"]["courts"][0]["points"]["home"], json!(5));
+        assert_eq!(v["data"]["courts"][0]["id"], json!("game-77"));
+        let (_, _, body) = get_path(&state, "/api/global/live/game/78", &[]).await;
+        let v: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["data"]["courts"], json!([]));
+        let (status, _, page) = get_path(&state, "/tv/77", &[]).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(page.contains("data-src=\"/api/global/live/game/77\""));
+        let (status, _, page) = get_path(&state, "/tv/abcd2345/3", &[]).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(page.contains("data-src=\"/api/global/live/ABCD2345?screen=3\""));
+        let (status, h, _) = get_path(&state, "/tv/abcd2345/0", &[]).await;
+        assert_eq!(status, StatusCode::FOUND);
+        assert_eq!(h.get("location").unwrap(), "/tv/?wrong=1");
+        let (_, h, _) = get_path(&state, "/tv/go?code=abcd2345&court=3", &[]).await;
+        assert_eq!(h.get("location").unwrap(), "/tv/ABCD2345/3");
+        let (_, h, _) = get_path(&state, "/tv/go?code=77", &[]).await;
+        assert_eq!(h.get("location").unwrap(), "/tv/77");
+    }
+
+    #[tokio::test]
+    async fn tv_without_a_code_asks_for_it_and_the_form_answer_redirects() {
+        let state = new_state(0, 0);
+        for path in ["/tv", "/tv/"] {
+            let (status, _, body) = get_path(&state, path, &[]).await;
+            assert_eq!(status, StatusCode::OK, "{path}");
+            assert!(body.contains("action=\"/tv/go\""));
+            assert!(!body.contains("class=\"err\""));
+        }
+        let (_, _, body) = get_path(&state, "/tv/?wrong=1", &[]).await;
+        assert!(body.contains("class=\"err\""));
+        let (status, h, _) = get_path(&state, "/tv/go?code=tvpg+2345", &[]).await;
+        assert_eq!(status, StatusCode::FOUND);
+        assert_eq!(h.get("location").unwrap(), "/tv/TVPG2345");
+        let (_, h, _) = get_path(&state, "/tv/go?code=tvpg%202345", &[]).await;
+        assert_eq!(h.get("location").unwrap(), "/tv/TVPG2345");
+        let (_, h, _) = get_path(&state, "/tv/go?code=nope", &[]).await;
+        assert_eq!(h.get("location").unwrap(), "/tv/?wrong=1");
+        assert_eq!(crate::global_live::tv_entry_html(false), crate::global_live::TV_ENTRY_HTML.replacen("{{ERROR}}", "", 1));
+    }
+}
+
+#[cfg(test)]
+#[path = "relay_limits_tests.rs"]
+mod limits_tests;

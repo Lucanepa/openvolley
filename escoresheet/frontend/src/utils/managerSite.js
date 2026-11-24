@@ -1,0 +1,144 @@
+/**
+ * manager.openvolley.app: the admin console and the competition manager as a
+ * site of their own. The main app links to it from its manage console (web
+ * only), and the manager links back to the scorer app.
+ *
+ * Both follow the deployment the page runs on, as cloudTabletBase does for
+ * the tablets: a Cloudflare Pages preview (dev.openvolley-app.pages.dev)
+ * links the preview of the other project, everything on *.openvolley.app the
+ * production sites.
+ */
+import { detectAppPlatform } from './openAppWindow'
+
+export const MANAGER_SITE_URL = 'https://manager.openvolley.app'
+export const MAIN_APP_URL = 'https://app.openvolley.app'
+// OpenBeach's manager (the same console, built as manager-beach; src/managerBrand.js)
+// and its scoring app. OpenBeach's "Create account" opens MANAGER_BEACH_SITE_URL/#signup.
+export const MANAGER_BEACH_SITE_URL = 'https://manager-beach.openvolley.app'
+export const BEACH_APP_URL = 'https://beach.openvolley.app'
+
+const hostOf = (hostname) => String(hostname || '').toLowerCase()
+const currentHost = () => (typeof window !== 'undefined' ? window.location.hostname : '')
+
+/**
+ * The same Pages label in another project: <label>.openvolley-<from>.pages.dev
+ * -> https://<label>.openvolley-<to>.pages.dev. A per-deployment hash (8 hex)
+ * exists only in its own project, so it maps to the production build.
+ * @returns {string|null} null when the host is not a preview of `from`
+ */
+function pagesPeer(host, from, to) {
+  const m = host.match(new RegExp(`^(?:([a-z0-9-]+)\\.)?openvolley-${from}\\.pages\\.dev$`))
+  if (!m) return null
+  const label = m[1] && !/^[0-9a-f]{8}$/.test(m[1]) ? `${m[1]}.` : ''
+  return `https://${label}openvolley-${to}.pages.dev`
+}
+
+/**
+ * Where the main app's console links to the manager site, or null when it
+ * should not: in the desktop and Android apps (the console stays in-app
+ * there), on the venue LAN server and in local development.
+ * @param {string} [hostname]
+ * @param {Window} [win]
+ */
+export function managerSiteUrl(hostname = currentHost(), win = typeof window !== 'undefined' ? window : undefined) {
+  if (detectAppPlatform(win) !== 'web') return null
+  if (win?.electronAPI) return null
+  const host = hostOf(hostname)
+  const preview = pagesPeer(host, 'app', 'manager')
+  if (preview) return preview
+  if (host === 'openvolley.app' || host.endsWith('.openvolley.app')) return MANAGER_SITE_URL
+  return null
+}
+
+// The manager's page that creates an account (ManagerApp, hash route).
+export const SIGN_UP_HASH = 'signup'
+
+// A team link (db/023): manager.openvolley.app/#team=<invite code>. The code
+// rides in the fragment, so it never reaches a server log.
+export const TEAM_LINK_HASH = 'team'
+const TEAM_CODE_RE = /^[0-9A-Za-z]{4}-?[0-9A-Za-z]{4}-?[0-9A-Za-z]{4}$/
+
+/**
+ * The link a club manager hands to a team manager: the manager site this page
+ * belongs to (a manager preview stays on itself, an app preview links its
+ * manager preview), else manager.openvolley.app.
+ * @param {string} code
+ * @param {string} [hostname]
+ */
+export function teamLinkUrl(code, hostname = currentHost()) {
+  const host = hostOf(hostname)
+  const base = /^(?:[a-z0-9-]+\.)?openvolley-manager\.pages\.dev$/.test(host)
+    ? `https://${host}`
+    : (pagesPeer(host, 'app', 'manager') || MANAGER_SITE_URL)
+  return `${base}/#${TEAM_LINK_HASH}=${encodeURIComponent(String(code || '').trim())}`
+}
+
+/**
+ * The invite code of a '#team=<code>' hash, or of a club manager link's
+ * '#club=<code>' (db/029, mailed by the admins' club page): upper-case, or null.
+ */
+export function teamCodeFromHash(hash) {
+  const m = /^#?(?:team|club)=([^&]+)$/.exec(String(hash || ''))
+  if (!m) return null
+  let code
+  try { code = decodeURIComponent(m[1]).trim() } catch { return null }
+  return TEAM_CODE_RE.test(code) ? code.toUpperCase() : null
+}
+
+/**
+ * Where the scorer apps send "Don't have an account?": accounts are made on
+ * manager.openvolley.app only. Unlike managerSiteUrl this is never null: the
+ * desktop and Android apps, the venue LAN server and local development link
+ * the public site too (it needs internet, see signUpNeedsInternetNote). Only a
+ * Cloudflare Pages preview of the app links the matching manager preview.
+ * @param {string} [hostname]
+ * @param {Window} [win]
+ */
+export function managerSignUpUrl(hostname = currentHost(), win = typeof window !== 'undefined' ? window : undefined) {
+  const preview = detectAppPlatform(win) === 'web' ? pagesPeer(hostOf(hostname), 'app', 'manager') : null
+  return `${preview || MANAGER_SITE_URL}/#${SIGN_UP_HASH}`
+}
+
+/**
+ * Should the "create an account" link say it needs internet? Wherever the app
+ * is not the public website (the desktop and Android apps, the venue LAN
+ * server, local development) and on a device that is offline right now.
+ * @param {string} [hostname]
+ * @param {Window} [win]
+ */
+export function signUpNeedsInternetNote(hostname = currentHost(), win = typeof window !== 'undefined' ? window : undefined) {
+  if (win?.navigator?.onLine === false) return true
+  return managerSiteUrl(hostname, win) === null
+}
+
+/**
+ * Where the manager links back to the scorer app: the production app, the
+ * matching Pages preview, or this origin in local development (vite serves
+ * both pages there).
+ * @param {string} [hostname]
+ * @param {string} [origin]
+ */
+export function mainAppUrl(hostname = currentHost(), origin = typeof window !== 'undefined' ? window.location.origin : '') {
+  const host = hostOf(hostname)
+  const preview = pagesPeer(host, 'manager', 'app')
+  if (preview) return `${preview}/`
+  if (host === 'localhost' || host === '127.0.0.1') return `${origin}/`
+  return `${MAIN_APP_URL}/`
+}
+
+/**
+ * Where a manager of `brand` (src/managerBrand.js) links to its scorer app:
+ * OpenVolley's as mainAppUrl(), OpenBeach's always the public beach app
+ * (it is another repository: no preview or dev server here to pair with).
+ * @param {{ app: string }} [brand]
+ */
+export function scorerAppUrlFor(brand, hostname = currentHost(), origin = typeof window !== 'undefined' ? window.location.origin : '') {
+  if (brand?.app === 'beach') return `${BEACH_APP_URL}/`
+  return mainAppUrl(hostname, origin)
+}
+
+/** 'club' for a club manager link's hash (#club=<code>), 'team' for a team link's, else null. */
+export function linkKindFromHash(hash) {
+  if (!teamCodeFromHash(hash)) return null
+  return /^#?club=/.test(String(hash || '')) ? 'club' : 'team'
+}

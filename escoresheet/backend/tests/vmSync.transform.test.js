@@ -1,0 +1,418 @@
+import { describe, it } from 'node:test'
+import assert from 'node:assert/strict'
+import {
+  transformGame, prepareRows, isExcludedLeague, resolveWindow, zonedTimeToUtc, zonedYmd,
+  parseVmDateTime, formatZurichDateTime, addDaysYmd, isYmd, nextRunAt, buildSearchBody,
+  windowFromEnv, MAX_WINDOW_DAYS, RENDER_PROPERTIES, matchFormatOf, GAME_COLUMNS, refereeLicenceOf, germanText, teamLanguage, teamName
+} from '../lib/vmSync.js'
+import { makeGame } from './helpers/fakeVolleyManager.js'
+
+const SYNCED = new Date('2026-10-05T04:00:00Z')
+const t = (item) => transformGame(item, { syncedAt: SYNCED })
+
+describe('transformGame: kick-off in Europe/Zurich', () => {
+  it('formats a summer game (CEST, +2 h)', () => {
+    const r = t(makeGame(1, { startingDateTime: '2026-10-10T16:00:00.000Z' }))
+    assert.equal(r.date, '10/10/2026')
+    assert.equal(r.time, '18:00')
+    assert.equal(r.datetime, '2026-10-10T16:00:00.000Z', 'raw datetime is kept for the frontend')
+  })
+
+  it('formats a winter game (CET, +1 h)', () => {
+    const r = t(makeGame(2, { startingDateTime: '2026-01-17T19:30:00.000Z' }))
+    assert.equal(r.date, '17/01/2026')
+    assert.equal(r.time, '20:30')
+  })
+
+  it('DST start 2026-03-29: 18:00Z is 20:00 CEST', () => {
+    const r = t(makeGame(3, { startingDateTime: '2026-03-29T18:00:00Z' }))
+    assert.equal(r.date, '29/03/2026')
+    assert.equal(r.time, '20:00')
+  })
+
+  it('DST end 2026-10-25: 18:00Z is 19:00 CET', () => {
+    const r = t(makeGame(4, { startingDateTime: '2026-10-25T18:00:00Z' }))
+    assert.equal(r.date, '25/10/2026')
+    assert.equal(r.time, '19:00')
+  })
+
+  it('both sides of the switch nights', () => {
+    // 00:59Z before the March switch = 01:59 CET; 01:00Z = 03:00 CEST
+    assert.equal(t(makeGame(5, { startingDateTime: '2026-03-29T00:59:00Z' })).time, '01:59')
+    assert.equal(t(makeGame(6, { startingDateTime: '2026-03-29T01:00:00Z' })).time, '03:00')
+    // 00:30Z on 25 Oct = 02:30 CEST; 01:30Z = 02:30 CET (the repeated hour)
+    assert.equal(t(makeGame(7, { startingDateTime: '2026-10-25T00:30:00Z' })).time, '02:30')
+    assert.equal(t(makeGame(8, { startingDateTime: '2026-10-25T01:30:00Z' })).time, '02:30')
+  })
+
+  it('a late game moves to the next Zurich day (UTC formatting kept the previous day)', () => {
+    const r = t(makeGame(9, { startingDateTime: '2026-06-30T22:15:00Z' }))
+    assert.equal(r.date, '01/07/2026')
+    assert.equal(r.time, '00:15')
+  })
+
+  it('accepts an explicit offset and reads an offset-less string as Zurich wall-clock time', () => {
+    assert.equal(t(makeGame(10, { startingDateTime: '2026-10-10T18:00:00+02:00' })).time, '18:00')
+    assert.equal(t(makeGame(13, { startingDateTime: '2026-10-10T16:00:00-0400' })).time, '22:00')
+    assert.equal(t(makeGame(14, { startingDateTime: '2026-10-10T20:00+01' })).time, '21:00')
+    // As the frontend's `new Date(datetime)` reads it in a Swiss browser; the digits stay
+    const r = t(makeGame(11, { startingDateTime: '2026-10-10T16:00:00' }))
+    assert.deepEqual([r.date, r.time], ['10/10/2026', '16:00'])
+    assert.equal(t(makeGame(15, { startingDateTime: '2026-01-17T23:45' })).time, '23:45')
+  })
+
+  it('parseVmDateTime: instants, Zurich wall clock, and rejects (never the host zone)', () => {
+    assert.equal(parseVmDateTime('2026-10-10T16:00:00.5Z').toISOString(), '2026-10-10T16:00:00.500Z')
+    assert.equal(parseVmDateTime('2026-10-10T18:00:00+02:00').toISOString(), '2026-10-10T16:00:00.000Z')
+    assert.equal(parseVmDateTime('2026-01-17T19:30:00').toISOString(), '2026-01-17T18:30:00.000Z', 'CET')
+    assert.equal(parseVmDateTime('2026-07-01T19:30:15.250').toISOString(), '2026-07-01T17:30:15.250Z', 'CEST')
+    assert.equal(parseVmDateTime(' 2026-10-10T16:00Z ').toISOString(), '2026-10-10T16:00:00.000Z')
+    for (const bad of [
+      '2026-10-10 18:00:00', // space separator: V8 would read it in the host's zone
+      '10.10.2026 18:00',
+      'Sat Oct 10 2026 18:00:00',
+      '2026-02-30T10:00:00Z', // V8 would roll it over to March 2
+      '2026-04-31T10:00:00Z',
+      '2026-10-10T24:00:00Z',
+      '2026-10-10T18:60:00Z',
+      '2026-13-01T10:00:00Z',
+      '2026-10-10T18:00:00+25:00',
+      '2026-10-10',
+      'garbage', '', null, 12345
+    ]) {
+      assert.equal(parseVmDateTime(bad), null, String(bad))
+    }
+  })
+
+  it('leaves date/time empty for a missing or unparsable datetime (no NaN)', () => {
+    for (const startingDateTime of ['', 'not a date', null, '2026-10-10 18:00:00', '2026-02-30T10:00:00Z']) {
+      const r = t(makeGame(12, { startingDateTime }))
+      assert.equal(r.date, '')
+      assert.equal(r.time, '')
+    }
+  })
+})
+
+describe('transformGame: other fields', () => {
+  it('maps the row like the Edge Function did', () => {
+    const r = t(makeGame(123456))
+    assert.equal(r.game_number, '123456')
+    assert.equal(r.league, '3L B')
+    assert.equal(r.gender, 'women')
+    assert.equal(r.match_level, 'senior')
+    assert.equal(r.match_type, 'championship')
+    assert.equal(r.championship_type, 'regional')
+    assert.equal(r.match_format, 5)
+    assert.equal(r.team_home, 'Home 123456')
+    assert.equal(r.city, 'Zürich')
+    assert.equal(r.hall, 'Halle Musterdorf')
+    assert.equal(r.hall_postal_code, '8003')
+    assert.equal(r.referee_1, 'Muster Anna')
+    assert.equal(r.referee_1_first_name, 'Anna')
+    assert.equal(r.referee_1_last_name, 'Muster')
+    // the birthday VolleyManager sends is never read (db/048); no date column at all (db/049)
+    assert.ok(!('referee_1_dob' in r) && !('referee_2_dob' in r))
+    assert.equal(r.referee_2, 'Beispiel Ben', 'falls back to activeSecondHeadRefereeName')
+    assert.equal(r.linesman_1, 'Linie Lea')
+    assert.equal(r.linesman_2, '')
+    assert.equal(r.is_supervised, true)
+    assert.equal(r.has_supervised_referee, false)
+    assert.deepEqual(r.convocations, ['Muster Anna'])
+    assert.equal(r.synced_at, SYNCED.toISOString())
+  })
+
+  it('classifies 1L senior as national, junior and cup leagues', () => {
+    assert.equal(t(makeGame(1, { leagueName: '1. Liga', shortName: '1L' })).championship_type, 'national')
+    const u = t(makeGame(2, { leagueName: 'U18 Juniorinnen', shortName: 'U18' }))
+    assert.equal(u.match_level, 'junior')
+    assert.equal(u.championship_type, 'regional')
+    assert.equal(t(makeGame(3, { leagueName: 'Züri Cup', shortName: 'ZC' })).match_type, 'cup')
+    assert.equal(t(makeGame(4, { groupDisplay: '#27051 | D', shortName: '1L' })).league, '1L D')
+    assert.equal(t(makeGame(5, { gender: 'm' })).gender, 'men')
+  })
+
+  it('asks VolleyManager for the format and the category it stores', () => {
+    for (const prop of ['game.group.phase.league.numberOfWinSets', 'game.group.phase.league.leagueCategory.shortName',
+      'game.group.phase.league.leagueCategory.isJuniorLeagueCategory']) {
+      assert.ok(RENDER_PROPERTIES.includes(prop), prop)
+    }
+    const p = new URLSearchParams(buildSearchBody('tok', 0, 100, '2026-10-01T00:00:00Z', '2026-10-02T00:00:00Z'))
+    assert.ok([...p.values()].includes('game.group.phase.league.numberOfWinSets'))
+  })
+
+  it('best of 3 or 5 only when VolleyManager says so; anything else is no format, never a silent 5', () => {
+    assert.equal(t(makeGame(1, { winSets: 'two_win_sets' })).match_format, 3)
+    assert.equal(t(makeGame(2, { winSets: 'three_win_sets' })).match_format, 5)
+    assert.equal(t(makeGame(3, { winSets: 'TWO_WIN_SETS' })).match_format, 3)
+    for (const v of [null, '', 'four_win_sets', 2, {}]) {
+      assert.equal(t(makeGame(4, { winSets: v })).match_format, null, String(v))
+      assert.equal(matchFormatOf(v), null)
+    }
+    const missing = makeGame(5)
+    delete missing.game.group.phase.league.numberOfWinSets
+    assert.equal(t(missing).match_format, null, 'not sent')
+  })
+
+  it('a youth league by its age class (U13, U21, U23) or by the VolleyManager flag; the category is recorded', () => {
+    for (const [leagueName, shortName] of [['U21 Damen', 'U21'], ['U13 Mixed', 'U13'], ['U12 Kids', 'U12'], ['Juniorinnen U 17', 'J17'], ['3. Liga', 'U23']]) {
+      assert.equal(t(makeGame(1, { leagueName, shortName })).match_level, 'junior', leagueName)
+    }
+    for (const [leagueName, shortName] of [['3. Liga', '3L'], ['Seniorenliga Ü35', 'S35'], ['Plu 12 Cup', 'P12']]) {
+      assert.equal(t(makeGame(1, { leagueName, shortName })).match_level, 'senior', leagueName)
+    }
+    const flagged = t(makeGame(2, { leagueName: 'Nachwuchs B', shortName: 'NWB', junior: true }))
+    assert.equal(flagged.match_level, 'junior')
+    assert.equal(flagged.junior_category, true)
+    assert.equal(flagged.league_category, 'Nachwuchs B')
+    const plain = t(makeGame(3))
+    assert.equal(plain.junior_category, null, 'not sent: not known')
+    assert.equal(plain.league_category, '3. Liga')
+    assert.equal(t(makeGame(4, { junior: false })).junior_category, false)
+  })
+
+  it('never reads a referee\'s birthday: no date column is written (db/048, db/049)', () => {
+    for (const [dob1, iso] of [['31.12.1985', '1985-12-31'], ['1990-02-24T00:00:00+01:00', '1990-02-24']]) {
+      const r = t(makeGame(1, { dob1 }))
+      assert.deepEqual([r.referee_1_dob, r.referee_2_dob, r.referee_1_last_name], [undefined, undefined, 'Muster'])
+      assert.ok(!GAME_COLUMNS.some(([c]) => /dob/.test(c)), 'the sync never names a dob column')
+      const text = JSON.stringify(r)
+      assert.ok(!text.includes(dob1) && !text.includes(iso), text)
+    }
+  })
+
+  it('the referees\' licence numbers: person.associationId, else externalId, 4 to 7 digits (db/051)', () => {
+    assert.equal(refereeLicenceOf({ associationId: '512345' }), '512345')
+    assert.equal(refereeLicenceOf({ associationId: 512345 }), '512345')
+    assert.equal(refereeLicenceOf({ associationId: ' 51 2345 ' }), '512345')
+    assert.equal(refereeLicenceOf({ associationId: null, externalId: '4321' }), '4321')
+    assert.equal(refereeLicenceOf({ associationId: 'SV-1234', externalId: 1234567 }), '1234567')
+    for (const p of [{ associationId: '123' }, { associationId: '12345678' }, { associationId: 'abc', externalId: 'x1' }, { associationId: {} }, {}, null, 'x']) {
+      assert.equal(refereeLicenceOf(p), null, JSON.stringify(p))
+    }
+    const r = t(makeGame(1, { sv1: 512345, ref2: true, sv2: '623456' }))
+    assert.deepEqual([r.referee_1_licence, r.referee_2_licence, r.referee_2_last_name], ['512345', '623456', 'Beispiel'])
+    // no convocation (a name only) or no number: none
+    const none = t(makeGame(2, { sv1: '12' }))
+    assert.deepEqual([none.referee_1_licence, none.referee_2_licence, none.referee_2], [null, null, 'Beispiel Ben'])
+    assert.ok(GAME_COLUMNS.some(([c]) => c === 'referee_1_licence') && GAME_COLUMNS.some(([c]) => c === 'referee_2_licence'))
+  })
+
+  it('survives a malformed item', () => {
+    assert.equal(transformGame(null).game_number, '')
+    assert.equal(transformGame({ game: { number: 7 } }).game_number, '7')
+  })
+})
+
+describe('NL exclusion and row preparation', () => {
+  it('excludes NL leagues by whole word, never a league that only contains the letters', () => {
+    for (const l of ['NLA', 'NLB', 'nl', 'NL B', 'Nationalliga A', 'NLA Damen', 'NL-Herren']) assert.equal(isExcludedLeague(l), true, l)
+    for (const l of ['1L D', '3L B', 'U18', 'ZC', '', 'Seniorenliga', 'Juniorenliga A', 'Frauenliga', 'Einladungsturnier', 'Online Cup']) {
+      assert.equal(isExcludedLeague(l), false, l)
+    }
+  })
+
+  it('drops NL games and games without a number, merges duplicate numbers', () => {
+    const items = [
+      makeGame(1),
+      makeGame(2, { shortName: 'NLA', groupDisplay: '' }),
+      makeGame(3, { shortName: 'NLB' }),
+      { game: { startingDateTime: '2026-10-10T16:00:00Z' } }, // no number
+      makeGame(1, { home: 'Later wins' })
+    ]
+    const { rows, transformed, excluded, excludedLeagues, duplicates } = prepareRows(items, { syncedAt: SYNCED })
+    assert.equal(transformed, 4)
+    assert.equal(excluded, 2)
+    assert.deepEqual(excludedLeagues, ['NLA', 'NLB B'], 'named in the run log')
+    assert.equal(duplicates, 1)
+    assert.deepEqual(rows.map((r) => r.game_number), ['1'])
+    assert.equal(rows[0].team_home, 'Later wins')
+  })
+})
+
+describe('Zurich calendar window', () => {
+  it('"today" is the Zurich day, not the UTC day', () => {
+    // 23:30Z on 5 Oct is already 6 Oct in Zurich
+    const w = resolveWindow({ daysBack: 0, daysAhead: 0 }, { now: new Date('2026-10-05T23:30:00Z') })
+    assert.equal(w.fromDay, '2026-10-06')
+    assert.equal(w.dateFrom, '2026-10-05T22:00:00.000Z')
+    assert.equal(w.dateTo, '2026-10-06T21:59:59.000Z')
+  })
+
+  it('defaults to today -1 .. today +14', () => {
+    const w = resolveWindow(undefined, { now: new Date('2026-10-05T10:00:00Z') })
+    assert.equal(w.fromDay, '2026-10-04')
+    assert.equal(w.toDay, '2026-10-19')
+    assert.equal(w.days, 16)
+  })
+
+  it('a window across DST end starts at CEST midnight and ends at CET midnight', () => {
+    const w = resolveWindow({ from: '2026-10-24', to: '2026-10-25' })
+    assert.equal(w.dateFrom, '2026-10-23T22:00:00.000Z')
+    assert.equal(w.dateTo, '2026-10-25T22:59:59.000Z')
+  })
+
+  it('a single --date across DST start', () => {
+    const w = resolveWindow({ date: '2026-03-29' })
+    assert.equal(w.dateFrom, '2026-03-28T23:00:00.000Z')
+    assert.equal(w.dateTo, '2026-03-29T21:59:59.000Z')
+  })
+
+  it('rejects bad windows', () => {
+    assert.throws(() => resolveWindow({ from: '2026-10-10', to: '2026-10-01' }), /after/)
+    assert.throws(() => resolveWindow({ from: '2026-10-10' }), /both/)
+    assert.throws(() => resolveWindow({ date: '2026-02-30' }), /YYYY-MM-DD/)
+    assert.throws(() => resolveWindow({ daysBack: -1 }), /non-negative/)
+    assert.throws(() => resolveWindow({ daysAhead: MAX_WINDOW_DAYS }), /max/)
+  })
+
+  it('date helpers', () => {
+    assert.equal(addDaysYmd('2026-12-31', 1), '2027-01-01')
+    assert.equal(addDaysYmd('2028-03-01', -1), '2028-02-29')
+    assert.equal(isYmd('2026-02-29'), false)
+    assert.equal(zonedYmd(new Date('2026-12-31T23:00:00Z')), '2027-01-01')
+    assert.equal(zonedTimeToUtc('2026-03-29', 2, 30).toISOString(), '2026-03-29T01:30:00.000Z', 'skipped hour maps one hour later')
+    assert.equal(zonedTimeToUtc('2026-10-25', 2, 30).toISOString(), '2026-10-25T00:30:00.000Z', 'repeated hour maps to the first one')
+    assert.equal(parseVmDateTime('garbage'), null)
+    assert.deepEqual(formatZurichDateTime(new Date('2026-07-01T05:05:00Z')), { date: '01/07/2026', time: '07:05' })
+  })
+
+  it('window from env', () => {
+    assert.deepEqual(windowFromEnv({ VM_SYNC_DAYS_BACK: '2', VM_SYNC_DAYS_AHEAD: '30' }), { daysBack: 2, daysAhead: 30 })
+    assert.deepEqual(windowFromEnv({}), {})
+    assert.throws(() => windowFromEnv({ VM_SYNC_DAYS_AHEAD: '-3' }), /non-negative/)
+    // MAX_WINDOW_DAYS is checked here, at wiring time, not first on the 06:00 run
+    assert.throws(() => windowFromEnv({ VM_SYNC_DAYS_AHEAD: '500' }), /VM_SYNC_DAYS_BACK \/ VM_SYNC_DAYS_AHEAD: window spans 502 days \(max 400\)/)
+    assert.deepEqual(windowFromEnv({ VM_SYNC_DAYS_BACK: ' 0 ', VM_SYNC_DAYS_AHEAD: String(MAX_WINDOW_DAYS - 1) }), { daysBack: 0, daysAhead: MAX_WINDOW_DAYS - 1 })
+  })
+
+  it('search body carries the Zurich-aligned range and the CSRF token', () => {
+    const w = resolveWindow({ date: '2026-10-10' })
+    const p = new URLSearchParams(buildSearchBody('tok', 200, 200, w.dateFrom, w.dateTo))
+    assert.equal(p.get('searchConfiguration[propertyFilters][0][dateRange][from]'), '2026-10-09T22:00:00.000Z')
+    assert.equal(p.get('searchConfiguration[propertyFilters][0][dateRange][to]'), '2026-10-10T21:59:59.000Z')
+    assert.equal(p.get('searchConfiguration[offset]'), '200')
+    assert.equal(p.get('__csrfToken'), 'tok')
+  })
+})
+
+describe('nextRunAt (06:00 Europe/Zurich)', () => {
+  it('later today or tomorrow, in local time across DST', () => {
+    assert.equal(nextRunAt(new Date('2026-10-05T03:00:00Z')).toISOString(), '2026-10-05T04:00:00.000Z')
+    assert.equal(nextRunAt(new Date('2026-10-05T04:00:00Z')).toISOString(), '2026-10-06T04:00:00.000Z')
+    assert.equal(nextRunAt(new Date('2026-10-24T12:00:00Z')).toISOString(), '2026-10-25T05:00:00.000Z', 'CET after the switch')
+    assert.equal(nextRunAt(new Date('2026-03-28T12:00:00Z')).toISOString(), '2026-03-29T04:00:00.000Z', 'CEST after the switch')
+  })
+})
+
+describe('transformGame: German names (no club number) whatever the account language', () => {
+  // VM's shape: `name` in the logged-in account's language, all three under translations
+  const team = (de, other) => ({
+    name: other,
+    translations: { de: { name: de }, fr: { name: other }, it: { name: other } }
+  })
+
+  it('keeps the German team names when the account answers in Italian', () => {
+    const g = makeGame(406001)
+    g.game.encounter = {
+      teamHome: team('VBC Musterdorf HU23-1', 'VBC Musterdorf KS (nuovo)'),
+      teamAway: team('VC Beispielstadt HU23-1', 'VC Beispielstadt 1')
+    }
+    const r = t(g)
+    assert.equal(r.team_home, 'VBC Musterdorf HU23-1')
+    assert.equal(r.team_away, 'VC Beispielstadt HU23-1')
+  })
+
+  it('falls back to the plain name when the German text is empty or missing', () => {
+    const g = makeGame(406002)
+    g.game.encounter = {
+      teamHome: { name: 'VBC Musterdorf H1', translations: { de: { name: '  ' }, it: { name: 'x' } } },
+      teamAway: { name: 'VC Beispielstadt H2', translations: { fr: { name: 'y' } } }
+    }
+    const r = t(g)
+    assert.equal(r.team_home, 'VBC Musterdorf H1')
+    assert.equal(r.team_away, 'VC Beispielstadt H2')
+  })
+
+  it('reads the German league category, short name, phase and hall too', () => {
+    const g = makeGame(406003)
+    const lc = g.game.group.phase.league.leagueCategory
+    lc.name = 'Coppa di Zurigo'
+    lc.shortName = 'CZ'
+    lc.translations = { de: { name: 'Züri Cup', shortName: 'ZC' }, it: { name: 'Coppa di Zurigo', shortName: 'CZ' } }
+    g.game.group.phase.name = 'Qualificazione'
+    g.game.group.phase.translations = { de: { name: 'Qualifikation' } }
+    g.game.hall.name = 'Palestra Musterdorf'
+    g.game.hall.translations = { de: { name: 'Halle Musterdorf' } }
+    const r = t(g)
+    assert.equal(r.league_category, 'Züri Cup')
+    assert.equal(r.match_type, 'cup', 'the cup check reads the German name')
+    assert.equal(r.league, 'ZC B')
+    assert.equal(r.phase_name, 'Qualifikation')
+    assert.equal(r.hall, 'Halle Musterdorf')
+  })
+
+  it('germanText copes with junk', () => {
+    assert.equal(germanText(null), null)
+    assert.equal(germanText('x'), null)
+    assert.equal(germanText({}), null)
+    assert.equal(germanText({ name: 'A', translations: { de: { name: 7 } } }), 'A')
+    assert.equal(germanText({ shortName: 'S', translations: { de: { shortName: 'K' } } }, 'shortName'), 'K')
+  })
+})
+
+describe('transformGame: each team in its own region\'s language', () => {
+  const team = (clubId, names) => ({
+    name: names.it ?? names.de,
+    club: clubId == null ? undefined : { identifier: clubId },
+    translations: { de: { name: names.de ?? '' }, fr: { name: names.fr ?? '' }, it: { name: names.it ?? '' } }
+  })
+  const names = { de: 'Muster DE', fr: 'Muster FR', it: 'Muster IT' }
+
+  it('Ticino Italian, Romandie French, German-speaking Switzerland German', () => {
+    assert.equal(teamLanguage(team('915001', names)), 'it')
+    assert.equal(teamName(team('915001', names)), 'Muster IT')
+    for (const id of ['901001', '902001', '904001']) assert.equal(teamName(team(id, names)), 'Muster FR', id)
+    for (const id of ['907001', '909001', '910001', '911001', '912001', '913001', '914001']) assert.equal(teamName(team(id, names)), 'Muster DE', id)
+  })
+
+  it('bilingual associations: French unless the club is in the German-speaking part', () => {
+    assert.equal(teamName(team('903060', names)), 'Muster FR', 'Valais romand')
+    assert.equal(teamName(team('903300', names)), 'Muster DE', 'Oberwallis')
+    assert.equal(teamName(team('906150', names)), 'Muster FR', 'Fribourg')
+    assert.equal(teamName(team('906100', names)), 'Muster DE', 'Sense')
+    assert.equal(teamName(team('905320', names)), 'Muster FR', 'Jura')
+    assert.equal(teamName(team('905270', names)), 'Muster DE', 'Seeland')
+  })
+
+  it('no or unknown club number: German', () => {
+    assert.equal(teamName(team(null, names)), 'Muster DE')
+    assert.equal(teamName(team('999001', names)), 'Muster DE')
+    assert.equal(teamName(team('12', names)), 'Muster DE')
+    assert.equal(teamLanguage(null), 'de')
+  })
+
+  it('a club number sent as a number counts too', () => {
+    assert.equal(teamName(team(915001, names)), 'Muster IT')
+  })
+
+  it('an empty text in the region language falls back to German, then the plain name', () => {
+    assert.equal(teamName(team('915001', { de: 'Muster DE', it: ' ' })), 'Muster DE')
+    assert.equal(teamName({ name: 'Plain', club: { identifier: '901001' } }), 'Plain')
+  })
+
+  it('maps both sides of a game', () => {
+    const g = makeGame(406010)
+    g.game.encounter = {
+      teamHome: team('912001', { de: 'VBC Musterdorf HU23-1', fr: 'VBC Musterdorf 1', it: 'VBC Musterdorf 1' }),
+      teamAway: team('915001', { de: 'Pallavolo Esempio DE', fr: 'Pallavolo Esempio DE', it: 'Pallavolo Esempio' })
+    }
+    const r = t(g)
+    assert.equal(r.team_home, 'VBC Musterdorf HU23-1')
+    assert.equal(r.team_away, 'Pallavolo Esempio')
+  })
+
+  it('asks VolleyManager for the club numbers', () => {
+    assert.ok(RENDER_PROPERTIES.includes('game.encounter.teamHome.club.identifier'))
+    assert.ok(RENDER_PROPERTIES.includes('game.encounter.teamAway.club.identifier'))
+  })
+})

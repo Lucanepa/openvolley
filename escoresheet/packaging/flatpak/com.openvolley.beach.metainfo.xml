@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2025 Luca Canepa -->
+<component type="desktop-application">
+  <id>com.openvolley.beach</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <name>OpenBeach</name>
+  <summary>Offline beach volleyball scoresheet with a LAN server for the tablets</summary>
+  <developer id="app.openvolley">
+    <name>Luca Canepa</name>
+  </developer>
+
+  <description>
+    <p>
+      OpenBeach is an electronic scoresheet for beach volleyball, made for the
+      scorer's table, from the makers of OpenVolley eScoresheet.
+    </p>
+    <p>
+      It runs fully offline and doubles as a server on the local network: the
+      referee and livescore tablets and the court displays connect to it over
+      the same Wi-Fi, with no internet and no accounts. It runs next to
+      OpenVolley eScoresheet on the same computer (OpenBeach uses ports 5174
+      and 8081).
+    </p>
+    <ul>
+      <li>Teams of two, coin toss and the service order</li>
+      <li>Rally-by-rally scoring with undo and court switches</li>
+      <li>Timeouts, sanctions, signatures and the scoresheet PDF</li>
+      <li>Referee and livescore views and court displays on other devices</li>
+    </ul>
+    <p>Languages: English, German, Swiss German, French, Italian.</p>
+  </description>
+
+  <launchable type="desktop-id">com.openvolley.beach.desktop</launchable>
+  <provides>
+    <binary>openbeach-escoresheet</binary>
+  </provides>
+
+  <url type="homepage">https://beach.openvolley.app</url>
+  <url type="bugtracker">https://github.com/Lucanepa/openvolley/issues</url>
+  <url type="vcs-browser">https://github.com/Lucanepa/openvolley</url>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#f5f5f4</color>
+    <color type="primary" scheme_preference="dark">#44403c</color>
+  </branding>
+
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-info">mild</content_attribute>
+  </content_rating>
+
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <control>touch</control>
+  </supports>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>The start screen: a new match or a restored one</caption>
+      <image>https://raw.githubusercontent.com/Lucanepa/openvolley/main/escoresheet/packaging/flatpak/screenshots/openbeach-1.png</image>
+    </screenshot>
+  </screenshots>
+
+  <releases>
+    <release version="26.11.0" date="2026-11-24">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v26.11.0</url>
+      <description>
+        <ul>
+          <li>New version numbers: year.month.release</li>
+          <li>Security fixes: deleting your account asks for your password; referee approvals only from the appointed referee's account; the referee screen asks for the game before the PIN</li>
+          <li>Android: backups stay inside the app (Options › Export to Documents)</li>
+          <li>Scoresheet PDF at true size on A4, nothing cut off; long names fit</li>
+          <li>Licence numbers on by default; officials' licences on the sheet</li>
+          <li>Manual adjustments keep the line judges</li>
+        </ul>
+      </description>
+    </release>
+    <release version="3.1.1" date="2026-11-20">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v3.1.1</url>
+      <description>
+        <ul>
+          <li>Error reports: when something goes wrong, the app sends what went wrong and where (never what you typed) to the OpenVolley server, also without signing in. You can switch it off in Support &amp; feedback.</li>
+          <li>Privacy policy 1.22.</li>
+        </ul>
+      </description>
+    </release>
+    <release version="3.1.0" date="2026-11-19">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v3.1.0</url>
+      <description>
+        <ul>
+          <li>Account: an optional licence number instead of the date of birth.</li>
+          <li>Beach sheets: a licence number (or a date of birth) beside each name; the scoresheet's column reads "Licence".</li>
+          <li>Saved teams, the Excel import and the referee directory bring licences only, never birthdates.</li>
+          <li>Birthdates still kept on this device are deleted once, at start-up.</li>
+        </ul>
+      </description>
+    </release>
+    <release version="3.0.5" date="2026-11-18">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v3.0.5</url>
+      <description>
+        <ul>
+          <li>Android: the approval PDF no longer fails as "stopped answering" on slow tablets.</li>
+          <li>Live screen: every court of a beach event on TVs (opt-in).</li>
+          <li>Show/hide eye on every password field.</li>
+          <li>The activity log records the match-end scoresheet PDF.</li>
+        </ul>
+      </description>
+    </release>
+    <release version="3.0.4" date="2026-11-15">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v3.0.4</url>
+      <description>
+        <ul>
+          <li>German, French and Italian now address you informally (du/tu).</li>
+          <li>Swiss German (de-CH) reviewed throughout, with the same terms as OpenVolley.</li>
+          <li>"Made by Swiss referees" under the logo on the home screen.</li>
+        </ul>
+      </description>
+    </release>
+    <release version="3.0.3" date="2026-10-30">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v3.0.3</url>
+      <description>
+        <ul>
+          <li>The app opens on Home: Continue resumes the match in one tap, a reload goes back into it, 15 minutes in the background goes to Home.</li>
+          <li>A match closed on the server opens read-only and keeps no sync error.</li>
+          <li>Restoring a backup no longer deletes the other matches on the device.</li>
+          <li>The match-end and set-end files can be restored.</li>
+          <li>The last backup is saved before the app closes.</li>
+          <li>"Auto-download data at set end" is remembered.</li>
+        </ul>
+      </description>
+    </release>
+    <release version="3.0.2" date="2026-10-27">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v3.0.2</url>
+      <description>
+        <ul>
+          <li>Deleting a match keeps the unsent results of other matches.</li>
+          <li>Take back scoring keeps the cloud's sets and points, the TTO and the sides.</li>
+          <li>Live score: team B's sets count; an Undo is never overwritten; catches up after Wi-Fi drops.</li>
+          <li>One scoring tab per match; a double tap is one point; Reopen set ends again.</li>
+          <li>Works offline from every page link; Clear cache refuses offline.</li>
+          <li>Scoresheet: penalty service turns; files retried until uploaded.</li>
+        </ul>
+      </description>
+    </release>
+    <release version="2.0.10" date="2026-10-19">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.10</url>
+      <description>
+        <ul>
+          <li>Theme: Options → Display mode → Theme chooses Light, Dark or E-ink. E-ink is black and white at full contrast, for reading the screen in full sun. The referee view has it in its menu.</li>
+          <li>Dark keeps team and shirt colours, flags and photos as they are.</li>
+        </ul>
+      </description>
+    </release>
+    <release version="2.0.9" date="2026-10-15">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.9</url>
+      <description>
+        <ul>
+          <li>A long connection status or translation no longer pushes the header under the match chip or off the screen: it switches to the compact form when the full one does not fit, and back when it fits again.</li>
+        </ul>
+      </description>
+    </release>
+    <release version="2.0.8" date="2026-10-14">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.8</url>
+      <description>
+        <ul>
+          <li>In a narrow window the header's match chip no longer covers the alarm bell; below 720 px the header uses its compact form.</li>
+        </ul>
+      </description>
+    </release>
+    <release version="2.0.7" date="2026-10-14">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.7</url>
+      <description>
+        <ul>
+          <li>Narrow windows and phones: only the scoring screen asks for a larger window; every other screen works without fullscreen.</li>
+          <li>The header, the coin toss choices, the Scoresheet menu and the scoresheet preview fit a narrow window.</li>
+        </ul>
+      </description>
+    </release>
+    <release version="2.0.6" date="2026-10-14">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.6</url>
+      <description>
+        <ul>
+          <li>Closing the window asks whether OpenBeach keeps running in the tray or quits completely.</li>
+          <li>The "Update is ready" card no longer stays on "waits until OpenBeach has finished loading".</li>
+        </ul>
+      </description>
+    </release>
+    <release version="2.0.5" date="2026-10-13">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.5</url>
+      <description>
+        <ul>
+          <li>A match scored offline or signed out now reaches the server whole: the approval waits for its sets and points.</li>
+          <li>Signed in again, the "Session expired" notice goes as soon as the waiting changes are being sent.</li>
+          <li>A saved scoresheet is named game&lt;n&gt;_&lt;league&gt;_&lt;date&gt;.pdf.</li>
+        </ul>
+      </description>
+    </release>
+    <release version="2.0.4" date="2026-10-13">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.4</url>
+      <description>
+        <ul>
+          <li>The scoresheet stays at hand after the approval: preview or save it before closing the match.</li>
+        </ul>
+      </description>
+    </release>
+    <release version="2.0.3" date="2026-10-11">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.3</url>
+      <description>
+        <ul>
+          <li>Security update of the PDF library (jsPDF 4.2.1).</li>
+          <li>Pages load faster: the PDF code only loads when a PDF is made.</li>
+          <li>Updated libraries and build tools.</li>
+        </ul>
+      </description>
+    </release>
+    <release version="2.0.2" date="2026-10-10">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.2</url>
+      <description>
+        <ul>
+          <li>Between sets nothing moves by itself; set 2 and set 3 choices follow the FIVB beach rules.</li>
+          <li>Change of courts and TTO after every point, undo and reload.</li>
+          <li>Phone layout for the scorer.</li>
+          <li>Team colours: own colour picker, readable text, outlined shirts.</li>
+          <li>Last action in your language.</li>
+          <li>Fixes crashes in the guide and at the final signatures.</li>
+          <li>Remarks sync to the server.</li>
+          <li>Many smaller fixes.</li>
+        </ul>
+      </description>
+    </release>
+    <release version="2.0.1" date="2026-10-07">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.1</url>
+      <description>
+        <ul>
+          <li>Updates now come from Flatpak; the app no longer downloads its own.</li>
+          <li>Build fixes.</li>
+        </ul>
+      </description>
+    </release>
+    <release version="2.0.0" date="2026-10-07">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.0</url>
+      <description>
+        <p>First release of the OpenBeach desktop app: the beach volleyball scoretable and a LAN server for the referee and livescore tablets and the court displays.</p>
+      </description>
+    </release>
+  </releases>
+</component>

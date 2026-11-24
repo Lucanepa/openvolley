@@ -1,0 +1,2 @@
+OpenVolley 26.11.4
+- Scoring screen: the player names on the court are a little smaller, and the libero (L) and captain (C) marks always stay visible above them, also with a larger font size on the tablet.

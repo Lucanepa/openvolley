@@ -1,0 +1,361 @@
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { argon2id } from 'hash-wasm'
+import { argon2idOptions } from '../argon2'
+import { BACKUP_DAMAGED, BACKUP_NEWER, BACKUP_WRONG_PIN, fromBase64, isEncryptedBackup, MAX_PIN_SLOTS, newDataKey, openEnvelope, pinKey, pinSlot, readableHeader, sealText, toBase64 } from '../envelope'
+import { backupPins, createBackupSealer } from '../sealer'
+import { checkKdfParams, derivePinKey, KDF_PARAMS } from '../kdf'
+
+// The real Argon2id, at the app's parameters, counted (sealer: once per match and PIN)
+const countingDerive = () => vi.fn((pin, salt, params) => derivePinKey(pin, salt, params))
+
+function backup(overrides = {}) {
+  return {
+    version: 1,
+    lastUpdated: '2026-10-29T18:00:00.000Z',
+    match: { id: 1, gameN: 1042, seed_key: 'match_1_x', status: 'live', scheduledAt: '2026-10-29T18:00:00.000Z', gamePin: '123456', refereePin: '654321', hall: 'Saalsporthalle', officials: [{ role: 'r1', firstName: 'Rita', lastName: 'Ref' }], ...overrides },
+    homeTeam: { name: 'Volley Home' },
+    awayTeam: { name: 'Volley Away' },
+    homePlayers: [{ number: 7, firstName: 'Anna', lastName: 'Muster', dob: '2004-05-06' }],
+    awayPlayers: [],
+    sets: [{ index: 2, homePoints: 3, awayPoints: 1 }, { index: 1, homePoints: 25, awayPoints: 20, finished: true }],
+    events: [{ seq: 1, type: 'point', payload: { team: 'home' } }]
+  }
+}
+// the file's own JSON: the backup without its PINs (nativeBackup/redact)
+const plainOf = (data) => {
+  const { gamePin, refereePin, ...match } = data.match
+  return JSON.stringify({ ...data, match, secretsRemoved: true })
+}
+
+// A data key with the game and referee PIN slots (and `extra` slots), for files sealed by hand
+async function keyring(extra = []) {
+  const dataKey = await newDataKey()
+  const slots = []
+  for (const [pin, value] of [['game', '123456'], ['referee', '654321']]) slots.push(await pinSlot(pin, dataKey, await pinKey(value)))
+  return { dataKey, slots: [...extra, ...slots] }
+}
+
+// PIN slots only, whatever recovery key the build has (envelope.recovery.test.js)
+async function sealed(data = backup(), sealer = createBackupSealer({ recoveryKey: '' })) {
+  const { text, encrypted } = await sealer.seal(1, data, plainOf(data), '2026-10-29T18:42:00.000Z')
+  return { text, encrypted, envelope: JSON.parse(text) }
+}
+
+describe('encrypted backup file', () => {
+  it('round trip: the game PIN and the referee PIN each open it', async () => {
+    const data = backup()
+    const { envelope, encrypted } = await sealed(data)
+    expect(encrypted).toBe(true)
+    expect(isEncryptedBackup(envelope)).toBe(true)
+
+    const byGame = await openEnvelope(envelope, '123456')
+    expect(byGame.data).toEqual(JSON.parse(plainOf(data)))
+    expect(byGame.unlockedWith).toEqual({ pin: 'game', field: 'gamePin', value: '123456' })
+
+    const byReferee = await openEnvelope(envelope, ' 654321 ')
+    expect(byReferee.data).toEqual(byGame.data)
+    expect(byReferee.unlockedWith).toEqual({ pin: 'referee', field: 'refereePin', value: '654321' })
+  })
+
+  it('a wrong PIN (or none) fails cleanly, and the right one still opens it after', async () => {
+    const { envelope } = await sealed()
+    await expect(openEnvelope(envelope, '000000')).rejects.toMatchObject({ code: BACKUP_WRONG_PIN })
+    await expect(openEnvelope(envelope, '')).rejects.toMatchObject({ code: BACKUP_WRONG_PIN })
+    await expect(openEnvelope(envelope, '123456')).resolves.toMatchObject({ unlockedWith: { pin: 'game' } })
+  })
+
+  it('tampered ciphertext, a tampered readable header or a cut file fail as damaged', async () => {
+    const { envelope } = await sealed()
+    const bytes = fromBase64(envelope.ciphertext)
+    bytes[10] ^= 1
+    await expect(openEnvelope({ ...envelope, ciphertext: toBase64(bytes) }, '123456')).rejects.toMatchObject({ code: BACKUP_DAMAGED })
+    const edited = { ...envelope, readable: { ...envelope.readable, sets: [{ index: 1, home: 25, away: 0 }] } }
+    await expect(openEnvelope(edited, '123456')).rejects.toMatchObject({ code: BACKUP_DAMAGED })
+    await expect(openEnvelope({ ...envelope, ciphertext: envelope.ciphertext.slice(0, 40) }, '654321')).rejects.toMatchObject({ code: BACKUP_DAMAGED })
+    // a damaged slot is a slot that no PIN opens
+    const slots = envelope.slots.map(s => ({ ...s, wrappedKey: toBase64(fromBase64(s.wrappedKey).map((b, i) => (i === 0 ? b ^ 1 : b))) }))
+    await expect(openEnvelope({ ...envelope, slots }, '123456')).rejects.toMatchObject({ code: BACKUP_WRONG_PIN })
+  })
+
+  it('a file of a newer format says so instead of "wrong PIN"', async () => {
+    const { envelope } = await sealed()
+    await expect(openEnvelope({ ...envelope, formatVersion: 3 }, '123456')).rejects.toMatchObject({ code: BACKUP_NEWER })
+  })
+
+  it('the readable header holds only the game number, teams, scheduled date, set scores and lastUpdated', async () => {
+    const { text, envelope } = await sealed()
+    expect(Object.keys(envelope).sort()).toEqual(['about', 'cipher', 'ciphertext', 'format', 'formatVersion', 'readable', 'slots'])
+    expect(envelope.readable).toEqual({
+      gameN: 1042,
+      homeTeam: 'Volley Home',
+      awayTeam: 'Volley Away',
+      scheduledAt: '2026-10-29T18:00:00.000Z',
+      sets: [{ index: 1, home: 25, away: 20 }, { index: 2, home: 3, away: 1 }],
+      lastUpdated: '2026-10-29T18:42:00.000Z'
+    })
+    // names, birth dates, officials, the hall, the events and the PINs: not in the clear
+    for (const secret of ['Anna', 'Muster', '2004-05-06', 'Rita', 'Saalsporthalle', 'point', 'seed_key', 'match_1_x', '123456', '654321']) {
+      expect(text).not.toContain(secret)
+    }
+    // the slots: one per PIN, its own salt, the KDF as written
+    expect(envelope.slots.map(s => [s.kind, s.pin])).toEqual([['pin', 'game'], ['pin', 'referee']])
+    expect(envelope.slots[0].kdf.salt).not.toBe(envelope.slots[1].kdf.salt)
+    expect(envelope.slots[0].kdf).toMatchObject({ alg: 'argon2id', memoryKiB: 32768, iterations: 3, parallelism: 1 })
+  })
+
+  it('an envelope is not mistaken for a plain backup by an older app (no version, match, sets or events at the top)', async () => {
+    const { envelope } = await sealed()
+    for (const k of ['version', 'match', 'matches', 'sets', 'events']) expect(k in envelope).toBe(false)
+  })
+
+  it('the file contains neither PIN, not even inside the ciphertext', async () => {
+    const { envelope } = await sealed()
+    const { data } = await openEnvelope(envelope, '123456')
+    expect(JSON.stringify(data)).not.toMatch(/123456|654321/)
+    expect(data.secretsRemoved).toBe(true)
+  })
+
+  it('slot kinds a PIN does not open (the recovery slot, a later kind) are skipped', async () => {
+    const data = backup()
+    const ring = await keyring([{ kind: 'recovery', key: 'k2027', wrappedKey: 'AAAA' }, { kind: 'later' }])
+    const envelope = JSON.parse(await sealText(plainOf(data), readableHeader(data, 't'), ring))
+    await expect(openEnvelope(envelope, '654321')).resolves.toMatchObject({ unlockedWith: { pin: 'referee' } })
+  })
+
+  it('a slot asking for an absurd KDF cost is ignored, never run', async () => {
+    const { envelope } = await sealed()
+    const derive = vi.fn(derivePinKey)
+    const greedy = { ...envelope, slots: envelope.slots.map(s => ({ ...s, kdf: { ...s.kdf, memoryKiB: 8 * 1024 * 1024 } })) }
+    await expect(openEnvelope(greedy, '123456', { derive })).rejects.toMatchObject({ code: BACKUP_WRONG_PIN })
+    expect(derive).not.toHaveBeenCalled()
+    expect(() => checkKdfParams({ ...KDF_PARAMS, iterations: 1000 })).toThrow(/out of range/)
+  })
+
+  it('a slot asking for more than 64 MiB is ignored; the app\'s own 32 MiB still opens', async () => {
+    const { envelope } = await sealed()
+    const derive = vi.fn(derivePinKey)
+    const big = { ...envelope, slots: envelope.slots.map(s => ({ ...s, kdf: { ...s.kdf, memoryKiB: 128 * 1024 } })) }
+    await expect(openEnvelope(big, '123456', { derive })).rejects.toMatchObject({ code: BACKUP_WRONG_PIN })
+    expect(derive).not.toHaveBeenCalled()
+    expect(checkKdfParams({ ...KDF_PARAMS, memoryKiB: 64 * 1024 })).toMatchObject({ memoryKiB: 65536 })
+    expect(() => checkKdfParams({ ...KDF_PARAMS, memoryKiB: 64 * 1024 + 1 })).toThrow(/out of range/)
+    await expect(openEnvelope(envelope, '123456', { derive })).resolves.toMatchObject({ unlockedWith: { pin: 'game' } })
+  })
+
+  it('a file with many PIN slots: the first MAX_PIN_SLOTS are tried, the rest ignored', async () => {
+    const data = backup()
+    const derive = vi.fn(derivePinKey)
+    const seal = async (order) => {
+      const ring = await keyring()
+      // game slots no PIN opens (a damaged wrapped key), sealed into the file
+      const broken = toBase64(fromBase64(ring.slots[0].wrappedKey).map((b, i) => (i === 0 ? b ^ 1 : b)))
+      const junk = Array.from({ length: 40 }, () => ({ ...ring.slots[0], wrappedKey: broken }))
+      return JSON.parse(await sealText(plainOf(data), readableHeader(data, 't'), { ...ring, slots: order(junk, ring.slots) }))
+    }
+    await expect(openEnvelope(await seal((junk) => junk), '123456', { derive })).rejects.toMatchObject({ code: BACKUP_WRONG_PIN })
+    expect(derive).toHaveBeenCalledTimes(MAX_PIN_SLOTS)
+    expect(MAX_PIN_SLOTS).toBe(4)
+    // the real slots after the first four are not reached; before them they open
+    await expect(openEnvelope(await seal((junk, real) => [...junk.slice(0, 4), ...real]), '123456')).rejects.toMatchObject({ code: BACKUP_WRONG_PIN })
+    await expect(openEnvelope(await seal((junk, real) => [...real, ...junk]), '654321')).resolves.toMatchObject({ unlockedWith: { pin: 'referee' } })
+    // slot kinds a PIN does not open do not count
+    const recovery = Array.from({ length: 20 }, () => ({ kind: 'recovery', wrappedKey: 'AAAA' }))
+    await expect(openEnvelope(await seal((junk, real) => [...recovery, ...real]), '123456')).resolves.toBeTruthy()
+  })
+
+  it('an aborted open (the scorer cancelled) tries no further slot', async () => {
+    const { envelope } = await sealed()
+    const controller = new AbortController()
+    const derive = vi.fn((pin, salt, params) => {
+      controller.abort() // cancelled while the first slot is derived
+      return derivePinKey(pin, salt, params)
+    })
+    await expect(openEnvelope(envelope, '654321', { derive, signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' })
+    expect(derive).toHaveBeenCalledTimes(1) // the game slot; the referee slot is never derived
+  })
+})
+
+describe('the session sealer', () => {
+  it('derives each PIN once per match across many files; every file has its own IV', async () => {
+    const derive = countingDerive()
+    const sealer = createBackupSealer({ derive })
+    const data = backup()
+    const ivs = new Set()
+    const slotsSeen = new Set()
+    for (let i = 0; i < 8; i++) {
+      data.events.push({ seq: i + 2, type: 'point', payload: { team: 'away' } })
+      const { text } = await sealer.seal(1, data, plainOf(data), new Date(Date.UTC(2026, 9, 29, 18, 0, i)).toISOString())
+      const env = JSON.parse(text)
+      ivs.add(env.cipher.iv)
+      slotsSeen.add(JSON.stringify(env.slots))
+    }
+    expect(derive).toHaveBeenCalledTimes(2) // the game PIN and the referee PIN, once each
+    expect(ivs.size).toBe(8)
+    expect(slotsSeen.size).toBe(1) // one data key for the match this session
+
+    // another match: its own keys (own salts)
+    await sealer.seal(2, backup({ id: 2 }), plainOf(backup()), '2026-10-29T19:00:00.000Z')
+    expect(derive).toHaveBeenCalledTimes(4)
+  })
+
+  it('a changed PIN: only that PIN is derived again, the new files have a new data key and do not open with the old PIN', async () => {
+    const derive = countingDerive()
+    const sealer = createBackupSealer({ derive })
+    const data = backup()
+    const before = JSON.parse((await sealer.seal(1, data, plainOf(data), '2026-10-29T18:00:00.000Z')).text)
+    data.match.refereePin = '111222'
+    const after = JSON.parse((await sealer.seal(1, data, plainOf(data), '2026-10-29T18:00:01.000Z')).text)
+    expect(derive).toHaveBeenCalledTimes(3)
+    expect(after.slots[0].wrappedKey).not.toBe(before.slots[0].wrappedKey)
+    expect(after.slots[0].kdf.salt).toBe(before.slots[0].kdf.salt) // the game PIN's key is kept
+    await expect(openEnvelope(after, '654321')).rejects.toMatchObject({ code: BACKUP_WRONG_PIN })
+    await expect(openEnvelope(after, '111222')).resolves.toMatchObject({ unlockedWith: { pin: 'referee' } })
+    await expect(openEnvelope(before, '654321')).resolves.toBeTruthy()
+  })
+
+  it('a match with no game PIN and no referee PIN is written plain, as before', async () => {
+    const derive = countingDerive()
+    const sealer = createBackupSealer({ derive })
+    const data = backup({ gamePin: null, refereePin: '' })
+    const plain = plainOf(data)
+    expect(await sealer.seal(1, data, plain, 'x')).toEqual({ text: plain, encrypted: false })
+    expect(derive).not.toHaveBeenCalled()
+  })
+
+  it('one PIN is enough: a match with only a referee PIN gets one slot', async () => {
+    const { envelope } = await sealed(backup({ gamePin: undefined }))
+    expect(envelope.slots.map(s => s.pin)).toEqual(['referee'])
+    await expect(openEnvelope(envelope, '654321')).resolves.toBeTruthy()
+  })
+
+  it('a failing derivation fails the file (never a plain one) and is retried at the next', async () => {
+    const derive = vi.fn().mockRejectedValueOnce(new Error('out of memory')).mockImplementation(derivePinKey)
+    const sealer = createBackupSealer({ derive })
+    const data = backup({ refereePin: null })
+    await expect(sealer.seal(1, data, plainOf(data), 'x')).rejects.toThrow('out of memory')
+    const { encrypted } = await sealer.seal(1, data, plainOf(data), 'y')
+    expect(encrypted).toBe(true)
+  })
+
+  // The match opened (nativeBackup engine warm): its first file, maybe the
+  // last before the app quits, does not wait for Argon2id
+  it('warm derives the PIN keys ahead and writes nothing: the first file only encrypts', async () => {
+    const derive = countingDerive()
+    const sealer = createBackupSealer({ derive })
+    const data = backup()
+    expect(await sealer.warm(1, data.match)).toBe(true)
+    expect(derive).toHaveBeenCalledTimes(2)
+    derive.mockClear()
+    const { text, encrypted } = await sealer.seal(1, data, plainOf(data), '2026-10-29T18:00:00.000Z')
+    expect(encrypted).toBe(true)
+    expect(derive).not.toHaveBeenCalled()
+    await expect(openEnvelope(JSON.parse(text), '654321')).resolves.toBeTruthy()
+    // a match with no PIN: nothing to derive
+    expect(await sealer.warm(2, { test: true })).toBe(false)
+    expect(derive).not.toHaveBeenCalled()
+  })
+
+  it('a failed warm is not an error: the first file derives the PIN keys again', async () => {
+    const derive = vi.fn().mockRejectedValueOnce(new Error('out of memory')).mockImplementation(derivePinKey)
+    const sealer = createBackupSealer({ derive })
+    const data = backup({ refereePin: null })
+    expect(await sealer.warm(1, data.match)).toBe(false)
+    await expect(sealer.seal(1, data, plainOf(data), 'x')).resolves.toMatchObject({ encrypted: true })
+    expect(derive).toHaveBeenCalledTimes(2)
+  })
+
+  it('backupPins reads the local and the cloud spellings', () => {
+    expect(backupPins({ game_pin: 123456, connection_pins: { referee: '222222' } })).toEqual([{ pin: 'game', value: '123456' }, { pin: 'referee', value: '222222' }])
+    expect(backupPins({ test: true })).toEqual([])
+  })
+
+  // An empty local field beside the cloud one: the first spelling that
+  // holds a PIN counts, so the file is not written plain
+  it('backupPins takes the first spelling that holds a PIN, skipping empty ones', async () => {
+    expect(backupPins({ gamePin: '', game_pin: '123456', refereePin: '  ', referee_pin: null, connection_pins: { referee: '' }, connectionPins: { referee: 654321 } }))
+      .toEqual([{ pin: 'game', value: '123456' }, { pin: 'referee', value: '654321' }])
+    expect(backupPins({ gamePin: '111111', game_pin: '999999' })).toEqual([{ pin: 'game', value: '111111' }]) // the local one first
+    expect(backupPins({ gamePin: '', game_pin: '', refereePin: '' })).toEqual([])
+    const data = backup({ gamePin: '', game_pin: '123456', refereePin: undefined })
+    const { envelope, encrypted } = await sealed(data)
+    expect(encrypted).toBe(true)
+    await expect(openEnvelope(envelope, '123456')).resolves.toMatchObject({ unlockedWith: { pin: 'game' } })
+  })
+})
+
+describe('the KDF', () => {
+  it('is Argon2id: the key matches hash-wasm run directly with the same parameters', async () => {
+    const salt = new Uint8Array(16).fill(7)
+    const key = await derivePinKey('123456', salt)
+    expect(key).toHaveLength(32)
+    expect([...key]).toEqual([...await argon2id(argon2idOptions('123456', salt, KDF_PARAMS))])
+  })
+
+  // A worker that never answers (a WebView that froze it, a script that
+  // never loaded) must not hold a backup back for good
+  describe('a KDF worker that does not answer', () => {
+    let made
+    let posted
+    let terminated
+    async function freshKdf() {
+      made = 0
+      posted = []
+      terminated = vi.fn()
+      vi.stubGlobal('Worker', class {
+        constructor() { made++ }
+        postMessage(msg) { posted.push(msg) }
+        terminate() { terminated() }
+      })
+      vi.resetModules()
+      vi.useFakeTimers()
+      return import('../kdf') // its own worker state
+    }
+    afterEach(() => {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    })
+
+    it('after 10 s the job is derived on this thread, and so is the rest of the session', async () => {
+      const kdf = await freshKdf()
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const salt = new Uint8Array(16).fill(3)
+      const key = kdf.derivePinKey('123456', salt)
+      await vi.advanceTimersByTimeAsync(kdf.WORKER_TIMEOUT_MS - 100)
+      expect(posted).toHaveLength(1)
+      expect(terminated).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(100)
+      expect(terminated).toHaveBeenCalledTimes(1) // retired
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('did not answer'))
+      vi.useRealTimers()
+      expect([...await key]).toEqual([...await argon2id(argon2idOptions('123456', salt, KDF_PARAMS))])
+      await kdf.derivePinKey('654321', salt)
+      expect(made).toBe(1) // no new worker
+      expect(posted).toHaveLength(1)
+      warn.mockRestore()
+    })
+
+    it('a costlier slot (a restore) gets proportionally longer before it moves to this thread', async () => {
+      const kdf = await freshKdf()
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const salt = new Uint8Array(16).fill(4)
+      const params = { ...KDF_PARAMS, iterations: 6 } // twice the cost
+      const key = kdf.derivePinKey('123456', salt, params)
+      await vi.advanceTimersByTimeAsync(kdf.WORKER_TIMEOUT_MS)
+      expect(terminated).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(kdf.WORKER_TIMEOUT_MS)
+      expect(terminated).toHaveBeenCalledTimes(1)
+      vi.useRealTimers()
+      expect([...await key]).toEqual([...await argon2id(argon2idOptions('123456', salt, params))])
+      warn.mockRestore()
+    })
+  })
+})
+
+describe('readableHeader', () => {
+  it('reads the cloud spellings and empty backups', () => {
+    expect(readableHeader({ match: { game_n: '12', scheduled_at: '2026-11-01' }, sets: [{ index: 1, home_points: 2, away_points: 3 }] }, 't')).toEqual({
+      gameN: '12', homeTeam: null, awayTeam: null, scheduledAt: '2026-11-01', sets: [{ index: 1, home: 2, away: 3 }], lastUpdated: 't'
+    })
+    expect(readableHeader(null)).toMatchObject({ gameN: null, sets: [] })
+  })
+})

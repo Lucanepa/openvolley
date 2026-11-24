@@ -1,0 +1,5 @@
+First release on F-Droid.
+- Scorer app with the referee, bench and livescore views bundled; works fully offline.
+- Venue mode: connect the tablets to a local OpenVolley server on the LAN (Options, Server).
+- Licence and credits (GPL-3.0-or-later, Game Icons CC BY 3.0, fonts) under Options, App version.
+- Android build: no federation logo in the scoresheet PDF header; the referee view uses the credited whistle icon.

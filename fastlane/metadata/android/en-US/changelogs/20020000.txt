@@ -1,0 +1,4 @@
+OpenVolley 2.2.0
+- Options, App version shows whether a newer version is available and opens F-Droid to install it.
+- Installed outside F-Droid: optional update notice (off unless you turn it on).
+- Never shown during a match.

@@ -1,0 +1,15 @@
+#!/bin/sh
+# Last step of the app's command-chain, after the gnome extension's
+# desktop-launch (which sets XDG_DATA_HOME to the versioned $SNAP_USER_DATA).
+#
+# Everything the app keeps on this computer lives under XDG_DATA_HOME: the
+# WebKit storage (the matches, the saved teams, the settings), the automatic
+# match backups (<data>/OpenVolley/backups or <data>/OpenBeach/backups) and
+# the activity log. A snap's versioned data goes back with `snap revert` and
+# with an automatic rollback after a failed refresh, so matches scored since
+# the refresh would vanish. $SNAP_USER_COMMON is shared by all revisions:
+# nothing is ever taken back.
+export XDG_DATA_HOME="$SNAP_USER_COMMON/.local/share"
+mkdir -p "$XDG_DATA_HOME"
+
+exec "$@"

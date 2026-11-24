@@ -1,0 +1,261 @@
+/**
+ * Vite Plugin for API Routes
+ * Adds the same API routes and WebSocket relay as server.js to the Vite dev
+ * server. Both use the shared protocol in ./lanRelayCore.js.
+ */
+
+import { WebSocketServer } from 'ws'
+import { networkInterfaces } from 'os'
+import { createServer as createHttpsServer } from 'https'
+import { createServer as createHttpServer } from 'http'
+import { readFileSync, existsSync } from 'fs'
+import { fileURLToPath } from 'url'
+import { dirname, resolve } from 'path'
+import { createLanRelay, createLocalAddressCheck, createMainInstanceGate, WS_MAX_PAYLOAD, signCore } from './lanRelayCore.js'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+
+// Same main-instance rule as every relay: only this machine may take/release it
+const isLocalAddress = createLocalAddressCheck(networkInterfaces)
+// Shared relay state + WS protocol (same module as server.js). Module level,
+// so it must start no timer: the sign sessions and their sweeper are created
+// on the first /api/sign/* request (vite build never sends one).
+const relay = createLanRelay({ isLocal: isLocalAddress })
+const mainGate = createMainInstanceGate({ isLocal: isLocalAddress })
+
+// Get local IP address
+function getLocalIP() {
+  const interfaces = networkInterfaces()
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name] || []) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address
+      }
+    }
+  }
+  return '127.0.0.1'
+}
+
+export function vitePluginApiRoutes(options = {}) {
+  const { wsPort = 8080 } = options
+  let wss = null
+  let viteServer = null
+  let httpServer = null
+
+  // The WebSocket port actually bound: wsPort, or the one the system picked
+  // for wsPort 0 (the tests: a port looked up first and bound later can be
+  // taken in between by another process)
+  const boundWsPort = () => {
+    try {
+      const addr = httpServer ? httpServer.address() : wss?.address()
+      if (addr && typeof addr === 'object' && addr.port) return addr.port
+    } catch { /* not bound */ }
+    return wsPort
+  }
+
+  return {
+    name: 'vite-plugin-api-routes',
+    enforce: 'pre', // Run before other plugins
+    configureServer(server) {
+      viteServer = server
+      const useHttps = !!server.config.server.https
+      const protocol = useHttps ? 'wss' : 'ws'
+      const hostname = '0.0.0.0'
+
+      // Create WebSocket server with SSL support
+      if (useHttps) {
+        // Try to use the same certificates as Vite
+        const certPath = resolve(__dirname, 'localhost.pem')
+        const keyPath = resolve(__dirname, 'localhost-key.pem')
+        
+        if (existsSync(certPath) && existsSync(keyPath)) {
+          const httpsOptions = {
+            cert: readFileSync(certPath),
+            key: readFileSync(keyPath)
+          }
+          httpServer = createHttpsServer(httpsOptions)
+          wss = new WebSocketServer({ 
+            server: httpServer,
+            perMessageDeflate: false,
+            maxPayload: WS_MAX_PAYLOAD
+          })
+          httpServer.listen(wsPort, hostname, () => {
+            console.log(`🔒 Secure WebSocket Server (WSS) running on port ${wsPort}`)
+          })
+        } else {
+          console.warn('⚠️  SSL certificates not found, falling back to non-secure WebSocket')
+          wss = new WebSocketServer({ 
+            port: wsPort,
+            perMessageDeflate: false,
+            maxPayload: WS_MAX_PAYLOAD
+          })
+        }
+      } else {
+        // Create non-secure WebSocket server
+      wss = new WebSocketServer({ 
+        port: wsPort,
+        perMessageDeflate: false,
+        maxPayload: WS_MAX_PAYLOAD
+      })
+      }
+
+      wss.on('connection', (ws, req) => {
+        // Sends the 'connected' welcome message
+        relay.addClient(ws, { ip: req.socket.remoteAddress })
+        // All message handling lives in lanRelayCore (shared with server.js)
+        ws.on('message', (data) => relay.handleMessage(ws, data))
+        ws.on('close', () => relay.removeClient(ws))
+        ws.on('error', (error) => {
+          console.error('[WebSocket] Error:', error)
+          relay.removeClient(ws)
+        })
+      })
+
+      if (!useHttps || !httpServer) {
+      console.log(`🔌 WebSocket Server running on port ${wsPort}`)
+      }
+      console.log(`📡 API routes enabled for dev server`)
+
+      // Health check (the coin toss's WebSocket server check), as the relays
+      // answer it: the dev server answered 404 and the check failed
+      const sendHealth = (res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ status: 'ok', running: true }))
+      }
+      // connect strips the prefix: '/health' arrives as '/'
+      const healthMiddleware = (req, res, next) => {
+        if ((req.url || '/').split('?')[0] !== '/') return next()
+        sendHealth(res)
+      }
+      // Add API middleware - must be added before Vite's default middleware
+      // Use a function to ensure it's called for every request
+      const apiMiddleware = (req, res, next) => {
+        // Early return if not an API request (shouldn't happen due to .use('/api'), but just in case)
+        if (!req.url.startsWith('/match/') && !req.url.startsWith('/server/') && !req.url.startsWith('/sign/') && !req.url.startsWith('/pair/') && !req.url.startsWith('/display/') && req.url.split('?')[0] !== '/health') {
+          return next()
+        }
+        // Vite's connect middleware strips the prefix when using .use('/api', ...)
+        // So /api/match/validate-pin becomes req.url = '/match/validate-pin'
+        const urlPath = req.url.split('?')[0]
+        
+        // Ensure we handle the response properly
+        if (res.headersSent) {
+          return next()
+        }
+        
+        // CORS headers — reflect only same-origin/localhost/LAN origins so an
+        // arbitrary website a developer visits cannot read dev-server responses.
+        const devOrigin = req.headers.origin
+        if (devOrigin && /^https?:\/\/(localhost|127\.0\.0\.1|(\d{1,3}\.){3}\d{1,3})(:\d+)?$/.test(devOrigin)) {
+          res.setHeader('Access-Control-Allow-Origin', devOrigin)
+          res.setHeader('Vary', 'Origin')
+        }
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS')
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Instance-ID, X-OV-Match-Pin, X-OV-Match-Token')
+
+        // Security headers
+        res.setHeader('X-Content-Type-Options', 'nosniff')
+        res.setHeader('X-Frame-Options', 'SAMEORIGIN')
+        res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
+
+        // Handle OPTIONS preflight (the scoreboard codes answer their own: CORS *)
+        if (req.method === 'OPTIONS' && urlPath.startsWith('/display/') && relay.handleApiRequest(req, res, '/api' + req.url)) return
+        if (req.method === 'OPTIONS') {
+          res.writeHead(200)
+          res.end()
+          return
+        }
+        
+        if (urlPath === '/health') {
+          sendHealth(res)
+          return
+        }
+
+        // Server status
+        if (urlPath === '/server/status') {
+          const localIP = getLocalIP()
+          const protocol = server.config.server.https ? 'https' : 'http'
+          const wsProtocol = server.config.server.https ? 'wss' : 'ws'
+          const port = server.config.server.port || 5173
+          const wsPortNow = boundWsPort()
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({
+            running: true,
+            mainInstanceId: mainGate.mainInstanceId,
+            hasMainInstance: mainGate.mainInstanceId !== null,
+            protocol,
+            wsProtocol,
+            hostname: 'escoresheet.local',
+            localIP,
+            port,
+            wsPort: wsPortNow,
+            urls: {
+              main: `${protocol}://escoresheet.local:${port}/`,
+              mainIP: `${protocol}://${localIP}:${port}/`,
+              referee: `${protocol}://escoresheet.local:${port}/referee/`,
+              refereeIP: `${protocol}://${localIP}:${port}/referee/`,
+              bench: `${protocol}://escoresheet.local:${port}/bench/`,
+              benchIP: `${protocol}://${localIP}:${port}/bench/`,
+              livescore: `${protocol}://escoresheet.local:${port}/livescore/`,
+              livescoreIP: `${protocol}://${localIP}:${port}/livescore/`,
+              websocket: `${wsProtocol}://escoresheet.local:${wsPortNow}`,
+              websocketIP: `${wsProtocol}://${localIP}:${wsPortNow}`
+            }
+          }))
+          return
+        }
+        
+        // Register / unregister the main instance (shared rule in lanRelayCore)
+        if (mainGate.handleRequest(req, res, '/api' + urlPath)) {
+          return
+        }
+
+        // Relay-owned endpoints (validate-pin, match/:id, list, by-game-number,
+        // PATCH, server/connections) — one implementation in lanRelayCore.
+        if (relay.handleApiRequest(req, res, '/api' + req.url)) {
+          return
+        }
+
+        // If no route matched, continue to next middleware
+        next()
+      }
+      
+      // The phone signing page (public/sign/, served as is), with the page's
+      // headers; /sign and /sign/ open its index.html like on the relays.
+      // connect strips the prefix ('/sign' -> '/') and puts it back in next().
+      server.middlewares.use('/sign', (req, res, next) => {
+        const path = (req.url || '').split('?')[0]
+        if (path === '/' || path === '') req.url = '/index.html'
+        for (const [k, v] of Object.entries(signCore.SIGN_PAGE_HEADERS)) res.setHeader(k, v)
+        next()
+      })
+      // The Pair a phone page (public/pair/), the same way and headers
+      server.middlewares.use('/pair', (req, res, next) => {
+        const path = (req.url || '').split('?')[0]
+        if (path === '/' || path === '') req.url = '/index.html'
+        for (const [k, v] of Object.entries(signCore.SIGN_PAGE_HEADERS)) res.setHeader(k, v)
+        next()
+      })
+
+      // Register the middleware - use unshift to add it first
+      // This ensures it runs before Vite's default handlers
+      server.middlewares.use('/health', healthMiddleware)
+      server.middlewares.use('/api', apiMiddleware)
+    },
+    
+    boundWsPort,
+
+    closeBundle() {
+      relay.close()
+      if (wss) {
+        wss.close()
+        console.log('WebSocket server closed')
+      }
+      if (httpServer) {
+        httpServer.close()
+        console.log('HTTPS server for WebSocket closed')
+      }
+    }
+  }
+}

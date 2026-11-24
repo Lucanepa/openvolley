@@ -1,0 +1,64 @@
+// First: the error reporter listens while the rest loads (utils/errorReport, privacy 1.22)
+import './utils/errorReport/boot'
+import { setErrorTool } from './utils/errorReport'
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import RefereeApp from './RefereeApp'
+import './tailwind.css' // also brings in styles.css (legacy layer) and the volleyui tokens
+import './utils/cqFontScale' // undoes WebKitGTK's double page zoom on font sizes in container units
+import './i18n'  // Initialize i18n for localization
+import { AlertProvider } from './contexts/AlertContext'
+import { AuthProvider } from './contexts/AuthContext'
+import { ScaleProvider } from './contexts/ScaleContext'
+import ErrorBoundary from './components/ErrorBoundary'
+import { UiHost } from './ui/UiHost.jsx'
+import { stripCacheBustParam } from './hooks/useServiceWorker'
+import { setAppEntry } from './utils/appEntry'
+import { captureScorerReturn } from './utils/scorerReturn'
+import { db } from './db/db'
+import { installPopupDiagnostics } from './diagnostics'
+import { initTheme } from './utils/theme'
+import { initLook } from './utils/lookSettings'
+import { installErrorTrail } from './utils/diagnosticsInfo'
+
+// Not the scoretable: this page never saves a match backup (utils/appEntry)
+setAppEntry('referee')
+setErrorTool('referee')
+
+// Opened from the scorer's Home menu on this device (?from=scorer): its menus
+// offer "Back to scorer" (utils/scorerReturn.js)
+captureScorerReturn()
+
+// Diagnostics mode, in the desktop app's pop-up window only (opened from the
+// scoretable): its lines go into the scoretable's diagnostics file
+// (diagnostics/popupForward.js). Elsewhere this does nothing.
+installPopupDiagnostics({ db, app: 'referee' })
+
+// Clean up cache_bust query parameter (added by cache clear / update flow).
+// Keep the rest of the query: ?match=&team= attach tablets to the live match.
+stripCacheBustParam()
+
+// This page's errors and warnings, in memory, for Support & feedback's
+// "Include diagnostics" (this app has no utils/logger)
+installErrorTrail()
+
+initTheme()
+// The look switches the scorer set on this device (Options › Effects and
+// speed, utils/lookSettings): blur and animations off apply here too; a
+// switch never set keeps this page's look (blur and animations on)
+initLook({ storedOnly: true })
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <ErrorBoundary name="referee">
+      <ScaleProvider>
+        <AuthProvider>
+          <AlertProvider>
+            <RefereeApp />
+          </AlertProvider>
+        </AuthProvider>
+      </ScaleProvider>
+      <div className="ov-kit ov-kit-host"><UiHost /></div>
+    </ErrorBoundary>
+  </React.StrictMode>,
+)
+

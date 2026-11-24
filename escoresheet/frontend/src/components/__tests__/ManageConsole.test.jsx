@@ -1,0 +1,215 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key, opts) => (typeof opts === 'string' ? opts : key), i18n: { language: 'en' } })
+}))
+
+const auth = vi.hoisted(() => ({ value: null }))
+vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => auth.value }))
+
+const api = vi.hoisted(() => ({
+  admin: {
+    listAccounts: vi.fn(async () => ({ data: { accounts: [] }, error: null, status: 200 })),
+    setRoles: vi.fn(),
+    listInvites: vi.fn(async () => ({ data: { invites: [] }, error: null, status: 200 })),
+    createInvite: vi.fn(),
+    revokeInvite: vi.fn(),
+    listOfficialGames: vi.fn(async () => ({ data: { games: [] }, error: null, status: 200 })),
+    listMatches: vi.fn(async () => ({ data: { matches: [] }, error: null, status: 200 })),
+    reopenMatch: vi.fn(),
+    addMatchEditor: vi.fn(),
+    releaseGame: vi.fn(),
+    listAudit: vi.fn(async () => ({ data: { entries: [], next_before: null }, error: null, status: 200 })),
+    listActivity: vi.fn(async () => ({ data: { entries: [], next: null }, error: null, status: 200 })),
+    exportActivity: vi.fn(),
+    deleteActivity: vi.fn(),
+    listRevisions: vi.fn(async () => ({ data: [], error: null, status: 200 })),
+    listMatchClosures: vi.fn(async () => ({ data: { closures: [] }, error: null, status: 200 })),
+    finalMailStatus: vi.fn(async () => ({ data: { mail: true, switch_on: true, sendable: true, reason: null, recipients: 0, pdf: false, resend: false, state: { outcome: null } }, error: null, status: 200 })),
+    sendFinalMail: vi.fn()
+  },
+  savedTeamsApi: { fetchBundle: vi.fn(async () => ({ data: { version: '0', competitions: [], teams: [] }, error: null, status: 200 })) },
+  scoresheetsApi: { list: vi.fn(async () => ({ data: { matches: [] }, error: null, status: 200 })), pdf: vi.fn() }
+}))
+vi.mock('../../lib/accountApi', async (orig) => ({ ...(await orig()), admin: api.admin, savedTeamsApi: api.savedTeamsApi, scoresheetsApi: api.scoresheetsApi }))
+vi.mock('../../db/savedTeams', () => ({ storeSavedTeamsBundle: vi.fn(async () => []) }))
+vi.mock('../../lib/apiClient', () => ({
+  apiFrom: () => {
+    const b = { select: () => b, in: () => b, limit: () => b, then: (r) => Promise.resolve({ data: [], error: null }).then(r) }
+    return b
+  },
+  apiRequest: vi.fn()
+}))
+
+import ManageConsole, { manageTabsFor } from '../manage/ManageConsole'
+import { ManagerBrandProvider } from '../../managerBrand'
+import InvitesPanel from '../manage/InvitesPanel'
+import { accessFromRoles } from '../../lib/access'
+
+const asUser = (roles) => { auth.value = { user: { id: 'u-1', email: 'a@b.ch' }, access: { ...accessFromRoles(roles), known: true } } }
+
+describe('ManageConsole', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('an admin sees nine tabs (clubs: db/018), a competition manager the scoresheets and saved teams, others none', () => {
+    expect(manageTabsFor(accessFromRoles(['admin']))).toEqual(['accounts', 'invites', 'clubs', 'games', 'matches', 'scoresheets', 'audit', 'activity', 'teams'])
+    expect(manageTabsFor(accessFromRoles(['competition_manager']))).toEqual(['scoresheets', 'teams'])
+    expect(manageTabsFor(accessFromRoles(['scorer']))).toEqual([])
+  })
+
+  it('renders the tabs in the nav for an admin', async () => {
+    asUser(['admin'])
+    render(<ManageConsole tab="accounts" onTab={() => {}} onClose={() => {}} />)
+    const nav = screen.getAllByRole('navigation')[0]
+    expect(within(nav).getAllByRole('button')).toHaveLength(12) // with Settings (db/021) and the open tab's two filters (Pending, All)
+    await waitFor(() => expect(api.admin.listAccounts).toHaveBeenCalled())
+  })
+
+  it('the header "Back to the app" button has an accessible name (its text is hidden on phones)', async () => {
+    asUser(['admin'])
+    const onClose = vi.fn()
+    render(<ManageConsole tab="accounts" onTab={() => {}} onClose={onClose} />)
+    const back = screen.getByRole('button', { name: 'manage.backToApp' })
+    expect(back).toHaveAttribute('aria-label', 'manage.backToApp')
+    fireEvent.click(back)
+    expect(onClose).toHaveBeenCalled()
+    await waitFor(() => expect(api.admin.listAccounts).toHaveBeenCalled())
+  })
+
+  it('OpenVolley\'s console scopes accounts, invites and audit to ?app=indoor (S2 review: no OpenBeach data)', async () => {
+    asUser(['admin'])
+    const { rerender } = render(<ManageConsole tab="accounts" onTab={() => {}} onClose={() => {}} />)
+    await waitFor(() => expect(api.admin.listAccounts).toHaveBeenCalledWith({ filter: 'pending', q: undefined, app: 'indoor' }))
+    expect(api.admin.listAccounts).toHaveBeenCalledWith({ filter: 'pending', app: 'indoor' })
+    rerender(<ManageConsole tab="invites" onTab={() => {}} onClose={() => {}} />)
+    await waitFor(() => expect(api.admin.listInvites).toHaveBeenCalledWith({ app: 'indoor' }))
+    rerender(<ManageConsole tab="audit" onTab={() => {}} onClose={() => {}} />)
+    await waitFor(() => expect(api.admin.listAudit).toHaveBeenCalledWith({ limit: 50, before: undefined, app: 'indoor' }))
+    for (const fn of [api.admin.listAccounts, api.admin.listInvites, api.admin.listAudit]) {
+      expect(fn.mock.calls.every(([o]) => o?.app === 'indoor')).toBe(true)
+    }
+  })
+
+  // A tab's own page after a slash (#myteams/<team id>/<game number>): the
+  // tab is the part before it
+  it('opens the tab named before a slash in the route', async () => {
+    asUser(['admin'])
+    render(<ManageConsole tab="invites/some/page" onTab={() => {}} onClose={() => {}} />)
+    await waitFor(() => expect(api.admin.listInvites).toHaveBeenCalledWith({ app: 'indoor' }))
+    expect(api.admin.listAccounts).not.toHaveBeenCalled()
+  })
+
+  it('a competition manager lands on the scoresheets whatever tab was asked', async () => {
+    asUser(['competition_manager'])
+    render(<ManageConsole tab="accounts" onTab={() => {}} onClose={() => {}} />)
+    const nav = screen.getAllByRole('navigation')[0]
+    expect(within(nav).getAllByRole('button').map(b => b.textContent)).toEqual(['manage.tabs.scoresheets', 'manage.matches.filterAll', 'manage.matches.filterClosed', 'manage.matches.filterOpen', 'manage.tabs.teams', 'manage.tabs.settings'])
+    await waitFor(() => expect(api.scoresheetsApi.list).toHaveBeenCalledWith(expect.objectContaining({ app: 'indoor' })))
+    expect(api.admin.listAccounts).not.toHaveBeenCalled()
+  })
+
+  it('the OpenBeach console offers its admins no "Rebuild PDF" (LOG-02: the beach sheet is OpenBeach\'s own); OpenVolley\'s does', async () => {
+    asUser(['admin'])
+    // a closed row the panel would offer it for, so only the console's canRebuild decides
+    const rows = [{ id: 'm-1', game_n: 7, status: 'final', sport: 'indoor', home_name: 'Home', away_name: 'Away', pdf: true, pdf_updated_at: '2026-11-23T16:40:00Z', closed_at: '2026-11-23T16:40:00Z' }]
+    api.scoresheetsApi.list.mockImplementation(async () => ({ data: { matches: rows }, error: null, status: 200 }))
+    try {
+      const { unmount } = render(<ManageConsole tab="scoresheets" onTab={() => {}} onClose={() => {}} />)
+      await screen.findByText('Home vs Away')
+      expect(screen.getByTestId('scoresheet-rebuild')).toBeInTheDocument()
+      unmount()
+      render(<ManagerBrandProvider app="beach"><ManageConsole tab="scoresheets" onTab={() => {}} onClose={() => {}} /></ManagerBrandProvider>)
+      await screen.findByText('Home vs Away')
+      await waitFor(() => expect(api.scoresheetsApi.list).toHaveBeenLastCalledWith(expect.objectContaining({ app: 'beach' })))
+      expect(screen.queryByTestId('scoresheet-rebuild')).toBeNull()
+    } finally {
+      api.scoresheetsApi.list.mockImplementation(async () => ({ data: { matches: [] }, error: null, status: 200 }))
+    }
+  })
+
+  it('a list tab is a tree by its filter: the child sits in the URL and drives the list', async () => {
+    asUser(['admin'])
+    const onTab = vi.fn()
+    const { rerender } = render(<ManageConsole tab="accounts" onTab={onTab} onClose={() => {}} />)
+    await waitFor(() => expect(api.admin.listAccounts).toHaveBeenCalledWith(expect.objectContaining({ filter: 'pending' })))
+    fireEvent.click(within(screen.getAllByRole('navigation')[0]).getByText('manage.accounts.filterAll'))
+    expect(onTab).toHaveBeenCalledWith('accounts/@all')
+    rerender(<ManageConsole tab="accounts/@all" onTab={onTab} onClose={() => {}} />)
+    await waitFor(() => expect(api.admin.listAccounts).toHaveBeenCalledWith(expect.objectContaining({ filter: 'all' })))
+  })
+
+  it('without a role it shows the forbidden note and a way back', () => {
+    asUser(['scorer'])
+    const onClose = vi.fn()
+    render(<ManageConsole tab="accounts" onTab={() => {}} onClose={onClose} />)
+    expect(screen.getByText('manage.errors.forbidden')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('manage.backToApp'))
+    expect(onClose).toHaveBeenCalled()
+  })
+})
+
+describe('InvitesPanel', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('shows a new invite code once, and never again after closing', async () => {
+    asUser(['admin'])
+    api.admin.createInvite.mockResolvedValue({
+      data: { code: 'ABCD-EFGH-JKMN', invite: { id: 'i1', label: 'VBC 26/27', club: null, role: 'scorer', code_hint: 'JKMN', state: 'active', uses: 0, max_uses: 1 } },
+      error: null,
+      status: 201
+    })
+    render(<InvitesPanel />)
+    fireEvent.click(await screen.findByText('manage.invites.new'))
+    fireEvent.change(screen.getByLabelText('manage.invites.label'), { target: { value: 'VBC 26/27' } })
+    fireEvent.click(screen.getByTestId('create-invite'))
+    expect(await screen.findByTestId('invite-code')).toHaveTextContent('ABCD-EFGH-JKMN')
+    expect(api.admin.createInvite).toHaveBeenCalledWith(expect.objectContaining({ label: 'VBC 26/27', role: 'scorer', max_uses: 1 }))
+    // Close: the plaintext code is gone from the page
+    const closeButtons = screen.getAllByText('Close')
+    fireEvent.click(closeButtons[closeButtons.length - 1])
+    await waitFor(() => expect(screen.queryByTestId('invite-code')).toBeNull())
+    expect(document.body.textContent).not.toContain('ABCD-EFGH-JKMN')
+  })
+
+  it('a code made in OpenVolley\'s console is an indoor code (sport: indoor)', async () => {
+    asUser(['admin'])
+    api.admin.createInvite.mockResolvedValue({
+      data: { code: 'ABCD-EFGH-JKMN', invite: { id: 'i1', label: 'VBC', club: null, role: 'scorer', sport: 'indoor', code_hint: 'JKMN', state: 'active', uses: 0, max_uses: 1 } },
+      error: null,
+      status: 201
+    })
+    render(<InvitesPanel app="indoor" />)
+    await waitFor(() => expect(api.admin.listInvites).toHaveBeenCalledWith({ app: 'indoor' }))
+    fireEvent.click(await screen.findByText('manage.invites.new'))
+    fireEvent.change(screen.getByLabelText('manage.invites.label'), { target: { value: 'VBC' } })
+    fireEvent.click(screen.getByTestId('create-invite'))
+    await waitFor(() => expect(api.admin.createInvite).toHaveBeenCalledWith(expect.objectContaining({ label: 'VBC', role: 'scorer', sport: 'indoor' })))
+  })
+
+  it('activity tab: opened from a match, filtered by it, a row opens its JSON; the match lists its corrections', async () => {
+    asUser(['admin'])
+    api.admin.listActivity.mockResolvedValue({
+      data: { entries: [{ id: 5, uid: 'u', client_ts: '2026-10-07T10:00:00.000Z', kind: 'event.undo', level: 'info', match_external_id: 'match_1_a', game_n: 12, data: { type: 'point', seq: 3, reason: 'undo' }, device_id: 'abcdef1234', app_version: '2.4.0', platform: 'web', account_email: 'anna@example.ch' }], next: null },
+      error: null,
+      status: 200
+    })
+    api.admin.listMatches.mockResolvedValue({ data: { matches: [{ id: '11111111-1111-4111-8111-111111111111', external_id: 'match_1_a', game_n: 12, status: 'final', closed_at: '2026-10-07T12:00:00Z' }] }, error: null, status: 200 })
+    let tab = 'matches'
+    const onTab = vi.fn((x) => { tab = x })
+    const { rerender } = render(<ManageConsole tab={tab} onTab={onTab} onClose={() => {}} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'manage.matches.activity' }))
+    // the activity tab's page of that match (#activity/<external id>)
+    expect(onTab).toHaveBeenCalledWith('activity/match_1_a', { push: true })
+    rerender(<ManageConsole tab={tab} onTab={onTab} onClose={() => {}} />)
+    await waitFor(() => expect(api.admin.listActivity).toHaveBeenCalledWith(expect.objectContaining({ match: 'match_1_a' })))
+    const row = await screen.findByRole('button', { name: 'event.undo' })
+    expect(row.textContent).toContain('anna@example.ch')
+    fireEvent.click(row)
+    expect(await screen.findByText(/"abcdef1234"/)).toBeInTheDocument()
+
+    // the corrections are on the match's own page (#matches/<match id>)
+    rerender(<ManageConsole tab="matches/11111111-1111-4111-8111-111111111111" onTab={onTab} onClose={() => {}} />)
+    await waitFor(() => expect(api.admin.listRevisions).toHaveBeenCalledWith('11111111-1111-4111-8111-111111111111'))
+  })
+})

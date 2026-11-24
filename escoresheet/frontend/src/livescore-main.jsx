@@ -1,0 +1,80 @@
+// First: the error reporter listens while the rest loads (utils/errorReport, privacy 1.22)
+import './utils/errorReport/boot'
+import { setErrorTool } from './utils/errorReport'
+import React, { Suspense, lazy } from 'react'
+import ReactDOM from 'react-dom/client'
+import LivescoreApp from './LivescoreApp'
+import TournamentLive from './components/TournamentLive'
+import { liveCodeFromUrl } from './utils/globalLive'
+import { cloudPageFromUrl } from './utils/globalCloudDb'
+import { isBoardPath, takeBoardTargetFromUrl } from './utils/boardCode'
+import { SharedMatchPage, OrganizerPage } from './components/GlobalCloudPages'
+import './tailwind.css' // also brings in styles.css (legacy layer) and the volleyui tokens
+import './utils/cqFontScale' // undoes WebKitGTK's double page zoom on font sizes in container units
+import './i18n'  // Initialize i18n for localization
+import { AlertProvider } from './contexts/AlertContext'
+import { AuthProvider } from './contexts/AuthContext'
+import ErrorBoundary from './components/ErrorBoundary'
+import { UiHost } from './ui/UiHost.jsx'
+import { stripCacheBustParam } from './hooks/useServiceWorker'
+import { setAppEntry } from './utils/appEntry'
+import { captureScorerReturn } from './utils/scorerReturn'
+import { initTheme } from './utils/theme'
+import { initLook } from './utils/lookSettings'
+import { installErrorTrail } from './utils/diagnosticsInfo'
+
+// Not the scoretable: this page never saves a match backup (utils/appEntry)
+setAppEntry('livescore')
+setErrorTool('livescore')
+
+// Opened from the scorer's Home menu on this device (?from=scorer): its menus
+// offer "Back to scorer" (utils/scorerReturn.js)
+captureScorerReturn()
+
+// Clean up cache_bust query parameter (added by cache clear / update flow).
+// Keep the rest of the query: ?match=&team= attach tablets to the live match.
+stripCacheBustParam()
+
+// This page's errors and warnings, in memory, for Support & feedback's
+// "Include diagnostics" (this app has no utils/logger)
+installErrorTrail()
+
+initTheme()
+// The look switches the scorer set on this device (Options › Effects and
+// speed, utils/lookSettings): blur and animations off apply here too; a
+// switch never set keeps this page's look (blur and animations on)
+initLook({ storedOnly: true })
+// /board (livescore.openvolley.app/board, /livescore/board, <relay>/livescore/board):
+// the full-screen scoreboard page (components/board). A ?code= leaves the
+// address here, before anything else reads it (utils/boardCode).
+const boardPage = isBoardPath(window.location.pathname)
+const boardTarget = boardPage ? takeBoardTargetFromUrl() : undefined
+const BoardApp = lazy(() => import('./components/board/BoardApp'))
+const tournamentCode = boardPage ? null : liveCodeFromUrl()
+// ?s=<token> / ?o=<code>: a shared Global match, a tournament's list (utils/globalCloudDb)
+const cloudPage = tournamentCode ? null : cloudPageFromUrl()
+ReactDOM.createRoot(document.getElementById('root')).render(boardPage ? (
+  <React.StrictMode>
+    <ErrorBoundary name="livescore">
+      <Suspense fallback={null}>
+        <BoardApp initialTarget={boardTarget} />
+      </Suspense>
+    </ErrorBoundary>
+  </React.StrictMode>
+) : (
+  <React.StrictMode>
+    <ErrorBoundary name="livescore">
+      <AuthProvider>
+        <AlertProvider>
+          {/* ?t=<code>: the Global tool's live page for TVs (utils/globalLive.js) */}
+          {tournamentCode ? <TournamentLive code={tournamentCode} />
+            : cloudPage?.share ? <SharedMatchPage token={cloudPage.share} />
+              : cloudPage?.organizer ? <OrganizerPage code={cloudPage.organizer} />
+                : <LivescoreApp />}
+        </AlertProvider>
+      </AuthProvider>
+      <div className="ov-kit ov-kit-host"><UiHost /></div>
+    </ErrorBoundary>
+  </React.StrictMode>
+))
+

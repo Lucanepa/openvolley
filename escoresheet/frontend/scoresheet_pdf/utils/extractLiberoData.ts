@@ -1,0 +1,219 @@
+import { compareEventsBySeq } from './scoresheetModel';
+import { Player, LCSData, LiberoSetData, LiberoReplacement, LiberoRedesignation } from '../types_scoresheet';
+
+const LIBERO_RANK: Record<string, number> = { libero1: 0, libero2: 1 };
+
+/**
+ * Registered liberos of a team for the LCS header ("No: __ (A) No: __").
+ * On re-designation Scoreboard rewrites the unable libero to libero 'unable' (and the
+ * new one to 'redesignated'), so the unable libero's registered type is recovered from
+ * the libero_unable / libero_redesignation events; the new libero is printed in the
+ * re-designation footer instead.
+ */
+export function getHeaderLiberos(
+  players: Player[],
+  events: any[],
+  teamKey: 'home' | 'away'
+): { number: number; type: string }[] {
+  const registeredType = new Map<number, string>();
+  // a registered type once found is kept (a later event may carry the rewritten flag)
+  const note = (number: number, type: string) => {
+    if (!(registeredType.get(number)! in LIBERO_RANK)) registeredType.set(number, type);
+  };
+  (events || []).forEach((e: any) => {
+    if (e?.payload?.team !== teamKey) return;
+    if (e.type === 'libero_unable' && e.payload?.liberoNumber != null && e.payload?.liberoType) {
+      note(Number(e.payload.liberoNumber), e.payload.liberoType);
+    } else if (e.type === 'libero_redesignation' && e.payload?.unableLiberoNumber != null && e.payload?.unableLiberoType) {
+      note(Number(e.payload.unableLiberoNumber), e.payload.unableLiberoType);
+    }
+  });
+
+  const rank = (type: string) => (type in LIBERO_RANK ? LIBERO_RANK[type] : 2);
+  return players
+    .filter(p => p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'unable')
+    .map(p => {
+      const number = Number(p.number);
+      const type = p.libero === 'unable' ? (registeredType.get(number) || 'unable') : (p.libero as string);
+      return { number, type };
+    })
+    .sort((a, b) => rank(a.type) - rank(b.type));
+}
+
+/**
+ * The roster's LIBERO box: the registered liberos (libero 1, libero 2) in their
+ * slots, also once unable (registered type recovered as for the LCS header),
+ * then an unable libero whose type is unknown (older events). A player
+ * re-designated as libero is not listed here: he stays in the player list and
+ * the re-designation is in the remarks, as the Genius eScoresheet prints it
+ * (owner 2026-11-16, Diktat check; it showed "+9 R" in this box before).
+ */
+export function rosterLiberos(
+  players: Player[],
+  events: any[],
+  teamKey: 'home' | 'away'
+): Player[] {
+  const byNumber = new Map(players.map(p => [Number(p.number), p]));
+  const header = getHeaderLiberos(players, events, teamKey);
+  const registered = header.filter(h => h.type in LIBERO_RANK).map(h => h.number);
+  const unknown = header.filter(h => h.type === 'unable').map(h => h.number);
+  return [...registered, ...unknown].map(n => byNumber.get(n)).filter(Boolean) as Player[];
+}
+
+export function extractLiberoData(
+  events: any[],
+  sets: any[],
+  teamAKey: 'home' | 'away',
+  teamAPlayers: Player[],
+  teamBPlayers: Player[],
+  /** the deciding set's change of courts (rules.courtSwitchPointOf: 8 of 15) */
+  switchAt = 8
+): LCSData {
+  const teamBKey = teamAKey === 'home' ? 'away' : 'home';
+
+  // Identify liberos per team
+  const teamALiberos = getHeaderLiberos(teamAPlayers, events, teamAKey);
+  const teamBLiberos = getHeaderLiberos(teamBPlayers, events, teamBKey);
+
+  const redesignations: LiberoRedesignation[] = [];
+  const lcsSetData: LiberoSetData[] = [];
+
+  // Process each set (1-5, setIndex is 1-based in events)
+  for (let setNumber = 1; setNumber <= 5; setNumber++) {
+    const isSet5 = setNumber === 5;
+
+    // Filter events for this set (setIndex is 1-based)
+    const setEvents = events
+      .filter(e => e.setIndex === setNumber)
+      .sort(compareEventsBySeq);
+
+    let homeScore = 0;
+    let awayScore = 0;
+    let courtChangeHappened = false;
+
+    const teamAReps: LiberoReplacement[] = [];
+    const teamBReps: LiberoReplacement[] = [];
+    const teamAReps_After: LiberoReplacement[] = [];
+    const teamBReps_After: LiberoReplacement[] = [];
+
+    setEvents.forEach((event: any) => {
+      if (event.type === 'point') {
+        const scoringTeam = event.payload?.team as 'home' | 'away';
+        if (scoringTeam === 'home') homeScore++;
+        else awayScore++;
+
+        if (isSet5 && !courtChangeHappened && (homeScore >= switchAt || awayScore >= switchAt)) {
+          courtChangeHappened = true;
+        }
+      } else if (event.type === 'libero_entry') {
+        const team = event.payload?.team as 'home' | 'away';
+        const isTeamA = team === teamAKey;
+        const teamScore = team === 'home' ? homeScore : awayScore;
+        const oppScore = team === 'home' ? awayScore : homeScore;
+
+        const rep: LiberoReplacement = {
+          liberoNumber: Number(event.payload?.liberoIn),
+          replacedPlayer: Number(event.payload?.playerOut),
+          score: `${teamScore}:${oppScore}`,
+        };
+
+        if (isTeamA) {
+          if (isSet5 && courtChangeHappened) teamAReps_After.push(rep);
+          else teamAReps.push(rep);
+        } else {
+          if (isSet5 && courtChangeHappened) teamBReps_After.push(rep);
+          else teamBReps.push(rep);
+        }
+      } else if (event.type === 'libero_exit') {
+        const team = event.payload?.team as 'home' | 'away';
+        const isTeamA = team === teamAKey;
+        const teamScore = team === 'home' ? homeScore : awayScore;
+        const oppScore = team === 'home' ? awayScore : homeScore;
+
+        const rep: LiberoReplacement = {
+          liberoNumber: Number(event.payload?.liberoOut),
+          replacedPlayer: Number(event.payload?.playerIn),
+          score: `${teamScore}:${oppScore}`,
+        };
+
+        if (isTeamA) {
+          if (isSet5 && courtChangeHappened) teamAReps_After.push(rep);
+          else teamAReps.push(rep);
+        } else {
+          if (isSet5 && courtChangeHappened) teamBReps_After.push(rep);
+          else teamBReps.push(rep);
+        }
+      } else if (event.type === 'libero_exchange') {
+        const team = event.payload?.team as 'home' | 'away';
+        const isTeamA = team === teamAKey;
+        const teamScore = team === 'home' ? homeScore : awayScore;
+        const oppScore = team === 'home' ? awayScore : homeScore;
+        const score = `${teamScore}:${oppScore}`;
+
+        // Exchange = one libero leaves, another enters at same position
+        const repOut: LiberoReplacement = {
+          liberoNumber: Number(event.payload?.liberoOut),
+          replacedPlayer: Number(event.payload?.playerNumber || event.payload?.liberoIn),
+          score,
+          isExchange: true,
+        };
+        const repIn: LiberoReplacement = {
+          liberoNumber: Number(event.payload?.liberoIn),
+          replacedPlayer: Number(event.payload?.playerNumber || event.payload?.liberoOut),
+          score,
+          isExchange: true,
+        };
+
+        if (isTeamA) {
+          if (isSet5 && courtChangeHappened) {
+            teamAReps_After.push(repOut);
+            teamAReps_After.push(repIn);
+          } else {
+            teamAReps.push(repOut);
+            teamAReps.push(repIn);
+          }
+        } else {
+          if (isSet5 && courtChangeHappened) {
+            teamBReps_After.push(repOut);
+            teamBReps_After.push(repIn);
+          } else {
+            teamBReps.push(repOut);
+            teamBReps.push(repIn);
+          }
+        }
+      } else if (event.type === 'libero_redesignation') {
+        const team = event.payload?.team as 'home' | 'away';
+        const teamScore = team === 'home' ? homeScore : awayScore;
+        const oppScore = team === 'home' ? awayScore : homeScore;
+
+        redesignations.push({
+          team: team === teamAKey ? 'A' : 'B',
+          outNumber: Number(event.payload?.unableLiberoNumber),
+          inNumber: Number(event.payload?.newLiberoNumber),
+          setNumber,
+          score: `${teamScore}:${oppScore}`,
+        });
+      }
+    });
+
+    const setData: LiberoSetData = {
+      setNumber,
+      teamAReplacements: teamAReps,
+      teamBReplacements: teamBReps,
+    };
+
+    if (isSet5) {
+      setData.teamAReplacements_After = teamAReps_After;
+      setData.teamBReplacements_After = teamBReps_After;
+    }
+
+    lcsSetData.push(setData);
+  }
+
+  return {
+    teamALiberos,
+    teamBLiberos,
+    sets: lcsSetData,
+    redesignations,
+  };
+}

@@ -1,0 +1,193 @@
+import { describe, it, expect, afterEach } from 'vitest'
+import { zurichWallTimeMs } from '../../../src/ui/format.js'
+import {
+  buildScoresheetFilename,
+  buildScoresheetTitle,
+  displayShortName,
+  findOfficial,
+  formatClockHoursMinutes,
+  formatDob,
+  formatHoursMinutes,
+  formatPersonName,
+  formatSheetDate,
+  gameNumberOf,
+  idHeadingOf,
+  isPlaceholderTeamName,
+  localDateStamp,
+  normalizeOfficials,
+  sanitizeFilenamePart
+} from '../sheetFormat'
+
+// Dates built from Zürich parts: the sheet prints the Zürich clock
+const local = (y: number, m: number, d: number, h = 0, min = 0) => new Date(zurichWallTimeMs(y, m, d, h, min)).toISOString()
+
+describe('formatDob (field-spec 12.3)', () => {
+  it('prints every stored format as DD.MM.YYYY', () => {
+    expect(formatDob('19.04.1982')).toBe('19.04.1982') // MatchSetup
+    expect(formatDob('1979-09-02')).toBe('02.09.1979') // referee DB / sync (ISO)
+    expect(formatDob('1979-09-02T00:00:00.000Z')).toBe('02.09.1979')
+    expect(formatDob('7.6.1988')).toBe('07.06.1988') // typed short
+    expect(formatDob('03/12/1985')).toBe('03.12.1985') // test seeds
+    expect(formatDob('03-12-1985')).toBe('03.12.1985')
+  })
+  it('leaves the 01.01.1900 placeholder and nothing empty', () => {
+    for (const p of ['01.01.1900', '1900-01-01', '01/01/1900', '', '  ', null, undefined]) expect(formatDob(p)).toBe('')
+  })
+  it('prints anything else verbatim, never "Invalid Date"', () => {
+    expect(formatDob('unknown')).toBe('unknown')
+    expect(formatDob('31.02.2001')).toBe('31.02.2001')
+    expect(formatDob('1990')).toBe('1990')
+  })
+  it('prints a licence number as it is (a Swiss match: licence or date of birth)', () => {
+    expect(formatDob('123456')).toBe('123456')
+    expect(formatDob('1234567890')).toBe('1234567890')
+  })
+})
+
+describe('idHeadingOf', () => {
+  it('"Licence" in every Swiss match, whatever idMode it carries', () => {
+    expect(idHeadingOf({})).toBe('Licence')
+    expect(idHeadingOf(null)).toBe('Licence')
+    expect(idHeadingOf({ global: false, idMode: 'number' })).toBe('Licence')
+    expect(idHeadingOf({ test: true })).toBe('Licence')
+  })
+  it('a Global match: its own choice, DoB by default', () => {
+    expect(idHeadingOf({ global: true })).toBe('DoB')
+    expect(idHeadingOf({ global: true, idMode: 'dob' })).toBe('DoB')
+    expect(idHeadingOf({ global: true, idMode: 'number' })).toBe('ID')
+    expect(idHeadingOf({ global: true, idMode: 'text' })).toBe('Info')
+    expect(idHeadingOf({ global: true, idMode: 'licence' })).toBe('DoB')
+  })
+})
+
+describe('dates and times of the sheet', () => {
+  it('the header date is the Zürich day, DD.MM.YYYY (a match at 00:30 is not the day before)', () => {
+    expect(formatSheetDate(local(2026, 10, 8, 0, 30))).toBe('08.10.2026')
+    expect(formatSheetDate(local(2026, 10, 7, 23, 59))).toBe('07.10.2026')
+    expect(formatSheetDate(undefined)).toBe('')
+    expect(formatSheetDate('nonsense')).toBe('')
+    expect(localDateStamp(local(2026, 10, 8, 0, 30))).toBe('20261008')
+  })
+  it('match times as "HH h MM min" and durations as "H h MM min"', () => {
+    expect(formatClockHoursMinutes(local(2026, 10, 7, 19, 4))).toBe('19 h 04 min')
+    expect(formatHoursMinutes(112)).toBe('1 h 52 min')
+    expect(formatHoursMinutes(59)).toBe('0 h 59 min')
+    expect(formatHoursMinutes(0)).toBe('')
+    expect(formatHoursMinutes(-5)).toBe('')
+  })
+
+  // Stress test 2026-10-25 (device-timezone-shifts-official-times): a laptop
+  // left on GMT+2 printed a 10:20 start as 11:20 on the official sheet
+  describe('on a device outside Europe/Zurich', () => {
+    const deviceTz = process.env.TZ
+    afterEach(() => {
+      if (deviceTz === undefined) delete process.env.TZ
+      else process.env.TZ = deviceTz
+    })
+    for (const tz of ['Etc/GMT-2', 'UTC', 'America/New_York']) {
+      it(`${tz}: the Zürich day and clock`, () => {
+        process.env.TZ = tz
+        expect(formatClockHoursMinutes('2026-10-26T09:20:00.000Z')).toBe('10 h 20 min')
+        expect(formatSheetDate('2026-10-26T23:30:00.000Z')).toBe('27.10.2026')
+        expect(localDateStamp('2026-10-26T23:30:00.000Z')).toBe('20261027')
+        expect(formatSheetDate('2026-10-26T04:30:00.000Z')).toBe('26.10.2026')
+      })
+    }
+  })
+})
+
+describe('game number and team names', () => {
+  it('one game number for the header, the file name and the storage path', () => {
+    expect(gameNumberOf({ gameNumber: '382208', game_n: 7 })).toBe('382208')
+    expect(gameNumberOf({ gameNumber: '', game_n: 77 })).toBe('77')
+    expect(gameNumberOf({ externalId: 'SV/2026-27 #12' })).toBe('SV-2026-27--12')
+    expect(gameNumberOf({})).toBe('')
+    expect(gameNumberOf(null)).toBe('')
+  })
+  it('placeholders (HOME / AWAY / Team A ...) never stand for a team', () => {
+    for (const p of ['HOME', 'Away', 'home', 'Team A', 'TEAM B', 'teamB', '', null]) expect(isPlaceholderTeamName(p)).toBe(true)
+    for (const n of ['MUST', 'Homeland Volley', 'Team Aarau']) expect(isPlaceholderTeamName(n)).toBe(false)
+    expect(displayShortName('HOME', 'VBC Musterdorf H1')).toBe('VBC Musterdorf H1')
+    expect(displayShortName('', 'VBC Musterdorf H1')).toBe('VBC Musterdorf H1')
+    expect(displayShortName('MUST', 'VBC Musterdorf H1')).toBe('MUST')
+    expect(displayShortName('HOME', '')).toBe('HOME')
+    expect(displayShortName(undefined, undefined)).toBe('')
+  })
+})
+
+describe('file name (owner 2026-10-13: game<n>_<league>_<YYYY-MM-DD>)', () => {
+  const match = { gameNumber: '382208', league: '2L', homeShortName: 'MUST-H1', awayShortName: 'Spatz H1', scheduledAt: local(2026, 10, 7, 20, 0) }
+
+  it('game<gameNo>_<league>_<YYYY-MM-DD>.pdf', () => {
+    expect(buildScoresheetFilename({ match })).toBe('game382208_2L_2026-10-07.pdf')
+    // a league code loses its spaces (owner 2026-10-13)
+    expect(buildScoresheetFilename({ match: { ...match, league: '1L D' } })).toBe('game382208_1LD_2026-10-07.pdf')
+    // no league: left out with its "_"
+    expect(buildScoresheetFilename({ match: { ...match, league: '' } })).toBe('game382208_2026-10-07.pdf')
+  })
+
+  it('no game number: the real team names in its place, never "match" or the placeholders', () => {
+    const quick = { homeShortName: 'HOME', awayShortName: 'AWAY', league: 'Friendly', scheduledAt: local(2026, 10, 7, 20, 0) }
+    const name = buildScoresheetFilename({ match: quick, homeTeam: { name: 'VBC Musterdorf H1' }, awayTeam: { name: 'VC Mühlestadt Academica' } })
+    expect(name).toBe('VBC-Musterdorf-H1_vs_VC-Muehlestadt-Academica_Friendly_2026-10-07.pdf')
+    expect(name).not.toMatch(/match|HOME|AWAY/)
+  })
+
+  it('the local match date (not the UTC day), else set 1, else today', () => {
+    expect(buildScoresheetFilename({ match: { ...match, scheduledAt: local(2026, 10, 8, 0, 30) } })).toMatch(/_2026-10-08\.pdf$/)
+    expect(buildScoresheetFilename({ match: { ...match, scheduledAt: undefined }, sets: [{ index: 1, startTime: local(2026, 9, 1, 18, 0) }] })).toMatch(/_2026-09-01\.pdf$/)
+    expect(buildScoresheetFilename({ match: { ...match, scheduledAt: undefined } }, new Date(2026, 0, 2, 9))).toMatch(/_2026-01-02\.pdf$/)
+  })
+
+  it('every part sanitised: no dots, slashes, spaces, umlauts; bounded length', () => {
+    const name = buildScoresheetFilename({
+      match: { externalId: 'SV/2026-27 #12', league: 'Muster Volley Cup / Männer', homeShortName: 'VBC SCHÖNTAL-MUSTERAU', awayShortName: 'Seeblick Volley Musterau', scheduledAt: local(2026, 10, 7, 20) }
+    })
+    expect(name).toBe('gameSV-2026-27-12_Muster-Volley-Cup-Maenner_2026-10-07.pdf')
+    expect(name.length).toBeLessThanOrEqual(120)
+    expect(name.slice(0, -4)).toMatch(/^[A-Za-z0-9_-]+$/)
+    expect(sanitizeFilenamePart('Zürich Genève Ça va', 60)).toBe('Zuerich-Geneve-Ca-va')
+    expect(sanitizeFilenamePart('../a/b:c.d', 60)).toBe('a-b-c-d')
+    expect(sanitizeFilenamePart('---', 60)).toBe('')
+  })
+
+  it('the PDF title names the match, never a federation', () => {
+    const title = buildScoresheetTitle({ match, homeTeam: { name: 'VBC Musterdorf H1' }, awayTeam: { name: 'Volley Spatz' } })
+    expect(title).toBe('OpenVolley eScoresheet: VBC Musterdorf H1 vs Volley Spatz, 07.10.2026, game 382208')
+    expect(title).not.toMatch(/swiss/i)
+  })
+})
+
+describe('names and officials', () => {
+  it('"Lastname, F." for officials and players', () => {
+    expect(formatPersonName('Moser', 'Claudia')).toBe('Moser, C.')
+    expect(formatPersonName('de Montmollin', 'Jean-Baptiste')).toBe('de Montmollin, J.-B.')
+    expect(formatPersonName('Hollenstein', 'maria theresia')).toBe('Hollenstein, M. T.')
+    expect(formatPersonName('Moser', '')).toBe('Moser')
+    expect(formatPersonName('', 'Claudia')).toBe('Claudia')
+    expect(formatPersonName(null, undefined)).toBe('')
+  })
+
+  it('an initial is a whole character, never half an emoji (a lone surrogate made Save PDF fail)', () => {
+    expect(formatPersonName('Hofmann', '🏐 Max')).toBe('Hofmann, 🏐. M.')
+    expect(formatPersonName('Hofmann', 'Max-𝒜nna')).toBe('Hofmann, M.-𝒜.')
+  })
+
+  it('reads every stored shape of match.officials, never throws', () => {
+    const array = normalizeOfficials([
+      { role: '1st referee', firstName: 'Claudia', lastName: 'Moser', country: 'CHE', dob: '19.04.1982' },
+      { role: 'scorer', first_name: 'Anna', last_name: 'Brun', dob: '1999-02-07' },
+      { role: 'line judge 1', name: 'Marie Claire de la Fontaine' }
+    ])
+    expect(findOfficial(array, '1st Referee')).toMatchObject({ lastName: 'Moser', firstName: 'Claudia', country: 'CHE', dob: '19.04.1982' })
+    expect(findOfficial(array, 'Scorer')).toMatchObject({ lastName: 'Brun', firstName: 'Anna' })
+    expect(findOfficial(array, 'line judge 1')?.name).toBe('Marie Claire de la Fontaine')
+    // the older role-keyed object (ManualAdjustments)
+    const legacy = normalizeOfficials({ ref1: { firstName: 'Paul', lastName: 'Kunz' }, asstScorer: { first_name: 'Lea', last_name: 'Baumann' } })
+    expect(findOfficial(legacy, '1st Referee')?.lastName).toBe('Kunz')
+    expect(findOfficial(legacy, 'Assistant Scorer')?.lastName).toBe('Baumann')
+    // aliases of the role
+    expect(findOfficial(normalizeOfficials([{ role: 'ref2', lastName: 'X' }]), '2nd Referee')?.lastName).toBe('X')
+    for (const bad of [null, undefined, 'x', 5, [null, 7]]) expect(() => normalizeOfficials(bad)).not.toThrow()
+  })
+})

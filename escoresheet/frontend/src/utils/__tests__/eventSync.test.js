@@ -1,0 +1,398 @@
+import { describe, it, expect, beforeEach } from 'vitest'
+import Dexie from 'dexie'
+import { IDBFactory, IDBKeyRange as FakeIDBKeyRange } from 'fake-indexeddb'
+import {
+  buildEventInsertJob,
+  queueEventSync,
+  queueSetScoreSync,
+  SHORT_QUEUE_JOBS,
+  isScoreOnlySetUpdate,
+  buildSetEndMatchPayload,
+  buildSetReopenMatchPayload,
+  queueSetReopenSync,
+  setLiveStateDirty,
+  isLiveStateDirty,
+  isLiveStateErrorWorthAlert,
+  isLiveStateRefusal,
+  isLiveStateRefused,
+  markLiveStateRefused,
+  clearLiveStateRefused,
+  LIVE_REFUSAL_PAUSE_MS,
+  setUpdateJob,
+  setDeleteJob,
+  queueSetDeletes
+} from '../eventSync'
+import { jobMatchKey } from '../syncIds'
+
+// In-memory stand-in for the Dexie tables used here
+function fakeTable(rows = []) {
+  const map = new Map(rows.map(r => [r.id, { ...r }]))
+  let nextId = Math.max(0, ...rows.map(r => r.id)) + 1
+  const collection = (pred) => ({
+    toArray: async () => [...map.values()].filter(pred).sort((a, b) => a.id - b.id),
+    primaryKeys: async () => [...map.values()].filter(pred).map(r => r.id).sort((a, b) => a - b),
+    first: async () => [...map.values()].filter(pred)[0],
+    and: (fn) => collection(r => pred(r) && fn(r))
+  })
+  return {
+    map,
+    get: async (id) => map.get(id),
+    bulkGet: async (ids) => ids.map(id => map.get(id)),
+    add: async (row) => { const id = nextId++; map.set(id, { ...row, id }); return id },
+    bulkDelete: async (ids) => { for (const id of ids) map.delete(id) },
+    where: (field) => ({
+      equals: (v) => collection(r => r[field] === v),
+      anyOf: (...values) => collection(r => values.flat().includes(r[field]))
+    })
+  }
+}
+
+let db
+beforeEach(() => {
+  db = {
+    matches: fakeTable([
+      { id: 1, seed_key: 'match_100_aaa' },
+      { id: 2, seed_key: 'match_200_bbb', test: true }
+    ]),
+    sets: fakeTable([
+      { id: 5, matchId: 1, index: 1, homePoints: 25, awayPoints: 20, finished: true },
+      { id: 6, matchId: 1, index: 2, homePoints: 3, awayPoints: 2, finished: false },
+      { id: 7, matchId: 2, index: 1, homePoints: 1, awayPoints: 0 }
+    ]),
+    events: fakeTable([
+      { id: 40, matchId: 1, setIndex: 2, type: 'set_start', payload: { setIndex: 2, startTime: '2026-10-05T18:00:00.000Z' }, seq: 61, ts: '2026-10-05T18:00:00.000Z' },
+      { id: 41, matchId: 1, setIndex: 2, type: 'lineup', payload: { team: 'home', lineup: { I: 1 }, isInitial: true }, seq: 60 },
+      { id: 42, matchId: 2, setIndex: 1, type: 'lineup', payload: {}, seq: 1 }
+    ]),
+    sync_queue: fakeTable([])
+  }
+})
+
+describe('queueEventSync', () => {
+  it('queues set_start and lineup events with a match-scoped external id', async () => {
+    expect(await queueEventSync(db, 40)).toBe(true)
+    expect(await queueEventSync(db, 41)).toBe(true)
+    const jobs = [...db.sync_queue.map.values()]
+    expect(jobs).toHaveLength(2)
+    expect(jobs[0]).toMatchObject({
+      resource: 'event',
+      action: 'insert',
+      status: 'queued',
+      payload: { external_id: 'match_100_aaa:e:40', match_id: 'match_100_aaa', set_index: 2, type: 'set_start', seq: 61, test: false }
+    })
+    expect(jobs[1].payload).toMatchObject({ external_id: 'match_100_aaa:e:41', type: 'lineup', payload: { isInitial: true } })
+  })
+
+  it('never queues test matches or unknown events, and never throws', async () => {
+    expect(await queueEventSync(db, 42)).toBe(false)
+    expect(await queueEventSync(db, 999)).toBe(false)
+    expect(await queueEventSync(db, null)).toBe(false)
+    expect(await queueEventSync({ events: { get: async () => { throw new Error('IDB') } } }, 40)).toBe(false)
+    expect(db.sync_queue.map.size).toBe(0)
+  })
+
+  it('builds the job from the event row', () => {
+    const job = buildEventInsertJob({ id: 3, setIndex: 1, type: 'lineup', payload: { a: 1 }, seq: 2, ts: 'T' }, { seed_key: 'm' })
+    expect(job.payload).toEqual({ external_id: 'm:e:3', match_id: 'm', set_index: 1, type: 'lineup', payload: { a: 1 }, seq: 2, test: false, created_at: 'T' })
+  })
+})
+
+describe('queueSetScoreSync', () => {
+  it('queues the open set score and keeps only the newest queued one', async () => {
+    await queueSetScoreSync(db, { matchId: 1, setIndex: 2 })
+    db.sets.map.get(6).homePoints = 4
+    await queueSetScoreSync(db, { matchId: 1, setIndex: 2 })
+    const jobs = [...db.sync_queue.map.values()]
+    expect(jobs).toHaveLength(1)
+    expect(jobs[0]).toMatchObject({
+      resource: 'set',
+      action: 'update',
+      status: 'queued',
+      payload: { external_id: 'match_100_aaa:s:6', home_points: 4, away_points: 2 }
+    })
+  })
+
+  it('leaves other set jobs alone (set end, other sets, already sent)', async () => {
+    db.sync_queue.map.set(100, { id: 100, resource: 'set', action: 'update', status: 'queued', payload: { external_id: 'match_100_aaa:s:6', finished: true, home_points: 3, away_points: 2 } })
+    db.sync_queue.map.set(101, { id: 101, resource: 'set', action: 'update', status: 'queued', payload: { external_id: 'match_100_aaa:s:5', home_points: 25, away_points: 20 } })
+    db.sync_queue.map.set(102, { id: 102, resource: 'set', action: 'update', status: 'sending', payload: { external_id: 'match_100_aaa:s:6', home_points: 2, away_points: 2 } })
+    await queueSetScoreSync(db, { matchId: 1, setIndex: 2 })
+    expect(db.sync_queue.map.has(100)).toBe(true)
+    expect(db.sync_queue.map.has(101)).toBe(true)
+    expect(db.sync_queue.map.has(102)).toBe(true)
+    expect(db.sync_queue.map.size).toBe(4)
+  })
+
+  it('skips test matches', async () => {
+    expect(await queueSetScoreSync(db, { matchId: 2, setIndex: 1 })).toBe(false)
+    expect(db.sync_queue.map.size).toBe(0)
+  })
+
+  // On Dexie over fake-indexeddb. Online only the last point or two's jobs
+  // are queued; offline every point adds an event job with a state snapshot
+  // and the line-ups. Either way the sent set jobs (one per point) stay 7
+  // days. The same jobs are dropped as by the query used until 2026-11 (the
+  // oracle below). 7 of the queued jobs are not event jobs.
+  it.each([
+    ['online, a short queue', 2, 'short'],
+    ['the longest short queue', SHORT_QUEUE_JOBS - 7, 'short'],
+    ['one job past it', SHORT_QUEUE_JOBS - 6, 'long'],
+    ['offline, a long queue', 60, 'long']
+  ])('drops exactly the jobs the old query found, among queued and sent jobs: %s', async (_name, queuedEvents, queue) => {
+    const real = new Dexie(`eventSync-score-${Math.random()}`, { indexedDB: new IDBFactory(), IDBKeyRange: FakeIDBKeyRange })
+    real.version(1).stores({ matches: '++id', sets: '++id,matchId', sync_queue: '++id,resource,action,payload,ts,status' })
+    // what reads the queue's rows with their values, and which index's keys
+    // are read (keys alone are cheaper, but the set jobs' keys take in every
+    // sent one)
+    const valueReads = []
+    const keyReads = []
+    const keysOf = (req) => keyReads.push(req.query?.index?.name || 'id')
+    real.use({
+      stack: 'dbcore',
+      name: 'countQueueReads',
+      create: (down) => ({
+        ...down,
+        table: (name) => {
+          const table = down.table(name)
+          if (name !== 'sync_queue') return table
+          return {
+            ...table,
+            query: (req) => { if (req.values) valueReads.push('query'); else keysOf(req); return table.query(req) },
+            openCursor: (req) => { if (req.values !== false) valueReads.push('cursor'); else keysOf(req); return table.openCursor(req) },
+            get: (req) => { valueReads.push('get'); return table.get(req) },
+            getMany: (req) => { valueReads.push(...req.keys.map(() => 'get')); return table.getMany(req) }
+          }
+        }
+      })
+    })
+    await real.matches.add({ id: 1, seed_key: 'match_100_aaa' })
+    await real.sets.bulkAdd([
+      { id: 5, matchId: 1, index: 1, homePoints: 25, awayPoints: 20, finished: true },
+      { id: 6, matchId: 1, index: 2, homePoints: 4, awayPoints: 2, finished: false }
+    ])
+    const set6 = 'match_100_aaa:s:6'
+    const score = (externalId, home, away, extra = {}) => ({ external_id: externalId, home_points: home, away_points: away, ...extra })
+    const jobs = []
+    for (let i = 0; i < queuedEvents; i++) {
+      jobs.push({ resource: 'event', action: 'insert', status: 'queued', ts: i, payload: { external_id: `match_100_aaa:e:${i}`, state_snapshot: { pointsA: i, filler: 'x'.repeat(500) } } })
+    }
+    for (let i = 0; i < 40; i++) jobs.push({ resource: 'set', action: 'update', status: 'sent', ts: 100 + i, payload: score(set6, 1, i) })
+    jobs.push(
+      { resource: 'set', action: 'update', status: 'queued', ts: 200, payload: score(set6, 2, 2) },
+      { resource: 'set', action: 'update', status: 'queued', ts: 201, payload: score(set6, 3, 2, { sport_type: 'indoor' }) },
+      { resource: 'set', action: 'update', status: 'queued', ts: 202, payload: score('match_100_aaa:s:5', 25, 20) },
+      { resource: 'set', action: 'update', status: 'queued', ts: 203, payload: score(set6, 0, 0, { start_time: '2026-11-22T18:00:00.000Z' }) },
+      { resource: 'set', action: 'update', status: 'sending', ts: 204, payload: score(set6, 3, 1) },
+      { resource: 'set', action: 'update', status: 'error', ts: 205, payload: score(set6, 3, 1) },
+      { resource: 'set', action: 'insert', status: 'queued', ts: 206, payload: score(set6, 0, 0) },
+      { resource: 'match', action: 'update', status: 'queued', ts: 207, payload: { id: 'match_100_aaa', current_set: 2 } },
+      { resource: 'set', action: 'update', status: 'queued', ts: 208, payload: score(set6, 4, 1) }
+    )
+    await real.sync_queue.bulkAdd(jobs)
+    const before = await real.sync_queue.toArray()
+    const queuedJobs = before.filter(j => j.status === 'queued').length
+    expect(queuedJobs).toBe(queuedEvents + 7)
+    expect(queuedJobs > SHORT_QUEUE_JOBS).toBe(queue === 'long')
+    // the query used until 2026-11 (a value cursor over every queued job)
+    const oracle = (await real.sync_queue.where('status').equals('queued').and(j => isScoreOnlySetUpdate(j, set6)).toArray()).map(j => j.id)
+    expect(oracle).toHaveLength(3)
+
+    // inside a transaction, as the point's
+    valueReads.length = 0
+    keyReads.length = 0
+    expect(await real.transaction('rw', real.tables, () => queueSetScoreSync(real, { matchId: 1, setIndex: 2 }))).toBe(true)
+    if (queue === 'short') {
+      // the few queued jobs are read whole; the set jobs' keys (the 40 sent
+      // ones among them) are not read
+      expect(keyReads).toEqual(['status'])
+      expect(valueReads).toEqual(Array(queuedJobs).fill('get'))
+    } else {
+      // only the 6 queued set jobs are read whole, never the queued event
+      // jobs or the 40 sent ones
+      expect(keyReads).toEqual(['status', 'resource'])
+      expect(valueReads).toEqual(Array(6).fill('get'))
+    }
+
+    const after = await real.sync_queue.toArray()
+    const afterIds = new Set(after.map(j => j.id))
+    expect(before.filter(j => !afterIds.has(j.id)).map(j => j.id)).toEqual(oracle)
+    // everything else as it was, the new score last
+    const beforeIds = new Set(before.map(j => j.id))
+    expect(after.filter(j => beforeIds.has(j.id))).toEqual(before.filter(j => !oracle.includes(j.id)))
+    expect(after.filter(j => !beforeIds.has(j.id))).toMatchObject([{ resource: 'set', action: 'update', status: 'queued', payload: score(set6, 4, 2) }])
+    expect(after.at(-1).payload).toEqual(score(set6, 4, 2))
+    real.close()
+  })
+
+  it('recognises score-only updates', () => {
+    const job = (payload, status = 'queued') => ({ resource: 'set', action: 'update', status, payload })
+    expect(isScoreOnlySetUpdate(job({ external_id: 'x', home_points: 1, away_points: 0 }), 'x')).toBe(true)
+    expect(isScoreOnlySetUpdate(job({ external_id: 'x', home_points: 1, finished: true }), 'x')).toBe(false)
+    expect(isScoreOnlySetUpdate(job({ external_id: 'y', home_points: 1 }), 'x')).toBe(false)
+    expect(isScoreOnlySetUpdate(job({ external_id: 'x', home_points: 1 }, 'sent'), 'x')).toBe(false)
+  })
+})
+
+describe('buildSetEndMatchPayload', () => {
+  const finishedSets = [
+    { index: 2, homePoints: 20, awayPoints: 25 },
+    { index: 1, homePoints: 25, awayPoints: 18 }
+  ]
+
+  it('a set end moves current_set on and publishes the finished sets', () => {
+    expect(buildSetEndMatchPayload({ seedKey: 'm', finishedSets, isMatchEnd: false, nextSetIndex: 3, homeSetsWon: 1, awaySetsWon: 1 }))
+      .toEqual({ id: 'm', current_set: 3, set_results: [{ set: 1, home: 25, away: 18 }, { set: 2, home: 20, away: 25 }] })
+  })
+
+  it('the match end carries the result', () => {
+    const p = buildSetEndMatchPayload({ seedKey: 'm', finishedSets, isMatchEnd: true, homeSetsWon: 3, awaySetsWon: 1, sanctions: { a: 1 } })
+    expect(p).toMatchObject({ id: 'm', status: 'ended', winner: 'home', final_score: '3-1', sanctions: { a: 1 } })
+    expect(p.set_results).toHaveLength(2)
+    expect('current_set' in p).toBe(false)
+  })
+
+  it('does not reorder the caller\'s array', () => {
+    const sets = [...finishedSets]
+    buildSetEndMatchPayload({ seedKey: 'm', finishedSets: sets, isMatchEnd: false, nextSetIndex: 3 })
+    expect(sets[0].index).toBe(2)
+  })
+})
+
+describe('undo of a set end', () => {
+  // Set 2 had ended 25:23 (set 3 created); the undo deleted set 3 and put
+  // set 2 back to unfinished at 24:23
+  beforeEach(() => {
+    db.sets.map.set(6, { id: 6, matchId: 1, index: 2, homePoints: 24, awayPoints: 23, finished: false, endTime: null })
+  })
+
+  it('reopens the cloud set and puts current_set / set_results back', async () => {
+    // a running score queued earlier is replaced by the reopen update
+    db.sync_queue.map.set(100, { id: 100, resource: 'set', action: 'update', status: 'queued', payload: { external_id: 'match_100_aaa:s:6', home_points: 25, away_points: 23 } })
+
+    expect(await queueSetReopenSync(db, { matchId: 1, setIndex: 2 })).toBe(true)
+
+    const jobs = [...db.sync_queue.map.values()]
+    expect(jobs).toHaveLength(2)
+    expect(jobs[0]).toMatchObject({
+      resource: 'set',
+      action: 'update',
+      status: 'queued',
+      payload: { external_id: 'match_100_aaa:s:6', home_points: 24, away_points: 23, finished: false, end_time: null }
+    })
+    // queued after the set job: livescore reads set_results from the match row
+    expect(jobs[1]).toMatchObject({ resource: 'match', action: 'update', status: 'queued' })
+    expect(jobs[1].payload).toEqual({ id: 'match_100_aaa', current_set: 2, set_results: [{ set: 1, home: 25, away: 20 }] })
+  })
+
+  it('clears the result fields when the undone set end had ended the match', async () => {
+    await queueSetReopenSync(db, { matchId: 1, setIndex: 2, wasMatchEnd: true })
+    const matchJob = [...db.sync_queue.map.values()].find(j => j.resource === 'match')
+    expect(matchJob.payload).toMatchObject({ current_set: 2, status: 'live', winner: null, final_score: null })
+  })
+
+  it('skips test matches and unknown sets, and never throws', async () => {
+    expect(await queueSetReopenSync(db, { matchId: 2, setIndex: 1 })).toBe(false)
+    expect(await queueSetReopenSync(db, { matchId: 1, setIndex: 9 })).toBe(false)
+    expect(await queueSetReopenSync({ matches: { get: async () => { throw new Error('IDB') } } }, { matchId: 1, setIndex: 2 })).toBe(false)
+    expect(db.sync_queue.map.size).toBe(0)
+  })
+
+  it('never lists the reopened set as finished, even if the row still says so', () => {
+    const p = buildSetReopenMatchPayload({
+      seedKey: 'm',
+      finishedSets: [{ index: 2, homePoints: 25, awayPoints: 23 }, { index: 1, homePoints: 25, awayPoints: 20 }],
+      reopenedSetIndex: 2
+    })
+    expect(p).toEqual({ id: 'm', current_set: 2, set_results: [{ set: 1, home: 25, away: 20 }] })
+  })
+})
+
+describe('set update jobs', () => {
+  it('carry the namespaced set id and the match key, never a bare local id', () => {
+    const job = setUpdateJob({ seed_key: 'match_100_aaa' }, 6, { finished: false, end_time: null }, 't')
+    expect(job).toEqual({
+      resource: 'set',
+      action: 'update',
+      payload: { finished: false, end_time: null, external_id: 'match_100_aaa:s:6', match_id: 'match_100_aaa' },
+      ts: 't',
+      status: 'queued'
+    })
+    // per-match order, the approval's wait and the restore clean-up see it
+    expect(jobMatchKey(job)).toBe('match_100_aaa')
+  })
+})
+
+describe('sets deleted on the device', () => {
+  it('drop their undelivered jobs and queue a cloud delete', async () => {
+    db.sync_queue = fakeTable([
+      // set 6 went out (sent), its running score is still queued
+      { id: 1, resource: 'set', action: 'insert', status: 'sent', payload: { external_id: 'match_100_aaa:s:6', match_id: 'match_100_aaa' } },
+      { id: 2, resource: 'set', action: 'update', status: 'queued', payload: { external_id: 'match_100_aaa:s:6', home_points: 3 } },
+      // another match's set with the same local id stays
+      { id: 3, resource: 'set', action: 'update', status: 'queued', payload: { external_id: 'match_200_bbb:s:6', home_points: 1 } },
+      // parked: an insert waiting out a backoff, an update refused for good
+      // (kept, they would hold the delete behind them; it removes whatever
+      // of them reached the cloud)
+      { id: 4, resource: 'set', action: 'insert', status: 'error', payload: { external_id: 'match_100_aaa:s:6', match_id: 'match_100_aaa' } },
+      { id: 5, resource: 'set', action: 'update', status: 'failed', payload: { external_id: 'match_100_aaa:s:6', finished: true } }
+    ])
+    expect(await queueSetDeletes(db, { seed_key: 'match_100_aaa' }, [6])).toBe(1)
+    const rows = [...db.sync_queue.map.values()]
+    expect(rows.map(j => j.id)).toEqual([1, 3, 6])
+    expect(rows[2]).toMatchObject({ resource: 'set', action: 'delete', status: 'queued', payload: { external_id: 'match_100_aaa:s:6', match_id: 'match_100_aaa' } })
+    expect(setDeleteJob('match_100_aaa', 6, 't')).toEqual(
+      { resource: 'set', action: 'delete', payload: { external_id: 'match_100_aaa:s:6', match_id: 'match_100_aaa' }, ts: 't', status: 'queued' })
+  })
+
+  it('nothing for a test match or a match without a key', async () => {
+    db.sync_queue = fakeTable([])
+    expect(await queueSetDeletes(db, { seed_key: 'match_200_bbb', test: true }, [7])).toBe(0)
+    expect(await queueSetDeletes(db, { seed_key: null }, [7])).toBe(0)
+    expect(await queueSetDeletes(db, { seed_key: 'match_100_aaa' }, [])).toBe(0)
+    expect(db.sync_queue.map.size).toBe(0)
+  })
+})
+
+describe('live state catch-up flag', () => {
+  it('is kept per match until a push succeeds', () => {
+    expect(isLiveStateDirty(7)).toBe(false)
+    setLiveStateDirty(7, true)
+    expect(isLiveStateDirty(7)).toBe(true)
+    expect(isLiveStateDirty(8)).toBe(false)
+    setLiveStateDirty(7, false)
+    expect(isLiveStateDirty(7)).toBe(false)
+  })
+
+  it('offline, signed out and server hiccups are caught up silently', () => {
+    expect(isLiveStateErrorWorthAlert({ network: true, status: 0 })).toBe(false)
+    expect(isLiveStateErrorWorthAlert({ status: 401 })).toBe(false)
+    expect(isLiveStateErrorWorthAlert({ status: 429 })).toBe(false)
+    expect(isLiveStateErrorWorthAlert({ status: 503 })).toBe(false)
+    expect(isLiveStateErrorWorthAlert({ status: 400, code: 'OV_INVALID_DATA' })).toBe(true)
+  })
+
+  it('a server refusal (pending account, closed match, taken game, not an owner) never opens a dialog', () => {
+    // (OV_SCORER_MOVED, db/019: another device holds the match; review 2026-10-21: it opened "Sync failed")
+    for (const [status, code] of [[403, 'OV_SCORER_REQUIRED'], [409, 'OV_MATCH_CLOSED'], [409, 'OV_GAME_TAKEN'], [403, 'OV_NOT_MATCH_OWNER'], [409, 'OV_UNSCOPED_WRITE'], [409, 'OV_SCORER_MOVED']]) {
+      expect(isLiveStateRefusal({ status, code, message: 'x' })).toBe(true)
+      expect(isLiveStateErrorWorthAlert({ status, code, message: 'x' })).toBe(false)
+    }
+    expect(isLiveStateRefusal({ status: 403, code: 'OV_SOMETHING_ELSE' })).toBe(false)
+    expect(isLiveStateRefusal({ network: true, status: 0, code: 'OV_SCORER_REQUIRED' })).toBe(false)
+  })
+
+  it('a refused match pauses its cloud pushes, until the pause ends or access changes', () => {
+    const t0 = 1_000_000
+    markLiveStateRefused(11, 'OV_SCORER_REQUIRED', t0)
+    expect(isLiveStateRefused(11, t0 + 1000)).toBe(true)
+    expect(isLiveStateRefused('11', t0 + 1000)).toBe(true)
+    expect(isLiveStateRefused(12, t0 + 1000)).toBe(false)
+    expect(isLiveStateRefused(11, t0 + LIVE_REFUSAL_PAUSE_MS)).toBe(false)
+    markLiveStateRefused(11, 'OV_MATCH_CLOSED', t0)
+    clearLiveStateRefused(11)
+    expect(isLiveStateRefused(11, t0 + 1)).toBe(false)
+    markLiveStateRefused(13, 'OV_MATCH_CLOSED', t0)
+    clearLiveStateRefused()
+    expect(isLiveStateRefused(13, t0 + 1)).toBe(false)
+  })
+})

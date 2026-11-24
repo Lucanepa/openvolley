@@ -1,0 +1,6 @@
+# cargo audit settings for the desktop app (read by the Dependency audit workflow).
+[advisories]
+# No ignored advisories. The six zip 4.6.1 advisories (RUSTSEC-2026-0367/0368/0369/
+# 0429/0545/0548) went with tauri-plugin-updater 2.14.1, which uses zip 9 (#265,
+# 20.11.2026). Add an entry here only with the reason it cannot be fixed yet.
+ignore = []

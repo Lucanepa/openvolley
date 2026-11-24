@@ -1,0 +1,7 @@
+# The Lucanepa/openbeach commit whose frontend (beach referee + scoreboard)
+# the server release (release.yml, v* tags) packs. A full commit id, so a tag
+# always builds the OpenBeach code reviewed here, and a rebuild of the same
+# tag gives the same pages; the release notes name it. Before a server
+# release with newer OpenBeach pages: put the commit of openbeach's main
+# here (git -C openbeach rev-parse origin/main) in its own commit.
+c2991221664b198d8ed671131edf318ac3142120

@@ -1,0 +1,126 @@
+// First: the error reporter listens while the rest loads (utils/errorReport, privacy 1.22)
+import './utils/errorReport/boot'
+import { setErrorTool } from './utils/errorReport'
+import React from 'react'
+import { createRoot } from 'react-dom/client'
+import App from './App'
+import './tailwind.css' // also brings in styles.css (legacy layer) and the volleyui tokens
+import './utils/cqFontScale' // undoes WebKitGTK's double page zoom on font sizes in container units
+import './utils/tapHints' // Options › Show tap hints (the fingers on the scoring screen's buttons)
+import { initLogger } from './utils/logger'
+import './i18n'  // Initialize i18n for localization
+import { AlertProvider } from './contexts/AlertContext'
+import { AuthProvider } from './contexts/AuthContext'
+import { LoggingProvider } from './contexts/LoggingContext'
+import { ScaleProvider } from './contexts/ScaleContext'
+import ErrorBoundary from './components/ErrorBoundary'
+import { UiHost } from './ui/UiHost.jsx'
+import PhonePairHost from './components/phonePair/PhonePairHost.jsx'
+import ScoreboardCodeHost from './components/scoreboardCode/ScoreboardCodeHost.jsx'
+import { stripCacheBustParam, applyUpdateAtStart, answerUpdateQuestions, installPreloadErrorNotice } from './hooks/useServiceWorker'
+import { readOpenMatch } from './utils/deviceSelfCheck'
+import { isDesktopScoretable, resolveDesktopWindow } from './utils/appLifecycle'
+import { setAppEntry } from './utils/appEntry'
+import { watchFormStack } from './utils/formLayout'
+import { blockPagePinch, installOnScreenKeyboardHelp, onPointHubBoard, stillPopoversOnBoard } from './utils/pointHubBoard'
+import { db } from './db/db'
+import { startActivityLog } from './utils/activity'
+import { installDiagnostics } from './diagnostics'
+import { initTheme } from './utils/theme'
+import { isNativeApp } from './utils/backendConfig'
+import { initLook } from './utils/lookSettings'
+import { unlockOrientation } from './utils/nativeOrientation'
+import { startNativeFileHousekeeping } from './utils/nativeBackup'
+import { startDobCleanup } from './db/dobCleanup'
+
+// The scoretable: the only page that saves automatic match backups
+setAppEntry('scorer')
+setErrorTool('scorer')
+
+// Diagnostics mode (off unless Options, ?diag=1 or OPENVOLLEY_DIAGNOSTICS=1
+// in the desktop app): first, so it sees this load and the database opening
+installDiagnostics({ db })
+
+// Clean up cache_bust query parameter (added by cache clear / update flow).
+// Keep the rest of the query: ?match=&team= attach tablets to the live match.
+stripCacheBustParam()
+
+// An update accepted in another tab or window of the app waits while this
+// page has a match on show (its worker would switch under it); a file of
+// this build gone from the site (vite:preloadError) asks for a reload after
+// the rally
+answerUpdateQuestions({ isBusy: () => readOpenMatch() != null })
+installPreloadErrorNotice()
+
+// The desktop app: a new build waiting at start is applied before the scorer
+// touches anything (the binary is the update; see applyUpdateAtStart). In the
+// scoretable only: the app says which window this is (a Linux pop-up's own
+// metadata says "main"), asked once and kept for isDesktopScoretable
+if (isDesktopScoretable()) {
+  resolveDesktopWindow().then((scoretable) => { if (scoretable) applyUpdateAtStart() }).catch(() => {})
+}
+
+// Initialize logger to capture console output
+initLogger()
+
+// The match activity log (scoring, corrections, sync, app start/quit, errors):
+// local, synced, and a daily file in the apps (utils/activity)
+startActivityLog({ db })
+
+// The apps: the backups' (and on Android the saved PDFs') clean-up at every
+// start, and on Android the first start's move of the files older versions
+// left in the public Documents folder into the app's own (utils/nativeBackup)
+startNativeFileHousekeeping()
+
+// The one-time clean-up of dates of birth on this device (db/dobCleanup,
+// owner 2026-11-19): after the first paint, never awaited
+startDobCleanup({ db })
+
+// Portrait data entry: <body> carries ov-form-stack while a tablet is held
+// upright, which switches on the one-field-per-row rules in tailwind.css for
+// this app and its dialogs portalled to <body> (not for the other apps).
+watchFormStack(document.body)
+
+if (onPointHubBoard()) {
+  // The board's webview composites in software: an animated menu fades in
+  // slowly, then flickers once as it settles (owner 17.11). Menus there just
+  // appear (styles.css .no-popover-motion).
+  stillPopoversOnBoard()
+  installOnScreenKeyboardHelp()
+  blockPagePinch()
+}
+
+// The look switches of this device (Options › Effects and speed,
+// utils/lookSettings): the blur behind dialogs (off by default in the Android
+// app: LITE_GRAPHICS_ON_ANDROID) and the animations, on <html> before the
+// first paint
+initLook()
+
+// The Android app: the referee view locks the activity upright
+// (components/referee/upright.js) and is left by a page load (back), which
+// keeps that lock: rotate freely again before anything mounts. The
+// scoreboard locks landscape on its own when it opens, after this.
+if (isNativeApp()) unlockOrientation()
+
+initTheme()
+createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <ErrorBoundary name="scorer">
+      <ScaleProvider>
+        <AuthProvider>
+          <AlertProvider>
+            <LoggingProvider>
+              <App />
+              {/* Pair a phone: the remote keyboard lives across screens */}
+              <PhonePairHost />
+              <ScoreboardCodeHost />
+            </LoggingProvider>
+          </AlertProvider>
+        </AuthProvider>
+      </ScaleProvider>
+      <div className="ov-kit ov-kit-host"><UiHost /></div>
+    </ErrorBoundary>
+  </React.StrictMode>
+)
+
+

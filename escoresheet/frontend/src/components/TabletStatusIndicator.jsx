@@ -1,0 +1,132 @@
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
+import { getTabletStatusSummary, formatAge } from '../utils/connectionHealth'
+import { applyRelayTablets, relayMatchKey } from '../utils/serverDataSync'
+import { useRelayTablets } from '../hooks/useRealtimeConnection'
+import { useInAppViewOpen } from '../hooks/useInAppViewOpen'
+import { ChevronDown } from 'lucide-react'
+import { cn } from '../ui/cn.js'
+import { MenuPopover } from '../ui/MenuPopover.jsx'
+import { StatusPill } from '../ui/StatusPill.jsx'
+import { FOCUS_RING, KIT_SCOPE, STATUS_PILL, STATUS_TONES } from './chromeClasses'
+
+// compact (a phone's header): no arrow, the header has no room for it
+export default function TabletStatusIndicator({ match, compact = false }) {
+  const { t } = useTranslation()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const buttonRef = useRef(null)
+  const [, setTick] = useState(0)
+
+  // Force re-render every 5s to update heartbeat ages
+  useEffect(() => {
+    if (!menuOpen) return
+    const interval = setInterval(() => setTick(n => n + 1), 5000)
+    return () => clearInterval(interval)
+  }, [menuOpen])
+
+  // Heartbeats alone never reached the scorer device: the relay's subscriber
+  // list for this match (by seed key) says which tablets are actually there.
+  const anyEnabled = !!(match?.refereeConnectionEnabled || match?.homeTeamConnectionEnabled || match?.awayTeamConnectionEnabled)
+  // Not asked while the Android in-app view covers the screen (nobody sees
+  // the chip); asked again at once when it closes
+  const covered = useInAppViewOpen()
+  const relayTablets = useRelayTablets(relayMatchKey(match), match, { enabled: anyEnabled, paused: covered })
+  const summary = applyRelayTablets(getTabletStatusSummary(match), relayTablets)
+
+  // Kit status tones: emerald all connected, amber some missing, stone none.
+  const overallTone = STATUS_TONES[summary.overallStatus === 'ok' ? 'ok'
+    : summary.overallStatus === 'issues' ? 'warn'
+    : 'neutral']
+
+  // The popover hangs from the pill and closes on a press outside it (ui/MenuPopover.jsx)
+  const openMenu = useCallback(() => setMenuOpen(prev => !prev), [])
+
+  // Don't render if no roles are enabled. Must stay below every hook: the
+  // scorer toggles connections mid-match, and an early return above a hook
+  // changes the hook count between renders (React throws and unmounts).
+  if (summary.expectedCount === 0) return null
+
+  const SUMMARY_BOX = {
+    ok: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+    issues: 'border-amber-200 bg-amber-50 text-amber-800',
+    none: 'border-stone-200 bg-stone-50 text-stone-600'
+  }
+
+  // Per-device heartbeat state -> kit tone (a StatusPill per device).
+  const roleTone = (status) => STATUS_TONES[status === 'connected' ? 'ok' : status === 'stale' ? 'warn' : 'error']
+
+  return (
+    <div ref={buttonRef} style={{ position: 'relative' }}>
+      <span className={KIT_SCOPE}>
+        <button
+          type="button"
+          onClick={openMenu}
+          aria-expanded={menuOpen}
+          title={t('tabletStatus.title', 'Tablet status')}
+          className={cn(STATUS_PILL, FOCUS_RING, overallTone.pill)}
+        >
+          {/* Status dot */}
+          <span className={cn('h-2 w-2 shrink-0 rounded-full', overallTone.dot)} />
+          <span className="tabular-nums">{summary.connectedCount}/{summary.expectedCount}</span>
+          {!compact && (
+            <ChevronDown size={12} aria-hidden="true" className={cn('opacity-70 transition-transform', menuOpen && 'rotate-180')} />
+          )}
+        </button>
+      </span>
+
+      {menuOpen && (
+        <MenuPopover
+          open
+          onClose={() => setMenuOpen(false)}
+          anchorRef={buttonRef}
+          label={t('tabletStatus.title', 'Tablet status')}
+          role="dialog"
+          align="end"
+          closeLabel={t('common.close', 'Close')}
+          className="w-[260px] p-3 text-stone-800"
+        >
+          <div className="menu-own-title mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">
+            {t('tabletStatus.title', 'Tablet status')}
+          </div>
+
+          <div className="divide-y divide-stone-100">
+            {summary.roles.map((role) => {
+              const tone = roleTone(role.status)
+              return (
+                <div key={role.role} className="flex items-center justify-between gap-3 py-2">
+                  <span className="min-w-0 truncate text-sm font-medium text-stone-800">
+                    {t(`tabletStatus.role.${role.role}`, role.label)}
+                    {/* 1R and 2R both in: one role, two tablets */}
+                    {role.devices > 1 && <span className="ml-1 tabular-nums text-stone-500">×{role.devices}</span>}
+                  </span>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <StatusPill className={tone.tint}>{t(`tabletStatus.status.${role.status}`, role.status)}</StatusPill>
+                    {role.ageMs != null && (
+                      <span className="font-mono text-[10px] text-stone-500">
+                        {formatAge(role.ageMs)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Overall summary */}
+          <div className={cn('mt-2 rounded-lg border px-2.5 py-2 text-center text-xs font-medium', SUMMARY_BOX[summary.overallStatus] || SUMMARY_BOX.none)}>
+            {summary.overallStatus === 'ok'
+              ? t('tabletStatus.allConnected', 'All devices connected')
+              // the roles switched on in Connect tablets with no tablet there,
+              // by name: "1 device with issues" read as a referee tablet while
+              // both referees were in and a bench was missing (owner 15.11)
+              : t('tabletStatus.notConnected', {
+                  defaultValue: 'Not connected: {{roles}}',
+                  roles: summary.roles.filter(r => r.status !== 'connected').map(r => t(`tabletStatus.role.${r.role}`, r.label)).join(', ')
+                })
+            }
+          </div>
+        </MenuPopover>
+      )}
+    </div>
+  )
+}

@@ -1,0 +1,215 @@
+import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { render } from '@testing-library/react'
+import ScoreServeRow, { SCORE_ROW, SERVE_BLOCK, serveLabelCqi } from '../referee/ScoreServeRow.jsx'
+import { cssValue } from '../../__tests__/cssValue.js'
+
+// vmin as useScaledLayout gives it: a 1280 x 800 tablet at display scale 1
+const vmin = (v) => 800 * v / 100
+
+const renderRow = (servingSide, extra = {}) => render(
+  <ScoreServeRow
+    leftScore={12}
+    rightScore={10}
+    servingSide={servingSide}
+    serverNumber={servingSide ? 7 : null}
+    serveLabel="SERVE"
+    vmin={vmin}
+    {...extra}
+  />
+).container
+
+const slotStyle = (c, side) => {
+  const s = c.querySelector(`[data-serve-slot="${side}"]`).style
+  return { display: s.display, minWidth: s.minWidth, height: s.height }
+}
+
+describe('referee score row: the SERVE block', () => {
+  it('shows the block on the serving side only, with the label and the server\'s number', () => {
+    for (const side of ['left', 'right']) {
+      const c = renderRow(side)
+      const other = side === 'left' ? 'right' : 'left'
+      const block = c.querySelector(`[data-serve-slot="${side}"] [data-serve-block="${side}"]`)
+      expect(block, side).not.toBeNull()
+      expect(c.querySelector(`[data-serve-slot="${other}"] [data-serve-block]`), side).toBeNull()
+      expect(block.querySelector('[data-serve-label]').textContent).toBe('SERVE')
+      expect(block.querySelector('[data-serve-number]').textContent).toBe('7')
+      expect(c.querySelectorAll('[data-serve-block]')).toHaveLength(1)
+    }
+    expect(renderRow(null).querySelector('[data-serve-block]')).toBeNull()
+  })
+
+  it('sits at the screen edge of the serving team\'s side (mirrors with the view; owner 15.11)', () => {
+    const c = renderRow('left')
+    const row = c.querySelector('[data-score-row]')
+    const kids = [...row.children]
+    expect(kids.map(k => k.getAttribute('data-serve-slot') ?? (k.hasAttribute('data-score') ? 'score' : '?'))).toEqual(['left', 'score', 'right'])
+    expect(c.querySelector('[data-serve-slot="left"]').style.justifyContent).toBe('flex-start')
+    expect(c.querySelector('[data-serve-slot="right"]').style.justifyContent).toBe('flex-end')
+  })
+
+  it('upright (large): a bigger score and number, the serve block as wide as its content (owner 21.11)', () => {
+    const c = renderRow('right', { large: true })
+    const digits = c.querySelector('[data-score] span')
+    expect(digits.style.fontSize).toBe(`${vmin(SCORE_ROW.largeScoreVmin)}px`)
+    expect(SCORE_ROW.largeScoreVmin).toBeGreaterThan(SCORE_ROW.scoreVmin)
+    const block = c.querySelector('[data-serve-block="right"]')
+    // not the whole slot (owner 21.11: "not too wide but automatic width")
+    expect(block.style.width).toBe('auto')
+    expect(block.style.maxWidth).toBe('100%')
+    expect(block.style.height).toBe(`${vmin(SCORE_ROW.largeScoreVmin)}px`)
+    expect(SERVE_BLOCK.largeNumberVmin).toBeGreaterThan(SERVE_BLOCK.numberVmin)
+    // the number box (two digits + padding + border) stays inside a narrow slot
+    expect(SERVE_BLOCK.largeNumberCqi).toBeLessThanOrEqual(SERVE_BLOCK.numberCqi)
+    expect(c.querySelector('[data-serve-slot="left"]').style.height).toBe(`${vmin(SCORE_ROW.largeScoreVmin)}px`)
+    expect(c.querySelector('[data-serve-box]').style.fontSize).toBe(`min(${vmin(SERVE_BLOCK.largeNumberVmin)}px, calc(${SERVE_BLOCK.largeNumberCqi}cqi * var(--cqf, 1)))`)
+    // the referee view passes it upright only (landscape: the row is 15 % of the height)
+    const src = readFileSync(resolve(__dirname, '../Referee.jsx'), 'utf8')
+    expect(src).toMatch(/large=\{!wide\}/)
+  })
+
+  it('reserves the same room on both sides, served or not, so the score never moves', () => {
+    const row = renderRow('left').querySelector('[data-score-row]')
+    // two equal slots that never grow to their content
+    expect(row.style.gridTemplateColumns).toBe(cssValue('grid-template-columns', 'minmax(0, 1fr) auto minmax(0, 1fr)'))
+    const base = renderRow(null)
+    for (const side of ['left', 'right', null]) {
+      const c = renderRow(side)
+      expect(slotStyle(c, 'left'), String(side)).toEqual(slotStyle(base, 'left'))
+      expect(slotStyle(c, 'right'), String(side)).toEqual(slotStyle(base, 'right'))
+    }
+    expect(slotStyle(base, 'left')).toEqual(slotStyle(base, 'right'))
+  })
+
+  // Owner, 22.11.2026: "scorer on ref tablet can be 3% smaller" (the score
+  // digits and the colon, both layouts); the serve block stays as tall.
+  it('the score and colon are 3 % smaller than 15 / 11 (20 / 14 upright), the serve block as tall as them', () => {
+    expect(SCORE_ROW).toEqual({ scoreVmin: 14.55, colonVmin: 10.67, largeScoreVmin: 19.4, largeColonVmin: 13.58 })
+    for (const [now, was] of [[SCORE_ROW.scoreVmin, 15], [SCORE_ROW.colonVmin, 11], [SCORE_ROW.largeScoreVmin, 20], [SCORE_ROW.largeColonVmin, 14]]) {
+      expect(now).toBeCloseTo(was * 0.97, 2)
+    }
+    for (const large of [false, true]) {
+      const c = renderRow('left', { large })
+      const [left, colon, right] = c.querySelector('[data-score]').children
+      const score = large ? SCORE_ROW.largeScoreVmin : SCORE_ROW.scoreVmin
+      expect(left.style.fontSize, String(large)).toBe(`${vmin(score)}px`)
+      expect(right.style.fontSize, String(large)).toBe(`${vmin(score)}px`)
+      expect(colon.style.fontSize, String(large)).toBe(`${vmin(large ? SCORE_ROW.largeColonVmin : SCORE_ROW.colonVmin)}px`)
+      // the serve block and both slots: exactly the digits' height
+      expect(c.querySelector('[data-serve-block]').style.height, String(large)).toBe(`${vmin(score)}px`)
+      for (const side of ['left', 'right']) expect(c.querySelector(`[data-serve-slot="${side}"]`).style.height, String(large)).toBe(`${vmin(score)}px`)
+    }
+  })
+
+  it('is big (as tall as the score digits) but never taller, so the court is not pushed down', () => {
+    const c = renderRow('right')
+    const digits = c.querySelector('[data-score] span')
+    const block = c.querySelector('[data-serve-block]')
+    expect(digits.style.fontSize).toBe(`${vmin(SCORE_ROW.scoreVmin)}px`)
+    expect(digits.style.lineHeight).toBe('1')
+    expect(block.style.height).toBe(`${vmin(SERVE_BLOCK.heightVmin)}px`)
+    expect(c.querySelector('[data-serve-slot="right"]').style.height).toBe(`${vmin(SCORE_ROW.scoreVmin)}px`)
+    expect(SERVE_BLOCK.heightVmin).toBe(SCORE_ROW.scoreVmin)
+    // label + number + padding fit in that height
+    expect(SERVE_BLOCK.labelVmin * 1.1 + SERVE_BLOCK.numberVmin + 2 * 0.8).toBeLessThanOrEqual(SERVE_BLOCK.heightVmin)
+    // much larger than the old corner box (3 vmin label, 7-8 vmin number, 6 vmin box)
+    expect(SERVE_BLOCK.numberVmin).toBeGreaterThan(8)
+  })
+
+  // Owner, 3.0.16: "SERVE box does not have to be full width. Auto width is
+  // fine." It filled its slot up to 26 vmin, a wide box beside the score.
+  it('is as wide as its content, the number box two digits wide whatever the number', () => {
+    const c = renderRow('left')
+    const block = c.querySelector('[data-serve-block]')
+    expect(block.style.width).toBe('auto')
+    expect(block.style.maxWidth).toBe('100%')
+    expect(SERVE_BLOCK.widthVmin).toBeUndefined()
+    // the number: two digits wide (#1 and #12 the same box), with its padding
+    const number = c.querySelector('[data-serve-number]')
+    expect(number.style.minWidth).toBe('2ch')
+    expect(number.style.textAlign).toBe('center')
+    expect(c.querySelector('[data-serve-box]').style.padding).toBe(`0px ${SERVE_BLOCK.numberPadEm}em`)
+    // the sizes come from the slot's width (its container), not the block's
+    expect(c.querySelector('[data-serve-slot="left"]').style.containerType).toBe('inline-size')
+    expect(block.style.containerType).toBe('')
+  })
+
+  it('a narrow slot (portrait tablet, 150 % display scale) keeps the number box inside it, about as big as the old corner box', () => {
+    // Measured in Chromium at 768 x 1024, scale 1.5 (vmin 11.52): the slot is
+    // 128 px wide. The old corner box used a 3 vmin label and a 7-8 vmin number.
+    const v = 11.52
+    const slot = 128
+    const number = Math.min(SERVE_BLOCK.numberVmin * v, SERVE_BLOCK.numberCqi / 100 * slot)
+    expect(number).toBeGreaterThanOrEqual(7 * v)
+    // two digits (~1.11 em), the padding both sides and the 3 px border fit
+    expect(number * (1.112 + 2 * SERVE_BLOCK.numberPadEm) + 6).toBeLessThanOrEqual(slot)
+    // the label's share depends on its length: SERVE is not sized for AUFSCHLAG
+    expect(serveLabelCqi('SERVE')).toBeGreaterThan(serveLabelCqi('AUFSCHLAG') * 1.5)
+  })
+
+  it('every translated label and a two-digit number fit the block width', () => {
+    const dir = resolve(__dirname, '../../i18n/locales')
+    for (const lng of ['en', 'de', 'de-CH', 'fr', 'it']) {
+      const label = JSON.parse(readFileSync(resolve(dir, `${lng}.json`), 'utf8')).scoreboard.labels.serveLabel
+      // a bold upper-case letter with the 0.06 em spacing is at most ~0.76 em wide
+      expect(serveLabelCqi(label) * label.length * 0.76, `${lng} ${label}`).toBeLessThanOrEqual(100)
+    }
+    // two tabular digits (~1.11 em) and the box padding: within the slot
+    expect(SERVE_BLOCK.numberCqi * (1.112 + 2 * SERVE_BLOCK.numberPadEm)).toBeLessThanOrEqual(100)
+    // (jsdom drops min(... cqi) font sizes: the component's use of
+    // serveLabelCqi is checked in the source)
+    const src = readFileSync(resolve(__dirname, '../referee/ScoreServeRow.jsx'), 'utf8')
+    expect(src).toMatch(/\$\{serveLabelCqi\(label\)\}cqi/)
+  })
+
+  it('is green like the scorer\'s SERVE indicator, whatever the team colour (owner 2026-11-09)', () => {
+    const c = renderRow('left', { servingColour: '#3b82f6' })
+    const block = c.querySelector('[data-serve-block]')
+    const box = c.querySelector('[data-serve-box]')
+    // the box: a light-green fill with a green border (Scoreboard.jsx renderServeSide)
+    expect(box.style.background).toMatch(/34, 197, 94, 0\.1/)
+    expect(box.style.border).toMatch(/3px solid var\(--accent/)
+    // the label and the number in the same green, never the team colour
+    expect(c.querySelector('[data-serve-label]').style.color).toMatch(/var\(--accent/)
+    expect(c.querySelector('[data-serve-number]').style.color).toMatch(/var\(--accent/)
+    expect(block.outerHTML).not.toMatch(/59, 130, 246|#3b82f6/i)
+    // the referee view no longer hands it a team colour
+    const src = readFileSync(resolve(__dirname, '../Referee.jsx'), 'utf8')
+    expect(src).not.toMatch(/servingColour=/)
+  })
+
+  it('the referee view feeds it the serving side, the position I player and the translated label', () => {
+    const src = readFileSync(resolve(__dirname, '../Referee.jsx'), 'utf8')
+    expect(src).toMatch(/<ScoreServeRow\b/)
+    expect(src).toMatch(/servingSide=\{leftServing \? 'left' : rightServing \? 'right' : null\}/)
+    expect(src).toMatch(/lineupNumber\(leftLineup\?\.I\)/)
+    expect(src).toMatch(/lineupNumber\(rightLineup\?\.I\)/)
+    expect(src).toMatch(/t\('scoreboard\.labels\.serveLabel', 'SERVE'\)/)
+    // the old corner indicator is gone
+    expect(src).not.toMatch(/>SERVE<\/span>/)
+  })
+})
+
+// UI tour 14.11 (r07): in the set interval the referee tablet showed the sets
+// won ("1:0") as big as points over an empty court; it reads as a score. The
+// row labels them (caption) while the interval shows sets.
+describe('referee score row: sets in the set interval', () => {
+  it('a caption over the score says what the numbers are', () => {
+    const c = renderRow(null, { leftScore: 1, rightScore: 0, caption: 'SETS' })
+    const caption = c.querySelector('[data-score-caption]')
+    expect(caption).not.toBeNull()
+    expect(caption.textContent).toBe('SETS')
+    expect(c.querySelector('[data-score]').textContent.replace(/\s+/g, '')).toBe('1:0')
+    expect(caption.nextElementSibling).toBe(c.querySelector('[data-score]'))
+  })
+
+  it('no caption for points', () => {
+    expect(renderRow('left').querySelector('[data-score-caption]')).toBeNull()
+  })
+
+  it('the referee screen captions the score with Sets during the interval only', () => {
+    const src = readFileSync(resolve(__dirname, '../Referee.jsx'), 'utf8')
+    expect(src).toMatch(/caption=\{isInSetInterval \? t\('scoreboard\.labels\.sets', 'SETS'\) : null\}/)
+  })
+})

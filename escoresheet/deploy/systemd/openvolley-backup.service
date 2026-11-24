@@ -1,0 +1,22 @@
+# Installed by host-prep.sh to /etc/systemd/system/. Runs as root on the VM
+# that hosts the openvolley compose project.
+[Unit]
+Description=OpenVolley hourly database backup (pg_dump -Fc, GPG to openvolley-backup)
+Documentation=file:///opt/openvolley/README.md
+Wants=docker.service
+After=docker.service
+ConditionPathExists=/etc/openvolley/backup.conf
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/backup-openvolley.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=45min
+# Light hardening: the script only writes the backup dir, the status dir,
+# /var/lib/openvolley-backup (GPG homedir) and /run/lock.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=read-only

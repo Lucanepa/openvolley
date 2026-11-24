@@ -1,0 +1,663 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react'
+import en from '../i18n/locales/en.json'
+import de from '../i18n/locales/de.json'
+import deCH from '../i18n/locales/de-CH.json'
+import fr from '../i18n/locales/fr.json'
+import it_ from '../i18n/locales/it.json'
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key, opts) => (typeof opts === 'string' ? opts : key),
+    i18n: { language: 'en', changeLanguage: vi.fn() }
+  })
+}))
+
+const auth = vi.hoisted(() => ({ value: null }))
+vi.mock('../contexts/AuthContext', () => ({ useAuth: () => auth.value }))
+
+const api = vi.hoisted(() => ({
+  admin: {
+    listAccounts: vi.fn(async () => ({ data: { accounts: [] }, error: null, status: 200 })),
+    listInvites: vi.fn(async () => ({ data: { invites: [] }, error: null, status: 200 })),
+    listOfficialGames: vi.fn(async () => ({ data: { games: [] }, error: null, status: 200 })),
+    listMatches: vi.fn(async () => ({ data: { matches: [] }, error: null, status: 200 })),
+    listAudit: vi.fn(async () => ({ data: { entries: [], next_before: null }, error: null, status: 200 }))
+  },
+  savedTeamsApi: { fetchBundle: vi.fn(async () => ({ data: { version: '0', competitions: [], teams: [] }, error: null, status: 200 })) },
+  scoresheetsApi: { list: vi.fn(async () => ({ data: { matches: [] }, error: null, status: 200 })), pdf: vi.fn() },
+  previewInvite: vi.fn()
+}))
+vi.mock('../lib/accountApi', async (orig) => ({ ...(await orig()), admin: api.admin, savedTeamsApi: api.savedTeamsApi, scoresheetsApi: api.scoresheetsApi, previewInvite: api.previewInvite }))
+vi.mock('../db/savedTeams', () => ({ storeSavedTeamsBundle: vi.fn(async () => []) }))
+vi.mock('../lib/apiClient', () => ({
+  apiFrom: () => {
+    const b = { select: () => b, in: () => b, limit: () => b, then: (r) => Promise.resolve({ data: [], error: null }).then(r) }
+    return b
+  },
+  apiRequest: vi.fn()
+}))
+
+import ManagerApp, { ACCOUNT_LOAD_TIMEOUT_MS, tabFromHash } from '../ManagerApp'
+import { accessFromRoles, NO_ACCESS } from '../lib/access'
+
+const CONFIRMED_AT = '2026-10-01T08:00:00Z'
+
+function setAuth({ user: given = { id: 'u-1', email: 'admin@club.ch' }, roles = [], known = true, loading = false, profile, meLoaded = true } = {}) {
+  // Confirmed unless the test says otherwise (email_confirmed_at: null)
+  const user = given && !('email_confirmed_at' in given) ? { ...given, email_confirmed_at: CONFIRMED_AT } : given
+  auth.value = {
+    user,
+    profile: profile ?? (user ? { user_id: user.id, first_name: 'Ada', last_name: 'Admin', roles } : null),
+    access: user ? { ...accessFromRoles(roles), known } : NO_ACCESS,
+    loading,
+    // this page load's /api/me answered (the console waits for it)
+    meLoaded: meLoaded && !!user,
+    signIn: vi.fn(async () => ({ error: null })),
+    signUp: vi.fn(async () => ({ data: { user: { id: 'u-new', email_confirmed_at: '2026-10-07T08:00:00Z' } }, error: null })),
+    signOut: vi.fn(async () => ({ error: null })),
+    resetPassword: vi.fn(),
+    fetchProfile: vi.fn(async () => null),
+    redeemInvite: vi.fn(async () => ({ data: { roles: ['competition_manager'] }, error: null })),
+    resendConfirmation: vi.fn(async () => ({ data: { sent: true }, error: null })),
+    refreshUser: vi.fn(async () => null)
+  }
+}
+
+// jsdom runs on localhost: the dev server serves the app on this origin
+const APP_URL = `${window.location.origin}/`
+const railButtons = () => within(screen.getAllByRole('navigation')[0]).getAllByRole('button')
+
+describe('ManagerApp (manager.openvolley.app)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.history.replaceState(null, '', '/')
+  })
+  afterEach(() => vi.useRealTimers())
+
+  it('waits for the session with a labelled spinner', () => {
+    setAuth({ user: null, loading: true })
+    render(<ManagerApp />)
+    expect(screen.getByRole('status')).toBeInTheDocument()
+    expect(screen.queryByTestId('manager-sign-in')).toBeNull()
+  })
+
+  it('signed out: the sign-in card opens the app sign-in dialog; "Create account" opens #signup', () => {
+    setAuth({ user: null })
+    render(<ManagerApp />)
+    const card = screen.getByTestId('manager-sign-in')
+    expect(within(card).getByRole('heading', { name: 'managerSite.signInHeading' })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(within(card).getByRole('button', { name: 'managerSite.signIn' }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByLabelText('Email')).toBeInTheDocument()
+    expect(within(dialog).getByLabelText('Password')).toBeInTheDocument()
+    expect(screen.queryByTestId('manage-console')).toBeNull()
+    // the dialog's "Don't have an account?" stays on this site (no link to the scorer app)
+    expect(within(dialog).queryByTestId('create-account-link')).toBeNull()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create account' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByTestId('manager-sign-up')).toBeInTheDocument()
+    expect(window.location.hash).toBe('#signup')
+  })
+
+  it('links the legal pages under the card and on the sign-up page, with the terms sentence', () => {
+    setAuth({ user: null })
+    render(<ManagerApp />)
+    const hrefs = () => [...screen.getAllByTestId('legal-links')[0].querySelectorAll('a')].map((a) => a.getAttribute('href'))
+    expect(hrefs()).toEqual([
+      'https://openvolley.app/en/privacy', 'https://openvolley.app/en/terms',
+      'https://openvolley.app/en/imprint', 'https://openvolley.app/en/open-source'
+    ])
+    fireEvent.click(screen.getByRole('button', { name: 'managerSite.createAccount' }))
+    // the sentence's links: src/legal/__tests__ (t() here returns the key)
+    const sentence = within(screen.getByTestId('manager-sign-up')).getByTestId('signup-legal')
+    expect(sentence).toHaveTextContent('legal.signUpConsent')
+    // above the submit button
+    expect(sentence.compareDocumentPosition(within(screen.getByTestId('signup-form')).getByRole('button', { name: 'Create account' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // no tick box: a free service, the sentence is enough (the only boxes are
+    // "What do you do?", db/025: what the account asks for, not a consent)
+    const requests = within(screen.getByTestId('signup-form')).getByTestId('signup-requests')
+    expect(within(screen.getByTestId('signup-form')).queryAllByRole('checkbox').filter((box) => !requests.contains(box))).toEqual([])
+  })
+
+  it('signed out: the card\'s own "Create account" button opens the sign-up page, "back" returns', () => {
+    setAuth({ user: null })
+    render(<ManagerApp />)
+    fireEvent.click(screen.getByRole('button', { name: 'managerSite.createAccount' }))
+    expect(window.location.hash).toBe('#signup')
+    const page = screen.getByTestId('manager-sign-up')
+    fireEvent.click(within(page).getByRole('button', { name: 'managerSite.backToSignIn' }))
+    expect(window.location.hash).toBe('')
+    expect(screen.getByTestId('manager-sign-in')).toBeInTheDocument()
+  })
+
+  it('admin: the full console, no "back to the app", a link to the app and sign out', async () => {
+    setAuth({ roles: ['admin'] })
+    render(<ManagerApp />)
+    expect(screen.getByTestId('manage-console')).toBeInTheDocument()
+    expect(railButtons().map(b => b.textContent)).toEqual([
+      'manage.tabs.accounts', 'manage.accounts.filterPending', 'manage.accounts.filterAll', 'manage.tabs.invites', 'manage.tabs.clubs', 'manage.tabs.games',
+      'manage.tabs.matches', 'manage.tabs.scoresheets', 'manage.tabs.audit', 'manage.tabs.activity', 'manage.tabs.teams', 'manage.tabs.settings'
+    ])
+    expect(screen.queryByRole('button', { name: 'manage.backToApp' })).toBeNull()
+    expect(screen.getByRole('link', { name: 'managerSite.openAppLong' })).toHaveAttribute('href', APP_URL)
+    expect(screen.getByTitle('Ada Admin')).toBeInTheDocument()
+    await waitFor(() => expect(api.admin.listAccounts).toHaveBeenCalled())
+
+    fireEvent.click(screen.getByRole('button', { name: 'managerSite.signOut' }))
+    await waitFor(() => expect(auth.value.signOut).toHaveBeenCalled())
+  })
+
+  it('admin: the tab follows the URL hash both ways', async () => {
+    window.history.replaceState(null, '', '/#audit')
+    setAuth({ roles: ['admin'] })
+    render(<ManagerApp />)
+    expect(railButtons().find(b => b.getAttribute('aria-current') === 'page').textContent).toBe('manage.tabs.audit')
+    await waitFor(() => expect(api.admin.listAudit).toHaveBeenCalled())
+    fireEvent.click(railButtons().find(b => b.textContent === 'manage.tabs.invites'))
+    expect(window.location.hash).toBe('#invites')
+    expect(railButtons().find(b => b.getAttribute('aria-current') === 'page').textContent).toBe('manage.tabs.invites')
+  })
+
+  it('the hash is handed to the console as is: a tab added there is restored too', () => {
+    // no copy of the console's tab ids in ManagerApp (they would go stale)
+    window.history.replaceState(null, '', '/#competitions')
+    expect(tabFromHash()).toBe('competitions')
+    window.history.replaceState(null, '', '/#teams')
+    expect(tabFromHash()).toBe('teams')
+    window.history.replaceState(null, '', '/')
+    expect(tabFromHash()).toBeNull()
+  })
+
+  it('admin: an unknown tab in the hash opens the first tab', async () => {
+    window.history.replaceState(null, '', '/#no-such-tab')
+    setAuth({ roles: ['admin'] })
+    render(<ManagerApp />)
+    expect(railButtons().find(b => b.getAttribute('aria-current') === 'page').textContent).toBe('manage.accounts.filterPending')
+    await waitFor(() => expect(api.admin.listAccounts).toHaveBeenCalled())
+  })
+
+  it('competition manager: scoresheets and saved teams, whatever the hash asks', async () => {
+    window.history.replaceState(null, '', '/#accounts')
+    setAuth({ roles: ['competition_manager'] })
+    render(<ManagerApp />)
+    expect(railButtons().map(b => b.textContent)).toEqual(['manage.tabs.scoresheets', 'manage.matches.filterAll', 'manage.matches.filterClosed', 'manage.matches.filterOpen', 'manage.tabs.teams', 'manage.tabs.settings'])
+    await waitFor(() => expect(api.scoresheetsApi.list).toHaveBeenCalledWith(expect.objectContaining({ app: 'indoor' })))
+    expect(api.admin.listAccounts).not.toHaveBeenCalled()
+  })
+
+  it('pending account with a sign-up request (db/025): what it asked for, waiting for a yes', async () => {
+    setAuth({ roles: [] })
+    auth.value.access = { ...auth.value.access, requests: [
+      { id: 'r2', kind: 'referee', club_id: null, club_name: null, team_id: null, team_name: null },
+      { id: 'r1', kind: 'scorer', club_id: 'c1', club_name: 'VBC Musterdorf', team_id: null, team_name: null }
+    ] }
+    render(<ManagerApp />)
+    const note = within(screen.getByTestId('manager-invite-step')).getByTestId('manager-open-requests')
+    expect([...note.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['access.requests.kinds.scorer · VBC Musterdorf', 'access.requests.kinds.referee'])
+    expect(note).toHaveTextContent('access.requests.yourRequestBody')
+    // the invite code still works next to it
+    expect(within(screen.getByTestId('manager-invite-step')).getByLabelText('access.inviteCodeLabel')).toBeInTheDocument()
+  })
+
+  it('pending account: the next step is the club\'s invite code, with the way without one', async () => {
+    setAuth({ roles: [] })
+    render(<ManagerApp />)
+    const page = screen.getByTestId('manager-invite-step')
+    expect(within(page).getByRole('heading', { name: 'managerSite.inviteStepTitle' })).toBeInTheDocument()
+    expect(within(page).getByText('managerSite.inviteStepBody')).toBeInTheDocument()
+    expect(within(page).getByText('managerSite.inviteStepNoCode')).toBeInTheDocument()
+    expect(within(page).getByLabelText('access.inviteCodeLabel')).toBeInTheDocument()
+    // the web app, and a word for the desktop / Android apps
+    expect(within(page).getByRole('link', { name: 'managerSite.openAppLong' })).toHaveAttribute('href', APP_URL)
+    expect(within(page).getByText('managerSite.nativeAppsNote')).toBeInTheDocument()
+    expect(within(page).getByText('managerSite.signedInAs')).toBeInTheDocument()
+    // "account created" belongs to a sign-up made just now only
+    expect(within(page).queryByText('managerSite.accountCreated')).toBeNull()
+    expect(screen.queryByTestId('manager-no-access')).toBeNull()
+    expect(screen.queryByTestId('manage-console')).toBeNull()
+    fireEvent.click(within(page).getByRole('button', { name: 'managerSite.signOut' }))
+    await waitFor(() => expect(auth.value.signOut).toHaveBeenCalled())
+  })
+
+  it('pending account, address not confirmed: "confirm your email" with "Send a new link" above the code', async () => {
+    setAuth({ user: { id: 'u-2', email: 'lea@club.ch', email_confirmed_at: null }, roles: [] })
+    render(<ManagerApp />)
+    const step = screen.getByTestId('manager-invite-step')
+    const banner = within(step).getByTestId('email-confirm-banner')
+    expect(banner).toHaveTextContent('authEmail.notConfirmed')
+    expect(within(step).getByLabelText('access.inviteCodeLabel')).toBeInTheDocument()
+    fireEvent.click(within(banner).getByRole('button', { name: 'authEmail.resend' }))
+    await waitFor(() => expect(auth.value.resendConfirmation).toHaveBeenCalledTimes(1))
+    expect(await within(step).findByText('authEmail.resent')).toBeInTheDocument()
+  })
+
+  it('pending account, confirmed elsewhere: "already confirmed" re-reads the user', async () => {
+    setAuth({ user: { id: 'u-2', email: 'lea@club.ch', email_confirmed_at: null }, roles: [] })
+    auth.value.resendConfirmation = vi.fn(async () => ({ data: { sent: false, already_confirmed: true }, error: null }))
+    render(<ManagerApp />)
+    fireEvent.click(screen.getByRole('button', { name: 'authEmail.resend' }))
+    await waitFor(() => expect(auth.value.refreshUser).toHaveBeenCalledTimes(1))
+  })
+
+  it('pending account, address confirmed: no "confirm your email"', () => {
+    setAuth({ user: { id: 'u-2', email: 'lea@club.ch' }, roles: [] })
+    render(<ManagerApp />)
+    expect(screen.getByTestId('manager-invite-step')).toBeInTheDocument()
+    expect(screen.queryByTestId('email-confirm-banner')).toBeNull()
+  })
+
+  it('pending account: a redeemed invite code sends the code to the server', async () => {
+    setAuth({ roles: [] })
+    render(<ManagerApp />)
+    const page = screen.getByTestId('manager-invite-step')
+    fireEvent.change(within(page).getByLabelText('access.inviteCodeLabel'), { target: { value: 'ABCD-EFGH-JKLM' } })
+    fireEvent.click(within(page).getByRole('button', { name: 'access.redeem' }))
+    await waitFor(() => expect(auth.value.redeemInvite).toHaveBeenCalledWith('ABCD-EFGH-JKLM'))
+  })
+
+  it('approved scorer without a manage role: "you\'re all set", not "no access"', () => {
+    setAuth({ roles: ['scorer', 'referee'] })
+    render(<ManagerApp />)
+    const page = screen.getByTestId('manager-all-set')
+    expect(within(page).getByRole('heading', { name: 'managerSite.allSetTitle' })).toBeInTheDocument()
+    expect(within(page).getByRole('link', { name: 'managerSite.openAppLong' })).toHaveAttribute('href', APP_URL)
+    expect(within(page).getByText('managerSite.nativeAppsNote')).toBeInTheDocument()
+    expect(screen.queryByTestId('manager-no-access')).toBeNull()
+    expect(screen.queryByTestId('manage-console')).toBeNull()
+    // a code for a manage role can still be entered, behind a quiet button
+    expect(within(page).queryByLabelText('access.inviteCodeLabel')).toBeNull()
+    fireEvent.click(within(page).getByRole('button', { name: 'managerSite.haveManagerCode' }))
+    expect(within(page).getByLabelText('access.inviteCodeLabel')).toBeInTheDocument()
+  })
+
+  it('referee-only account: no access, with the "ask an admin" text and the invite code', () => {
+    setAuth({ roles: ['referee'] })
+    render(<ManagerApp />)
+    const page = screen.getByTestId('manager-no-access')
+    expect(within(page).getByText('managerSite.noAccessBody')).toBeInTheDocument()
+    expect(within(page).getByLabelText('access.inviteCodeLabel')).toBeInTheDocument()
+    expect(screen.queryByTestId('manage-console')).toBeNull()
+  })
+
+  it('signed in on #signup: the hash is dropped and the console opens its first tab', async () => {
+    window.history.replaceState(null, '', '/#signup')
+    setAuth({ roles: ['admin'] })
+    render(<ManagerApp />)
+    expect(screen.getByTestId('manage-console')).toBeInTheDocument()
+    await waitFor(() => expect(window.location.hash).toBe(''))
+    expect(railButtons().find(b => b.getAttribute('aria-current') === 'page').textContent).toBe('manage.accounts.filterPending')
+  })
+
+  it('signed in but roles not known yet: loading, then a retry that re-reads the profile', async () => {
+    vi.useFakeTimers()
+    setAuth({ roles: [], known: false, profile: null })
+    render(<ManagerApp />)
+    const page = screen.getByTestId('manager-account-loading')
+    expect(within(page).getByRole('status')).toBeInTheDocument()
+    act(() => { vi.advanceTimersByTime(ACCOUNT_LOAD_TIMEOUT_MS) })
+    expect(within(page).getByRole('alert')).toHaveTextContent('managerSite.accountNotLoaded')
+    vi.useRealTimers()
+    fireEvent.click(within(page).getByRole('button', { name: 'managerSite.retry' }))
+    await waitFor(() => expect(auth.value.fetchProfile).toHaveBeenCalledWith('u-1'))
+  })
+})
+
+describe('ManagerApp #signup (accounts are made here)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.history.replaceState(null, '', '/#signup')
+  })
+  afterEach(() => window.history.replaceState(null, '', '/'))
+
+  const fill = (page, values) => {
+    for (const [label, value] of Object.entries(values)) {
+      fireEvent.change(within(page).getByLabelText(label), { target: { value } })
+    }
+  }
+  const valid = {
+    'First name': 'Lea',
+    'Last name': 'Muster',
+    Email: 'lea@club.ch',
+    Password: 'secret1234',
+    'Confirm password': 'secret1234',
+    // required since 23.11.2026 (owner: "have registered people insert their licence n")
+    'auth.licenceNumber': '123456'
+  }
+
+  it('the page: every field of the sign-up, the licence number required, no date of birth, a way back to sign in', () => {
+    setAuth({ user: null })
+    render(<ManagerApp />)
+    const page = screen.getByTestId('manager-sign-up')
+    expect(within(page).getByRole('heading', { name: 'managerSite.signUpHeading' })).toBeInTheDocument()
+    for (const label of ['First name', 'Last name', 'Country', 'auth.licenceNumber', 'Email', 'Password', 'Confirm password']) {
+      expect(within(page).getByLabelText(label)).toBeInTheDocument()
+    }
+    // db/048 (owner 2026-11-19): no date of birth at sign-up
+    expect(within(page).queryByLabelText(/birth/i)).toBeNull()
+    expect(within(page).getByLabelText('First name')).toBeRequired()
+    expect(within(page).getByLabelText('Last name')).toBeRequired()
+    // a dropdown with Switzerland only, for now
+    const country = within(page).getByLabelText('Country')
+    expect(country.tagName).toBe('SELECT')
+    expect(country).toHaveValue('CHE')
+    expect(within(country).getAllByRole('option').map(o => o.value)).toEqual(['CHE'])
+    // no line under the heading on OpenVolley (OpenBeach keeps its own)
+    expect(within(page).queryByText('managerSite.signUpBody')).toBeNull()
+    // the licence number: required (owner 23.11.2026), empty, digits only, at most 7
+    const licence = within(page).getByLabelText('auth.licenceNumber')
+    expect(licence).toHaveValue('')
+    expect(licence).toBeRequired()
+    expect(licence).toHaveAttribute('inputmode', 'numeric')
+    expect(within(page).getByText('auth.licenceNumberHint')).toBeInTheDocument()
+    fireEvent.change(licence, { target: { value: 'SV 12 34-567 89' } })
+    expect(licence).toHaveValue('1234567')
+    expect(within(page).getByText('access.signUpPendingNote')).toBeInTheDocument()
+    // "Already have an account? Sign in" opens the sign-in dialog here
+    fireEvent.click(within(page).getByRole('button', { name: 'Sign in' }))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('checks the names, the passwords and the licence number before asking the server', async () => {
+    setAuth({ user: null })
+    render(<ManagerApp />)
+    const page = screen.getByTestId('manager-sign-up')
+    const submit = () => fireEvent.click(within(page).getByRole('button', { name: 'Create account' }))
+
+    fill(page, { ...valid, 'Confirm password': 'other12' })
+    submit()
+    expect(await within(page).findByRole('alert')).toHaveTextContent('Passwords do not match')
+
+    fill(page, { ...valid, Password: 'abc', 'Confirm password': 'abc' })
+    submit()
+    expect(await within(page).findByRole('alert')).toHaveTextContent('Password must be at least 10 characters')
+
+    fill(page, { ...valid, 'Last name': '  ' })
+    submit()
+    expect(await within(page).findByRole('alert')).toHaveTextContent('auth.nameRequired')
+
+    fill(page, { ...valid, 'auth.licenceNumber': '123' })
+    submit()
+    expect(await within(page).findByText('auth.licenceNumberInvalid')).toBeInTheDocument()
+    expect(within(page).getByLabelText('auth.licenceNumber')).toHaveAttribute('aria-invalid', 'true')
+
+    // none at all: the browser holds the form (required), nothing is sent
+    fill(page, { ...valid, 'auth.licenceNumber': 'SV' })
+    expect(within(page).getByLabelText('auth.licenceNumber')).toHaveValue('')
+    submit()
+    expect(within(page).getByLabelText('auth.licenceNumber').validity.valueMissing).toBe(true)
+    expect(auth.value.signUp).not.toHaveBeenCalled()
+  })
+
+  it('a new account is signed in and lands on the invite code step, "account created" on top', async () => {
+    setAuth({ user: null })
+    // The backend confirms at sign-up: the form signs in, and the app follows the session
+    auth.value.signIn = vi.fn(async () => {
+      const prev = auth.value
+      setAuth({ user: { id: 'u-new', email: 'lea@club.ch' }, roles: [] })
+      auth.value.signUp = prev.signUp
+      return { error: null }
+    })
+    const { rerender } = render(<ManagerApp />)
+    const page = screen.getByTestId('manager-sign-up')
+    fill(page, { ...valid, 'auth.licenceNumber': '123456' })
+    fireEvent.click(within(page).getByRole('button', { name: 'Create account' }))
+    await waitFor(() => expect(screen.getByTestId('manager-invite-step')).toBeInTheDocument())
+    rerender(<ManagerApp />)
+    const step = screen.getByTestId('manager-invite-step')
+    expect(within(step).getByRole('status')).toHaveTextContent('managerSite.accountCreated')
+    expect(within(step).getByRole('heading', { name: 'managerSite.inviteStepTitle' })).toBeInTheDocument()
+    expect(within(step).getByLabelText('access.inviteCodeLabel')).toBeInTheDocument()
+    expect(window.location.hash).toBe('')
+  })
+
+  it('a confirmation link was mailed: signed in at once, the invite step says where the link went', async () => {
+    setAuth({ user: null })
+    // The server mails a link and lets the unconfirmed account sign in
+    auth.value.signUp = vi.fn(async () => ({
+      data: { user: { id: 'u-new', email_confirmed_at: null }, email_confirmation: 'sent' },
+      error: null
+    }))
+    auth.value.signIn = vi.fn(async () => {
+      const prev = auth.value
+      setAuth({ user: { id: 'u-new', email: 'lea@club.ch', email_confirmed_at: null }, roles: [] })
+      auth.value.signUp = prev.signUp
+      return { error: null }
+    })
+    const signIn = auth.value.signIn
+    const { rerender } = render(<ManagerApp />)
+    const page = screen.getByTestId('manager-sign-up')
+    fill(page, { ...valid, Email: ' lea@club.ch ' })
+    fireEvent.click(within(page).getByRole('button', { name: 'Create account' }))
+    await waitFor(() => expect(screen.getByTestId('manager-invite-step')).toBeInTheDocument())
+    expect(signIn).toHaveBeenCalledWith('lea@club.ch', 'secret1234')
+    rerender(<ManagerApp />)
+    const step = screen.getByTestId('manager-invite-step')
+    expect(within(step).getByText('managerSite.accountCreated')).toBeInTheDocument()
+    expect(within(step).getByTestId('signup-link-sent')).toHaveTextContent('authEmail.signUpLinkSent')
+    expect(within(step).getByTestId('email-confirm-banner')).toBeInTheDocument()
+
+    // Signed out and in again: the note belonged to that sign-up only
+    setAuth({ user: null })
+    rerender(<ManagerApp />)
+    setAuth({ user: { id: 'u-new', email: 'lea@club.ch' }, roles: [] })
+    rerender(<ManagerApp />)
+    expect(screen.queryByTestId('signup-link-sent')).toBeNull()
+  })
+
+  it('no link mailed (the server confirmed at sign-up): no "we sent a link" note', async () => {
+    setAuth({ user: null })
+    auth.value.signIn = vi.fn(async () => {
+      const prev = auth.value
+      setAuth({ user: { id: 'u-new', email: 'lea@club.ch' }, roles: [] })
+      auth.value.signUp = prev.signUp
+      return { error: null }
+    })
+    render(<ManagerApp />)
+    const page = screen.getByTestId('manager-sign-up')
+    fill(page, valid)
+    fireEvent.click(within(page).getByRole('button', { name: 'Create account' }))
+    await waitFor(() => expect(screen.getByTestId('manager-invite-step')).toBeInTheDocument())
+    expect(screen.queryByTestId('signup-link-sent')).toBeNull()
+  })
+
+  it('sign up, then sign out: the sign-in card, and another pending account gets no "account created"', async () => {
+    setAuth({ user: null })
+    auth.value.signIn = vi.fn(async () => {
+      const prev = auth.value
+      setAuth({ user: { id: 'u-new', email: 'lea@club.ch' }, roles: [] })
+      auth.value.signUp = prev.signUp
+      return { error: null }
+    })
+    const { rerender } = render(<ManagerApp />)
+    const page = screen.getByTestId('manager-sign-up')
+    fill(page, valid)
+    fireEvent.click(within(page).getByRole('button', { name: 'Create account' }))
+    await waitFor(() => expect(screen.getByTestId('manager-invite-step')).toBeInTheDocument())
+    expect(screen.getByText('managerSite.accountCreated')).toBeInTheDocument()
+    await waitFor(() => expect(window.location.hash).toBe(''))
+
+    // Sign out (the session goes): the sign-in card, not "Create your account"
+    setAuth({ user: null })
+    rerender(<ManagerApp />)
+    expect(screen.getByTestId('manager-sign-in')).toBeInTheDocument()
+    expect(screen.queryByTestId('manager-sign-up')).toBeNull()
+
+    // Another account, still pending, signs in in the same tab
+    setAuth({ user: { id: 'u-other', email: 'max@club.ch' }, roles: [] })
+    rerender(<ManagerApp />)
+    const step = screen.getByTestId('manager-invite-step')
+    expect(within(step).queryByText('managerSite.accountCreated')).toBeNull()
+  })
+
+  it('signed in from the #signup page\'s own dialog, then out: the sign-in card', async () => {
+    setAuth({ user: null })
+    const { rerender } = render(<ManagerApp />)
+    expect(screen.getByTestId('manager-sign-up')).toBeInTheDocument()
+    setAuth({ user: { id: 'u-1', email: 'lea@club.ch' }, roles: [] })
+    rerender(<ManagerApp />)
+    expect(screen.getByTestId('manager-invite-step')).toBeInTheDocument()
+    await waitFor(() => expect(window.location.hash).toBe(''))
+    setAuth({ user: null })
+    rerender(<ManagerApp />)
+    expect(screen.getByTestId('manager-sign-in')).toBeInTheDocument()
+    expect(screen.queryByTestId('manager-sign-up')).toBeNull()
+  })
+
+  it('sends the trimmed fields and the licence number, never a date of birth', async () => {
+    setAuth({ user: null })
+    render(<ManagerApp />)
+    const page = screen.getByTestId('manager-sign-up')
+    fill(page, { ...valid, Email: ' lea@club.ch ', 'First name': ' Lea ' })
+    fireEvent.click(within(page).getByRole('button', { name: 'Create account' }))
+    await waitFor(() => expect(auth.value.signUp).toHaveBeenCalledWith('lea@club.ch', 'secret1234', {
+      firstName: 'Lea', lastName: 'Muster', country: 'CHE', licenceNumber: '123456'
+    }, { requests: [] }))
+  })
+
+  it('an account that must be confirmed by email: "check your email" and a sign-in button', async () => {
+    setAuth({ user: null })
+    auth.value.signUp = vi.fn(async () => ({ data: { user: { id: 'u-new', email_confirmed_at: null } }, error: null }))
+    render(<ManagerApp />)
+    const page = screen.getByTestId('manager-sign-up')
+    fill(page, { ...valid, 'auth.licenceNumber': '0123456' })
+    fireEvent.click(within(page).getByRole('button', { name: 'Create account' }))
+    const done = await within(page).findByTestId('signup-done')
+    expect(done).toHaveTextContent('Check your email to confirm your account')
+    expect(auth.value.signUp.mock.calls[0][2]).toEqual({ firstName: 'Lea', lastName: 'Muster', country: 'CHE', licenceNumber: '0123456' })
+    expect(auth.value.signIn).not.toHaveBeenCalled()
+    fireEvent.click(within(done).getByRole('button', { name: 'Sign in' }))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('a server error shows in the form', async () => {
+    setAuth({ user: null })
+    auth.value.signUp = vi.fn(async () => ({ data: null, error: { message: 'This email is already registered' } }))
+    render(<ManagerApp />)
+    const page = screen.getByTestId('manager-sign-up')
+    fill(page, valid)
+    fireEvent.click(within(page).getByRole('button', { name: 'Create account' }))
+    expect(await within(page).findByRole('alert')).toHaveTextContent('This email is already registered')
+  })
+})
+
+// fe-auth-client-7, delta-fe-manage-3: a team or club manager link kept on
+// the device is redeemed only after the signed-in account said yes
+describe('ManagerApp: a kept team link asks first', () => {
+  const LINK = 'ov:pendingTeamLink'
+  const CODE = 'ABCD-EFGH-JKMN'
+  const keepLink = (kind = 'team') => localStorage.setItem(LINK, JSON.stringify({ code: CODE, at: Date.now(), ...(kind === 'club' ? { kind } : {}) }))
+  const teamPreview = { data: { role_granted: 'team_manager', already_had: false, preview: true, team: { id: 't-1', name: 'VBC Example H1', club_name: 'VBC Example' } }, error: null, status: 200 }
+  beforeEach(() => {
+    vi.clearAllMocks()
+    localStorage.clear()
+    window.history.replaceState(null, '', '/')
+    api.previewInvite.mockResolvedValue(teamPreview)
+  })
+
+  it('names the team and the account, and redeems only on Yes', async () => {
+    keepLink()
+    setAuth({ user: { id: 'u-7', email: 'coach@example.test' }, roles: [] })
+    render(<ManagerApp />)
+    const q = await screen.findByTestId('team-link-question')
+    expect(api.previewInvite).toHaveBeenCalledWith(CODE)
+    expect(auth.value.redeemInvite).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog')).toHaveTextContent('managerSite.linkAskTeam')
+    expect(q).toHaveTextContent('managerSite.linkAskTeamBody')
+    auth.value.redeemInvite.mockResolvedValue({ data: { role_granted: 'team_manager', team: { name: 'VBC Example H1' } }, error: null })
+    fireEvent.click(within(q).getByTestId('team-link-yes'))
+    await waitFor(() => expect(auth.value.redeemInvite).toHaveBeenCalledWith(CODE))
+    await waitFor(() => expect(screen.queryByTestId('team-link-question')).toBeNull())
+    expect(localStorage.getItem(LINK)).toBeNull()
+  })
+
+  it('Forget this link: nothing redeemed, nothing kept', async () => {
+    keepLink()
+    setAuth({ roles: ['admin'] })
+    render(<ManagerApp />)
+    fireEvent.click(await screen.findByTestId('team-link-forget-question'))
+    await waitFor(() => expect(screen.queryByTestId('team-link-question')).toBeNull())
+    expect(localStorage.getItem(LINK)).toBeNull()
+    expect(auth.value.redeemInvite).not.toHaveBeenCalled()
+  })
+
+  it('Use another account: signs out, nothing redeemed, the link kept for the next sign-in', async () => {
+    keepLink('club')
+    api.previewInvite.mockResolvedValue({ data: { role_granted: 'club_manager', already_had: false, preview: true, club: { id: 'c-1', name: 'VBC Example' } }, error: null, status: 200 })
+    setAuth({ roles: ['scorer'] })
+    // signing out clears the device (AuthContext clearLocalAccountData)
+    auth.value.signOut = vi.fn(async () => { localStorage.removeItem(LINK); return { error: null } })
+    render(<ManagerApp />)
+    expect(await screen.findByRole('dialog')).toHaveTextContent('managerSite.linkAskClub')
+    fireEvent.click(screen.getByTestId('team-link-other-account'))
+    await waitFor(() => expect(auth.value.signOut).toHaveBeenCalled())
+    await waitFor(() => expect(JSON.parse(localStorage.getItem(LINK) || 'null')).toMatchObject({ code: CODE, kind: 'club' }))
+    expect(auth.value.redeemInvite).not.toHaveBeenCalled()
+  })
+
+  it('a link opened in a signed-in tab (hashchange) asks too', async () => {
+    setAuth({ roles: ['admin'] })
+    render(<ManagerApp />)
+    expect(screen.getByTestId('manage-console')).toBeInTheDocument()
+    expect(api.previewInvite).not.toHaveBeenCalled()
+    await act(async () => {
+      window.history.replaceState(null, '', `/#team=${CODE}`)
+      window.dispatchEvent(new HashChangeEvent('hashchange'))
+    })
+    expect(await screen.findByTestId('team-link-question')).toBeInTheDocument()
+    expect(auth.value.redeemInvite).not.toHaveBeenCalled()
+  })
+
+  it('a club manager link mailed to another address: no Yes, only another account or forget', async () => {
+    keepLink('club')
+    api.previewInvite.mockResolvedValue({ data: null, error: { code: 'OV_INVITE_OTHER_ACCOUNT', status: 403, message: 'x' }, status: 403 })
+    setAuth({ roles: [] })
+    render(<ManagerApp />)
+    const q = await screen.findByTestId('team-link-question')
+    expect(within(q).queryByTestId('team-link-yes')).toBeNull()
+    expect(within(q).getByTestId('team-link-question-error')).toHaveTextContent('access.errors.inviteOtherAccount')
+    expect(within(q).getByTestId('team-link-other-account')).toBeInTheDocument()
+  })
+
+  it('a link that can no longer work is forgotten without a question', async () => {
+    keepLink()
+    api.previewInvite.mockResolvedValue({ data: null, error: { code: 'OV_INVITE_REMOVED', status: 409, message: 'x' }, status: 409 })
+    setAuth({ roles: [] })
+    render(<ManagerApp />)
+    await waitFor(() => expect(localStorage.getItem(LINK)).toBeNull())
+    expect(screen.queryByTestId('team-link-question')).toBeNull()
+    expect(auth.value.redeemInvite).not.toHaveBeenCalled()
+  })
+
+  it('an older server without the preview: asked all the same, without the team\'s name', async () => {
+    keepLink()
+    api.previewInvite.mockResolvedValue({ data: null, error: { status: 404, message: 'Not found' }, status: 404 })
+    setAuth({ roles: [] })
+    render(<ManagerApp />)
+    expect(await screen.findByRole('dialog')).toHaveTextContent('managerSite.linkAskTeamUnnamed')
+    expect(auth.value.redeemInvite).not.toHaveBeenCalled()
+  })
+
+  it('signed out: the sign-in card\'s note forgets the link', () => {
+    keepLink()
+    setAuth({ user: null })
+    render(<ManagerApp />)
+    fireEvent.click(within(screen.getByTestId('team-link-note')).getByTestId('team-link-forget'))
+    expect(localStorage.getItem(LINK)).toBeNull()
+    expect(screen.queryByTestId('team-link-note')).toBeNull()
+  })
+})
+
+describe('managerSite strings', () => {
+  const locales = { en, de, 'de-CH': deCH, fr, it: it_ }
+  it.each(Object.keys(locales))('%s has every managerSite key', (lng) => {
+    expect(Object.keys(locales[lng].managerSite).sort()).toEqual(Object.keys(en.managerSite).sort())
+    for (const [k, v] of Object.entries(locales[lng].managerSite)) expect(v, `${lng} ${k}`).toBeTruthy()
+    expect(locales[lng].managerSite.openManager).toContain('{{host}}')
+    expect(locales[lng].managerSite.signedInAs).toContain('{{name}}')
+  })
+  it('Swiss German writes ss', () => {
+    expect(JSON.stringify(deCH.managerSite)).not.toContain('ß')
+  })
+})

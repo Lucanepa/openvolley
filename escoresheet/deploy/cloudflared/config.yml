@@ -1,0 +1,36 @@
+# cloudflared ingress for the "openvolley" tunnel.
+#
+# The tunnel is locally managed (created with `cloudflared tunnel create
+# openvolley`), so ingress rules come from this file. Credentials come from
+# TUNNEL_TOKEN in /opt/openvolley/.env; no credentials file is mounted.
+#
+# Validate without connecting:
+#   docker run --rm -v "$PWD/cloudflared:/etc/cloudflared:ro" \
+#     cloudflare/cloudflared:2026.10.3 tunnel --config /etc/cloudflared/config.yml ingress validate
+#
+# The backend hostnames reach ov-backend on the compose network "ov-edge",
+# get.openvolley.app reaches ov-pkgs on "ov-pkgs-edge" and support. reaches the
+# helpdesk on "ov-helpdesk": one network per origin, only the tunnel on all of
+# them. No host port is involved.
+no-autoupdate: true
+originRequest:
+  connectTimeout: 10s
+  tcpKeepAlive: 30s
+  keepAliveTimeout: 90s
+  # The origin is plain HTTP inside the compose network; TLS ends at Cloudflare.
+  noHappyEyeballs: true
+ingress:
+  - hostname: backend.openvolley.app
+    service: http://ov-backend:8080
+  # Pre-go-live check hostname (RUNBOOK-hetzner.md step 9). Harmless when no
+  # DNS record points at it; delete its CNAME after go-live.
+  - hostname: ov-preflight.openvolley.app
+    service: http://ov-backend:8080
+  # Public download host (APT + F-Droid repos, install page): ov-pkgs, static.
+  - hostname: get.openvolley.app
+    service: http://ov-pkgs:80
+  # FreeScout helpdesk (its own stack on the production host, joins the network
+  # openvolley_ov-helpdesk as `freescout`, never ov-edge; not part of this kit). A 502 while that stack is down.
+  - hostname: support.openvolley.app
+    service: http://freescout:80
+  - service: http_status:404

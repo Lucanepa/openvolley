@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Venue mode: with no internet the tablets talk to a LOCAL relay (standalone
+  server, desktop app, Pi) at http://<LAN-IP>:5173 / ws://<LAN-IP>:8080 over
+  plain HTTP (owner decision). LAN IPs cannot be listed in a domain-config, so
+  cleartext is allowed app-wide, except for openvolley.app and its subdomains:
+  the cloud is https only, whatever an address field says. Which hosts the app
+  may talk to at all is enforced in src/utils/backendConfig.js
+  (isAllowedBackendUrl: localhost, RFC 1918 ranges, 100.64/10 (Tailscale) and
+  *.local over http or https, *.openvolley.app over https only).
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">openvolley.app</domain>
+    </domain-config>
+</network-security-config>

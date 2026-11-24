@@ -1,0 +1,10 @@
+[Unit]
+Description=OpenVolley hourly database backup at :05
+
+[Timer]
+OnCalendar=*-*-* *:05:00
+RandomizedDelaySec=60
+Persistent=true
+
+[Install]
+WantedBy=timers.target

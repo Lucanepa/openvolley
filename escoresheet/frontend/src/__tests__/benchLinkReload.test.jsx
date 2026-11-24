@@ -1,0 +1,184 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react'
+
+// A bench tablet joins through the match's link (QR code: /bench/?match=…&team=…)
+// and enters its PIN. The link stays in the address, and every reload (tab
+// discarded, pull to refresh, app update) comes back with it: the bench must
+// restore its stored session there, as the referee does, not ask for the PIN
+// again.
+
+const SEED = 'match_1791215210058_yxkc82'
+const PIN = '372449'
+
+const sync = vi.hoisted(() => ({
+  getMatchData: vi.fn(),
+  validatePin: vi.fn(),
+  validatePinSupabase: vi.fn(),
+  listAvailableMatches: vi.fn(),
+  listAvailableMatchesForBenchSupabase: vi.fn(),
+  getRelayServerStatus: vi.fn(),
+  getWebSocketStatus: vi.fn(),
+  setRelayDevice: vi.fn()
+}))
+
+vi.mock('../utils/serverDataSync', async (importOriginal) => {
+  const actual = await importOriginal()
+  return { ...actual, ...sync }
+})
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key, fallback) => (typeof fallback === 'string' ? fallback : key), i18n: { language: 'en' } })
+}))
+vi.mock('../components/MatchEntry', () => ({ default: () => <div>bench match view</div> }))
+vi.mock('../components/UpdateBanner', () => ({ default: () => null }))
+vi.mock('../components/DashboardHeader', () => ({ default: () => null }))
+vi.mock('../components/ServerConnectionScreen', () => ({ default: () => <div>server screen</div> }))
+vi.mock('../utils/backendConfig', async (importOriginal) => ({ ...(await importOriginal()), isServedFromLocalServer: () => true }))
+// The bench's connection check (every 15 s): never a real backend from a test
+vi.mock('../lib/apiClient', async (importOriginal) => ({
+  ...(await importOriginal()),
+  apiFrom: () => ({ select: () => ({ limit: async () => ({ data: [], error: null }) }) })
+}))
+
+import BenchApp from '../BenchApp'
+
+const storeSession = (over = {}) => localStorage.setItem('bench_session', JSON.stringify({
+  matchId: SEED, team: 'home', pin: PIN, gameNumber: 12, homeTeamName: 'Home VC', awayTeamName: 'Away VC', ...over
+}))
+
+describe('bench opened through its match link', () => {
+  beforeEach(() => {
+    cleanup()
+    localStorage.clear()
+    for (const fn of Object.values(sync)) fn.mockReset()
+    sync.listAvailableMatchesForBenchSupabase.mockResolvedValue({ success: true, matches: [] })
+    sync.listAvailableMatches.mockResolvedValue({ success: true, matches: [] })
+    sync.getRelayServerStatus.mockResolvedValue({ running: true })
+    sync.getWebSocketStatus.mockReturnValue('disconnected')
+    sync.getMatchData.mockResolvedValue({ success: false })
+    sync.validatePinSupabase.mockResolvedValue({ success: true, match: { id: SEED, gameNumber: 12, homeTeamConnectionEnabled: true, status: 'live' } })
+    window.history.replaceState({}, '', `/bench/?match=${SEED}&team=home`)
+  })
+  afterEach(() => {
+    cleanup()
+    window.history.replaceState({}, '', '/')
+  })
+
+  it('a reload restores the session it joined with: no PIN step', async () => {
+    storeSession()
+    render(<BenchApp />)
+    await screen.findByText('bench match view')
+    expect(sync.validatePinSupabase).toHaveBeenCalledWith(PIN, 'bench_home', { matchExternalId: SEED })
+    // the link's PIN step (it loads the linked match's details) never ran
+    expect(sync.getMatchData).not.toHaveBeenCalled()
+  })
+
+  // fe-connect-devices-1: a link naming another server than the page's waits
+  // for the connection screen's question; the stored session is checked
+  // against no server before it is answered
+  it('a link naming another server asks first: no PIN check, the session stays', async () => {
+    storeSession()
+    window.history.replaceState({}, '', `/bench/?match=${SEED}&team=home&server=${encodeURIComponent('http://192.168.1.66:8080')}`)
+    render(<BenchApp />)
+    await screen.findByText('server screen')
+    await new Promise(r => setTimeout(r, 50))
+    expect(sync.validatePinSupabase).not.toHaveBeenCalled()
+    expect(sync.validatePin).not.toHaveBeenCalled()
+    expect(sync.getMatchData).not.toHaveBeenCalled()
+    expect(JSON.parse(localStorage.getItem('bench_session'))).toMatchObject({ matchId: SEED, team: 'home', pin: PIN })
+    expect(localStorage.getItem('openvolley_backend_override')).toBeNull()
+  })
+
+  it('a session of another match or team leaves the link\'s PIN step', async () => {
+    storeSession({ matchId: 'match_other' })
+    render(<BenchApp />)
+    await waitFor(() => expect(sync.getMatchData).toHaveBeenCalledWith(SEED))
+    expect(sync.validatePinSupabase).not.toHaveBeenCalled()
+    cleanup()
+    sync.getMatchData.mockClear()
+    storeSession({ team: 'away' })
+    render(<BenchApp />)
+    await waitFor(() => expect(sync.getMatchData).toHaveBeenCalledWith(SEED))
+    expect(sync.validatePinSupabase).not.toHaveBeenCalled()
+  })
+
+  it('a stored PIN that no longer opens the match falls back to the link\'s PIN step', async () => {
+    storeSession()
+    sync.validatePinSupabase.mockResolvedValue({ success: false, error: 'Invalid PIN code' })
+    sync.validatePin.mockRejectedValue(Object.assign(new Error('No match found with this PIN.'), { status: 404 }))
+    render(<BenchApp />)
+    await waitFor(() => expect(sync.getMatchData).toHaveBeenCalledWith(SEED))
+    expect(localStorage.getItem('bench_session')).toBeNull()
+    expect(screen.queryByText('bench match view')).toBeNull()
+  })
+
+  // review of #37: the PIN checks turn a network failure into a failed check,
+  // so a bench reloading while the server was down deleted its session and
+  // asked for the PIN, also once the server was back
+  it('a reload while the server is unreachable keeps the session and joins once it is back', async () => {
+    storeSession()
+    sync.validatePinSupabase.mockResolvedValue({ success: false, error: 'Failed to fetch', unreachable: true })
+    sync.validatePin.mockRejectedValue(new TypeError('Failed to fetch'))
+    render(<BenchApp />)
+    await waitFor(() => expect(sync.validatePin).toHaveBeenCalled())
+    await new Promise(r => setTimeout(r, 100))
+    expect(JSON.parse(localStorage.getItem('bench_session'))).toMatchObject({ matchId: SEED, team: 'home', pin: PIN })
+    expect(screen.queryByText('bench match view')).toBeNull()
+    // not the link's PIN step
+    expect(sync.getMatchData).not.toHaveBeenCalled()
+
+    // the server is back: the bench joins without anyone touching it
+    sync.validatePinSupabase.mockResolvedValue({ success: true, match: { id: SEED, gameNumber: 12, homeTeamConnectionEnabled: true, status: 'live' } })
+    await screen.findByText('bench match view', {}, { timeout: 10000 })
+    expect(JSON.parse(localStorage.getItem('bench_session'))).toMatchObject({ matchId: SEED, team: 'home', pin: PIN })
+  }, 20000)
+
+  // 2026-10-27 re-verification: a test match is only on the relay, and a
+  // backend that has just restarted knows it once its scorer publishes it
+  // again. The bench's retry after the outage landed in that gap: the relay's
+  // 404 (with the cloud's, which never knows a test match) read as a wrong
+  // PIN, and the session was deleted, 2 runs in 3
+  it('after an outage, a match the relay does not know yet keeps the session until its scorer is back', async () => {
+    storeSession()
+    sync.validatePinSupabase.mockResolvedValue({ success: false, error: 'Failed to fetch', unreachable: true })
+    sync.validatePin.mockRejectedValue(new TypeError('Failed to fetch'))
+    render(<BenchApp />)
+    await waitFor(() => expect(sync.validatePin).toHaveBeenCalledTimes(1))
+    // the backend is back, the scorer not yet
+    sync.validatePinSupabase.mockResolvedValue({ success: false, error: 'Invalid PIN code', status: 404 })
+    sync.validatePin.mockRejectedValue(Object.assign(new Error('No match found with this PIN.'), { status: 404 }))
+    await waitFor(() => expect(sync.validatePin).toHaveBeenCalledTimes(2), { timeout: 8000 })
+    await new Promise(r => setTimeout(r, 100))
+    expect(JSON.parse(localStorage.getItem('bench_session'))).toMatchObject({ matchId: SEED, team: 'home', pin: PIN })
+    expect(sync.getMatchData).not.toHaveBeenCalled()
+    expect(screen.getByText('The server is back. The bench rejoins its match as soon as the scoresheet has reconnected.')).toBeTruthy()
+
+    // the scorer published it again: the bench joins
+    sync.validatePin.mockResolvedValue({ success: true, match: { id: SEED, gameNumber: 12, homeTeamConnectionEnabled: true, status: 'live' } })
+    await screen.findByText('bench match view', {}, { timeout: 8000 })
+    expect(JSON.parse(localStorage.getItem('bench_session'))).toMatchObject({ matchId: SEED, team: 'home', pin: PIN })
+  }, 25000)
+
+  // Full-match test 2026-11-21 follow-up: a typed PIN no server could check
+  // read "Invalid PIN" (and was cleared), and a failed check showed the raw
+  // error ("Failed to fetch")
+  it('a typed PIN no server could check says so and stays typed; a wrong one is "Invalid PIN"', async () => {
+    sync.getMatchData.mockResolvedValue({ success: true, match: { gameNumber: 12 }, homeTeam: { name: 'Home VC' }, awayTeam: { name: 'Away VC' } })
+    sync.validatePinSupabase.mockResolvedValue({ success: false, error: 'Failed to fetch', unreachable: true })
+    sync.validatePin.mockRejectedValue(new TypeError('Failed to fetch'))
+    render(<BenchApp />)
+    const input = await screen.findByPlaceholderText('000000')
+    fireEvent.change(input, { target: { value: PIN } })
+    fireEvent.click(screen.getByText('benchDashboard.connect'))
+    await screen.findByText('No connection to the server – check the Wi-Fi and try again.')
+    expect(screen.queryByText(/Failed to fetch/)).toBeNull()
+    expect(screen.queryByText('Invalid PIN. Please try again.')).toBeNull()
+    expect(input.value).toBe(PIN)
+
+    sync.validatePinSupabase.mockResolvedValue({ success: false, error: 'Invalid PIN code', status: 404 })
+    sync.validatePin.mockRejectedValue(Object.assign(new Error('No match found with this PIN.'), { status: 404 }))
+    fireEvent.click(screen.getByText('benchDashboard.connect'))
+    await screen.findByText('Invalid PIN. Please try again.')
+    expect(screen.queryByText(/No match found/)).toBeNull()
+    expect(input.value).toBe('')
+  })
+})

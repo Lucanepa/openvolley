@@ -1,0 +1,39 @@
+# Node
+node_modules
+.vite
+.dist
+frontend/dist
+
+# Env
+frontend/.env
+.env
+.env.*
+# Templates hold placeholders only (the gitleaks pre-commit hook checks that).
+!.env.example
+
+# LedBox bridge moved to its own repo (point-hub). Only the pointer README is
+# tracked here; local leftovers (Tech4Sport vendor firmware, runtime match
+# data, agent skill dirs) must never land in this public repo.
+ledbox-bridge/*
+!ledbox-bridge/README.md
+
+# Mac/Windows
+.DS_Store
+Thumbs.db
+
+# Supabase SQL files (database schema - run manually)
+supabase/sql/*.sql
+
+# Build outputs
+*.exe
+*.dmg
+*.AppImage
+release/
+
+# IDE
+.idea
+*.swp
+*.swo
+
+# Logs
+*.log

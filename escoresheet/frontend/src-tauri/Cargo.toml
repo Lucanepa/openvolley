@@ -1,0 +1,144 @@
+[package]
+name = "openvolley-escoresheet"
+version = "26.11.6"
+description = "Open Source Volleyball eScoresheet"
+authors = ["Luca Canepa"]
+edition = "2021"
+rust-version = "1.90"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+# build.rs reads the Tauri config to tell OpenVolley from OpenBeach
+# (src/flavour.rs). In the tree through tauri-build, no new crate.
+serde_json = "1"
+
+[dependencies]
+# tray-icon: the app keeps running in the tray when its window is closed
+# (lifecycle.rs). On Linux the tray loads libayatana-appindicator3 at run
+# time (deb depends in tauri.linux.conf.json).
+tauri = { version = "2", features = ["tray-icon"] }
+# native "open file" picker for restoring a backup (backup.rs)
+tauri-plugin-dialog = "2"
+# A second launch shows the running app instead of failing on the busy
+# relay ports ("Cannot bind HTTP port").
+tauri-plugin-single-instance = "2"
+# Automatic updates (updater.rs): latest.json from get.openvolley.app, the
+# download verified against the minisign key in tauri.conf.json (2.13: tauri
+# 2.12 and Rust 1.90, as the rest of tauri 2.12).
+# Its JS commands are not granted to any window (capabilities/update.json).
+tauri-plugin-updater = "~2.14"
+# The desktop log (main.rs): <data dir>/OpenVolley/logs/desktop.log, rotated.
+# None of its JS commands is granted to a window.
+tauri-plugin-log = "~2.10"
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "signal"] }
+axum = { version = "0.8", features = ["ws"] }
+# The relay's embedded frontend comes from $OV_DIST (build.rs: OpenVolley's
+# ../dist, or the openbeach build for OpenBeach).
+rust-embed = { version = "8", features = ["interpolate-folder-path"] }
+mime_guess = "2"
+local-ip-address = "0.6"
+futures-util = "0.3"
+# OS randomness (getrandom's SysRng) for the tablet Wi-Fi password
+# (netshare/creds.rs) and the Sign on phone / Pair a phone secrets (sign.rs,
+# pair.rs); the thread RNG (seeded from it) for the room-claim salt
+# (relay.rs). 0.10 is the line tungstenite 0.30 is on; until axum moves to it,
+# 0.9 stays in the tree through axum's tungstenite 0.29.
+rand = "0.10"
+# Sign on phone (sign.rs): SHA-256 of the session secrets (0.11 is in the
+# tree through rust-embed) and NFC for the context the phone page shows, the same
+# as String.prototype.normalize('NFC') in electron/signSessionCore.cjs.
+sha2 = "0.11"
+# The file name in an update signature's trusted comment (updater.rs
+# signed_file_name). 0.22 is in the tree through tauri-plugin-updater.
+base64 = "0.23"
+unicode-normalization = "0.1"
+
+# statvfs (free space and the read-only flag of a USB stick), fsync and
+# posix_fadvise / F_FULLFSYNC for its confirmed copies (stick.rs). In the tree
+# through tauri, no new crate.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# GtkSettings: keep the window light on a dark GTK theme (main.rs). Already
+# in the tree through tauri (wry/tao), so this adds no new crate.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+# connect WebKit's window.close() of a popup to its app window (popups.rs);
+# in the tree through wry, no new crate.
+webkit2gtk = "2.0"
+# NetworkManager over D-Bus: the tablet Wi-Fi (hotspot) and the Bluetooth
+# network (hotspot/linux.rs). On the tokio runtime the app already runs.
+zbus = { version = "5", default-features = false, features = ["tokio"] }
+# probe for libayatana-appindicator3 / libappindicator3 before building the
+# tray: tray-icon panics when neither loads (lifecycle.rs). 0.9 is the line
+# libappindicator-sys 0.10 is on; until tray-icon moves to it, 0.7 stays in
+# the tree through tray-icon's libappindicator-sys 0.9.
+libloading = "0.9"
+
+# Mobile Hotspot (WinRT tethering) and the Wi-Fi Direct legacy access point
+# (hotspot/windows.rs). Same version as tauri's (wry/webview2-com), so only
+# features are added.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+  "Foundation",
+  "Foundation_Collections",
+  "Foundation_Metadata",
+  "Networking_Connectivity",
+  "Networking_NetworkOperators",
+  "Devices_WiFiDirect",
+  "Security_Credentials",
+  "Win32_System_Com",
+  # the installer's firewall rule for the tablets (firewall.rs, read only;
+  # Ole + Variant: walking the rule list for Block rules)
+  "Win32_NetworkManagement_WindowsFirewall",
+  "Win32_System_Ole",
+  "Win32_System_Variant",
+  # USB sticks (stick.rs): drive letters, volume names, free space, the
+  # write-through rename (Storage_FileSystem; CreateFileW needs Security),
+  # the bus type of a fixed drive (Ioctl, IO) and no "no disk" box while
+  # probing (Diagnostics_Debug)
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Storage_FileSystem",
+  "Win32_System_IO",
+  "Win32_System_Ioctl",
+  "Win32_System_Diagnostics_Debug",
+] }
+
+# WKWebView's preferences: window.open() from scripts (popups.rs). Already
+# in the tree through wry (same version), so only features are added.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-web-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "objc2-app-kit",
+  "WKWebView",
+  "WKWebViewConfiguration",
+  "WKPreferences",
+] }
+# `diskutil info -plist` of a mounted volume: is it a stick? (stick.rs)
+# In the tree through tauri-utils, no new crate.
+plist = "1"
+
+[dev-dependencies]
+# the diskutil samples of stick.rs's tests run on every OS
+plist = "1"
+# mock runtime for the IPC/ACL test of the backup commands (main.rs)
+tauri = { version = "2", features = ["test"] }
+# Router tests of /api/sign/* (relay.rs): Router::oneshot and body reading,
+# both already in the tree through axum
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+# tokio::time::pause for the long-poll tests (sign.rs, relay.rs)
+tokio = { version = "1", features = ["test-util"] }
+
+
+# Release profile tuned for a small, fast single binary.
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

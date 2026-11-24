@@ -1,0 +1,5 @@
+OpenVolley 26.11.1
+- New version numbers: year.month.release (26.11.1 = 2026, November). Updates arrive as before.
+- A new language shows at once when you pick it, without restarting the app.
+- Security and stability updates: Capacitor 8.6 (the Android app shell), React 19.3, the translation library (i18next 27), the offline database (Dexie 4.4) and the Android build tools (Gradle 8.14, Android Gradle Plugin 8.13).
+- Nothing changes in scoring, the sheet or your data.

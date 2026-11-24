@@ -1,0 +1,6 @@
+OpenVolley 3.3.0
+- Home: the game PIN sits in the match's card, under Delete match.
+- Scoresheet: the LIBERO box lists the registered liberos only; a re-designated libero is in the remarks.
+- LFP marks on the scoresheet only when LFP tracking is on.
+- Deciding set: no inverted T over the points before the change of courts.
+- Manager: out-of-date scoresheets and an admin Rebuild PDF.

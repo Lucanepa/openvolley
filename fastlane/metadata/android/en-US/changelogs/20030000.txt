@@ -1,0 +1,6 @@
+OpenVolley 2.3.0
+- New logo and app icon.
+- Accounts are created on manager.openvolley.app; password reset by email.
+- Referee view: player circles and badges fit every tablet.
+- Dialogs no longer close when selecting text; date of birth typed as DD.MM.YYYY.
+- Many missing German, Swiss German and French texts added.

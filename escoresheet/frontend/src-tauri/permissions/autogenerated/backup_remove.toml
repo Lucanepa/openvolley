@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-backup-remove"
+description = "Enables the backup_remove command without any pre-configured scope."
+commands.allow = ["backup_remove"]
+
+[[permission]]
+identifier = "deny-backup-remove"
+description = "Denies the backup_remove command without any pre-configured scope."
+commands.deny = ["backup_remove"]

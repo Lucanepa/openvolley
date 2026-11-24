@@ -1,0 +1,3 @@
+OpenVolley 2.4.13
+- Theme: Options → Display mode → Theme chooses Light, Dark or E-ink. E-ink is black and white at full contrast, for reading the screen in bright sunlight. The bench, livescore and referee views have it in their menu.
+- Dark keeps team and shirt colours, flags and photos as they are.

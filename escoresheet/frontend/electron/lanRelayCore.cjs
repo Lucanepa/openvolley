@@ -1,0 +1,3424 @@
+'use strict'
+/**
+ * lanRelayCore — the ONE implementation of the LAN relay wire protocol and the
+ * relay-owned /api/match/* endpoints, shared by every Node relay runtime:
+ *   - ../server.js                 standalone / Pi LAN server (`npm start`)
+ *   - ../vite-plugin-api-routes.js Vite dev-server replica
+ * src-tauri/src/relay.rs is a Rust port of the same protocol, and the cloud /
+ * SEA backend (backend/server.js) speaks the same client-facing messages.
+ * Change the protocol here and mirror it there.
+ *
+ * It is dependency-free CommonJS in electron/ (the folder of the old Electron
+ * shell, removed in 2026-11; the tests, the Tauri vectors and the backend copy
+ * of the sign core point here). The ESM relays import it through
+ * ../lanRelayCore.js. Do not require() anything here: the Vite config bundler
+ * turns this file into ESM, where a bare require() throws.
+ *
+ * Client -> relay
+ *   sync-match-data   { matchId, match, homeTeam, awayTeam, homePlayers, awayPlayers,
+ *                       sets, events, _timestamp }  (or { matchId, matchData: {...} })
+ *                     Proves the scoreboard role for matchId: accepted when the match is
+ *                     new to the relay or its gamePin equals the stored match's gamePin.
+ *                     Otherwise { type:'error', code:'not-match-owner' }. Dexie ids restart
+ *                     at 1 on every device, so an id nobody has owned for a while may be
+ *                     reused by another scorer: after ORPHAN_TAKEOVER_MS when the stored
+ *                     match is finished, after STALE_TAKEOVER_MS otherwise. A room keyed by
+ *                     its seed_key with a game PIN is never taken over without that PIN,
+ *                     also not after a restart (claimStore). Wrong-PIN claims are limited
+ *                     per IP, per socket and per match ('rate-limited', no PIN oracle); only
+ *                     a claim carrying a PIN counts. A LAN IP may hold only a few match
+ *                     ids at once ('too-many-matches').
+ *                     Room key: the match's seed_key (match.seed_key) when it carries one,
+ *                     else String(matchId). Every device's first match is Dexie id 1, so
+ *                     the seed_key keeps scorers apart and is the id the tablets know
+ *                     (cloud PIN check, QR code, /api/match/validate-pin). The socket's
+ *                     own matchId is remembered as an alias of that key, so its later
+ *                     match-action / live-state-update / delete-match / keepMatchId may
+ *                     still use the Dexie id.
+ *                     PINs: a socket that already proved the match may leave the PIN
+ *                     fields (gamePin, refereePin, ...) out; the relay keeps the stored
+ *                     ones. A field that is present (even null) replaces the stored value.
+ *                     A sync without the PIN fields gets { code:'pins-required' } when this
+ *                     socket sent PINs for the key before and the relay no longer holds
+ *                     the match (a room recreated without PINs could be claimed by
+ *                     anyone), and when this socket has not proved the stored match (a
+ *                     scorer's reconnected socket): it must resend them. Not a failed
+ *                     claim: never counted toward 'rate-limited'. The scorer publishes
+ *                     only under the seed key (never a Dexie id), PINs with the first
+ *                     sync of each key, and in the browser on one socket for all views.
+ *                     Rooms exist only under that key: a scoreboard asked for a match by
+ *                     another id (GET /api/match/<Dexie id>) is not answered, so a Dexie
+ *                     id never opens a second, frozen room. Subscribers (tablets, the
+ *                     point-hub LedBox bridge) must use the seed key: MATCH_ID=<seed key>,
+ *                     or resolve it via /api/match/list or /api/match/by-game-number.
+ *                     device { id, claim } (optional): the installation and its claim of
+ *                     the match (a random id, new each time the device continues the
+ *                     match: restore, take back). The game PIN is known to every device
+ *                     the match was scored on; once another device's sync took the room
+ *                     over, a sync that still carries a claim it took over gets
+ *                     { code:'scorer-moved' } (nothing compared, not counted), unless the
+ *                     device that took it over left STALE_TAKEOVER_MS ago (finished:
+ *                     ORPHAN_TAKEOVER_MS). The take-over ends the room ownership of the
+ *                     sockets that named the previous device and tells them
+ *                     { type:'scorer-moved', matchId }. A sync without a claim (older
+ *                     apps) is not checked and changes nothing of this.
+ *                     device.supersedes (optional, up to MAX_SUPERSEDED_CLAIMS): the claims
+ *                     of the copies this device continued the match from (a backup
+ *                     restore): older copies of the room's match. Refused like a claim
+ *                     taken over, and since every sync of the newer copy names them, a
+ *                     restart of the relay does not forget them.
+ *   match-action      { matchId, action, data, timestamp }   proven scoreboard of matchId only
+ *   live-state-update { matchId, liveState }                 proven scoreboard of matchId only
+ *   delete-match      { matchId }                            proven scoreboard of matchId only
+ *   clear-all-matches { keepMatchId? }   removes only matches THIS socket proved
+ *   subscribe-match   { matchId, device?, team?, pin? }  /  unsubscribe-match { matchId }  /  ping
+ *                     device ('referee' | 'bench' | 'livescore') and team ('home' | 'away')
+ *                     only label the socket in /api/server/connections (tablet status on
+ *                     the scorer); they grant nothing. `role` is accepted as the old name.
+ *                     device 'display' (a scoreboard display, e.g. an LED board) with
+ *                     settingsUrl?: its settings page, kept only when it is a private-LAN
+ *                     http(s) URL (displaySettingsUrl); grants nothing either, and only
+ *                     the match's scoreboard hears of it (display-presence).
+ *                     pin: the referee PIN, a bench PIN (while that connection is on) or
+ *                     the game PIN of the match (pinGrantsAccess). With it the socket gets
+ *                     the bundle (rosters, events) and match-action; without it, or with a
+ *                     wrong one, the public summary only (relaySummaryBundle: teams, status,
+ *                     set scores, live state). A wrong PIN is answered { code:'pin-invalid' }
+ *                     and limited per socket and IP ('rate-limited'); a PIN offered before
+ *                     the scoreboard synced the match is checked once when it arrives.
+ *   match-data-response | game-number-response | match-update-response { requestId, ... }
+ *                     answers to relay requests; accepted only from the sockets asked.
+ * Relay -> client
+ *   match-full-data, match-data-update  FLAT bundle: { type, matchId, access, match, homeTeam, awayTeam,
+ *                     homePlayers, awayPlayers, sets, events, liveState?, _timestamp,
+ *                     _scoreboardTimestamp }. `match` is always stripped of PINs. access is
+ *                     'full' (PIN proved, or the match's own scoreboard) or 'summary'.
+ *   GET /api/match/:id  the same: the bundle with the X-OV-Match-Pin header carrying a PIN
+ *                     that grants the match, the summary otherwise.
+ *                     When a liveState is stored it is ALSO sent as `data: { liveState }`
+ *                     (and nothing else under `data`) for the LedBox bridge (point-hub
+ *                     relaySubscriber reads msg.data.liveState). The liveState is carried
+ *                     across syncs only while the same game PIN keeps the match.
+ *   match-action      { type, matchId, action, data, timestamp, _timestamp, _scoreboardTimestamp }
+ *                     (only to sockets with access)
+ *   live-state-update { type, matchId, liveState }   (every subscriber: public, like Livescore)
+ *   match-deleted     { type, matchId }
+ *   scorer-presence   { type, matchId, present, timestamp }  present: an OPEN socket holds the
+ *                     room's scoreboard claim (it proved the match with an accepted sync or a
+ *                     match-data / match-update answer); referee, bench and livescore sockets
+ *                     never count. timestamp: the relay's clock (ms), as pong. Sent to a socket
+ *                     right after the answer to its subscribe-match (also for a room not on the
+ *                     relay yet: false), and to the room's subscribers (not its scoreboards)
+ *                     only when it flips: the first claim of a room without one (true), the last
+ *                     claiming socket closing or losing the claim (scorer-moved) (false). A
+ *                     take-over keeps it true: the new socket holds the claim before the old
+ *                     ones lose it. A deleted match sends match-deleted instead. No timer, no
+ *                     repeat per sync, no PIN, device id or address. Unsubscribing ends no
+ *                     claim here (ownership comes from the sync, not the subscription). The referee and bench warn when the scorer's
+ *                     device is gone (lid closed, app crashed, Wi-Fi lost).
+ *   display-presence  { type, matchId, present, settingsUrl }  to the room's proven
+ *                     scoreboards only: whether a display follows the room, and the settings
+ *                     page of the newest one that named a usable one (null otherwise). Sent
+ *                     to a socket right after its first accepted sync of the room, and to the
+ *                     room's scoreboards when it changes (a display subscribing, naming
+ *                     another page, unsubscribing or closing); no repeat. Same message on the
+ *                     cloud relay and the Tauri relay (docs/scoreboard-display-spec.md).
+ *   connected, pong, error { type:'error', code, message, matchId? }
+ *   match-data-request | game-number-request | match-update-request  (proven scoreboards only)
+ *
+ *   GET /api/match/list  { success, matches: [{ id, gameNumber, homeTeam, awayTeam, scheduledAt,
+ *                     dateTime, status, sportType ('beach' | 'indoor'), test, refereeConnectionEnabled,
+ *                     homeTeamConnectionEnabled, awayTeamConnectionEnabled }] }: every match a
+ *                     scorer currently publishes here (see matchListEntry), newest
+ *                     scheduledAt first, whatever its referee connection: display devices
+ *                     (the point-hub LedBox bridge) pick their match from it; the referee /
+ *                     bench apps filter it to what they can join (utils/relayMatchList).
+ *                     Public fields only, no PINs, no people. dateTime is a display
+ *                     string here (null on the Tauri relay: clients format scheduledAt).
+ *   GET /api/match/list?finished=1  the same, finished matches (status 'ended', 'final',
+ *                     ...) included: the livescore lists a match that ended for a while
+ *                     (utils/relayLivescore). Its scores come from subscribe-match
+ *                     without a PIN: the public summary and every live-state-update.
+ *
+ * openbeach's scorer sends its teams as team1Team / team2Team (team1 / team2 in
+ * its periodic sync) and its players as team1Players / team2Players: the relay
+ * takes them as homeTeam / awayTeam / homePlayers / awayPlayers (the wire is
+ * home/away for both sports). Its PIN fields (team1Pin, team2Pin, the upload
+ * PINs, matchPin) are secret like the indoor ones, and its bench PINs grant
+ * the match while team1TeamConnectionEnabled / team2TeamConnectionEnabled is on.
+ *   POST /api/match/validate-pin { pin, type, sport? }  sport 'beach' (openbeach)
+ *                     finds beach matches only, 'indoor' (the default) indoor
+ *                     ones only.
+ *   /api/match/validate-connection-pin  the backend's (cloud) PIN check, not a
+ *                     relay's: 501. openbeach's referee asks it at its page's
+ *                     origin first, which on a venue LAN is this relay, and
+ *                     takes a JSON 4xx as the final "wrong PIN"; a 5xx sends it
+ *                     on to validate-pin (as the Tauri relay's 405 and the
+ *                     backend --local's 503 do).
+ *
+ * Venue mode: one relay serves every court. Each scorer claims its own match
+ * (room key = seed_key), /api/match/list lists them all, and the
+ * main-instance lock only guards the "/" page (createMainInstanceGate).
+ *
+ * Liveness: the relay pings every socket every HEARTBEAT_MS (30 s, as the
+ * cloud relay) and ends one that did not answer the previous ping; the
+ * runtime's 'close' handler then removes it (removeClient).
+ *
+ * Match ids are always String(matchId). PINs never leave the relay: PIN
+ * validation is answered from the relay's own store, never by a WS client.
+ *
+ * Sign on phone (docs/qr-signing-spec.md 4): POST /api/sign/start|open|submit|
+ *                   wait|close, JSON, state machine in ./signSessionCore.cjs (same
+ *                   protocol in backend/server.js and src-tauri/src/sign.rs). start
+ *                   from the relay host itself, or with X-OV-Match-Pin = the game PIN
+ *                   of the body's matchKey (wrong PINs counted like GET
+ *                   /api/match/:id). Bodies: 64 KB submit, 4 KB otherwise (413).
+ *
+ * Pair a phone (docs/phone-keyboard-spec.md): POST /api/pair/start|wait|focus|
+ *                   close (the scoring device) and join|poll|input (the phone),
+ *                   state machine in ./pairSessionCore.cjs (same protocol in
+ *                   backend/server.js and src-tauri/src/pair.rs). start has the
+ *                   /api/sign/start rule; the rest needs the session's secrets.
+ *                   Bodies: 64 KB focus and input, 4 KB otherwise (413).
+ */
+
+// Secret fields on a match object that must never be returned to a client.
+// PINs are the connection gate for referee/bench, so they are stripped from
+// every match-returning response and every WS message. The team1* / team2*
+// ones are openbeach's names for the bench and upload PINs (team1Pin, older
+// builds team1TeamPin); matchPin is openbeach's PIN that protects the match on
+// the scorer's device. Same list as backend/server.js and src-tauri/src/relay.rs.
+const MATCH_SECRET_FIELDS = [
+  'refereePin', 'homeTeamPin', 'awayTeamPin',
+  'homeTeamUploadPin', 'awayTeamUploadPin',
+  'connection_pins', 'connectionPins', 'game_pin', 'gamePin',
+  'team1Pin', 'team2Pin', 'team1TeamPin', 'team2TeamPin',
+  'team1UploadPin', 'team2UploadPin', 'team1TeamUploadPin', 'team2TeamUploadPin', 'matchPin',
+]
+
+const WS_MAX_PAYLOAD = 10 * 1024 * 1024 // same cap as the cloud relay
+// permessage-deflate for the standalone relay's WebSocketServer (server.js): a
+// tablet gets the scorer's whole match on every sync, two per rally, over the
+// hall Wi-Fi or the scorer's own hotspot. A frame above 1 KB goes compressed
+// to a client that offers it (browsers do; a client that does not gets plain
+// frames). A hall has a few tablets, so a zlib context each costs little (the
+// cloud, with hundreds, sends plain frames). Uploads compressed by the
+// scorer's browser are taken.
+const WS_PER_MESSAGE_DEFLATE = {
+  threshold: 1024,
+  serverNoContextTakeover: true,
+  clientNoContextTakeover: true,
+  concurrencyLimit: 10,
+}
+const MAX_BODY_SIZE = 1024 * 1024
+// Frames and request bodies nested deeper are refused (jsonTooDeep): the Tauri
+// relay's serde_json stops at the same depth; real bundles nest about ten.
+const MAX_JSON_DEPTH = 128
+// Sockets the relay takes in all and from one address (admit). A hall: per
+// court a scoreboard (one or two sockets), the referee, two benches and the
+// Point Hub bridge, plus one per spectator phone on the public livescore (no
+// PIN). A socket comes in before its hello, so the relay cannot tell a
+// spectator from a referee: the limits are high enough for a hall, and one
+// device cannot fill it. Per address like the backend's LAN relay
+// (MAX_CONNECTIONS_PER_IP 50); the relay host itself (loopback: its
+// scoreboard, the bridge) is exempt, as for MAX_OWNED_PER_IP.
+const MAX_SOCKETS = 500
+const MAX_SOCKETS_PER_IP = 50
+const MAX_MATCH_ID_LENGTH = 128
+// Server-side ping of every socket (the cloud relay's createHeartbeat,
+// backend/lib/realtimeHub.js): a socket that has not answered the previous
+// ping is ended. A phone that leaves the hall's Wi-Fi sends no close, and its
+// socket kept its slot (MAX_SOCKETS, MAX_SOCKETS_PER_IP) and its rooms until
+// TCP gave up, minutes or hours later. Browsers, the desktop apps and the
+// LedBox bridge answer pings on their own.
+const HEARTBEAT_MS = 30 * 1000
+// A FINISHED match whose scoreboard left this long ago may be claimed by
+// another scoreboard: a second scorer device / reset browser reusing the same
+// Dexie id on a long-running relay. Far longer than a Wi-Fi blip (clients
+// reconnect within ~5 s), so a live scoreboard is never displaced.
+const ORPHAN_TAKEOVER_MS = 60 * 1000
+// An UNFINISHED match is only claimable after a much longer absence (a scorer
+// tablet asleep through a set break must not lose its match), and its own game
+// PIN may then reclaim it once.
+const STALE_TAKEOVER_MS = 10 * 60 * 1000
+// Wrong game-PIN claims allowed per IP / per socket per minute. Past that every
+// claim needing proof is refused WITHOUT comparing the PIN, so the answer is
+// no oracle for guessing it. One limit for both on purpose: on the venue LAN
+// every scorer device has its own address (no NAT in between), unlike the
+// cloud relay (backend/server.js CLAIM_FAILURE_LIMIT_PER_IP = 20, venue NATs).
+const CLAIM_FAILURE_LIMIT = 5
+// Distinct match ids the sockets of one (non-loopback) IP may own at once, and
+// new ids one IP may claim per minute: stops a LAN device squatting on ids.
+// Sized for a venue with several courts: every court tablet has its own
+// address, the relay host (loopback) is exempt, and a tablet keeps the ids of
+// the matches it scored on one connection until it releases them
+// (clear-all-matches / delete-match) or reconnects, so 8 covers a block of
+// matches on one court. The cloud relay allows 20 per address (venue NATs).
+// Same value in src-tauri/src/relay.rs.
+const MAX_OWNED_PER_IP = 8
+const NEW_CLAIM_LIMIT = 10
+const FINISHED_STATUSES = new Set(['final', 'ended', 'completed', 'finished'])
+// Wrong PINs offered for a match's bundle (subscribe-match, GET /api/match/:id)
+// per socket and per IP and minute.
+const PIN_FAILURE_LIMIT = 5
+// POST /api/match/validate-pin per IP and minute: wrong PINs (the limit the
+// whole endpoint had before), and every check (reloads, renewals)
+const VALIDATE_PIN_FAILURES = 10
+const VALIDATE_PIN_FAILURE_WINDOW_MS = 10 * 60 * 1000
+const VALIDATE_PIN_REQUESTS = 60
+// Wrong PINs for one match from all addresses together (GET /api/match/:id,
+// subscribe-match, scoreboard claims): a device that changes its address
+// inside the hall network gets no fresh budget for that match
+const MATCH_PIN_FAILURE_LIMIT = 30
+const MATCH_PIN_WINDOW_MS = 10 * 60 * 1000
+// Room store bounds: rooms in all, rooms and synced bytes per creating
+// address, and how long a room with no scoreboard and no subscriber is kept
+const MAX_ROOMS = 200
+const MAX_ROOMS_PER_IP = 16
+const MAX_ROOM_BYTES_PER_IP = 64 * 1024 * 1024
+const ROOM_IDLE_EVICT_MS = 30 * 60 * 1000
+const MAX_SUBSCRIPTIONS_PER_SOCKET = 32
+// Messages a (non-loopback) socket may send per minute, past which they are
+// refused, and bytes a socket may have waiting to be sent: a client that
+// stops reading is ended, not buffered for. Same values in src-tauri relay.rs.
+const MESSAGES_PER_MINUTE = 600
+const MAX_BUFFERED_BYTES = 16 * 1024 * 1024
+const MAX_ACCESS_KEYS = 16
+// Devices a room remembers as having lost it to another (sync device.claim)
+const MAX_MOVED_DEVICES = 16
+const DEVICE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const MAX_CLAIM_LENGTH = 64
+// Claims a sync names as the copies it continued from (device.supersedes),
+// and those a room remembers
+const MAX_SUPERSEDED_CLAIMS = 8
+const MAX_SUPERSEDED_PER_ROOM = 32
+
+const isClaimString = (c) => typeof c === 'string' && c.length > 0 && c.length <= MAX_CLAIM_LENGTH
+
+/**
+ * The scoring device a sync names with its claim of the match ({ id, claim,
+ * supersedes }, see sync-match-data `device`), or null: no device, or one
+ * without a claim (older apps), is not checked. `supersedes`: the claims of
+ * the copies it continued the match from (never its own), [] when none.
+ */
+function syncDeviceClaim(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const { id, claim } = raw
+  if (typeof id !== 'string' || !DEVICE_ID_RE.test(id)) return null
+  if (!isClaimString(claim)) return null
+  const supersedes = Array.isArray(raw.supersedes)
+    ? [...new Set(raw.supersedes.slice(0, MAX_SUPERSEDED_CLAIMS).filter((c) => isClaimString(c) && c !== claim))]
+    : []
+  return { id: id.toLowerCase(), claim, supersedes }
+}
+
+// PIN types accepted by POST /api/match/validate-pin
+const PIN_TYPES = {
+  referee: { pin: 'refereePin', enabled: 'refereeConnectionEnabled' },
+  homeTeam: { pin: 'homeTeamPin', enabled: 'homeTeamConnectionEnabled' },
+  awayTeam: { pin: 'awayTeamPin', enabled: 'awayTeamConnectionEnabled' },
+}
+
+/**
+ * Return a shallow copy of a match object with all PIN/secret fields removed.
+ * @param {any} match
+ */
+function stripMatchSecrets(match) {
+  if (!match || typeof match !== 'object') return match
+  const clean = { ...match }
+  for (const k of MATCH_SECRET_FIELDS) delete clean[k]
+  return clean
+}
+
+// Personal data the relay never hands out. Subscribing needs no PIN (tablets
+// check theirs over HTTP, then subscribe like any viewer) and the room key is
+// the match's public external_id, so every match object and bundle that
+// leaves the relay is public. The match and team objects are the scorer's
+// free-form Dexie rows, so they leave through allowlists: a key the scorer
+// adds later stays on the relay until it is listed. These lists are a copy of
+// ../shared/relayPrivateFields.json (this file must not require() it), which
+// src-tauri/src/relay.rs includes and backend/lib/publicColumns.js follows;
+// lanRelayData.test.js checks that the three agree.
+// Keys of a person (player, bench member, official) never relayed.
+const PERSON_PRIVATE_FIELDS = [
+  'dob', 'dateOfBirth', 'date_of_birth', 'birthDate', 'birthdate', 'birth_date', 'country',
+  'nationality', 'email', 'phone', 'address',
+]
+
+// Match keys never relayed (besides any key containing "signature").
+const MATCH_PRIVATE_FIELDS = [
+  'officials', 'signatures', 'approval', 'accountApprovals', 'account_approvals', 'manualChanges',
+  'manual_changes', 'pendingHomeRoster', 'pendingAwayRoster', 'pending_home_roster',
+  'pending_away_roster', 'pendingTeam1Roster', 'pendingTeam2Roster', 'pending_team1_roster',
+  'pending_team2_roster', 'globalKey', 'globalOrganizer', 'cloudShareToken', 'liveSecret',
+]
+
+// Match keys holding people: kept, each entry without PERSON_PRIVATE_FIELDS.
+const MATCH_ROSTER_FIELDS = [
+  'players_home', 'players_away', 'bench_home', 'bench_away', 'players_team1', 'players_team2',
+  'benchHome', 'benchAway', 'homePlayers', 'awayPlayers', 'team1Players', 'team2Players',
+]
+
+// Match keys holding one person: kept without PERSON_PRIVATE_FIELDS.
+const MATCH_PERSON_FIELDS = [
+  'linesman1', 'linesman2', 'referee', 'scorer',
+]
+
+// Match keys holding a team object: kept as publicTeam.
+const MATCH_TEAM_FIELDS = [
+  'away_team', 'home_team', 'team1_data', 'team1_team', 'team2_data', 'team2_team',
+]
+
+// The match keys a bundle carries (what the tablets, livescore and openbeach read).
+const PUBLIC_MATCH_FIELDS = [
+  '_relayEpoch', '_relaySeq', '_syncSession', '_syncedAt', '_syncedSeq', 'approved', 'approved_at',
+  'away', 'awayCaptain', 'awayColor', 'awayCourtCaptain', 'awayName', 'awayPlayers',
+  'awayRememberedCourtCaptain', 'awayShortName', 'awaySponsors', 'awayTeamConnectionEnabled', 'awayTeamId',
+  'awayTeamName', 'away_name', 'away_short_name', 'away_team', 'away_team_connection_enabled',
+  'away_team_name', 'beach', 'benchAway', 'benchHome', 'bench_away', 'bench_home', 'bestOf',
+  'best_of', 'championshipType', 'championshipTypeOther', 'championship_type', 'city', 'closedAt',
+  'closed_at', 'cloudBlock', 'code', 'coinToss', 'coinTossChoice', 'coinTossConfirmed',
+  'coinTossServeA', 'coinTossServeB', 'coinTossTeamA', 'coinTossTeamB', 'coinTossWinner',
+  'coin_toss', 'coin_toss_confirmed', 'coin_toss_serve_a', 'coin_toss_team_a', 'coin_toss_team_b',
+  'competitionMatchId', 'competition_name', 'connectionPinsQueuedAt', 'connections', 'court',
+  'court_id', 'createdAt', 'created_at', 'dtstart', 'easy', 'entry1_id', 'entry2_id', 'eventName',
+  'exceptionalSubstitutionAway', 'exceptionalSubstitutionHome', 'externalId', 'external_id',
+  'final_mail', 'final_score', 'firstServe', 'first_serve', 'forfait', 'forfaitTeam', 'forfaitType',
+  'forfeit', 'forfeitReason', 'forfeitTeam', 'gameN', 'gameNumber', 'game_n', 'gender',
+  'groupDisplay', 'hall', 'hasCoach', 'home', 'homeCaptain', 'homeColor', 'homeCourtCaptain',
+  'homeName', 'homePlayers', 'homeRememberedCourtCaptain', 'homeShortName', 'homeSponsors',
+  'homeTeamConnectionEnabled', 'homeTeamId', 'homeTeamName', 'home_name', 'home_short_name',
+  'home_team', 'home_team_connection_enabled', 'home_team_name', 'id', 'importedAt',
+  'intervalChoices', 'intervalStartedAt', 'lastAwayTeamHeartbeat', 'lastHomeTeamHeartbeat',
+  'lastReferee1Heartbeat', 'lastReferee2Heartbeat', 'lastTeam1Heartbeat', 'lastTeam2Heartbeat',
+  'league', 'lfpTracking', 'leftTeam', 'license_number', 'linesman1', 'linesman2', 'listSource',
+  'liveClockOffsetMs', 'longIntervalAfterSet2', 'matchGender', 'matchInfo', 'matchInfoConfirmedAt', 'matchNumber',
+  'matchPhase', 'matchRound', 'match_external_id', 'match_info', 'match_type_1',
+  'match_type_1_other', 'match_type_2', 'match_type_3', 'match_type_3_other', 'phase',
+  'players_away', 'players_home', 'players_team1', 'players_team2', 'referee', 'referee1First',
+  'referee1Last', 'referee2First', 'referee2Last', 'refereeConnectionEnabled',
+  'referee_connection_enabled', 'remarks', 'restoredAt', 'roster', 'round', 'sanctions',
+  'scheduledAt', 'scheduled_at', 'scorer', 'scorerClaim', 'scoresheetPdfMissing', 'seedKey',
+  'seed_key', 'sentRosterDismissed', 'sentRosterUsed', 'sessionId', 'set2FirstServe',
+  'set3CoinTossWinner', 'set3CourtSwitched', 'set3FirstServe', 'set3LeftTeam', 'set5CourtSwitched',
+  'set5FirstServe', 'set5LeftTeam', 'setLeftTeamOverrides', 'set_results', 'site', 'source1',
+  'source2', 'sponsorsMarked', 'sportType', 'sport_type', 'status', 'stoppedReason', 'supersededClaims',
+  'team1BenchSide', 'team1Captain', 'team1Coach', 'team1CoachName', 'team1Color', 'team1Country',
+  'team1CourtCaptain', 'team1FirstServe', 'team1FirstServePlayer', 'team1Id', 'team1Name',
+  'team1Players', 'team1ShortName', 'team1TeamConnectionEnabled', 'team1TeamId', 'team1_data',
+  'team1_short_name', 'team1_team', 'team1_team_name', 'team2BenchSide', 'team2Captain',
+  'team2Coach', 'team2CoachName', 'team2Color', 'team2Country', 'team2CourtCaptain',
+  'team2FirstServe', 'team2FirstServePlayer', 'team2Id', 'team2Name', 'team2Players',
+  'team2ShortName', 'team2TeamConnectionEnabled', 'team2TeamId', 'team2_data', 'team2_short_name',
+  'team2_team', 'team2_team_name', 'test', 'type1', 'type2', 'type3', 'type3Other', 'tz', 'updatedAt',
+  'updated_at', 'userRole', 'venue', 'winner', 'winner_entry_id',
+]
+
+// The team-row keys a bundle carries.
+const PUBLIC_TEAM_FIELDS = [
+  'benchOfficials', 'benchStaff', 'bench_staff', 'coach', 'color', 'created_at', 'external_id',
+  'id', 'name', 'seedKey', 'seed_key', 'shortName', 'short_name',
+]
+
+// Team-row keys holding people (bench officials, the coach).
+const TEAM_PEOPLE_FIELDS = [
+  'benchOfficials', 'benchStaff', 'bench_staff', 'coach',
+]
+
+function publicPerson(p) {
+  if (p == null || typeof p !== 'object' || Array.isArray(p)) return p
+  let out = p
+  for (const k of PERSON_PRIVATE_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(out, k)) {
+      if (out === p) out = { ...p }
+      delete out[k]
+    }
+  }
+  return out
+}
+
+/** A roster array without personal keys (anything else is returned as is). */
+function publicPeople(list) {
+  return Array.isArray(list) ? list.map(publicPerson) : list
+}
+
+/** A team row as a bundle carries it: PUBLIC_TEAM_FIELDS, its people without personal keys. */
+function publicTeam(team) {
+  if (team == null || typeof team !== 'object' || Array.isArray(team)) return team ?? null
+  const out = {}
+  for (const k of PUBLIC_TEAM_FIELDS) {
+    if (!Object.prototype.hasOwnProperty.call(team, k)) continue
+    const v = team[k]
+    out[k] = !TEAM_PEOPLE_FIELDS.includes(k) ? v : Array.isArray(v) ? publicPeople(v) : publicPerson(v)
+  }
+  return out
+}
+
+/**
+ * A match object as the relay may hand it out: PUBLIC_MATCH_FIELDS only
+ * (never a PIN, MATCH_PRIVATE_FIELDS or a signature key), rosters, people and
+ * team objects without personal keys.
+ * @param {any} match
+ */
+function publicMatch(match) {
+  const clean = stripMatchSecrets(match)
+  if (!clean || typeof clean !== 'object' || Array.isArray(clean)) return clean
+  const out = {}
+  for (const k of PUBLIC_MATCH_FIELDS) {
+    if (!Object.prototype.hasOwnProperty.call(clean, k)) continue
+    if (MATCH_PRIVATE_FIELDS.includes(k) || /signature/i.test(k)) continue
+    const v = clean[k]
+    if (MATCH_ROSTER_FIELDS.includes(k)) out[k] = publicPeople(v)
+    else if (MATCH_PERSON_FIELDS.includes(k)) out[k] = Array.isArray(v) ? publicPeople(v) : publicPerson(v)
+    else if (MATCH_TEAM_FIELDS.includes(k)) out[k] = typeof v === 'string' ? v : publicTeam(v)
+    else out[k] = v
+  }
+  return out
+}
+
+// --- Before the PIN: the public summary (same lists as backend/lib/publicColumns.js) ---
+const SUMMARY_MATCH_FIELDS = [
+  'id', 'status', 'gameNumber', 'gameN', 'game_n', 'seed_key', 'seedKey', 'external_id', 'externalId',
+  'scheduledAt', 'scheduled_at', 'sport_type', 'sportType', 'test', 'league', 'best_of', 'bestOf',
+  'coinTossTeamA', 'coinTossTeamB', 'homeShortName', 'awayShortName', 'homeTeamName', 'awayTeamName',
+  'refereeConnectionEnabled', 'homeTeamConnectionEnabled', 'awayTeamConnectionEnabled',
+  '_syncedAt', '_syncedSeq', '_syncSession',
+]
+const SUMMARY_TEAM_FIELDS = ['name', 'shortName', 'short_name', 'color']
+const SUMMARY_SET_FIELDS = ['id', 'index', 'homePoints', 'awayPoints', 'home_points', 'away_points', 'finished', 'startTime', 'endTime']
+
+function pickFields(obj, keys) {
+  if (obj == null || typeof obj !== 'object' || Array.isArray(obj)) return obj ?? null
+  const out = {}
+  for (const k of keys) if (Object.prototype.hasOwnProperty.call(obj, k)) out[k] = obj[k]
+  return out
+}
+
+/**
+ * The public summary of a bundle, for a socket / caller without a PIN: same
+ * shape, rosters and events empty, `access: 'summary'`.
+ */
+function relaySummaryBundle(bundle) {
+  const out = {
+    access: 'summary',
+    match: pickFields(bundle && bundle.match, SUMMARY_MATCH_FIELDS),
+    homeTeam: typeof (bundle && bundle.homeTeam) === 'string' ? bundle.homeTeam : pickFields(bundle && bundle.homeTeam, SUMMARY_TEAM_FIELDS),
+    awayTeam: typeof (bundle && bundle.awayTeam) === 'string' ? bundle.awayTeam : pickFields(bundle && bundle.awayTeam, SUMMARY_TEAM_FIELDS),
+    homePlayers: [],
+    awayPlayers: [],
+    sets: Array.isArray(bundle && bundle.sets) ? bundle.sets.map((s) => pickFields(s, SUMMARY_SET_FIELDS)) : [],
+    events: [],
+  }
+  if (bundle && bundle.liveState !== undefined) out.liveState = bundle.liveState
+  return out
+}
+
+function safeEqualText(a, b) {
+  // Constant time for equal lengths; no Buffer (this file must not require()).
+  const x = String(a)
+  const y = String(b)
+  if (x.length !== y.length) return false
+  let diff = 0
+  for (let i = 0; i < x.length; i++) diff |= x.charCodeAt(i) ^ y.charCodeAt(i)
+  return diff === 0
+}
+
+/** The first non-empty PIN among `keys` of the match ('' when none). */
+function firstPin(match, keys) {
+  for (const k of keys) {
+    const v = match[k]
+    const s = v === undefined || v === null ? '' : String(v).trim()
+    if (s) return s
+  }
+  return ''
+}
+
+/**
+ * Does `pin` prove access to the match: the referee PIN (referee connection
+ * on), a bench PIN (that bench connection on) or the game PIN? A match without
+ * any of them grants nothing. Beach (openbeach) names its benches team1 / team2
+ * (team1TeamConnectionEnabled, team1Pin, older builds team1TeamPin). Same rule
+ * as backend/lib/matchAccess.js.
+ */
+function pinGrantsAccess(match, pin) {
+  const p = pin === undefined || pin === null ? '' : String(pin).trim()
+  if (!p || !match || typeof match !== 'object') return false
+  const candidates = []
+  if (match.refereeConnectionEnabled === true) candidates.push(match.refereePin)
+  if (match.homeTeamConnectionEnabled === true) candidates.push(match.homeTeamPin)
+  if (match.awayTeamConnectionEnabled === true) candidates.push(match.awayTeamPin)
+  if (match.team1TeamConnectionEnabled === true) candidates.push(firstPin(match, ['team1Pin', 'team1TeamPin']))
+  if (match.team2TeamConnectionEnabled === true) candidates.push(firstPin(match, ['team2Pin', 'team2TeamPin']))
+  candidates.push(match.gamePin != null && match.gamePin !== '' ? match.gamePin : match.game_pin)
+  let ok = false
+  for (const c of candidates) {
+    const s = c === undefined || c === null ? '' : String(c).trim()
+    if (s && safeEqualText(s, p)) ok = true
+  }
+  return ok
+}
+
+// PATCH /api/match/:id: the one key a roster upload may set, with the team
+// whose upload PIN it needs (openbeach: team 1 / team 2; older builds
+// team1TeamUploadPin).
+const ROSTER_UPLOAD_FIELDS = {
+  pendingHomeRoster: ['homeTeamUploadPin'],
+  pendingAwayRoster: ['awayTeamUploadPin'],
+  pendingTeam1Roster: ['team1UploadPin', 'team1TeamUploadPin'],
+  pendingTeam2Roster: ['team2UploadPin', 'team2TeamUploadPin'],
+}
+
+/** True when `pin` is the upload PIN of the team whose roster `field` holds. */
+function uploadPinGrants(match, field, pin) {
+  const p = pin === undefined || pin === null ? '' : String(pin).trim()
+  const fields = Object.prototype.hasOwnProperty.call(ROSTER_UPLOAD_FIELDS, field) ? ROSTER_UPLOAD_FIELDS[field] : null
+  if (!p || !fields || !match || typeof match !== 'object') return false
+  const expected = firstPin(match, fields)
+  const s = expected === undefined || expected === null ? '' : String(expected).trim()
+  return !!s && safeEqualText(s, p)
+}
+
+/** True when `pin` is any PIN of the match: a tablet's (pinGrantsAccess) or a team's upload PIN. */
+function anyMatchPinGrants(match, pin) {
+  return pinGrantsAccess(match, pin) || Object.keys(ROSTER_UPLOAD_FIELDS).some((f) => uploadPinGrants(match, f, pin))
+}
+
+/**
+ * Strip secrets from a stored match-data bundle ({ match, homeTeam, ... }),
+ * redacting the nested `match` object which is where the PINs live.
+ * @param {any} matchData
+ */
+function stripMatchDataSecrets(matchData) {
+  if (!matchData || typeof matchData !== 'object') return matchData
+  return { ...matchData, match: stripMatchSecrets(matchData.match) }
+}
+
+/**
+ * Is this parsed JSON value nested deeper than MAX_JSON_DEPTH? Iterative, so
+ * the check itself cannot overflow the stack. JSON.parse takes any depth, but
+ * JSON.stringify throws RangeError at a few thousand levels (about 10 KB of
+ * brackets), and the relay stringifies what a client sent for every
+ * subscriber and HTTP read: one such frame used to end the relay process.
+ */
+function jsonTooDeep(value) {
+  if (!value || typeof value !== 'object') return false
+  // Two plain stacks instead of [value, depth] pairs: no allocation per
+  // object, so a whole bundle (thousands of events) costs well under a ms
+  const values = [value]
+  const depths = [1]
+  while (values.length > 0) {
+    const v = values.pop()
+    const depth = depths.pop()
+    if (depth > MAX_JSON_DEPTH) return true
+    if (Array.isArray(v)) {
+      for (let i = 0; i < v.length; i++) {
+        const child = v[i]
+        if (child !== null && typeof child === 'object') { values.push(child); depths.push(depth + 1) }
+      }
+    } else {
+      for (const k in v) {
+        const child = v[k]
+        if (child !== null && typeof child === 'object') { values.push(child); depths.push(depth + 1) }
+      }
+    }
+  }
+  return false
+}
+
+/** Room / store key for a match id: always a string (Dexie ids are numbers). */
+function normalizeMatchId(id) {
+  if (id === undefined || id === null) return null
+  const s = String(id).trim()
+  if (!s || s.length > MAX_MATCH_ID_LENGTH) return null
+  return s
+}
+
+/** The match's game PIN as a comparable string, or null when it has none (test matches). */
+function gamePinOf(match) {
+  if (!match || typeof match !== 'object') return null
+  const v = match.gamePin != null && match.gamePin !== '' ? match.gamePin : match.game_pin
+  if (v === undefined || v === null) return null
+  const s = String(v).trim()
+  return s ? s : null
+}
+
+/**
+ * The relay room key of a synced match: its seed_key when it carries one (see
+ * the protocol notes above), else the id the scoreboard sent.
+ */
+function relayKeyOf(rawId, match) {
+  const seed = match && typeof match === 'object' ? (match.seed_key ?? match.seedKey) : null
+  return (typeof seed === 'string' && normalizeMatchId(seed)) || normalizeMatchId(rawId)
+}
+
+/**
+ * A scoreboard that already proved the match sends its PINs only when they
+ * change: fields it leaves out keep the stored values.
+ */
+function carryMatchSecrets(prevMatch, nextMatch) {
+  if (!prevMatch || typeof prevMatch !== 'object' || !nextMatch || typeof nextMatch !== 'object') return nextMatch
+  let out = nextMatch
+  for (const k of MATCH_SECRET_FIELDS) {
+    if (!(k in nextMatch) && prevMatch[k] !== undefined) {
+      if (out === nextMatch) out = { ...nextMatch }
+      out[k] = prevMatch[k]
+    }
+  }
+  return out
+}
+
+const DEVICE_ROLES = ['referee', 'bench', 'livescore']
+
+// --- Scoreboard displays (display-presence) ----------------------------------
+// The same rule as backend/lib/displayPresence.js and src-tauri/src/relay.rs
+// (docs/scoreboard-display-spec.md): a display's settings page is passed on
+// only when it is an http(s) URL on a private-LAN address.
+const DISPLAY_DEVICE = 'display'
+const MAX_SETTINGS_URL_LENGTH = 256
+
+/** RFC 1918 IPv4 or IPv6 unique local (fc00::/7), as new URL().hostname gives them. */
+function isPrivateLanHost(hostname) {
+  if (typeof hostname !== 'string' || !hostname) return false
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(hostname)
+  if (m) {
+    const [a, b, c, d] = m.slice(1).map(Number)
+    if ([a, b, c, d].some((n) => n > 255)) return false
+    return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
+  }
+  const v6 = /^\[([0-9a-f:.]+)\]$/i.exec(hostname)
+  if (v6) return /^f[cd][0-9a-f]{2}:/i.test(v6[1])
+  return false
+}
+
+/** A display's settings page as the relay keeps it (normalised href), or null. */
+function displaySettingsUrl(raw) {
+  if (typeof raw !== 'string' || raw.length === 0 || raw.length > MAX_SETTINGS_URL_LENGTH) return null
+  if (/[\u0000-\u0020\u007f]/.test(raw)) return null
+  let u
+  try { u = new URL(raw) } catch { return null }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return null
+  if (u.username || u.password) return null
+  if (!isPrivateLanHost(u.hostname)) return null
+  return u.href.length <= MAX_SETTINGS_URL_LENGTH ? u.href : null
+}
+const DEVICE_TEAMS = ['home', 'away']
+const MAX_ALIASES = 16
+
+/** True when the match object carries a game PIN field at all (even empty). */
+function hasGamePinField(match) {
+  return !!match && typeof match === 'object' && ('gamePin' in match || 'game_pin' in match)
+}
+
+/** True when the match object carries any PIN field at all (even empty). */
+function hasAnyPinField(match) {
+  return !!match && typeof match === 'object' && MATCH_SECRET_FIELDS.some((k) => k in match)
+}
+
+/** Remember a key in a bounded Set (oldest dropped first). */
+function rememberKey(set, key, max) {
+  set.delete(key)
+  if (set.size >= max) set.delete(set.values().next().value)
+  set.add(key)
+}
+
+/**
+ * Is this sync from openbeach? It sends its teams as team1Team / team2Team /
+ * team1Players / team2Players (before its home/away wire adapter) or names the
+ * sport on the match. Same rule as backend/server.js handleSyncMatchData.
+ */
+function isBeachSync(src) {
+  const m = src.match
+  return !!(src.team1Team || src.team2Team || src.team1Players || src.team2Players) ||
+    m.sportType === 'beach' || m.sport_type === 'beach'
+}
+
+/** The first array among `keys` of `src`, else []. */
+function firstArray(src, keys) {
+  for (const k of keys) if (Array.isArray(src[k])) return src[k]
+  return []
+}
+
+/**
+ * Build the stored bundle from a sync-match-data (flat or { matchData }) message.
+ * `sportType` ('beach' only, when the sync says so) is the relay's own note for
+ * POST /api/match/validate-pin { sport } and the sportType of its GET
+ * /api/match/list row: it is not part of any bundle sent out (toWireBundle).
+ */
+function bundleFromMessage(msg) {
+  const src = msg && msg.matchData && typeof msg.matchData === 'object' ? msg.matchData : msg
+  if (!src || !src.match || typeof src.match !== 'object') return null
+  const bundle = {
+    match: src.match,
+    // openbeach names its teams team1Team / team2Team (team1 / team2)
+    homeTeam: src.homeTeam ?? src.team1Team ?? src.team1 ?? null,
+    awayTeam: src.awayTeam ?? src.team2Team ?? src.team2 ?? null,
+    homePlayers: firstArray(src, ['homePlayers', 'team1Players']),
+    awayPlayers: firstArray(src, ['awayPlayers', 'team2Players']),
+    sets: Array.isArray(src.sets) ? src.sets : [],
+    events: Array.isArray(src.events) ? src.events : [],
+  }
+  if (isBeachSync(src)) bundle.sportType = 'beach'
+  return bundle
+}
+
+/** The sport of a stored bundle: 'beach' or 'indoor'. */
+function bundleSport(bundle) {
+  return bundle && bundle.sportType === 'beach' ? 'beach' : 'indoor'
+}
+
+/**
+ * The PIN-free, personal-data-free bundle fields every match-data message and
+ * HTTP response carries (only the scorer, who sent it, has the full bundle).
+ */
+function toWireBundle(bundle) {
+  const out = {
+    match: publicMatch(bundle.match),
+    homeTeam: publicTeam(bundle.homeTeam),
+    awayTeam: publicTeam(bundle.awayTeam),
+    homePlayers: publicPeople(bundle.homePlayers || []),
+    awayPlayers: publicPeople(bundle.awayPlayers || []),
+    sets: bundle.sets || [],
+    events: bundle.events || [],
+  }
+  if (bundle.liveState !== undefined) out.liveState = bundle.liveState
+  return out
+}
+
+/**
+ * A match-full-data / match-data-update message. Flat bundle for the apps; a
+ * stored liveState is mirrored under `data` for the LedBox bridge, which reads
+ * `msg.data.liveState` (`data` never carries anything else, so no PINs).
+ */
+function matchDataMessage(type, matchId, bundle, scoreboardTs, access = 'full') {
+  const now = Date.now()
+  const body = access === 'full' ? { access: 'full', ...toWireBundle(bundle) } : relaySummaryBundle(bundle)
+  const msg = { type, matchId, ...body, _timestamp: now, _scoreboardTimestamp: scoreboardTs || now }
+  if (bundle.liveState !== undefined) msg.data = { liveState: bundle.liveState }
+  return msg
+}
+
+function isFinishedMatch(match) {
+  return !!match && FINISHED_STATUSES.has(String(match.status || '').toLowerCase())
+}
+
+function stripV4Prefix(addr) {
+  return typeof addr === 'string' && addr.startsWith('::ffff:') ? addr.slice(7) : addr
+}
+
+function isLoopbackAddress(addr) {
+  const a = stripV4Prefix(addr)
+  return a === '::1' || (typeof a === 'string' && a.startsWith('127.'))
+}
+
+/**
+ * `isLocal(addr)`: the request comes from the relay host itself — loopback, or
+ * one of its own interface addresses (the scoretable app calls the relay on
+ * its LAN IP, which arrives from that IP, not 127.0.0.1). Pass
+ * os.networkInterfaces; this module must not require() it.
+ */
+function createLocalAddressCheck(networkInterfaces) {
+  return function isLocal(addr) {
+    if (!addr) return false
+    if (isLoopbackAddress(addr)) return true
+    const a = stripV4Prefix(addr)
+    try {
+      const nets = networkInterfaces ? networkInterfaces() : {}
+      for (const list of Object.values(nets)) {
+        for (const net of list || []) if (net.address === a) return true
+      }
+    } catch { /* treat as remote */ }
+    return false
+  }
+}
+
+// --- Origin and Host rule (same rule as backend/lib/cors.js, LAN side) --------
+// A page may reach the relay from the app's own sites, the native shells, the
+// relay's own pages and pages of the venue network. Callers without an Origin
+// (the native apps, the board, node clients) are not browsers and pass.
+
+const RELAY_ALLOWED_ORIGINS = new Set([
+  'https://openvolley.app', 'https://www.openvolley.app',
+  'https://localhost', 'capacitor://localhost', 'tauri://localhost',
+  'http://tauri.localhost', 'https://tauri.localhost',
+])
+const OPENVOLLEY_SITE_RE = /^https:\/\/[a-z0-9-]+\.openvolley\.app$/
+const IPV4_RE = /^\d{1,3}(\.\d{1,3}){3}$/
+
+/** Is this hostname (IPv6 without brackets) this machine or the venue network? */
+function isLanHostName(hostname) {
+  const h = String(hostname || '').toLowerCase().replace(/\.$/, '')
+  if (!h) return false
+  if (h === 'localhost' || h.endsWith('.localhost')) return true
+  if (IPV4_RE.test(h)) {
+    const [a, b] = h.split('.').map(Number)
+    return a === 127 || a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254)
+  }
+  if (h.includes(':')) {
+    if (h === '::1') return true
+    const hex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(h)
+    if (hex) {
+      const hi = parseInt(hex[1], 16)
+      const lo = parseInt(hex[2], 16)
+      return isLanHostName(`${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`)
+    }
+    const first = parseInt(h.split(':')[0] || '0', 16)
+    return (first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80
+  }
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)*\.local$/.test(h)
+}
+
+/**
+ * May a request with this Host reach the relay? Only by a name no outside
+ * party can point at it (a DNS-rebinding page sends its own name): an address,
+ * a LAN name, a single-label hall name, an openvolley.app name, or one of
+ * `extraHosts`. No Host (HTTP/1.0, node clients) passes.
+ */
+function isAllowedRelayHost(host, extraHosts = []) {
+  if (host === undefined || host === null || host === '') return true
+  if (typeof host !== 'string' || host.length > 300) return false
+  let name
+  try { name = new URL(`http://${host}`).hostname.replace(/^\[|\]$/g, '').toLowerCase() } catch { return false }
+  if (IPV4_RE.test(name) || name.includes(':') || isLanHostName(name) || !name.includes('.')) return true
+  return name === 'openvolley.app' || name.endsWith('.openvolley.app') || extraHosts.includes(name)
+}
+
+/** May a page with this Origin use the relay (`host`: the request's Host)? */
+function isTrustedRelayOrigin(origin, host) {
+  if (origin === undefined || origin === null || origin === '') return true
+  if (typeof origin !== 'string' || origin.length > 300) return false
+  if (RELAY_ALLOWED_ORIGINS.has(origin) || OPENVOLLEY_SITE_RE.test(origin)) return true
+  let u
+  try { u = new URL(origin) } catch { return false }
+  if ((u.protocol !== 'http:' && u.protocol !== 'https:') || u.origin !== origin.toLowerCase()) return false
+  if (typeof host === 'string' && host && u.host === host.toLowerCase()) return true
+  return isLanHostName(u.hostname.replace(/^\[|\]$/g, ''))
+}
+
+/**
+ * The WebSocket upgrade or a state-changing HTTP request: null when its Origin
+ * and Host pass the rule above, else why it is refused.
+ * @param {{ headers?: Record<string, string|undefined> }} req
+ * @param {string[]} [extraHosts] more names the relay is reached by (lowercase)
+ */
+function relayRequestRefusal(req, extraHosts = []) {
+  const headers = (req && req.headers) || {}
+  if (!isAllowedRelayHost(headers.host, extraHosts)) return 'host-not-allowed'
+  if (!isTrustedRelayOrigin(headers.origin, headers.host)) return 'origin-not-allowed'
+  return null
+}
+
+// --- Synced values the relay reads (status, ids, PINs, names) ----------------
+
+const MAX_SYNC_TEXT = 200
+const SYNC_SCALAR_FIELDS = ['id', 'status', 'gameNumber', 'game_n', 'scheduledAt', 'homeTeamName', 'awayTeamName']
+
+/** null / undefined, a boolean, a finite number or a string of at most `max` characters. */
+function isBoundedScalar(v, max = MAX_SYNC_TEXT) {
+  if (v === undefined || v === null || typeof v === 'boolean') return true
+  if (typeof v === 'number') return Number.isFinite(v)
+  return typeof v === 'string' && v.length <= max
+}
+
+/**
+ * Does a synced bundle carry only values the relay can read as text: its
+ * match status, ids, PINs and team names? Anything else (an object whose
+ * String() throws, a huge string) would reach every list and PIN check.
+ */
+function hasReadableSyncFields(bundle) {
+  const match = bundle && bundle.match
+  if (!match || typeof match !== 'object') return false
+  for (const k of SYNC_SCALAR_FIELDS) if (!isBoundedScalar(match[k])) return false
+  for (const k of MATCH_SECRET_FIELDS) {
+    if (k !== 'connection_pins' && k !== 'connectionPins' && !isBoundedScalar(match[k], 64)) return false
+  }
+  for (const side of ['homeTeam', 'awayTeam']) {
+    const t = bundle[side]
+    if (t && typeof t === 'object' ? !isBoundedScalar(t.name) : !isBoundedScalar(t)) return false
+  }
+  return true
+}
+
+// "Score another court on this device": the "already running" page links to
+// /?court=other, which answers with this cookie and a redirect to "/". A
+// browser that carries it gets the scoresheet even while the main instance is
+// registered (a page navigation cannot send X-Instance-ID). Same names in
+// src-tauri/src/relay.rs.
+const OTHER_COURT_PARAM = 'court'
+const OTHER_COURT_VALUE = 'other'
+const OTHER_COURT_COOKIE = 'ov_other_court'
+
+/** Does the Cookie header carry the other-court opt-in? */
+function hasOtherCourtCookie(cookieHeader) {
+  if (typeof cookieHeader !== 'string') return false
+  return cookieHeader.split(';').some((c) => c.trim() === `${OTHER_COURT_COOKIE}=1`)
+}
+
+const MAIN_INSTANCE_PAGE = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Main Instance Already Running</title>
+<style>body{font-family:Arial,sans-serif;text-align:center;padding:50px 16px}h1{color:#ef4444}p{color:#666}ul{list-style:none;padding:0}li{margin:8px 0}</style>
+</head><body><h1>Main Scoresheet Already Running</h1>
+<p>Another scoretable is active on this server.</p>
+<p>You can still open:</p>
+<ul>
+<li><a href="/referee">Referee App</a></li>
+<li><a href="/bench">Bench App</a></li>
+<li><a href="/livescore">Livescore App</a></li>
+</ul>
+<p>Scoring a match on another court?</p>
+<ul><li><a href="/?${OTHER_COURT_PARAM}=${OTHER_COURT_VALUE}">Open the scoresheet for another court on this device</a></li></ul>
+</body></html>`
+
+/** Its policy (SEC-47): links and its own inline style, nothing else
+ *  (relay.rs MAIN_INSTANCE_PAGE_CSP is the same). */
+const MAIN_INSTANCE_PAGE_CSP = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
+
+/**
+ * Single main-scoresheet lock, the same rule on every relay: only the relay
+ * host itself (see createLocalAddressCheck) may register or release it, and it
+ * may always re-register. A LAN device can therefore never lock the scoretable
+ * out of "/". When the scorer runs on a LAN tablet (headless Pi) nobody
+ * registers and the gate stays off — the gate would otherwise block that
+ * tablet's own reload, since a page navigation cannot send X-Instance-ID.
+ *
+ * The lock is a page lock, not a match lock: it only keeps a LAN browser from
+ * opening "/" by mistake. Who scores a match is decided per match by the game
+ * PIN (sync-match-data claims), so several courts can share one relay with one
+ * scoretable each: a court tablet in the native app never loads "/", and a LAN
+ * browser opts in with /?court=other (OTHER_COURT_COOKIE).
+ */
+function createMainInstanceGate({ isLocal }) {
+  let mainInstanceId = null
+  return {
+    get mainInstanceId() { return mainInstanceId },
+    register(instanceId, addr) {
+      if (!isLocal(addr)) {
+        return { status: 403, body: { success: false, error: 'Only the scoretable machine can register the main instance' } }
+      }
+      mainInstanceId = instanceId || `instance-${Date.now()}`
+      return { status: 200, body: { success: true, instanceId: mainInstanceId } }
+    },
+    unregister(instanceId, addr) {
+      if (!isLocal(addr)) {
+        return { status: 403, body: { success: false, error: 'Not the registered instance' } }
+      }
+      mainInstanceId = null // the host may always release its own lock
+      return { status: 200, body: { success: true } }
+    },
+    /**
+     * True when a request for "/" must get the "already running" page.
+     * `cookieHeader`: the request's Cookie header (the other-court opt-in).
+     */
+    blocksMainPage(addr, requestingInstanceId, cookieHeader) {
+      return mainInstanceId !== null && !isLocal(addr) && requestingInstanceId !== mainInstanceId &&
+        !hasOtherCourtCookie(cookieHeader)
+    },
+    /**
+     * The gate for a page request: "/?court=other" sets the other-court cookie
+     * and redirects to "/"; a blocked "/" gets the "already running" page.
+     * Returns true when it answered (anything else is served as usual).
+     */
+    handleMainPage(req, res, path) {
+      if (path !== '/' && path !== '/index.html') return false
+      let query = null
+      try { query = new URL(req.url || '/', 'http://relay.local').searchParams } catch { query = null }
+      if (query && query.get(OTHER_COURT_PARAM) === OTHER_COURT_VALUE) {
+        res.writeHead(302, {
+          Location: '/',
+          'Set-Cookie': `${OTHER_COURT_COOKIE}=1; Path=/; Max-Age=43200; SameSite=Lax`,
+          'Cache-Control': 'no-store',
+        })
+        res.end()
+        return true
+      }
+      const addr = req.socket && req.socket.remoteAddress
+      if (!this.blocksMainPage(addr, req.headers['x-instance-id'], req.headers.cookie)) return false
+      res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': MAIN_INSTANCE_PAGE_CSP })
+      res.end(MAIN_INSTANCE_PAGE)
+      return true
+    },
+    /**
+     * Serve /api/server/register-main and /api/server/unregister-main.
+     * Returns true when handled.
+     */
+    handleRequest(req, res, path) {
+      if (path !== '/api/server/register-main' && path !== '/api/server/unregister-main') return false
+      const addr = req.socket && req.socket.remoteAddress
+      const id = req.headers['x-instance-id']
+      const r = path.endsWith('/register-main') ? this.register(id, addr) : this.unregister(id, addr)
+      res.writeHead(r.status, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(r.body))
+      return true
+    },
+  }
+}
+
+/** Counts failures per key in a fixed window; `blocked` never increments. */
+function createFailureCounter({ windowMs = 60 * 1000, max = CLAIM_FAILURE_LIMIT } = {}) {
+  const entries = new Map()
+  const fresh = (key) => {
+    const e = entries.get(key)
+    if (e && Date.now() - e.windowStart <= windowMs) return e
+    entries.delete(key)
+    return null
+  }
+  return {
+    blocked: (key) => { const e = fresh(key); return !!e && e.count >= max },
+    fail: (key) => {
+      if (entries.size > 10000) entries.clear() // bound memory under a flood
+      const e = fresh(key)
+      if (e) e.count++
+      else entries.set(key, { count: 1, windowStart: Date.now() })
+    },
+    /** Takes back one count (a PIN that turned out right). */
+    refund: (key) => { const e = fresh(key); if (e && e.count > 0) e.count-- },
+  }
+}
+
+/** Numeric ids stay numbers in HTTP responses (clients compare them to Dexie ids). */
+function publicMatchId(key) {
+  return /^\d+$/.test(key) ? Number(key) : key
+}
+
+function formatDateTime(scheduledAt) {
+  if (!scheduledAt) return 'TBD'
+  try {
+    const d = new Date(scheduledAt)
+    const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    const timeStr = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+    return `${dateStr} ${timeStr}`
+  } catch {
+    return 'TBD'
+  }
+}
+
+const LISTED_STATUSES = new Set(['scheduled', 'live'])
+
+/** A team's display name: the bundle's team (object or plain string), else `fallback`. */
+function teamNameOf(team, fallback) {
+  const name = typeof team === 'string' ? team : team && typeof team === 'object' ? team.name : null
+  return typeof name === 'string' && name.trim() ? name : fallback
+}
+
+/**
+ * One GET /api/match/list row for a stored bundle, or null when the match is
+ * not listed. Listed: status 'scheduled' or 'live' (none counts as
+ * 'scheduled'), whatever the referee connection — display devices (the LedBox
+ * bridge) need no PIN and pick their match from this list — and with
+ * `includeFinished` (?finished=1, the livescore) a finished one too. Public
+ * fields only: no PINs, no people. Same rule in backend/lib/publicColumns.js
+ * relayMatchListRow and src-tauri/src/relay.rs match_list_entry.
+ * @param {string} key
+ * @param {object} bundle
+ * @param {{ includeFinished?: boolean }} [options]
+ */
+function matchListEntry(key, bundle, { includeFinished = false } = {}) {
+  const match = (bundle && bundle.match) || {}
+  // A status that is neither text nor a number lists nothing (String() of an
+  // object can throw; onSync refuses such syncs, this guards older rooms)
+  if (match.status != null && typeof match.status !== 'string' && typeof match.status !== 'number') return null
+  const status = match.status == null || match.status === '' ? 'scheduled' : String(match.status)
+  if (!LISTED_STATUSES.has(status) && !(includeFinished && FINISHED_STATUSES.has(status.toLowerCase()))) return null
+  return {
+    id: publicMatchId(key),
+    gameNumber: match.gameNumber || match.game_n || key,
+    homeTeam: teamNameOf(bundle && bundle.homeTeam, teamNameOf(match.homeTeamName, 'Home')),
+    awayTeam: teamNameOf(bundle && bundle.awayTeam, teamNameOf(match.awayTeamName, 'Away')),
+    scheduledAt: match.scheduledAt ?? null,
+    dateTime: formatDateTime(match.scheduledAt),
+    status,
+    // 'beach' (openbeach) or 'indoor': each app lists its own sport's matches
+    sportType: bundleSport(bundle),
+    test: match.test === true,
+    // PINs intentionally NOT returned — validated via /api/match/validate-pin
+    refereeConnectionEnabled: match.refereeConnectionEnabled === true,
+    // The referee / bench apps offer only the matches they can join
+    homeTeamConnectionEnabled: match.homeTeamConnectionEnabled === true,
+    awayTeamConnectionEnabled: match.awayTeamConnectionEnabled === true,
+  }
+}
+
+/**
+ * Fixed-window per-key rate limiter. The cleanup timer is unref'd so it never
+ * keeps a process (e.g. `vite build`) alive.
+ */
+function createRateLimiter({ windowMs = 60 * 1000, max = 10 } = {}) {
+  const entries = new Map()
+  const timer = setInterval(() => {
+    const now = Date.now()
+    for (const [key, e] of entries) if (now - e.windowStart > windowMs * 2) entries.delete(key)
+  }, 5 * 60 * 1000)
+  if (timer && typeof timer.unref === 'function') timer.unref()
+  function isRateLimited(key, limit = max) {
+    const now = Date.now()
+    const e = entries.get(key)
+    if (!e || now - e.windowStart > windowMs) {
+      entries.set(key, { count: 1, windowStart: now })
+      return false
+    }
+    e.count++
+    return e.count > limit
+  }
+  /** Clears the cleanup timer (createLanRelay's close()). */
+  isRateLimited.dispose = () => clearInterval(timer)
+  return isRateLimited
+}
+
+// --- Sign on phone (docs/qr-signing-spec.md 4): /api/sign/* -----------------
+
+const SIGN_ENDPOINT_RE = /^\/api\/sign\/(start|open|submit|wait|close)$/
+const PAIR_ENDPOINT_RE = /^\/api\/pair\/(start|wait|focus|close|join|poll|input)$/
+
+/**
+ * Read at most `limit` bytes of a JSON body and stop: { body } or { error: status }.
+ * Never buffers more than the cap.
+ */
+function readSignBody(req, limit) {
+  return new Promise((resolve) => {
+    const declared = Number(req.headers && req.headers['content-length'])
+    if (Number.isFinite(declared) && declared > limit) {
+      req.resume()
+      resolve({ error: 413 })
+      return
+    }
+    const chunks = []
+    let size = 0
+    let done = false
+    const finish = (r) => { if (!done) { done = true; resolve(r) } }
+    req.on('data', (chunk) => {
+      if (done) return
+      size += chunk.length
+      if (size > limit) {
+        chunks.length = 0
+        finish({ error: 413 })
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on('end', () => {
+      if (done) return
+      // Buffer is a Node global (no require): a multi-byte character split
+      // across two chunks decodes whole
+      const text = typeof Buffer !== 'undefined' && chunks.every((c) => typeof c !== 'string')
+        ? Buffer.concat(chunks).toString('utf8')
+        : chunks.map(String).join('')
+      try {
+        const body = JSON.parse(text)
+        finish(jsonTooDeep(body) ? { error: 400 } : { body })
+      } catch {
+        finish({ error: 400 })
+      }
+    })
+    req.on('error', () => finish({ error: 400 }))
+  })
+}
+
+/**
+ * Read at most `limit` bytes of a body as text and stop: { text } or { error: status }.
+ * Never buffers more than the cap.
+ */
+function readTextBody(req, limit) {
+  return new Promise((resolve) => {
+    const declared = Number(req.headers && req.headers['content-length'])
+    if (Number.isFinite(declared) && declared > limit) {
+      req.resume()
+      resolve({ error: 413 })
+      return
+    }
+    const chunks = []
+    let size = 0
+    let done = false
+    const finish = (r) => { if (!done) { done = true; resolve(r) } }
+    req.on('data', (chunk) => {
+      if (done) return
+      size += chunk.length
+      if (size > limit) {
+        chunks.length = 0
+        finish({ error: 413 })
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on('end', () => {
+      const text = typeof Buffer !== 'undefined' && chunks.every((c) => typeof c !== 'string')
+        ? Buffer.concat(chunks).toString('utf8')
+        : chunks.map(String).join('')
+      finish({ text })
+    })
+    req.on('error', () => finish({ error: 400 }))
+  })
+}
+
+const isJsonRequest = (req) => /^application\/json\b/i.test(String((req.headers && req.headers['content-type']) || ''))
+
+// --- Bench requests ----------------------------------------------------------
+// A bench tablet sends its team's line-up, a time-out request or a prepared
+// substitution to the scorer (bench-request); the scorer answers
+// (bench-response). The rules and messages are those of the cloud relay's
+// backend/lib/benchRequests.js (copied here: this file requires nothing) and
+// of src-tauri/src/relay.rs; the wire scenario all of them pass is
+// backend/tests/helpers/benchRequestContract.js. See that lib for the messages.
+
+const BENCH_REQUEST_KINDS = Object.freeze(['lineup', 'timeout', 'substitution', 'cancel'])
+const BENCH_RESPONSE_STATUSES = Object.freeze(['accepted', 'declined', 'seen'])
+const LINEUP_KEYS = Object.freeze(['I', 'II', 'III', 'IV', 'V', 'VI'])
+const BENCH_REQUESTS_PER_MINUTE = 30
+const MAX_BENCH_REASON = 200
+const MAX_BENCH_PAIRS = 6
+const MAX_REQUESTS_PER_TEAM = 12
+const BENCH_REQUEST_TTL_MS = 30 * 60 * 1000
+const ID_RE = /^[A-Za-z0-9_-]{1,64}$/
+// The app's ids are br-<hex>; a name every plain object has (constructor,
+// __proto__, toString...) is refused, a scoreboard keys its cards by the id
+const isId = (v) => typeof v === 'string' && ID_RE.test(v) && !(v in Object.prototype)
+
+const isTeam = (t) => t === 'home' || t === 'away'
+const shirt = (v) => {
+  const n = typeof v === 'string' && /^\d{1,2}$/.test(v.trim()) ? Number(v.trim()) : v
+  return Number.isInteger(n) && n >= 1 && n <= 99 ? n : null
+}
+const fail = (reason) => ({ ok: false, reason })
+
+/**
+ * A bench-request's request, checked and copied to the known fields only.
+ * @returns {{ ok: true, request: object } | { ok: false, reason: string }}
+ */
+function normalizeBenchRequest(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return fail('bad-request')
+  if (!isId(raw.id)) return fail('bad-id')
+  if (!BENCH_REQUEST_KINDS.includes(raw.kind)) return fail('bad-kind')
+  const setIndex = raw.setIndex
+  if (!Number.isInteger(setIndex) || setIndex < 1 || setIndex > 5) return fail('bad-set')
+  const request = { id: raw.id, kind: raw.kind, setIndex }
+  if (raw.kind === 'cancel') {
+    if (!isId(raw.cancelId)) return fail('bad-cancel')
+    request.cancelId = raw.cancelId
+    return { ok: true, request }
+  }
+  if (raw.kind === 'lineup') {
+    const lu = raw.lineup
+    if (!lu || typeof lu !== 'object' || Array.isArray(lu)) return fail('bad-lineup')
+    const lineup = {}
+    const seen = new Set()
+    for (const k of LINEUP_KEYS) {
+      const n = shirt(lu[k])
+      if (n === null || seen.has(n)) return fail('bad-lineup')
+      seen.add(n)
+      lineup[k] = n
+    }
+    request.lineup = lineup
+    if (raw.gameCaptain !== undefined && raw.gameCaptain !== null) {
+      const gc = shirt(raw.gameCaptain)
+      if (gc === null || !seen.has(gc)) return fail('bad-captain')
+      request.gameCaptain = gc
+    }
+    return { ok: true, request }
+  }
+  if (raw.kind === 'substitution') {
+    if (!Array.isArray(raw.pairs) || raw.pairs.length < 1 || raw.pairs.length > MAX_BENCH_PAIRS) return fail('bad-pairs')
+    const outs = new Set()
+    const ins = new Set()
+    const pairs = []
+    for (const p of raw.pairs) {
+      if (!p || typeof p !== 'object') return fail('bad-pairs')
+      const out = shirt(p.out)
+      const inn = shirt(p.in)
+      if (out === null || inn === null || out === inn || outs.has(out) || ins.has(inn) || outs.has(inn) || ins.has(out)) return fail('bad-pairs')
+      outs.add(out)
+      ins.add(inn)
+      pairs.push({ out, in: inn })
+    }
+    request.pairs = pairs
+    if (raw.gameCaptain !== undefined && raw.gameCaptain !== null) {
+      const gc = shirt(raw.gameCaptain)
+      if (gc === null || outs.has(gc)) return fail('bad-captain')
+      request.gameCaptain = gc
+    }
+    return { ok: true, request }
+  }
+  return { ok: true, request } // timeout: nothing more
+}
+
+/** A bench-response, checked: { ok, response: { id, status, reason? } }. */
+function normalizeBenchResponse(raw) {
+  if (!raw || typeof raw !== 'object') return fail('bad-request')
+  if (!isId(raw.id)) return fail('bad-id')
+  if (!BENCH_RESPONSE_STATUSES.includes(raw.status)) return fail('bad-status')
+  const response = { id: raw.id, status: raw.status }
+  if (typeof raw.reason === 'string' && raw.reason.trim()) response.reason = raw.reason.trim().slice(0, MAX_BENCH_REASON)
+  return { ok: true, response }
+}
+
+/** The set the match is in from the relayed sets: the lowest unfinished one, else after the last. */
+function currentSetOfBundle(bundle) {
+  const sets = Array.isArray(bundle?.sets) ? bundle.sets : []
+  let open = null
+  let last = 0
+  for (const s of sets) {
+    const i = Number(s?.index)
+    if (!Number.isInteger(i)) continue
+    if (i > last) last = i
+    if (!s.finished && (open === null || i < open)) open = i
+  }
+  return open ?? (last > 0 ? last + 1 : 1)
+}
+
+const OPEN = (e) => e.status === 'pending' || e.status === 'seen'
+
+/** What the bench is told about one of its requests. */
+function benchView(entry) {
+  const r = entry.request
+  return { id: r.id, kind: r.kind, setIndex: r.setIndex, status: entry.status, ...(entry.reason ? { reason: entry.reason } : {}) }
+}
+
+/** What a referee sees of a time-out / substitution request (never a line-up). */
+function refereeInfo(matchId, entry, status = entry.status) {
+  const r = entry.request
+  return { type: 'bench-request-info', matchId, team: entry.team, id: r.id, kind: r.kind, setIndex: r.setIndex, ...(r.pairs ? { pairs: r.pairs } : {}), status }
+}
+
+/**
+ * The open and recently answered requests of every match. Answered ones stay
+ * (for a bench that reconnects) until their set is over or BENCH_REQUEST_TTL_MS.
+ */
+function createBenchRequestStore({ ttlMs = BENCH_REQUEST_TTL_MS, maxPerTeam = MAX_REQUESTS_PER_TEAM } = {}) {
+  const byMatch = new Map() // matchId -> Map<id, { team, request, status, reason?, at }>
+
+  const entries = (matchId) => byMatch.get(matchId) || null
+
+  /**
+   * Keep a request. A new line-up of a team replaces its open line-up of that
+   * set, a new time-out request its open time-out request, a new substitution
+   * request its open one. A line-up already accepted for the set is locked.
+   * cancel: drops the team's open request cancelId.
+   * @returns {{ ok: true, entry, superseded: object[], cancelled: object|null } | { ok: false, reason }}
+   */
+  function add(matchId, team, request, now = Date.now()) {
+    if (!isTeam(team)) return fail('bad-team')
+    let map = byMatch.get(matchId)
+    if (request.kind === 'cancel') {
+      const target = map?.get(request.cancelId)
+      if (!target || target.team !== team || !OPEN(target)) return fail('nothing-to-cancel')
+      map.delete(request.cancelId)
+      return { ok: true, entry: null, superseded: [], cancelled: target }
+    }
+    if (!map) {
+      map = new Map()
+      byMatch.set(matchId, map)
+    }
+    const prev = map.get(request.id)
+    if (prev && (prev.team !== team || !OPEN(prev))) return fail('duplicate-id')
+    if (request.kind === 'lineup') {
+      for (const e of map.values()) {
+        if (e.team === team && e.request.kind === 'lineup' && e.request.setIndex === request.setIndex && e.status === 'accepted') return fail('lineup-locked')
+      }
+    }
+    const superseded = []
+    for (const [id, e] of map) {
+      if (id === request.id || e.team !== team || !OPEN(e) || e.request.kind !== request.kind) continue
+      if (request.kind === 'lineup' && e.request.setIndex !== request.setIndex) continue
+      superseded.push(e)
+      map.delete(id)
+    }
+    const entry = { team, request, status: 'pending', at: now }
+    map.delete(request.id)
+    map.set(request.id, entry)
+    // Room per team: the oldest answered ones go first, then the oldest
+    let own = [...map.entries()].filter(([, e]) => e.team === team)
+    while (own.length > maxPerTeam) {
+      const victim = own.find(([, e]) => !OPEN(e)) || own[0]
+      map.delete(victim[0])
+      own = own.filter((x) => x !== victim)
+    }
+    return { ok: true, entry, superseded, cancelled: null }
+  }
+
+  /** The scorer's answer. null when there is no such open request of the team. */
+  function answer(matchId, team, id, status, reason = null, now = Date.now()) {
+    const e = entries(matchId)?.get(id)
+    if (!e || e.team !== team || !OPEN(e)) return null
+    if (status === 'seen') {
+      e.status = 'seen'
+      return e
+    }
+    e.status = status
+    e.answeredAt = now
+    if (reason) e.reason = reason
+    else delete e.reason
+    return e
+  }
+
+  /** Open requests (for the scorer), oldest first. */
+  function open(matchId) {
+    return [...(entries(matchId)?.values() || [])].filter(OPEN)
+  }
+
+  /** Every kept request of a team (for its bench). */
+  function ofTeam(matchId, team) {
+    return [...(entries(matchId)?.values() || [])].filter((e) => e.team === team)
+  }
+
+  /** Drop what belongs to a set that is over, and what is older than the TTL. */
+  function prune(matchId, currentSet, now = Date.now()) {
+    const map = entries(matchId)
+    if (!map) return
+    for (const [id, e] of map) {
+      if (e.request.setIndex < currentSet || now - e.at > ttlMs) map.delete(id)
+    }
+    if (map.size === 0) byMatch.delete(matchId)
+  }
+
+  function drop(matchId) {
+    byMatch.delete(matchId)
+  }
+
+  return { add, answer, open, ofTeam, prune, drop, size: () => byMatch.size }
+}
+
+/** Fixed-window counter per key (the per-socket bench-request limit). */
+function createWindowLimiter({ max = BENCH_REQUESTS_PER_MINUTE, windowMs = 60 * 1000 } = {}) {
+  const windows = new Map()
+  return {
+    /** Counts one; true when over the limit. */
+    hit(key, now = Date.now()) {
+      let w = windows.get(key)
+      if (!w || now - w.start >= windowMs) {
+        w = { start: now, count: 0 }
+        windows.set(key, w)
+      }
+      w.count++
+      if (windows.size > 10000) {
+        for (const [k, v] of windows) if (now - v.start >= windowMs) windows.delete(k)
+      }
+      return w.count > max
+    },
+    forget(key) { windows.delete(key) }
+  }
+}
+
+/**
+ * Which role a PIN proves for a relayed match: 'home' / 'away' (that bench's
+ * PIN while its connection is on), 'referee', else null. The game PIN (the
+ * scorer's own devices) proves no bench. Same as backend lib/matchAccess.js pinRoleOf.
+ */
+function pinRoleOf(match, pin) {
+  const p = pin === undefined || pin === null ? '' : String(pin).trim()
+  if (!p || !match || typeof match !== 'object') return null
+  const same = (v) => {
+    const s = v === undefined || v === null ? '' : String(v).trim()
+    return !!s && safeEqualText(s, p)
+  }
+  if (match.homeTeamConnectionEnabled === true && same(match.homeTeamPin)) return 'home'
+  if (match.awayTeamConnectionEnabled === true && same(match.awayTeamPin)) return 'away'
+  if (match.refereeConnectionEnabled === true && same(match.refereePin)) return 'referee'
+  return null
+}
+
+/**
+ * Create one relay instance (state + WS protocol + HTTP API).
+ *
+ * Sign on phone (/api/sign/*, docs/qr-signing-spec.md 4): `signCore` is the
+ * module ./signSessionCore.cjs (this file must not require() it; the ESM entry
+ * ../lanRelayCore.js passes it). Without it every sign call
+ * answers 503 OV_SIGN_UNAVAILABLE. The sessions (and their sweeper timer) are
+ * created on the first sign request, never at load: a module-level relay (the
+ * Vite plugin) must not keep `vite build` alive. close() disposes them.
+ * `isLocal(addr)`: the relay host itself may start a session; anyone else
+ * proves the match's game PIN (X-OV-Match-Pin). Defaults to loopback only.
+ *
+ * Pair a phone (/api/pair/*): `pairCore` is ./pairSessionCore.cjs, passed the
+ * same way (`pairOptions.sha256` is required by that core; the ESM entry
+ * passes the sign core's). Without it every pair call answers 503
+ * OV_PAIR_UNAVAILABLE. Created lazily, disposed by close(), like the sign
+ * sessions.
+ *
+ * `heartbeatMs`: the ping interval (HEARTBEAT_MS; 0 turns it off).
+ *
+ * @param {{ log?: Console, requestTimeoutMs?: number, isRateLimited?: Function,
+ *   signCore?: object, isLocal?: (addr: string) => boolean, signOptions?: object,
+ *   pairCore?: object, pairOptions?: object }} [options]
+ */
+function createLanRelay(options = {}) {
+  const log = options.log || console
+  const requestTimeoutMs = options.requestTimeoutMs || 5000
+  const orphanTakeoverMs = options.orphanTakeoverMs ?? ORPHAN_TAKEOVER_MS
+  const staleTakeoverMs = options.staleTakeoverMs ?? STALE_TAKEOVER_MS
+  const maxOwnedPerIp = options.maxOwnedPerIp ?? MAX_OWNED_PER_IP
+  const maxSockets = options.maxSockets ?? MAX_SOCKETS
+  const maxSocketsPerIp = options.maxSocketsPerIp ?? MAX_SOCKETS_PER_IP
+  // The relay machine's own sockets (scoreboard, board bridge) have a cap of
+  // their own: a page there must not fill the relay either
+  const maxLoopbackSockets = options.maxLoopbackSockets ?? MAX_SOCKETS_PER_IP
+  const heartbeatMs = options.heartbeatMs ?? HEARTBEAT_MS
+  const ownLimiters = []
+  const isRateLimited = options.isRateLimited || (ownLimiters[ownLimiters.length] = createRateLimiter())
+  const claimFailures = createFailureCounter({ max: options.claimFailureLimit ?? CLAIM_FAILURE_LIMIT })
+  // Wrong subscribe-match PINs per socket / IP and minute (no PIN compared beyond)
+  const pinFailures = createFailureCounter({ max: options.pinFailureLimit ?? PIN_FAILURE_LIMIT })
+  // Wrong POST /api/match/validate-pin PINs per IP and minute
+  const validatePinFailures = createFailureCounter({ windowMs: VALIDATE_PIN_FAILURE_WINDOW_MS, max: VALIDATE_PIN_FAILURES })
+  const isNewClaimLimited = (ownLimiters[ownLimiters.length] = createRateLimiter({ max: options.newClaimLimit ?? NEW_CLAIM_LIMIT }))
+  const signCore = options.signCore || null
+  const pairCore = options.pairCore || null
+  // Scoreboard codes (docs/scoreboard-code-spec.md): ./displayCodeCore.cjs,
+  // passed like the pair core; it needs the sign core's SHA-256
+  const displayCore = options.displayCore || null
+  const isLocalAddr = options.isLocal || isLoopbackAddress
+  // Wrong PINs per match from every address (MATCH_PIN_FAILURE_LIMIT)
+  const matchPinFailures = createFailureCounter({ windowMs: MATCH_PIN_WINDOW_MS, max: options.matchPinFailureLimit ?? MATCH_PIN_FAILURE_LIMIT })
+  const matchPinKey = (matchId) => `m:${matchId}`
+  // Addresses that proved a PIN of a match (room key -> Set of `ip:` keys):
+  // the per-match budget others spent does not hold them, only their own
+  // address budget (a referee or bench that reconnects mid-match)
+  const provenAddrs = new Map()
+  const MAX_PROVEN_PER_MATCH = 64
+  const noteProven = (matchId, addr) => {
+    if (!addr || addr === 'ip:unknown') return
+    let set = provenAddrs.get(matchId)
+    if (!set) {
+      if (provenAddrs.size >= 10000) provenAddrs.clear() // bound memory under a flood
+      provenAddrs.set(matchId, (set = new Set()))
+    }
+    if (set.size < MAX_PROVEN_PER_MATCH) set.add(addr)
+  }
+  const matchBlockedFor = (matchId, addr) =>
+    !(provenAddrs.get(matchId)?.has(addr)) && matchPinFailures.blocked(matchPinKey(matchId))
+  // PINs offered before their match reached the relay, counted once per
+  // address, match and PIN (`addr|matchId|pin` -> time): a tablet that wakes
+  // and resubscribes does not spend its budget on the same offer again
+  const pendingOffers = new Map()
+  // { check(matchId, pin) -> true | false | undefined, remember(matchId, pin), forget(matchId) }:
+  // the game PIN of each room kept beyond a restart of the relay (frontend/server.js
+  // keeps a salted hash on disk). Without it the claims live in memory only.
+  const claimStore = options.claimStore || null
+  const maxRooms = options.maxRooms ?? MAX_ROOMS
+  const maxRoomsPerIp = options.maxRoomsPerIp ?? MAX_ROOMS_PER_IP
+  const maxRoomBytesPerIp = options.maxRoomBytesPerIp ?? MAX_ROOM_BYTES_PER_IP
+  const roomIdleMs = options.roomIdleMs ?? ROOM_IDLE_EVICT_MS
+  const allowedHosts = (options.allowedHosts || []).map((h) => String(h).toLowerCase())
+  let signSessions = null // created on the first /api/sign/* request
+  let pairSessions = null // created on the first /api/pair/* request
+  // The scoreboard codes of the rooms (hash -> room only); its sweeper starts with the first code
+  const displayCodes = displayCore && (options.displayOptions?.sha256 || signCore)
+    ? displayCore.createDisplayCodes({
+      via: 'lan',
+      sha256: signCore ? signCore.sha256Hex : undefined,
+      log: (line) => log.log(`[Display] ${line}`),
+      onEnd: (room, hash, reason) => onCodeEnd(room, hash, reason),
+      ...(options.displayOptions || {}),
+    })
+    : null
+  const codeFollowers = new Map() // code hash -> Set<ws> that follow its room by it
+
+  const store = new Map() // matchId -> bundle (unstripped: the PINs live only here)
+  const subscriptions = new Map() // matchId -> Set<ws>
+  const clients = new Map() // ws -> { id, ip, role, connectedAt, owned:Set, subscribed:Set }
+  const pending = new Map() // requestId -> { type, matchId, targets:Set<ws>, resolve, timer }
+  const orphanedSince = new Map() // matchId -> when its last owning socket left
+  const rooms = new Map() // matchId -> { ip, bytes, idleSince }: who created the room, its last sync's size
+  const displaced = new Map() // bare Dexie id -> game PIN an unfinished match had before a stale takeover
+  const scorers = new Map() // matchId -> { id, claim }: the device whose claim scores the room
+  const movedClaims = new Map() // matchId -> Map<device id, claim> another device's claim took over
+  const supersededClaims = new Map() // matchId -> Set<claim> the scorers' copies were continued from
+  const presentRooms = new Set() // room keys whose subscribers were last told present:true (scorer-presence)
+  const displayTold = new Map() // room key -> display state its scoreboards were last told (display-presence)
+  let displaySeq = 0
+  const benchRequests = createBenchRequestStore() // open + recently answered bench requests per match
+  const benchLimiter = createWindowLimiter() // bench-request per socket and minute
+  const messageLimiter = createWindowLimiter({ max: options.messagesPerMinute ?? MESSAGES_PER_MINUTE })
+  let nextClientId = 1
+  let frameBytes = 0 // size of the frame handleMessage is dispatching
+
+  function send(ws, msg) {
+    if (!ws || ws.readyState !== 1) return false
+    if (typeof ws.bufferedAmount === 'number' && ws.bufferedAmount > MAX_BUFFERED_BYTES) {
+      // fallen this far behind: end it (the runtime's 'close' handler removes it)
+      try { ws.terminate() } catch { /* already gone */ }
+      return false
+    }
+    try {
+      ws.send(JSON.stringify(msg))
+      return true
+    } catch (err) {
+      log.error('[Relay] send failed:', err && err.message)
+      return false
+    }
+  }
+
+  function sendError(ws, code, message, matchId) {
+    send(ws, matchId ? { type: 'error', code, message, matchId } : { type: 'error', code, message })
+  }
+
+  // --- PIN-proved access ----------------------------------------------------
+
+  // Loopback is keyed by socket only: a page on the relay machine must not
+  // spend the scoreboard's own budget
+  const pinFailureKeys = (meta) => (meta.ip && !isLoopbackAddress(meta.ip) ? [`ip:${meta.ip}`, `ws:${meta.id}`] : [`ws:${meta.id}`])
+
+  /** pinGrantsAccess, compared only with the PINs of the role the caller names (and the game PIN). */
+  function pinGrantsAccessAs(match, pin, role) {
+    if (role !== 'referee' && role !== 'bench') return pinGrantsAccess(match, pin)
+    const only = role === 'referee'
+      ? { ...match, homeTeamConnectionEnabled: false, awayTeamConnectionEnabled: false, team1TeamConnectionEnabled: false, team2TeamConnectionEnabled: false }
+      : { ...match, refereeConnectionEnabled: false }
+    return pinGrantsAccess(only, pin)
+  }
+
+  /** May this socket get the bundle and match actions (not just the summary)? */
+  function hasAccess(ws, matchId, bundle) {
+    const meta = clients.get(ws)
+    if (!meta || !matchId) return false
+    if (meta.owned.has(matchId)) return true
+    const a = meta.access.get(matchId)
+    if (!a || !bundle || !bundle.match) return false
+    // Offered before the match reached the relay: counted when it was
+    // offered (offerPin), compared once, and not at all once the match is
+    // over its wrong-PIN budget
+    const addr = pinFailureKeys(meta)[0]
+    if (!a.verified && matchBlockedFor(matchId, addr)) {
+      meta.access.delete(matchId)
+      return false
+    }
+    if (pinGrantsAccessAs(bundle.match, a.pin, a.role)) {
+      if (!a.verified) {
+        // The offer was right: it no longer counts as a failure
+        for (const k of a.counted || []) pinFailures.refund(k)
+        pendingOffers.delete(`${addr}|${matchId}|${a.pin}`)
+        noteProven(matchId, addr)
+      }
+      a.verified = true
+      a.counted = null
+      return true
+    }
+    if (!a.verified) {
+      matchPinFailures.fail(matchPinKey(matchId))
+      meta.access.delete(matchId)
+    }
+    return false
+  }
+
+  /** match-full-data / match-data-update to a match's subscribers: full or summary each. */
+  function sendMatchData(matchId, type, bundle, scoreboardTs, excludeWs = null) {
+    const subs = subscriptions.get(matchId)
+    if (!subs || !bundle) return 0
+    let full = null
+    let summary = null
+    let publicSummary = null
+    let sent = 0
+    for (const client of subs) {
+      if (client === excludeWs || client.readyState !== 1) continue
+      let text
+      if (followsByCode(client, matchId)) {
+        // a board that came by a scoreboard code: the public live state only
+        publicSummary = publicSummary || JSON.stringify(codeView(matchDataMessage(type, matchId, bundle, scoreboardTs, 'summary')))
+        text = publicSummary
+      } else if (hasAccess(client, matchId, bundle)) {
+        full = full || JSON.stringify(matchDataMessage(type, matchId, bundle, scoreboardTs, 'full'))
+        text = full
+      } else {
+        summary = summary || JSON.stringify(matchDataMessage(type, matchId, bundle, scoreboardTs, 'summary'))
+        text = summary
+      }
+      try {
+        client.send(text)
+        sent++
+      } catch (err) {
+        log.error('[Relay] send to subscriber failed:', err && err.message)
+      }
+    }
+    return sent
+  }
+
+  function sendToSubscribers(matchId, msg, excludeWs = null, accessOnly = false) {
+    const subs = subscriptions.get(matchId)
+    if (!subs) return 0
+    const text = JSON.stringify(msg)
+    let sent = 0
+    const bundle = accessOnly ? store.get(matchId) : null
+    for (const client of subs) {
+      if (client === excludeWs || client.readyState !== 1) continue
+      if (accessOnly && !hasAccess(client, matchId, bundle)) continue
+      try {
+        client.send(text)
+        sent++
+      } catch (err) {
+        log.error('[Relay] send to subscriber failed:', err && err.message)
+      }
+    }
+    return sent
+  }
+
+  // --- Connection lifecycle -------------------------------------------------
+
+  /**
+   * May one more socket from this address in (MAX_SOCKETS, MAX_SOCKETS_PER_IP)?
+   * null if so, else the close code and reason. The runtimes ask before
+   * addClient.
+   */
+  function admit(ip) {
+    if (clients.size >= maxSockets) return { code: 1013, reason: 'Maximum connections reached' }
+    if (ip) {
+      let fromIp = 0
+      for (const meta of clients.values()) if (meta.ip === ip) fromIp++
+      if (fromIp >= (isLoopbackAddress(ip) ? maxLoopbackSockets : maxSocketsPerIp)) return { code: 1008, reason: 'Too many connections from this address' }
+    }
+    return null
+  }
+
+  // --- Heartbeat (HEARTBEAT_MS) -----------------------------------------------
+  // ws -> pong seen since the last ping. Sockets without ping() (tests' fakes)
+  // are not watched. The timer starts with the first socket and never keeps
+  // a process alive (unref): a module-level relay must not hold `vite build`.
+  const alive = new Map()
+  let heartbeatTimer = null
+
+  /** One heartbeat round: end the sockets that missed the last ping, ping the rest. */
+  function heartbeat() {
+    evictIdleRooms()
+    for (const [ws, seen] of alive) {
+      if (ws.readyState !== 1) {
+        if (ws.readyState === 3) alive.delete(ws)
+        continue
+      }
+      if (!seen) {
+        alive.delete(ws)
+        // the runtime's 'close' handler removes it (removeClient)
+        try { ws.terminate() } catch { /* already gone */ }
+        continue
+      }
+      alive.set(ws, false)
+      try { ws.ping() } catch { /* went away between checks */ }
+    }
+  }
+
+  function watch(ws) {
+    if (!(heartbeatMs > 0) || typeof ws.ping !== 'function' || typeof ws.terminate !== 'function' || typeof ws.on !== 'function') return
+    alive.set(ws, true)
+    ws.on('pong', () => { if (alive.has(ws)) alive.set(ws, true) })
+    if (!heartbeatTimer) {
+      heartbeatTimer = setInterval(heartbeat, heartbeatMs)
+      if (heartbeatTimer.unref) heartbeatTimer.unref()
+    }
+  }
+
+  function addClient(ws, info = {}) {
+    const meta = {
+      id: `c${nextClientId++}`,
+      ip: info.ip || null,
+      role: 'subscriber',
+      team: null,
+      connectedAt: new Date().toISOString(),
+      owned: new Set(),
+      subscribed: new Set(),
+      aliases: new Map(), // id this socket synced under -> room key (seed_key)
+      pinKeys: new Set(), // room keys this socket sent PINs for (see 'pins-required')
+      access: new Map(), // room key -> { pin, verified }: the PIN offered in subscribe-match
+      scorerDevice: null, // the device its syncs named with a claim (see noteScorer)
+      display: null, // a display's announcement { settingsUrl, at } (subscribe-match device 'display')
+      codeRooms: new Map(), // room key -> code hash: the rooms it follows by a scoreboard code
+    }
+    clients.set(ws, meta)
+    watch(ws)
+    send(ws, { type: 'connected', message: 'Connected to eScoresheet WebSocket server', timestamp: Date.now() })
+    return meta
+  }
+
+  function removeClient(ws) {
+    alive.delete(ws)
+    const meta = clients.get(ws)
+    if (!meta) return
+    for (const id of meta.subscribed) {
+      const subs = subscriptions.get(id)
+      if (subs) {
+        subs.delete(ws)
+        if (subs.size === 0) subscriptions.delete(id)
+      }
+    }
+    clients.delete(ws)
+    for (const hash of meta.codeRooms.values()) unfollowCode(ws, hash)
+    benchLimiter.forget(meta.id)
+    messageLimiter.forget(meta.id)
+    if (meta.display) for (const id of meta.subscribed) noteDisplays(id)
+    for (const matchId of meta.owned) {
+      if (ownersOf(matchId).length === 0) orphanedSince.set(matchId, Date.now())
+      notePresence(matchId)
+    }
+    // A scoreboard that disconnects can no longer answer pending requests.
+    for (const [requestId, p] of pending) {
+      if (p.targets.delete(ws) && p.targets.size === 0) settle(requestId, null)
+    }
+  }
+
+  // --- Scoreboard ownership -------------------------------------------------
+
+  function isOwner(ws, matchId) {
+    const meta = clients.get(ws)
+    return !!meta && meta.owned.has(matchId)
+  }
+
+  function ownersOf(matchId) {
+    const out = []
+    for (const [ws, meta] of clients) if (meta.owned.has(matchId)) out.push(ws)
+    return out
+  }
+
+  function scoreboardSockets() {
+    const out = []
+    for (const [ws, meta] of clients) if (meta.owned.size > 0 && ws.readyState === 1) out.push(ws)
+    return out
+  }
+
+  // --- Scorer presence (scorer-presence) -----------------------------------
+
+  /** Does an open socket hold the room's scoreboard claim (proved it)? */
+  function isScorerPresent(matchId) {
+    for (const [ws, meta] of clients) if (meta.owned.has(matchId) && ws.readyState === 1) return true
+    return false
+  }
+
+  function presenceMessage(matchId, present) {
+    return { type: 'scorer-presence', matchId, present, timestamp: Date.now() }
+  }
+
+  /**
+   * After a socket gained or lost the room's claim: tells the room's
+   * subscribers (not its scoreboards) when the scorer's presence flipped,
+   * once per flip. Called where `owned` changes (a granted claim, removeClient,
+   * scorer-moved, clear-all-matches), each time after the change is complete,
+   * so a take-over (the new socket in before the old one out) sends nothing.
+   */
+  function notePresence(matchId) {
+    const present = isScorerPresent(matchId)
+    if (present === presentRooms.has(matchId)) return
+    if (present) presentRooms.add(matchId)
+    else presentRooms.delete(matchId)
+    const subs = subscriptions.get(matchId)
+    if (!subs) return
+    const out = presenceMessage(matchId, present)
+    for (const c of [...subs]) if (!clients.get(c)?.owned.has(matchId)) send(c, out)
+  }
+
+  // --- Scoreboard displays (display-presence) -------------------------------
+
+  /** Whether a display follows the room, and the newest usable settings page. */
+  function displayStateIn(matchId) {
+    let present = false
+    let settingsUrl = null
+    let at = -Infinity
+    for (const c of subscriptions.get(matchId) || []) {
+      const meta = clients.get(c)
+      if (!meta || !meta.display || c.readyState !== 1) continue
+      present = true
+      if (meta.display.settingsUrl && meta.display.at >= at) {
+        settingsUrl = meta.display.settingsUrl
+        at = meta.display.at
+      }
+    }
+    return { present, settingsUrl: present ? settingsUrl : null }
+  }
+
+  const displayKey = (s) => (s.present ? `1|${s.settingsUrl || ''}` : '0')
+  const displayMessage = (matchId, s) => ({ type: 'display-presence', matchId, present: s.present, settingsUrl: s.settingsUrl })
+
+  /** To one socket that has just proved the room. */
+  function sendDisplayPresence(ws, matchId) {
+    const s = displayStateIn(matchId)
+    displayTold.set(matchId, displayKey(s))
+    send(ws, displayMessage(matchId, s))
+  }
+
+  /** After a display came, went or named another page: its scoreboards, when that changed. */
+  function noteDisplays(matchId) {
+    const s = displayStateIn(matchId)
+    const key = displayKey(s)
+    if (key === (displayTold.get(matchId) ?? '0')) return
+    if (key === '0') displayTold.delete(matchId)
+    else displayTold.set(matchId, key)
+    const out = displayMessage(matchId, s)
+    for (const o of ownersOf(matchId)) if (o.readyState === 1) send(o, out)
+  }
+
+  /**
+   * No connected socket has owned matchId for long enough: ORPHAN_TAKEOVER_MS
+   * for a finished match, STALE_TAKEOVER_MS for one still in play.
+   */
+  function isAbandoned(matchId, existing) {
+    return isAbandonedFor(matchId, isFinishedMatch(existing && existing.match) ? orphanTakeoverMs : staleTakeoverMs)
+  }
+
+  /** No connected socket has owned matchId for `graceMs` or longer. */
+  function isAbandonedFor(matchId, graceMs) {
+    const since = orphanedSince.get(matchId)
+    if (since === undefined || ownersOf(matchId).length > 0) return false
+    return Date.now() - since >= graceMs
+  }
+
+  const failureKeys = pinFailureKeys
+  /** A room keyed by a seed_key (not a bare Dexie id every device starts at). */
+  const isSeedRoom = (matchId) => !/^\d+$/.test(matchId)
+
+  /** Squatting limits for a socket that is about to own an id it did not own. */
+  function newClaimDenied(meta, matchId) {
+    if (!meta.ip || isLoopbackAddress(meta.ip)) return null // the scoretable machine itself
+    const ids = new Set()
+    for (const other of clients.values()) {
+      if (other.ip !== meta.ip) continue
+      for (const id of other.owned) if (id !== matchId) ids.add(id)
+    }
+    if (ids.size >= maxOwnedPerIp) return 'too-many-matches'
+    if (isNewClaimLimited(`new:${meta.ip}`)) return 'rate-limited'
+    return null
+  }
+
+  /** Is a room left with no scoreboard and no subscriber? */
+  function isIdleRoom(matchId) {
+    return ownersOf(matchId).length === 0 && !(subscriptions.get(matchId)?.size > 0)
+  }
+
+  /**
+   * Drop the rooms that have had no scoreboard and no subscriber for
+   * roomIdleMs. Their game PIN stays in claimStore: a later sync of the same
+   * room still has to prove it.
+   */
+  function evictIdleRooms(now = Date.now()) {
+    for (const matchId of [...store.keys()]) {
+      let room = rooms.get(matchId)
+      if (!room) rooms.set(matchId, (room = { ip: null, bytes: 0, idleSince: null }))
+      if (!isIdleRoom(matchId)) room.idleSince = null
+      else if (room.idleSince === null) room.idleSince = now
+      else if (now - room.idleSince >= roomIdleMs) dropRoom(matchId)
+    }
+  }
+
+  function dropRoom(matchId) {
+    if (displayCodes) displayCodes.dropRoom(matchId)
+    subscriptions.delete(matchId)
+    store.delete(matchId)
+    rooms.delete(matchId)
+    displaced.delete(matchId)
+    orphanedSince.delete(matchId)
+    scorers.delete(matchId)
+    movedClaims.delete(matchId)
+    supersededClaims.delete(matchId)
+    benchRequests.drop(matchId)
+    provenAddrs.delete(matchId)
+    presentRooms.delete(matchId)
+    displayTold.delete(matchId)
+  }
+
+  /**
+   * May this sync (of `bytes`) be stored? null if so, else the error code.
+   * A new room needs space in the store (MAX_ROOMS; the room idle the longest
+   * goes first); the creating address may hold MAX_ROOMS_PER_IP rooms and
+   * MAX_ROOM_BYTES_PER_IP synced bytes, counted also after its socket closed.
+   * The relay machine itself is not limited per address.
+   */
+  function roomBudgetDenied(meta, matchId, bytes) {
+    const isNew = !store.has(matchId)
+    if (isNew && store.size >= maxRooms) {
+      evictIdleRooms()
+      let oldest = null
+      for (const [id, r] of rooms) if (r.idleSince !== null && store.has(id) && (oldest === null || r.idleSince < rooms.get(oldest).idleSince)) oldest = id
+      if (store.size >= maxRooms) {
+        if (oldest === null) return 'relay-full'
+        dropRoom(oldest)
+      }
+    }
+    if (!meta || !meta.ip || isLoopbackAddress(meta.ip)) return null
+    let count = 0
+    let total = bytes
+    for (const [id, r] of rooms) {
+      if (r.ip !== meta.ip || id === matchId) continue
+      count++
+      total += r.bytes
+    }
+    if (isNew && count >= maxRoomsPerIp) return 'too-many-matches'
+    if (total > maxRoomBytesPerIp) return 'too-large'
+    return null
+  }
+
+  /**
+   * Prove the scoreboard role for matchId with the match's own game PIN.
+   * Returns { ok:true, kind } or { ok:false, code }. kind is 'owner' (this
+   * socket already owned it), 'proved' (same game PIN), 'new', 'open' (test
+   * match without a PIN), 'takeover' or 'reclaim' (bare Dexie ids only).
+   * - match not on the relay yet: the first scoreboard claims it;
+   * - stored match has a game PIN: the incoming match must carry the same one;
+   * - stored match has none (test match): any socket may write it, but only a
+   *   socket that already owns it may attach a game PIN to it;
+   * - a match with a game PIN is never taken over without it, not after its
+   *   scoreboard left and not after a restart of the relay (claimStore keeps
+   *   the PIN's hash): the scorer can always send it again; an abandoned
+   *   match without one (see isAbandoned) may be taken over;
+   * - a socket that has not proved the match and leaves the game PIN out is
+   *   asked for it ('pins-required'): not a guess, not counted;
+   * - wrong game PINs count per address and per match (matchPinFailures);
+   *   the device that scores the room (`device`, noteScorer) is not held by
+   *   the per-match budget others spent.
+   */
+  function claim(ws, matchId, incomingMatch, device = null) {
+    const meta = clients.get(ws)
+    if (!meta) return { ok: false, code: 'bad-request' }
+    const wasOwner = meta.owned.has(matchId)
+    const existing = store.get(matchId)
+    const incomingPin = gamePinOf(incomingMatch)
+    const grant = (kind) => {
+      meta.owned.add(matchId)
+      orphanedSince.delete(matchId)
+      noteProven(matchId, keys[0])
+      return { ok: true, kind }
+    }
+    const denyNew = () => (wasOwner ? null : newClaimDenied(meta, matchId))
+    const keys = failureKeys(meta)
+    const scorer = scorers.get(matchId)
+    const isScorer = !!device && !!scorer && scorer.id === device.id && scorer.claim === device.claim
+    const overBudget = () => keys.some((k) => claimFailures.blocked(k)) ||
+      (!isScorer && matchBlockedFor(matchId, keys[0]))
+    const wrongPin = () => {
+      for (const k of keys) claimFailures.fail(k)
+      matchPinFailures.fail(matchPinKey(matchId))
+      return { ok: false, code: 'not-match-owner' }
+    }
+
+    if (!existing) {
+      // A room this relay held before (a restart, an evicted room): its game PIN still decides
+      const known = claimStore && isSeedRoom(matchId) ? claimStore.check(matchId, incomingPin) : undefined
+      if (known !== undefined && !wasOwner) {
+        if (!hasGamePinField(incomingMatch)) return { ok: false, code: 'pins-required' }
+        if (overBudget()) return { ok: false, code: 'rate-limited' }
+        return known ? grant('proved') : wrongPin()
+      }
+      const denied = denyNew()
+      return denied ? { ok: false, code: denied } : grant(wasOwner ? 'owner' : 'new')
+    }
+    const storedPin = gamePinOf(existing.match)
+    if (storedPin === null && (incomingPin === null || wasOwner)) {
+      const denied = denyNew()
+      return denied ? { ok: false, code: denied } : grant(wasOwner ? 'owner' : 'open')
+    }
+    // An owner re-sending its own PIN proved it already: never rate limited.
+    // Leaving the PIN out is fine too (PINs are sent only when they change).
+    if (wasOwner && storedPin !== null && (incomingPin === storedPin || !hasGamePinField(incomingMatch))) return grant('owner')
+    // Proof takes the game PIN. A socket that leaves it out (the scorer after
+    // a reconnect) is asked for it: nothing compared, nothing counted.
+    if (storedPin !== null && !hasGamePinField(incomingMatch)) return { ok: false, code: 'pins-required' }
+    // From here the socket must prove something. Over the failure limit it is
+    // refused before any comparison, so the reply says nothing about the PIN.
+    if (overBudget()) return { ok: false, code: 'rate-limited' }
+
+    if (storedPin !== null && incomingPin !== null && safeEqualText(storedPin, incomingPin)) return grant(wasOwner ? 'owner' : 'proved')
+
+    // A room under a bare Dexie id (older apps without seed_key) another
+    // scorer may reuse: when an unfinished one is taken over with another
+    // game PIN, its own PIN may reclaim it once
+    const reclaimPin = displaced.get(matchId)
+    if (reclaimPin !== undefined && incomingPin !== null && incomingPin === reclaimPin) {
+      displaced.delete(matchId)
+      for (const other of clients.values()) if (other !== meta) other.owned.delete(matchId)
+      return grant('reclaim')
+    }
+    // Only a match without a game PIN (a test match), or one under a bare
+    // Dexie id, is ever taken over
+    if ((storedPin === null || !isSeedRoom(matchId)) && isAbandoned(matchId, existing)) {
+      const denied = denyNew()
+      if (denied) return { ok: false, code: denied }
+      if (storedPin !== null && incomingPin !== storedPin && !isFinishedMatch(existing.match)) displaced.set(matchId, storedPin)
+      else displaced.delete(matchId)
+      return grant('takeover')
+    }
+    // Only a claim with a PIN is a guess (a null PIN proves nothing either way)
+    if (incomingPin !== null) return wrongPin()
+    return { ok: false, code: 'not-match-owner' }
+  }
+
+  const CLAIM_ERRORS = {
+    'not-match-owner': 'Match is owned by another scoreboard (game PIN mismatch)',
+    'rate-limited': 'Too many failed scoreboard claims. Wait a minute.',
+    'too-many-matches': 'This device already drives the maximum number of matches',
+    'bad-request': 'Unknown connection',
+    'pins-required': 'Send this match again with its PINs (the relay lost it, or this connection has not proved it yet)',
+    'scorer-moved': 'This match is now scored on another device',
+    'relay-full': 'The relay holds the maximum number of matches',
+    'too-large': 'This device has synced the maximum amount of match data to the relay',
+  }
+
+  /**
+   * The room moved away from `device`'s claim: another device's sync took it
+   * over, and this one has not continued the match since (a new claim). The
+   * game PIN cannot tell: every device the match was scored on knows it, and
+   * a laptop back on the Wi-Fi re-synced its older copy over the room, the
+   * referee and benches jumping back to it (the cloud relay asks its
+   * database, see backend verifyRelayClaim). Once the device that took it
+   * over has been gone as long as a stale take-over waits, the match is the
+   * old one's again.
+   * Also moved: a claim the room's scorers name as one their copy was
+   * continued from (device.supersedes, a backup restore). The take-overs are
+   * kept in memory only: after a restart of this relay the first sync was
+   * granted, the second proved the PIN, and a laptop's older copy synced
+   * after the phone that had continued the match took the room from it for
+   * good (2026-10-27). Every sync of the newer copy names the older claims,
+   * so the relay knows them again from the newer copy's first sync.
+   */
+  function isMovedClaim(matchId, device) {
+    const scorer = scorers.get(matchId)
+    if (!scorer || scorer.id === device.id) return false
+    if (movedClaims.get(matchId)?.get(device.id) !== device.claim &&
+      !supersededClaims.get(matchId)?.has(device.claim)) return false
+    return !isAbandoned(matchId, store.get(matchId))
+  }
+
+  /**
+   * A granted sync of `device` (sync-match-data with a claim): it scores the
+   * room. When it took it over from another device, that device's claim is
+   * remembered as moved (isMovedClaim), and the sockets that named it stop
+   * speaking for the room and are told ('scorer-moved'), so its copy cannot
+   * replace the room on their next sync. A take-over by another match (a
+   * reused id) starts afresh. The claims its copy was continued from are
+   * older copies from now on (isMovedClaim), its own claim never.
+   */
+  function noteScorer(ws, meta, matchId, device, kind) {
+    if (kind === 'takeover' || kind === 'new') {
+      movedClaims.delete(matchId)
+      supersededClaims.delete(matchId)
+    }
+    if (meta) meta.scorerDevice = device.id
+    const prev = kind === 'takeover' || kind === 'new' ? null : scorers.get(matchId)
+    scorers.set(matchId, device)
+    let older = supersededClaims.get(matchId)
+    if (device.supersedes.length && !older) supersededClaims.set(matchId, (older = new Set()))
+    if (older) {
+      older.delete(device.claim)
+      for (const c of device.supersedes) {
+        older.delete(c) // re-added as the newest
+        older.add(c)
+      }
+      while (older.size > MAX_SUPERSEDED_PER_ROOM) older.delete(older.values().next().value)
+    }
+    let moved = movedClaims.get(matchId)
+    if (moved) moved.delete(device.id)
+    if (!prev || prev.id === device.id) return
+    if (!moved) movedClaims.set(matchId, (moved = new Map()))
+    moved.set(prev.id, prev.claim)
+    while (moved.size > MAX_MOVED_DEVICES) moved.delete(moved.keys().next().value)
+    for (const [other, om] of clients) {
+      if (other === ws || om.scorerDevice !== prev.id || !om.owned.delete(matchId)) continue
+      send(other, { type: 'scorer-moved', matchId, timestamp: Date.now() })
+    }
+  }
+
+  /**
+   * Store a synced bundle. A sync carries no liveState: the last one pushed is
+   * kept only while the same scoreboard / game PIN keeps the match — never
+   * across a takeover, a reclaim or a PIN change (it would describe another
+   * match: its sides, sets won, 'ended' status, ...).
+   */
+  function storeBundle(matchId, bundle, kind) {
+    // A scorer's undo snapshots are not relayed (backend server.js; the
+    // 3.0.15 scorer drops them itself, older ones send them with every point)
+    if (Array.isArray(bundle.events) && bundle.events.some((e) => e && (e.stateSnapshot !== undefined || e.stateBefore !== undefined))) {
+      bundle = { ...bundle, events: bundle.events.map((e) => {
+        if (!e || typeof e !== 'object') return e
+        const { stateSnapshot, stateBefore, ...rest } = e
+        return rest
+      }) }
+    }
+    const prev = store.get(matchId)
+    if (prev && (kind === 'owner' || kind === 'proved')) {
+      bundle = { ...bundle, match: carryMatchSecrets(prev.match, bundle.match) }
+      // A sync without its teams keeps the sport the same scorer set before
+      if (prev.sportType && !bundle.sportType) bundle.sportType = prev.sportType
+    }
+    const carry = prev && prev.liveState !== undefined && bundle.liveState === undefined &&
+      (kind === 'owner' || kind === 'proved') && gamePinOf(prev.match) === gamePinOf(bundle.match)
+    const next = carry ? { ...bundle, liveState: prev.liveState } : bundle
+    store.set(matchId, next)
+    return next
+  }
+
+  function deleteMatch(matchId) {
+    // Read the subscribers BEFORE dropping them, so they actually get told.
+    sendToSubscribers(matchId, { type: 'match-deleted', matchId })
+    // its scoreboard code ends (the boards that followed by it are told)
+    if (displayCodes) displayCodes.dropRoom(matchId)
+    const subs = subscriptions.get(matchId)
+    if (subs) for (const ws of subs) clients.get(ws)?.subscribed.delete(matchId)
+    subscriptions.delete(matchId)
+    store.delete(matchId)
+    orphanedSince.delete(matchId)
+    rooms.delete(matchId)
+    displaced.delete(matchId)
+    if (claimStore) claimStore.forget(matchId)
+    scorers.delete(matchId)
+    movedClaims.delete(matchId)
+    supersededClaims.delete(matchId)
+    benchRequests.drop(matchId)
+    provenAddrs.delete(matchId)
+    // Its subscribers were told match-deleted and dropped: no presence message
+    presentRooms.delete(matchId)
+    displayTold.delete(matchId)
+    for (const meta of clients.values()) meta.owned.delete(matchId)
+  }
+
+  // --- Relay -> scoreboard requests ----------------------------------------
+
+  function settle(requestId, result) {
+    const p = pending.get(requestId)
+    if (!p) return
+    pending.delete(requestId)
+    clearTimeout(p.timer)
+    p.resolve(result)
+  }
+
+  /** Ask the connected (proven) scoreboards; resolves null on timeout / no answer. */
+  function requestFromScoreboards(type, payload, matchId = null, sockets = null) {
+    const targets = new Set(sockets || scoreboardSockets())
+    if (targets.size === 0) return Promise.resolve(null)
+    const requestId = `${type}-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => settle(requestId, null), requestTimeoutMs)
+      if (timer && typeof timer.unref === 'function') timer.unref()
+      pending.set(requestId, { type, matchId, targets, resolve, timer })
+      for (const ws of targets) send(ws, { type, requestId, ...payload })
+    })
+  }
+
+  /** One scoreboard said "not me": wait for the others, give up when none are left. */
+  function declineRequest(requestId, ws) {
+    const p = pending.get(requestId)
+    if (!p) return
+    p.targets.delete(ws)
+    if (p.targets.size === 0) settle(requestId, null)
+  }
+
+  function onResponse(ws, msg) {
+    const p = pending.get(msg.requestId)
+    // Only the scoreboards the relay asked may answer, and only the matching type.
+    if (!p || !p.targets.has(ws) || `${p.type.replace(/-request$/, '')}-response` !== msg.type) return
+
+    if (msg.type === 'match-data-response') {
+      const bundle = bundleFromMessage({ matchData: msg.data ?? msg.matchData })
+      const id = normalizeMatchId(msg.matchId) ?? p.matchId
+      // Stored only under its room key, and only when that is the id asked for
+      const claimed = msg.success && bundle && id === p.matchId && relayKeyOf(id, bundle.match) === id
+        ? claim(ws, id, bundle.match) : null
+      if (!claimed || !claimed.ok) {
+        declineRequest(msg.requestId, ws)
+        return
+      }
+      settle(msg.requestId, storeBundle(id, bundle, claimed.kind))
+      notePresence(id)
+    } else if (msg.type === 'game-number-response') {
+      const id = normalizeMatchId(msg.matchId)
+      if (!msg.success || !msg.match || !id || !isOwner(ws, id)) {
+        declineRequest(msg.requestId, ws)
+        return
+      }
+      settle(msg.requestId, { match: msg.match, matchId: id })
+    } else if (msg.type === 'match-update-response') {
+      if (!msg.success) {
+        declineRequest(msg.requestId, ws)
+        return
+      }
+      // Only with the match's bundle as it is now (the claim check of a sync):
+      // a bare success proves nothing was stored
+      const bundle = bundleFromMessage({ matchData: msg.data })
+      const id = normalizeMatchId(msg.matchId) ?? p.matchId
+      const claimed = bundle && id === p.matchId && relayKeyOf(id, bundle.match) === id ? claim(ws, id, bundle.match) : null
+      if (!claimed || !claimed.ok) {
+        declineRequest(msg.requestId, ws)
+        return
+      }
+      const stored = storeBundle(id, bundle, claimed.kind)
+      sendMatchData(id, 'match-data-update', stored, undefined, ws)
+      notePresence(id)
+      settle(msg.requestId, { data: stored })
+    }
+  }
+
+  // --- WS message handlers ---------------------------------------------------
+
+  /** The room key for an id this socket sends (its Dexie id is an alias of the seed_key). */
+  function resolveKey(ws, rawId) {
+    const id = normalizeMatchId(rawId)
+    if (!id) return null
+    const meta = clients.get(ws)
+    return (meta && meta.aliases.get(id)) || id
+  }
+
+  function onSync(ws, msg) {
+    const bundle = bundleFromMessage(msg)
+    const rawId = normalizeMatchId(msg.matchId)
+    const matchId = bundle ? relayKeyOf(rawId, bundle.match) : null
+    if (!matchId || !bundle) {
+      sendError(ws, 'bad-request', 'sync-match-data needs matchId and match')
+      return
+    }
+    if (!hasReadableSyncFields(bundle)) {
+      sendError(ws, 'bad-request', 'sync-match-data: status, ids, PINs and team names must be short text or numbers', matchId)
+      return
+    }
+    const meta = clients.get(ws)
+    if (meta) {
+      if (hasAnyPinField(bundle.match)) {
+        rememberKey(meta.pinKeys, matchId, MAX_ALIASES)
+      } else if (!store.has(matchId) && meta.pinKeys.has(matchId)) {
+        // It left the PINs out because the relay held them: not any more
+        sendError(ws, 'pins-required', CLAIM_ERRORS['pins-required'], matchId)
+        return
+      }
+    }
+    // A claim another device took over: refused before any PIN is compared
+    const device = syncDeviceClaim(msg.device)
+    if (device && isMovedClaim(matchId, device)) {
+      if (meta) meta.owned.delete(matchId)
+      sendError(ws, 'scorer-moved', CLAIM_ERRORS['scorer-moved'], matchId)
+      notePresence(matchId)
+      return
+    }
+    const bytes = frameBytes
+    const full = roomBudgetDenied(meta, matchId, bytes)
+    if (full) {
+      sendError(ws, full, CLAIM_ERRORS[full], matchId)
+      return
+    }
+    const claimed = claim(ws, matchId, bundle.match, device)
+    if (!claimed.ok) {
+      sendError(ws, claimed.code, CLAIM_ERRORS[claimed.code] || 'Refused', matchId)
+      return
+    }
+    if (meta && rawId && rawId !== matchId) {
+      meta.aliases.delete(rawId)
+      if (meta.aliases.size >= MAX_ALIASES) meta.aliases.delete(meta.aliases.keys().next().value)
+      meta.aliases.set(rawId, matchId)
+    }
+    if (device) noteScorer(ws, meta, matchId, device, claimed.kind)
+    const stored = storeBundle(matchId, bundle, claimed.kind)
+    const room = rooms.get(matchId)
+    if (room && claimed.kind !== 'new' && claimed.kind !== 'takeover') room.bytes = bytes
+    else rooms.set(matchId, { ip: meta ? meta.ip : null, bytes, idleSince: null })
+    if (claimStore && isSeedRoom(matchId)) {
+      const pin = gamePinOf(stored.match)
+      if (pin !== null) claimStore.remember(matchId, pin)
+    }
+    sendMatchData(matchId, 'match-data-update', stored, msg._timestamp, ws)
+    // After the update: a tablet has the match before it hears its scorer is
+    // there. A take-over (noteScorer) is complete here, so it flips nothing.
+    notePresence(matchId)
+    // Bench requests of a set that is over go; a socket that has just
+    // (re)proved the match gets the open ones again
+    benchRequests.prune(matchId, currentSetOfBundle(stored))
+    // A socket that has just proved the room hears whether a display follows it
+    if (claimed.kind !== 'owner') sendDisplayPresence(ws, matchId)
+    if (claimed.kind !== 'owner') {
+      for (const e of benchRequests.open(matchId)) {
+        send(ws, { type: 'bench-request', matchId, team: e.team, request: e.request, status: e.status, at: e.at, replay: true })
+      }
+    }
+  }
+
+  function onSubscribe(ws, msg) {
+    // subscribe-match { code }: a scoreboard follows by the scorer's code
+    if (msg.code !== undefined && msg.code !== null && (msg.matchId === undefined || msg.matchId === null || msg.matchId === '')) {
+      onCodeSubscribe(ws, msg)
+      return
+    }
+    const matchId = normalizeMatchId(msg.matchId)
+    if (!matchId) {
+      sendError(ws, 'bad-request', 'subscribe-match needs matchId')
+      return
+    }
+    const meta = clients.get(ws)
+    if (meta && !meta.subscribed.has(matchId) && meta.subscribed.size >= MAX_SUBSCRIPTIONS_PER_SOCKET) {
+      sendError(ws, 'too-many-subscriptions', 'This connection follows the maximum number of matches', matchId)
+      return
+    }
+    if (!subscriptions.has(matchId)) subscriptions.set(matchId, new Set())
+    subscriptions.get(matchId).add(ws)
+    if (meta) {
+      meta.subscribed.add(matchId)
+      const device = msg.device ?? msg.role
+      if (DEVICE_ROLES.includes(device)) meta.role = device
+      if (DEVICE_TEAMS.includes(msg.team)) meta.team = msg.team
+      offerPin(ws, meta, matchId, msg.pin, DEVICE_ROLES.includes(device) ? device : null)
+    }
+    const stored = store.get(matchId)
+    if (stored && followsByCode(ws, matchId)) send(ws, codeView(matchDataMessage('match-full-data', matchId, stored, undefined, 'summary')))
+    else if (stored) send(ws, matchDataMessage('match-full-data', matchId, stored, undefined, hasAccess(ws, matchId, stored) ? 'full' : 'summary'))
+    if (stored) {
+      // A bench: its team's requests; a referee: the open time-out / substitution requests
+      const role = roleOf(ws, matchId, stored)
+      if (role === 'home' || role === 'away') {
+        send(ws, { type: 'bench-request-state', matchId, team: role, requests: benchRequests.ofTeam(matchId, role).map(benchView) })
+      } else if (role === 'referee') {
+        for (const e of benchRequests.open(matchId)) if (e.request.kind !== 'lineup') send(ws, refereeInfo(matchId, e))
+      }
+    }
+    // Last, once the subscription is answered: is the scorer there now (false
+    // for a room not on the relay yet)
+    send(ws, presenceMessage(matchId, isScorerPresent(matchId)))
+    // A display: its announcement, for every room it follows (the scoreboards told)
+    if (meta && msg.device === DISPLAY_DEVICE) {
+      meta.display = { settingsUrl: displaySettingsUrl(msg.settingsUrl), at: ++displaySeq }
+      for (const id of meta.subscribed) noteDisplays(id)
+    }
+  }
+
+  // --- Bench requests (see the block above createLanRelay) ------------------
+
+  /** The role a subscriber proved for the match: 'home' / 'away' / 'referee', else null. */
+  function roleOf(ws, matchId, bundle = store.get(matchId)) {
+    const meta = clients.get(ws)
+    const a = meta && meta.access.get(matchId)
+    if (!a || !bundle || !bundle.match || !hasAccess(ws, matchId, bundle)) return null
+    return pinRoleOf(bundle.match, a.pin)
+  }
+
+  function subscribersWithRole(matchId, role) {
+    const out = []
+    const bundle = store.get(matchId)
+    for (const c of subscriptions.get(matchId) || []) if (c.readyState === 1 && roleOf(c, matchId, bundle) === role) out.push(c)
+    return out
+  }
+
+  function toReferees(matchId, msg) {
+    for (const c of subscribersWithRole(matchId, 'referee')) send(c, msg)
+  }
+
+  function benchRefused(ws, matchId, reason, id) {
+    send(ws, { type: 'error', code: 'bench-request-refused', reason, message: `Bench request refused: ${reason}`, ...(id ? { id } : {}), ...(matchId ? { matchId } : {}) })
+  }
+
+  function onBenchRequest(ws, msg) {
+    const meta = clients.get(ws)
+    const matchId = normalizeMatchId(msg.matchId)
+    const id = msg.request && typeof msg.request.id === 'string' ? msg.request.id.slice(0, 64) : null
+    if (!meta || benchLimiter.hit(meta.id)) return benchRefused(ws, matchId, 'rate-limited', id)
+    const stored = matchId ? store.get(matchId) : null
+    if (!stored) return benchRefused(ws, matchId, 'no-match', id)
+    const team = msg.team
+    if (team !== 'home' && team !== 'away') return benchRefused(ws, matchId, 'bad-team', id)
+    if (roleOf(ws, matchId, stored) !== team) return benchRefused(ws, matchId, 'not-this-bench', id)
+    const checked = normalizeBenchRequest(msg.request)
+    if (!checked.ok) return benchRefused(ws, matchId, checked.reason, id)
+    const request = checked.request
+    benchRequests.prune(matchId, currentSetOfBundle(stored))
+    const kept = benchRequests.add(matchId, team, request)
+    if (!kept.ok) return benchRefused(ws, matchId, kept.reason, request.id)
+    const owners = ownersOf(matchId).filter((o) => o.readyState === 1)
+    const at = kept.entry ? kept.entry.at : Date.now()
+    for (const o of owners) send(o, { type: 'bench-request', matchId, team, request, status: kept.entry ? kept.entry.status : 'cancelled', at })
+    for (const old of kept.superseded) if (old.request.kind !== 'lineup') toReferees(matchId, refereeInfo(matchId, old, 'superseded'))
+    if (kept.cancelled && kept.cancelled.request.kind !== 'lineup') toReferees(matchId, refereeInfo(matchId, kept.cancelled, 'cancelled'))
+    if (kept.entry && request.kind !== 'lineup') toReferees(matchId, refereeInfo(matchId, kept.entry))
+    send(ws, {
+      type: 'bench-request-ack',
+      matchId,
+      team,
+      id: request.id,
+      status: kept.entry ? 'pending' : 'cancelled',
+      delivered: owners.length,
+      superseded: kept.superseded.map((e) => e.request.id),
+      ...(kept.cancelled ? { cancelId: kept.cancelled.request.id } : {}),
+    })
+  }
+
+  function onBenchResponse(ws, msg) {
+    const matchId = resolveKey(ws, msg.matchId)
+    if (!requireOwner(ws, matchId, 'bench-response')) return
+    const team = msg.team
+    const checked = normalizeBenchResponse(msg)
+    if ((team !== 'home' && team !== 'away') || !checked.ok) return benchRefused(ws, matchId, checked.ok ? 'bad-team' : checked.reason)
+    const { id, status, reason } = checked.response
+    const e = benchRequests.answer(matchId, team, id, status, reason || null)
+    if (!e) return benchRefused(ws, matchId, 'unknown-request', id)
+    const out = { type: 'bench-response', matchId, team, id, kind: e.request.kind, setIndex: e.request.setIndex, status, ...(reason ? { reason } : {}) }
+    for (const b of subscribersWithRole(matchId, team)) send(b, out)
+    for (const o of ownersOf(matchId)) if (o !== ws) send(o, out)
+    if (e.request.kind !== 'lineup') toReferees(matchId, refereeInfo(matchId, e, status))
+  }
+
+  /** The PIN a subscriber offers for a match: checked now if the relay holds it. */
+  function offerPin(ws, meta, matchId, rawPin, role = null) {
+    const pin = rawPin === undefined || rawPin === null || typeof rawPin === 'object' ? '' : String(rawPin).trim().slice(0, 32)
+    if (!pin) return
+    const keys = pinFailureKeys(meta)
+    if (keys.some((k) => pinFailures.blocked(k)) || matchBlockedFor(matchId, keys[0])) {
+      sendError(ws, 'rate-limited', 'Too many wrong PINs. Wait a minute.', matchId)
+      return
+    }
+    const stored = store.get(matchId)
+    if (stored && stored.match && !pinGrantsAccessAs(stored.match, pin, role)) {
+      for (const k of keys) pinFailures.fail(k)
+      matchPinFailures.fail(matchPinKey(matchId))
+      sendError(ws, 'pin-invalid', 'Wrong PIN for this match', matchId)
+      return
+    }
+    // Not on the relay yet: compared at its first sync (hasAccess). The offer
+    // counts against the address's budget now, so offers spread over many
+    // sockets cannot all be compared at once. The same offer again from the
+    // same address is not counted twice; a right one is refunded (hasAccess).
+    const known = !!(stored && stored.match)
+    let counted = null
+    if (known) noteProven(matchId, keys[0])
+    else {
+      const offerKey = `${keys[0]}|${matchId}|${pin}`
+      const at = pendingOffers.get(offerKey)
+      if (at === undefined || Date.now() - at > MATCH_PIN_WINDOW_MS) {
+        if (pendingOffers.size >= 10000) pendingOffers.clear() // bound memory under a flood
+        pendingOffers.set(offerKey, Date.now())
+        for (const k of keys) pinFailures.fail(k)
+        counted = keys
+      }
+    }
+    meta.access.delete(matchId)
+    if (meta.access.size >= MAX_ACCESS_KEYS) meta.access.delete(meta.access.keys().next().value)
+    meta.access.set(matchId, { pin, role, verified: known, counted })
+  }
+
+  function onUnsubscribe(ws, msg) {
+    const matchId = normalizeMatchId(msg.matchId)
+    if (!matchId) return
+    const subs = subscriptions.get(matchId)
+    if (subs) {
+      subs.delete(ws)
+      if (subs.size === 0) subscriptions.delete(matchId)
+    }
+    const meta = clients.get(ws)
+    if (meta) meta.subscribed.delete(matchId)
+    if (meta && meta.codeRooms.has(matchId)) {
+      unfollowCode(ws, meta.codeRooms.get(matchId))
+      meta.codeRooms.delete(matchId)
+    }
+    if (meta && meta.display) noteDisplays(matchId)
+  }
+
+  function requireOwner(ws, matchId, what) {
+    if (!matchId) {
+      sendError(ws, 'bad-request', `${what} needs matchId`)
+      return false
+    }
+    if (!isOwner(ws, matchId)) {
+      sendError(ws, 'not-match-owner', `Only the match's scoreboard may send ${what}`, matchId)
+      return false
+    }
+    return true
+  }
+
+  function onMatchAction(ws, msg) {
+    const matchId = resolveKey(ws, msg.matchId)
+    if (!requireOwner(ws, matchId, 'match-action')) return
+    if (!msg.action || typeof msg.action !== 'string') {
+      sendError(ws, 'bad-request', 'match-action needs action', matchId)
+      return
+    }
+    const now = Date.now()
+    sendToSubscribers(matchId, {
+      type: 'match-action',
+      matchId,
+      action: msg.action,
+      // Scoreboard sends the payload as `data`; `actionData` is the legacy name.
+      data: msg.data !== undefined ? msg.data : msg.actionData,
+      timestamp: msg.timestamp,
+      _timestamp: now,
+      _scoreboardTimestamp: msg._timestamp || msg.timestamp || now,
+    }, ws, true) // only sockets with access: actions carry players and sanctions
+  }
+
+  function onLiveState(ws, msg) {
+    const matchId = resolveKey(ws, msg.matchId)
+    if (!requireOwner(ws, matchId, 'live-state-update')) return
+    if (!msg.liveState || typeof msg.liveState !== 'object') return
+    const existing = store.get(matchId)
+    if (existing) existing.liveState = msg.liveState
+    const update = { type: 'live-state-update', matchId, liveState: msg.liveState }
+    let publicText = null
+    for (const client of subscriptions.get(matchId) || []) {
+      if (client === ws || client.readyState !== 1) continue
+      // a board that came by a scoreboard code: the public live state only
+      const text = followsByCode(client, matchId)
+        ? (publicText = publicText || JSON.stringify({ ...update, liveState: displayCore.publicLiveState(msg.liveState) }))
+        : null
+      if (text) {
+        try { client.send(text) } catch (err) { log.error('[Relay] send to subscriber failed:', err && err.message) }
+      } else {
+        send(client, update)
+      }
+    }
+  }
+
+  // --- Scoreboard codes (docs/scoreboard-code-spec.md) -----------------------
+  // The scorer's socket sets its room's code (display-code-set); a board
+  // follows by it (subscribe-match { code }) and gets the public summary and
+  // live state only. The code table (./displayCodeCore.cjs) keeps hashes only.
+
+  function followsByCode(ws, matchId) {
+    const meta = clients.get(ws)
+    return !!meta && meta.codeRooms.has(matchId)
+  }
+
+  /** A match-full-data / match-data-update for a code follower: its live state public. */
+  function codeView(msg) {
+    const out = { ...msg }
+    if (out.liveState !== undefined) out.liveState = displayCore.publicLiveState(out.liveState)
+    if (out.data && out.data.liveState !== undefined) out.data = { ...out.data, liveState: displayCore.publicLiveState(out.data.liveState) }
+    return out
+  }
+
+  function unfollowCode(ws, hash) {
+    const set = codeFollowers.get(hash)
+    if (!set) return
+    set.delete(ws)
+    if (set.size === 0) codeFollowers.delete(hash)
+  }
+
+  function onCodeSet(ws, msg) {
+    const key = resolveKey(ws, msg.matchId)
+    const matchId = key || normalizeMatchId(msg.matchId)
+    if (!displayCodes) {
+      send(ws, displayCore ? displayCore.codeStateMessage(matchId, { ok: false, reason: 'busy' }) : { type: 'display-code-state', matchId, active: false, reason: 'busy' })
+      return
+    }
+    if (!key || !isOwner(ws, key)) {
+      send(ws, displayCore.codeStateMessage(matchId, { ok: false, reason: 'not-match-owner' }))
+      return
+    }
+    const meta = clients.get(ws)
+    const r = displayCodes.set({ room: key, code: msg.code, issuedAt: msg.issuedAt, owner: meta ? meta.id : 'ws' })
+    send(ws, displayCore.codeStateMessage(key, r))
+  }
+
+  function onCodeSubscribe(ws, msg) {
+    const meta = clients.get(ws)
+    if (!displayCodes || !meta) {
+      send(ws, { type: 'display-code', ok: false, reason: 'not-found' })
+      return
+    }
+    const r = displayCodes.resolve(msg.code, { ipKey: stripV4Prefix(meta.ip) || `ws:${meta.id}` })
+    send(ws, displayCore.codeAnswerMessage(r))
+    if (!r.ok) return
+    const before = meta.codeRooms.get(r.room)
+    if (before && before !== r.hash) unfollowCode(ws, before)
+    meta.codeRooms.set(r.room, r.hash)
+    if (!codeFollowers.has(r.hash)) codeFollowers.set(r.hash, new Set())
+    codeFollowers.get(r.hash).add(ws)
+    // as a PIN-less display subscribing to the room (a PIN next to a code is never offered)
+    onSubscribe(ws, { type: 'subscribe-match', matchId: r.room, device: DISPLAY_DEVICE, settingsUrl: msg.settingsUrl })
+  }
+
+  /** A code ended (replaced, revoked, expired, its room dropped): its boards are told and leave the room. */
+  function onCodeEnd(room, hash, reason) {
+    const set = codeFollowers.get(hash)
+    codeFollowers.delete(hash)
+    for (const ws of set || []) {
+      const meta = clients.get(ws)
+      if (!meta || meta.codeRooms.get(room) !== hash) continue
+      meta.codeRooms.delete(room)
+      const subs = subscriptions.get(room)
+      if (subs) {
+        subs.delete(ws)
+        if (subs.size === 0) subscriptions.delete(room)
+      }
+      meta.subscribed.delete(room)
+      send(ws, displayCore.codeEndedMessage(room))
+      if (meta.display) noteDisplays(room)
+    }
+    // run out: the scorer's sockets hear it (a revoke or a new code was answered already)
+    if (reason === 'expired') for (const owner of ownersOf(room)) send(owner, displayCore.codeStateMessage(room, { ok: false, reason: 'expired' }))
+  }
+
+  function onDelete(ws, msg) {
+    const matchId = resolveKey(ws, msg.matchId)
+    if (!requireOwner(ws, matchId, 'delete-match')) return
+    deleteMatch(matchId)
+  }
+
+  function onClearAll(ws, msg) {
+    const meta = clients.get(ws)
+    if (!meta || meta.owned.size === 0) {
+      sendError(ws, 'not-scoreboard', 'Only a scoreboard that synced its match may clear matches')
+      return
+    }
+    const keep = resolveKey(ws, msg.keepMatchId)
+    for (const matchId of [...meta.owned]) {
+      if (matchId === keep) continue
+      // Another live socket still drives this match: just drop our claim.
+      if (ownersOf(matchId).some((other) => other !== ws && other.readyState === 1)) {
+        meta.owned.delete(matchId)
+      } else {
+        deleteMatch(matchId)
+      }
+      notePresence(matchId)
+    }
+  }
+
+  function handleMessage(ws, raw) {
+    let msg
+    try {
+      msg = JSON.parse(typeof raw === 'string' ? raw : raw.toString())
+    } catch {
+      sendError(ws, 'bad-request', 'Invalid message format')
+      return
+    }
+    if (!msg || typeof msg !== 'object') return
+    if (jsonTooDeep(msg)) {
+      sendError(ws, 'bad-request', 'Message nested too deeply')
+      return
+    }
+    if (!clients.has(ws)) addClient(ws)
+    const sender = clients.get(ws)
+    if (sender && !isLoopbackAddress(sender.ip) && messageLimiter.hit(sender.id)) {
+      sendError(ws, 'rate-limited', 'Too many messages. Wait a minute.')
+      return
+    }
+    frameBytes = typeof raw === 'string' ? raw.length : (raw && raw.length) || 0
+
+    // A frame never ends the relay (and every court's tablets with it): the
+    // runtimes call this from the socket's 'message' event, where a throw
+    // reaches no handler and exits the process. A handler that throws on what
+    // a client sent (a value whose String() throws, ...) fails that message
+    // only.
+    try {
+      dispatch(ws, msg)
+    } catch (err) {
+      log.error('[Relay] message failed:', err && err.message)
+      sendError(ws, 'bad-request', 'Message could not be handled')
+    }
+  }
+
+  function dispatch(ws, msg) {
+    switch (msg.type) {
+      case 'ping': send(ws, { type: 'pong', timestamp: Date.now() }); break
+      case 'sync-match-data': onSync(ws, msg); break
+      case 'subscribe-match': onSubscribe(ws, msg); break
+      case 'unsubscribe-match': onUnsubscribe(ws, msg); break
+      case 'display-code-set': onCodeSet(ws, msg); break
+      case 'match-action': onMatchAction(ws, msg); break
+      case 'live-state-update': onLiveState(ws, msg); break
+      case 'delete-match': onDelete(ws, msg); break
+      case 'clear-all-matches': onClearAll(ws, msg); break
+      case 'bench-request': onBenchRequest(ws, msg); break
+      case 'bench-response': onBenchResponse(ws, msg); break
+      case 'match-data-response':
+      case 'game-number-response':
+      case 'match-update-response':
+        onResponse(ws, msg)
+        break
+      // The relay validates PINs itself; answers from clients are ignored.
+      case 'pin-validation-response': break
+      // No catch-all rebroadcast: unknown types are dropped.
+      default: break
+    }
+  }
+
+  // --- Relay-owned HTTP API -------------------------------------------------
+
+  /**
+   * POST /api/match/validate-pin { pin, type, sport }: `sport` is the asking
+   * app's ('beach' from openbeach, 'indoor' when left out); a PIN never finds a
+   * match of the other sport (same rule as backend/server.js).
+   */
+  function validatePin(body) {
+    const pinStr = String((body && body.pin) ?? '').trim()
+    const cfg = PIN_TYPES[(body && body.type) || 'referee']
+    const sport = (body && body.sport) ?? 'indoor'
+    if (sport !== 'indoor' && sport !== 'beach') return { status: 400, body: { success: false, error: 'Invalid request' } }
+    if (!/^\d{6}$/.test(pinStr)) return { status: 400, body: { success: false, error: 'Invalid PIN format' } }
+    if (!cfg) return { status: 400, body: { success: false, error: 'Invalid PIN type' } }
+    for (const [key, bundle] of store) {
+      const match = bundle.match
+      if (!match || bundleSport(bundle) !== sport) continue
+      const expected = match[cfg.pin]
+      if (expected === undefined || expected === null || !safeEqualText(String(expected).trim(), pinStr)) continue
+      if (match[cfg.enabled] === true && match.status !== 'final') {
+        const found = publicMatch({ ...match, id: publicMatchId(key) })
+        // A beach answer names its sport (the indoor answer is unchanged)
+        return { status: 200, body: { success: true, match: sport === 'beach' ? { ...found, sportType: 'beach' } : found } }
+      }
+    }
+    return {
+      status: 404,
+      body: { success: false, error: 'No match found with this PIN. Make sure the main scoresheet is running and connected.' },
+    }
+  }
+
+  /**
+   * The match for GET /api/match/:id: the bundle when `pin` grants it (the
+   * X-OV-Match-Pin header), the public summary otherwise. `ip` keys the
+   * wrong-PIN limit.
+   */
+  async function getMatch(rawId, { pin = null, ip = null } = {}) {
+    const matchId = normalizeMatchId(rawId)
+    if (!matchId) return { status: 400, body: { success: false, error: 'Match ID required' } }
+    const offered = pin === undefined || pin === null ? '' : String(pin).trim()
+    const key = `ip:${ip || 'unknown'}`
+    if (offered && (pinFailures.blocked(key) || matchBlockedFor(matchId, key))) {
+      return { status: 429, body: { success: false, error: 'Too many wrong PINs. Wait a minute.' } }
+    }
+    const bundle = store.get(matchId) || await requestFromScoreboards('match-data-request', { matchId }, matchId)
+    if (!bundle) {
+      return { status: 404, body: { success: false, error: 'Match data not found. Make sure the main scoresheet is running and connected.' } }
+    }
+    const full = !!offered && pinGrantsAccess(bundle.match, offered)
+    if (offered && !full) {
+      pinFailures.fail(key)
+      matchPinFailures.fail(matchPinKey(matchId))
+    }
+    if (full) noteProven(matchId, key)
+    return { status: 200, body: { success: true, ...(full ? { access: 'full', ...toWireBundle(bundle) } : relaySummaryBundle(bundle)) } }
+  }
+
+  /**
+   * GET /api/match/list: every match a scorer currently publishes here
+   * (matchListEntry) — not one left without its scoreboard for longer than an
+   * unfinished match is held for it (staleTakeoverMs) — newest first.
+   * `includeFinished` (?finished=1): finished matches too.
+   * @param {{ includeFinished?: boolean }} [options]
+   */
+  function listMatches({ includeFinished = false } = {}) {
+    const matches = []
+    for (const [key, bundle] of store) {
+      if (isAbandonedFor(key, staleTakeoverMs)) continue
+      const m = matchListEntry(key, bundle, { includeFinished })
+      if (m) matches.push(m)
+    }
+    const at = (m) => (m.scheduledAt ? new Date(m.scheduledAt).getTime() || 0 : 0)
+    matches.sort((a, b) => at(b) - at(a))
+    return { status: 200, body: { success: true, matches } }
+  }
+
+  /**
+   * GET /api/match/by-game-number: the match's public summary (SUMMARY_MATCH_FIELDS,
+   * the team names) and its room key; the public match only with a PIN of that
+   * match (`pin`, X-OV-Match-Pin: a tablet's or a team's upload PIN). Wrong PINs
+   * count like GET /api/match/:id.
+   */
+  async function findByGameNumber(gameNumber, { pin = null, ip = null } = {}) {
+    const gn = gameNumber === undefined || gameNumber === null ? '' : String(gameNumber).trim()
+    if (!gn) return { status: 400, body: { success: false, error: 'Game number required' } }
+    const offered = pin === undefined || pin === null ? '' : String(pin).trim()
+    const failKey = `ip:${ip || 'unknown'}`
+    if (offered && pinFailures.blocked(failKey)) {
+      return { status: 429, body: { success: false, error: 'Too many wrong PINs. Wait a minute.' } }
+    }
+    const answer = (match, matchId, bundle) => {
+      // A spent match budget: no PIN is compared, whatever the address
+      const spent = !!offered && matchBlockedFor(matchId, failKey)
+      const full = !!offered && !spent && anyMatchPinGrants(match, offered)
+      if (offered && !full && !spent) {
+        pinFailures.fail(failKey)
+        matchPinFailures.fail(matchPinKey(matchId))
+      }
+      if (full) return { status: 200, body: { success: true, access: 'full', match: publicMatch(match), matchId } }
+      const summary = relaySummaryBundle({ ...(bundle || {}), match })
+      return {
+        status: 200,
+        body: { success: true, access: 'summary', match: summary.match, homeTeam: summary.homeTeam, awayTeam: summary.awayTeam, matchId },
+      }
+    }
+    for (const [key, bundle] of store) {
+      const match = bundle.match
+      if (match && (String(match.gameNumber || '') === gn || String(match.game_n || '') === gn || key === gn)) {
+        return answer(match, key, bundle)
+      }
+    }
+    const found = await requestFromScoreboards('game-number-request', { gameNumber: gn })
+    if (!found) return { status: 404, body: { success: false, error: 'Match not found with this game number' } }
+    return answer(found.match, found.matchId, store.get(found.matchId))
+  }
+
+  /**
+   * PATCH /api/match/:id { pendingHomeRoster | pendingAwayRoster | pendingTeam1Roster
+   * | pendingTeam2Roster }: a team's roster upload, with that team's upload PIN
+   * of this match (`pin`, X-OV-Match-Pin). Handed only to the scoreboard that
+   * owns the match; done when it answers with the match's bundle.
+   */
+  async function updateMatch(rawId, updates, { pin = null, ip = null } = {}) {
+    const matchId = normalizeMatchId(rawId)
+    if (!matchId) return { status: 400, body: { success: false, error: 'Match ID required' } }
+    const keys = updates && typeof updates === 'object' && !Array.isArray(updates) ? Object.keys(updates) : []
+    const field = keys.length === 1 && Object.prototype.hasOwnProperty.call(ROSTER_UPLOAD_FIELDS, keys[0]) ? keys[0] : null
+    const roster = field ? updates[field] : null
+    if (!field || !roster || typeof roster !== 'object' || Array.isArray(roster)) {
+      return { status: 400, body: { success: false, error: 'Only a team roster can be uploaded here' } }
+    }
+    const offered = pin === undefined || pin === null ? '' : String(pin).trim()
+    if (!offered) return { status: 401, body: { success: false, error: 'Upload PIN required' } }
+    const failKey = `ip:${ip || 'unknown'}`
+    if (pinFailures.blocked(failKey)) {
+      return { status: 429, body: { success: false, error: 'Too many wrong PINs. Wait a minute.' } }
+    }
+    const bundle = store.get(matchId)
+    const owners = ownersOf(matchId).filter((o) => o.readyState === 1)
+    if (!bundle || owners.length === 0) {
+      return { status: 404, body: { success: false, error: 'Match not found. Make sure the main scoresheet is running and connected.' } }
+    }
+    if (!uploadPinGrants(bundle.match, field, offered)) {
+      pinFailures.fail(failKey)
+      return { status: 403, body: { success: false, error: 'Invalid upload PIN' } }
+    }
+    if (isFinishedMatch(bundle.match)) return { status: 409, body: { success: false, error: 'This match has already ended' } }
+    const result = await requestFromScoreboards('match-update-request', { matchId, updates: { [field]: roster } }, matchId, owners)
+    if (!result) {
+      return { status: 500, body: { success: false, error: 'Update request timeout. Make sure the main scoresheet is running.' } }
+    }
+    return { status: 200, body: { success: true } }
+  }
+
+  /**
+   * GET /api/server/connections. `local`: the relay machine itself asks. The
+   * list of tablets only for it or with a PIN of the asked match (`pin`,
+   * X-OV-Match-Pin; wrong ones count like GET /api/match/:id); anyone else
+   * gets counts, and no other room's key.
+   */
+  function getConnections(matchIdFilter, { local = true, pin = null, ip = null } = {}) {
+    const filter = normalizeMatchId(matchIdFilter)
+    const offered = pin === undefined || pin === null ? '' : String(pin).trim()
+    let listed = local
+    if (!local && offered && filter) {
+      const failKey = `ip:${ip || 'unknown'}`
+      if (!pinFailures.blocked(failKey) && !matchBlockedFor(filter, failKey)) {
+        const bundle = store.get(filter)
+        listed = !!bundle && anyMatchPinGrants(bundle.match, offered)
+        if (!listed) {
+          pinFailures.fail(failKey)
+          matchPinFailures.fail(matchPinKey(filter))
+        }
+      }
+    }
+    const list = []
+    for (const [, meta] of clients) {
+      if (meta.owned.size > 0) continue // scoreboards are not dashboards
+      for (const matchId of meta.subscribed) {
+        if (filter && matchId !== filter) continue
+        list.push({ id: meta.id, ip: meta.ip, role: meta.role, team: meta.team, matchId, connectedAt: meta.connectedAt })
+      }
+    }
+    const matchSubscriptions = {}
+    for (const [matchId, subs] of subscriptions) if (local || matchId === filter) matchSubscriptions[matchId] = subs.size
+    return {
+      totalClients: clients.size,
+      dashboardClients: list.length,
+      referees: list.filter((c) => c.role === 'referee').length,
+      benches: list.filter((c) => c.role === 'bench').length,
+      clients: listed ? list : [],
+      matchSubscriptions,
+    }
+  }
+
+  function sendJson(res, status, body, headers = {}) {
+    if (res.headersSent || res.writableEnded) return
+    res.writeHead(status, { 'Content-Type': 'application/json', ...headers })
+    res.end(JSON.stringify(body))
+  }
+
+  function readJsonBody(req) {
+    return new Promise((resolve, reject) => {
+      let body = ''
+      req.on('data', (chunk) => {
+        body += chunk.toString()
+        if (body.length > MAX_BODY_SIZE) {
+          reject(Object.assign(new Error('Request body too large'), { status: 413 }))
+          req.destroy()
+        }
+      })
+      req.on('end', () => {
+        if (!body.trim()) return reject(Object.assign(new Error('Empty request body'), { status: 400 }))
+        let parsed
+        try {
+          parsed = JSON.parse(body)
+        } catch {
+          return reject(Object.assign(new Error('Invalid request body'), { status: 400 }))
+        }
+        if (jsonTooDeep(parsed)) return reject(Object.assign(new Error('Invalid request body'), { status: 400 }))
+        resolve(parsed)
+      })
+      req.on('error', reject)
+    })
+  }
+
+  // --- Sign on phone --------------------------------------------------------
+
+  function getSignSessions() {
+    if (!signSessions) {
+      signSessions = signCore.createSignSessions({
+        via: 'lan',
+        log: (line) => log.log(`[Sign] ${line}`),
+        ...(options.signOptions || {}),
+      })
+    }
+    return signSessions
+  }
+
+  function sendSign(res, r) {
+    if (res.headersSent || res.writableEnded) return
+    const headers = { 'Content-Type': 'application/json', ...(signCore ? signCore.SIGN_API_HEADERS : { 'Cache-Control': 'no-store' }), ...(r.headers || {}) }
+    if (r.status === 413) headers.Connection = 'close'
+    res.writeHead(r.status, headers)
+    res.end(JSON.stringify(r.body))
+  }
+  const signFail = (status, code, headers) => (signCore
+    ? signCore.signError(status, code, headers)
+    : { status, body: { ok: false, code, message: code }, ...(headers ? { headers } : {}) })
+
+  /**
+   * Who may start a session here (spec D3): the relay host itself ('local'),
+   * or a device that proves the game PIN of a match this relay holds
+   * ('pin:<address>': the session caps are the caller's address's, however
+   * many matches it names). Wrong PINs count toward the per-IP wrong-PIN limit.
+   */
+  function signOwner(req, body, ip) {
+    if (isLocalAddr(req.socket && req.socket.remoteAddress)) return { owner: 'local' }
+    const raw = req.headers && req.headers['x-ov-match-pin']
+    const pin = typeof raw === 'string' ? raw.trim().slice(0, 32) : ''
+    if (!pin) return { error: signFail(403, 'OV_SIGN_FORBIDDEN') }
+    const key = `ip:${ip}`
+    if (pinFailures.blocked(key)) return { error: signFail(429, 'OV_SIGN_RATE_LIMITED', { 'Retry-After': '60' }) }
+    const matchKey = body && typeof body.matchKey === 'string' ? normalizeMatchId(body.matchKey) : null
+    const bundle = matchKey ? store.get(matchKey) : null
+    const stored = gamePinOf(bundle && bundle.match)
+    if (!stored) return { error: signFail(403, 'OV_SIGN_FORBIDDEN') }
+    if (!safeEqualText(stored, pin)) {
+      pinFailures.fail(key)
+      return { error: signFail(403, 'OV_SIGN_PIN_INVALID') }
+    }
+    return { owner: `pin:${stripV4Prefix(ip)}` }
+  }
+
+  /** POST /api/sign/<endpoint>. */
+  async function handleSign(req, res, endpoint, ip) {
+    if (!signCore) return sendSign(res, signFail(503, 'OV_SIGN_UNAVAILABLE'))
+    if (!isJsonRequest(req)) {
+      req.resume()
+      return sendSign(res, signFail(400, 'OV_SIGN_BAD_REQUEST'))
+    }
+    const read = await readSignBody(req, signCore.signBodyLimit(endpoint))
+    if (read.error === 413) return sendSign(res, signFail(413, 'OV_SIGN_TOO_LARGE'))
+    if (read.error) return sendSign(res, signFail(400, 'OV_SIGN_BAD_REQUEST'))
+    const body = read.body
+    const sessions = getSignSessions()
+    const ipKey = stripV4Prefix(ip)
+    if (endpoint === 'start') {
+      // The wrong-PIN key is the raw socket address, spelled exactly as getMatch
+      // and the WS subscribe count it (a dual-stack server sees '::ffff:a.b.c.d'):
+      // one budget for every PIN check, not one per spelling
+      const who = signOwner(req, body, ip)
+      return sendSign(res, who.error || sessions.start(body, { owner: who.owner }))
+    }
+    if (endpoint === 'open') return sendSign(res, sessions.open(body, { ipKey }))
+    if (endpoint === 'submit') return sendSign(res, sessions.submit(body, { ipKey }))
+    if (endpoint === 'close') return sendSign(res, sessions.close(body))
+    // wait: dropped when the scoring device goes away
+    const ac = typeof AbortController === 'function' ? new AbortController() : null
+    const onGone = () => { if (ac && !res.writableEnded) ac.abort() }
+    res.on('close', onGone)
+    const r = await sessions.wait(body, ac ? { signal: ac.signal } : {})
+    res.off('close', onGone)
+    if (r.status !== 499) sendSign(res, r)
+  }
+
+  // --- Pair a phone -----------------------------------------------------------
+
+  function getPairSessions() {
+    if (!pairSessions) {
+      pairSessions = pairCore.createPairSessions({
+        via: 'lan',
+        sha256: signCore ? signCore.sha256Hex : undefined,
+        log: (line) => log.log(`[Pair] ${line}`),
+        ...(options.pairOptions || {}),
+      })
+    }
+    return pairSessions
+  }
+
+  const pairFail = (status, code, headers) => (pairCore
+    ? pairCore.pairError(status, code, headers)
+    : { status, body: { ok: false, code, message: code }, ...(headers ? { headers } : {}) })
+
+  /** Who may start a pairing: the /api/sign/start rule, in OV_PAIR_* codes. */
+  function pairOwner(req, body, ip) {
+    const who = signOwner(req, body, ip)
+    if (!who.error) return who
+    const code = String(who.error.body && who.error.body.code || '').replace(/^OV_SIGN_/, 'OV_PAIR_')
+    return { error: pairFail(who.error.status, code, who.error.headers) }
+  }
+
+  /** POST /api/pair/<endpoint>. */
+  async function handlePair(req, res, endpoint, ip) {
+    if (!pairCore) return sendSign(res, pairFail(503, 'OV_PAIR_UNAVAILABLE'))
+    if (!isJsonRequest(req)) {
+      req.resume()
+      return sendSign(res, pairFail(400, 'OV_PAIR_BAD_REQUEST'))
+    }
+    const read = await readSignBody(req, pairCore.pairBodyLimit(endpoint))
+    if (read.error === 413) return sendSign(res, pairFail(413, 'OV_PAIR_TOO_LARGE'))
+    if (read.error) return sendSign(res, pairFail(400, 'OV_PAIR_BAD_REQUEST'))
+    const body = read.body
+    const sessions = getPairSessions()
+    const ipKey = stripV4Prefix(ip)
+    if (endpoint === 'start') {
+      const who = pairOwner(req, body, ip)
+      return sendSign(res, who.error || sessions.start(body, { owner: who.owner }))
+    }
+    if (endpoint === 'focus') return sendSign(res, sessions.focus(body))
+    if (endpoint === 'close') return sendSign(res, sessions.close(body))
+    if (endpoint === 'join') return sendSign(res, sessions.join(body, { ipKey }))
+    if (endpoint === 'input') return sendSign(res, sessions.input(body, { ipKey }))
+    // wait / poll: dropped when the caller goes away
+    const ac = typeof AbortController === 'function' ? new AbortController() : null
+    const onGone = () => { if (ac && !res.writableEnded) ac.abort() }
+    res.on('close', onGone)
+    const opts = ac ? { signal: ac.signal } : {}
+    const r = endpoint === 'poll' ? await sessions.poll(body, { ipKey, ...opts }) : await sessions.wait(body, opts)
+    res.off('close', onGone)
+    if (r.status !== 499) sendSign(res, r)
+  }
+
+  // --- Scoreboard codes over HTTP ----------------------------------------------
+
+  function sendDisplay(res, r) {
+    if (res.headersSent || res.writableEnded) return
+    const headers = { 'Content-Type': 'application/json', ...(r.headers || displayCore.DISPLAY_API_HEADERS) }
+    if (r.status === 413) headers.Connection = 'close'
+    res.writeHead(r.status, headers)
+    res.end(JSON.stringify(r.body))
+  }
+
+  /** POST /api/display/lookup | live. */
+  async function handleDisplay(req, res, endpoint, ip) {
+    if (!displayCodes) {
+      req.resume()
+      return sendDisplay(res, displayCore.displayError(503, 'OV_DISPLAY_UNAVAILABLE'))
+    }
+    const read = await readTextBody(req, displayCore.BODY_MAX)
+    if (read.error === 413) return sendDisplay(res, displayCore.displayError(413, 'OV_DISPLAY_TOO_LARGE'))
+    if (read.error) return sendDisplay(res, displayCore.displayError(400, 'OV_DISPLAY_BAD_REQUEST'))
+    const r = displayCodes.http(endpoint, {
+      contentType: req.headers && req.headers['content-type'],
+      text: read.text,
+      ipKey: stripV4Prefix(ip),
+      summaryOf: (room) => {
+        const stored = store.get(room)
+        return stored ? relaySummaryBundle(stored) : null
+      },
+    })
+    sendDisplay(res, r)
+  }
+
+  /**
+   * Serve the relay-owned endpoints. `url` is the full '/api/...' path with
+   * query (the Vite middleware strips '/api', so it passes '/api' + req.url).
+   * Returns true when the request was handled (the response may finish later).
+   */
+  function handleApiRequest(req, res, url) {
+    const parsed = new URL(url, 'http://relay.local')
+    const path = parsed.pathname
+    const method = req.method
+    const ip = (req.socket && req.socket.remoteAddress) || 'unknown'
+    // Scoreboard codes: read-only, no credentials, CORS * (third-party boards call them)
+    const displayEndpoint = displayCore ? displayCore.displayEndpointOf(path) : null
+    // Host on every relay route, Origin on the ones that change something
+    // (a page elsewhere must not drive the relay through a visitor's browser)
+    if (path.startsWith('/api/')) {
+      const readOnly = method === 'GET' || method === 'HEAD' || method === 'OPTIONS' || !!displayEndpoint
+      const refused = relayRequestRefusal(readOnly ? { headers: { host: req.headers && req.headers.host } } : req, allowedHosts)
+      if (refused) {
+        sendJson(res, 403, { success: false, error: refused === 'host-not-allowed' ? 'Host not allowed' : 'Origin not allowed' })
+        return true
+      }
+    }
+    // `p`: a promise, or a function run inside the promise (a throw answers 500)
+    const reply = (p) => Promise.resolve().then(typeof p === 'function' ? p : () => p)
+      .then((r) => sendJson(res, r.status, r.body))
+      .catch((err) => sendJson(res, err.status || 500, { success: false, error: err.message || 'Internal error' }))
+
+    if (displayEndpoint && method === 'OPTIONS') {
+      if (!res.headersSent) {
+        res.writeHead(204, displayCore.DISPLAY_PREFLIGHT_HEADERS)
+        res.end()
+      }
+      return true
+    }
+    if (displayEndpoint && method === 'POST') {
+      handleDisplay(req, res, displayEndpoint, ip).catch((err) => {
+        log.error('[Display] request failed:', err && err.message)
+        sendDisplay(res, displayCore.displayError(500, 'OV_DISPLAY_BAD_REQUEST'))
+      })
+      return true
+    }
+
+    const pair = PAIR_ENDPOINT_RE.exec(path)
+    if (pair && method === 'POST') {
+      handlePair(req, res, pair[1], ip).catch((err) => {
+        log.error('[Pair] request failed:', err && err.message)
+        sendSign(res, pairFail(500, 'OV_PAIR_BAD_REQUEST'))
+      })
+      return true
+    }
+
+    const sign = SIGN_ENDPOINT_RE.exec(path)
+    if (sign && method === 'POST') {
+      handleSign(req, res, sign[1], ip).catch((err) => {
+        log.error('[Sign] request failed:', err && err.message)
+        sendSign(res, signFail(500, 'OV_SIGN_BAD_REQUEST'))
+      })
+      return true
+    }
+
+    if (path === '/api/match/validate-connection-pin') {
+      sendJson(res, 501, { success: false, error: 'Not a venue relay endpoint: use /api/match/validate-pin' })
+      return true
+    }
+    if (path === '/api/match/validate-pin') {
+      if (method !== 'POST') return false
+      // Wrong PINs are limited (VALIDATE_PIN_FAILURES a minute per address,
+      // no PIN compared beyond), right ones are not: every check used to
+      // count, and a tablet reloading with its stored PIN was told it had
+      // typed too many wrong ones. A generous cap on all checks stays.
+      const failKey = `vp:${ip || 'unknown'}`
+      if (validatePinFailures.blocked(failKey)) {
+        sendJson(res, 429, { success: false, error: 'Too many wrong PINs. Wait a minute.' }, { 'Retry-After': String(VALIDATE_PIN_FAILURE_WINDOW_MS / 1000) })
+        return true
+      }
+      if (isRateLimited(failKey, VALIDATE_PIN_REQUESTS)) {
+        sendJson(res, 429, { success: false, error: 'Too many attempts. Please wait a minute before trying again.' }, { 'Retry-After': '60' })
+        return true
+      }
+      reply(readJsonBody(req).then((body) => {
+        const r = validatePin(body)
+        if (r.status === 404) validatePinFailures.fail(failKey)
+        return r
+      }))
+      return true
+    }
+    if (path === '/api/match/list' && method === 'GET') {
+      reply(() => listMatches({ includeFinished: parsed.searchParams.get('finished') === '1' }))
+      return true
+    }
+    if (path === '/api/match/by-game-number' && method === 'GET') {
+      if (isRateLimited(`gn:${ip}`, 60)) {
+        sendJson(res, 429, { success: false, error: 'Too many requests' })
+        return true
+      }
+      const pin = req.headers && req.headers['x-ov-match-pin']
+      reply(findByGameNumber(parsed.searchParams.get('gameNumber'), { pin: typeof pin === 'string' ? pin : null, ip }))
+      return true
+    }
+    if (path === '/api/server/connections' && method === 'GET') {
+      const local = isLocalAddr(ip)
+      const pin = req.headers && req.headers['x-ov-match-pin']
+      reply(() => ({ status: 200, body: getConnections(parsed.searchParams.get('matchId'), { local, pin: typeof pin === 'string' ? pin : null, ip }) }))
+      return true
+    }
+    const m = path.match(/^\/api\/match\/([^/]+)$/)
+    if (m) {
+      let id
+      try { id = decodeURIComponent(m[1]) } catch { id = null }
+      if (method === 'GET') {
+        const pin = req.headers && req.headers['x-ov-match-pin']
+        reply(getMatch(id, { pin: typeof pin === 'string' ? pin : null, ip }))
+        return true
+      }
+      if (method === 'PATCH') {
+        const pin = req.headers && req.headers['x-ov-match-pin']
+        reply(readJsonBody(req).then((updates) => updateMatch(id, updates, { pin: typeof pin === 'string' ? pin : null, ip })))
+        return true
+      }
+    }
+    return false
+  }
+
+  return {
+    // WS side
+    admit,
+    /** The upgrade's Origin / Host: null when allowed, else why not (the runtimes answer 403). */
+    upgradeRefusal: (req) => relayRequestRefusal(req, allowedHosts),
+    addClient,
+    removeClient,
+    handleMessage,
+    // HTTP side
+    handleApiRequest,
+    validatePin,
+    getMatch,
+    listMatches,
+    findByGameNumber,
+    updateMatch,
+    getConnections,
+    // introspection (status endpoints, tests)
+    get clientCount() { return clients.size },
+    hasMatch: (id) => store.has(normalizeMatchId(id)),
+    isScoreboard: (ws) => (clients.get(ws)?.owned.size || 0) > 0,
+    /** Run one heartbeat round now (tests). */
+    heartbeat,
+    /** Sign session counts (tests): null before the first sign request. */
+    signStats: () => (signSessions ? signSessions.stats() : null),
+    /** Pair session counts (tests): null before the first pair request. */
+    pairStats: () => (pairSessions ? pairSessions.stats() : null),
+    /** Scoreboard code counts (tests): null without the code core. */
+    displayStats: () => (displayCodes ? displayCodes.stats() : null),
+    /**
+     * Stop the relay's timers: the sign sessions (sweeper, held waits) and the
+     * rate limiters it created. A later sign request starts fresh sessions.
+     */
+    close() {
+      if (signSessions) signSessions.dispose()
+      signSessions = null
+      if (pairSessions) pairSessions.dispose()
+      pairSessions = null
+      if (displayCodes) displayCodes.dispose()
+      for (const limiter of ownLimiters) limiter.dispose()
+      for (const p of pending.values()) clearTimeout(p.timer)
+      if (heartbeatTimer) clearInterval(heartbeatTimer)
+      heartbeatTimer = null
+      alive.clear()
+    },
+  }
+}
+
+module.exports = {
+  MATCH_SECRET_FIELDS,
+  WS_MAX_PAYLOAD,
+  WS_PER_MESSAGE_DEFLATE,
+  MAX_BODY_SIZE,
+  stripMatchSecrets,
+  stripMatchDataSecrets,
+  PERSON_PRIVATE_FIELDS,
+  MATCH_PRIVATE_FIELDS,
+  MATCH_PERSON_FIELDS,
+  MATCH_TEAM_FIELDS,
+  PUBLIC_MATCH_FIELDS,
+  PUBLIC_TEAM_FIELDS,
+  TEAM_PEOPLE_FIELDS,
+  publicTeam,
+  MATCH_ROSTER_FIELDS,
+  publicMatch,
+  publicPeople,
+  normalizeMatchId,
+  gamePinOf,
+  relayKeyOf,
+  carryMatchSecrets,
+  toWireBundle,
+  matchDataMessage,
+  relaySummaryBundle,
+  pinGrantsAccess,
+  pinRoleOf,
+  normalizeBenchRequest,
+  normalizeBenchResponse,
+  createBenchRequestStore,
+  currentSetOfBundle,
+  BENCH_REQUESTS_PER_MINUTE,
+  SUMMARY_MATCH_FIELDS,
+  SUMMARY_TEAM_FIELDS,
+  SUMMARY_SET_FIELDS,
+  matchListEntry,
+  createRateLimiter,
+  createLocalAddressCheck,
+  createMainInstanceGate,
+  MAIN_INSTANCE_PAGE_CSP,
+  OTHER_COURT_COOKIE,
+  MAX_OWNED_PER_IP,
+  isTrustedRelayOrigin,
+  isAllowedRelayHost,
+  relayRequestRefusal,
+  DISPLAY_DEVICE,
+  displaySettingsUrl,
+  isPrivateLanHost,
+  createLanRelay,
+}

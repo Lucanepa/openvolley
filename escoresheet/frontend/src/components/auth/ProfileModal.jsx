@@ -1,0 +1,383 @@
+import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
+import { useAuth } from '../../contexts/AuthContext'
+import { PROFILE_NOT_SAVED } from './profileWrite'
+import { X } from 'lucide-react'
+import { Button, cn, Field, FOCUS_RING, IconButton, Input } from '../../ui'
+import RoleChips from './RoleChips'
+import PendingApprovalBanner from './PendingApprovalBanner'
+import EmailConfirmBanner from './EmailConfirmBanner'
+import { licenceInput, licenceOk, licenceValue } from './licenceNumber'
+import ApprovalPinSection from './ApprovalPinSection'
+import PasskeySection from './PasskeySection'
+import AccountSecuritySection from './AccountSecuritySection'
+import { confirmErrorText, withConfirmation } from './confirmIdentity'
+import { isPasskeyCancel, passkeysPossible } from '../../lib/passkeys'
+import { backdropDismiss } from '../../ui/backdropDismiss.js'
+
+export default function ProfileModal({ open, onClose }) {
+  const { t } = useTranslation()
+  const { user, profile, access, updateProfile, deleteAccount } = useAuth()
+
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [country, setCountry] = useState('CHE')
+  // The licence number (db/048), optional; no date of birth
+  const [licence, setLicence] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState(false)
+
+  // Delete account state: the server wants the password (or a passkey)
+  // besides the session, so a device left signed in cannot delete it
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [passkeyHere] = useState(() => passkeysPossible())
+  const [deletePassword, setDeletePassword] = useState('')
+  const [deleteLoading, setDeleteLoading] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
+
+  // Track if form has been initialized to avoid resetting on profile refetch
+  const formInitialized = useRef(false)
+
+  // Load profile data when modal opens OR when profile arrives (for late-loading profiles)
+  useEffect(() => {
+    console.log('[ProfileModal] useEffect triggered:', { open, profile, formInitialized: formInitialized.current })
+
+    // Reset initialization flag when modal closes
+    if (!open) {
+      formInitialized.current = false
+      return
+    }
+
+    // If modal is open and we have profile data, populate the form
+    if (open && profile && !formInitialized.current) {
+      if (import.meta.env.DEV) console.log('[ProfileModal] Loading profile data into form:', profile)
+      setFirstName(profile.first_name || '')
+      setLastName(profile.last_name || '')
+      setCountry(profile.country || 'CHE')
+      setLicence(profile.license_number || '')
+      setError('')
+      setSuccess(false)
+      // Reset delete state
+      setShowDeleteConfirm(false)
+      setDeletePassword('')
+      setDeleteError('')
+      formInitialized.current = true
+    } else if (open && !profile) {
+      console.warn('[ProfileModal] Modal opened but profile is null/undefined - will update when profile loads')
+    }
+  }, [open, profile])
+
+  const handleDeleteAccount = async (usePasskey = false) => {
+    if (deleteLoading) return
+    setDeleteLoading(true)
+    setDeleteError('')
+
+    let delError = null
+    try {
+      ({ error: delError } = await withConfirmation({ password: deletePassword, usePasskey }, ({ password }) => deleteAccount({ password })))
+    } catch (err) {
+      if (isPasskeyCancel(err)) {
+        setDeleteLoading(false)
+        return
+      }
+      delError = err
+    }
+
+    if (delError) {
+      setDeleteError(confirmErrorText(t, delError))
+      setDeleteLoading(false)
+    } else {
+      // Account deleted, close modal
+      onClose()
+    }
+  }
+
+  if (!open) return null
+
+  // Check if any field has changed
+  const hasChanges =
+    firstName !== (profile?.first_name || '') ||
+    lastName !== (profile?.last_name || '') ||
+    country !== (profile?.country || 'CHE') ||
+    licence !== (profile?.license_number || '')
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setError('')
+    setSuccess(false)
+    if (!licenceOk(licence)) {
+      setError(t('auth.licenceNumberInvalid'))
+      return
+    }
+    setLoading(true)
+
+    const { error: updateError } = await updateProfile({
+      firstName,
+      lastName,
+      country,
+      licenceNumber: licenceValue(licence)
+    })
+
+    if (updateError) {
+      setError(updateError.code === PROFILE_NOT_SAVED
+        ? t('auth.profileNotSaved', 'Your profile was not saved. Please reload the app and try again.')
+        : updateError.message)
+    } else {
+      setSuccess(true)
+      setTimeout(() => setSuccess(false), 3000)
+    }
+    setLoading(false)
+  }
+
+  const labelCls = 'mb-1.5 block text-sm font-medium text-stone-700'
+
+  return (
+    <div className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm" style={{ zIndex: 2000 }} {...backdropDismiss(onClose)}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="profile-modal-title"
+        className="flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between gap-3 border-b border-stone-200/70 px-5 py-2 sm:px-6">
+          <h2 id="profile-modal-title" className="text-lg font-bold text-stone-900">
+            {t('auth.profile', 'Profile')}
+          </h2>
+          <IconButton variant="close" icon={X} label={t('common.close', 'Close')} onClick={onClose} className="-mr-2" />
+        </div>
+
+        {/* Body */}
+        <div className="overflow-y-auto px-5 py-5 sm:px-6">
+          {error && (
+            <p role="alert" className="mb-4 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {error}
+            </p>
+          )}
+
+          {success && (
+            <p className="mb-4 rounded-lg border border-green-100 bg-green-50 px-3 py-2 text-sm text-green-700">
+              {t('auth.profileUpdated', 'Profile updated successfully')}
+            </p>
+          )}
+
+          {/* Email (read-only: an admin changes the address, PATCH /api/admin/accounts/:id) */}
+          <div className="mb-4">
+            <div className={labelCls}>
+              {t('auth.email', 'Email')}
+            </div>
+            <div className="flex h-11 min-w-0 items-center truncate rounded-xl border border-stone-200 bg-stone-50 px-3 text-base text-stone-600">
+              {user?.email}
+            </div>
+            <p className="mt-1 mb-0 text-xs text-stone-500">{t('accountSecurity.emailChangeHint')}</p>
+            <EmailConfirmBanner className="mt-2" />
+          </div>
+
+          {/* Role (read-only) */}
+          <div className="mb-4">
+            <div className={labelCls}>
+              {t('auth.roles', 'Role')}
+            </div>
+            {access?.known ? <RoleChips roles={access.roles} pending={access.isPending} manages={{ clubs: access.managedClubs, teams: access.managedTeams }} /> : <span className="text-xs text-stone-400">–</span>}
+          </div>
+          <PendingApprovalBanner className="mb-4" />
+          {/* Referees and scorers: the personal PIN to approve results with the account */}
+          <ApprovalPinSection className="mb-4" />
+          {/* Sign-in with the device's fingerprint or face (web only) */}
+          <PasskeySection className="mb-4" />
+          {/* A new password, where the account is signed in, sign out everywhere */}
+          <AccountSecuritySection className="mb-4" />
+
+          <form onSubmit={handleSubmit} className="space-y-3">
+            {/* Name fields */}
+            <div className="grid grid-cols-2 gap-3 stack:grid-cols-1">
+              <Field label={t('auth.firstName', 'First name')}>
+                <Input
+                  size="lg"
+                  type="text"
+                  value={firstName}
+                  onChange={e => setFirstName(e.target.value)}
+                  aria-label={t('auth.firstName', 'First name')}
+                  autoComplete="given-name"
+                />
+              </Field>
+              <Field label={t('auth.lastName', 'Last name')}>
+                <Input
+                  size="lg"
+                  type="text"
+                  value={lastName}
+                  onChange={e => setLastName(e.target.value)}
+                  aria-label={t('auth.lastName', 'Last name')}
+                  autoComplete="family-name"
+                />
+              </Field>
+            </div>
+
+            {/* Country and licence number */}
+            <div className="grid grid-cols-2 gap-3 stack:grid-cols-1">
+              <Field label={t('auth.country', 'Country')}>
+                <Input
+                  size="lg"
+                  type="text"
+                  value={country}
+                  onChange={e => setCountry(e.target.value.toUpperCase())}
+                  placeholder="CHE"
+                  maxLength={3}
+                  aria-label={t('auth.country', 'Country')}
+                  className="uppercase"
+                />
+              </Field>
+              <Field label={t('auth.licenceNumber')} hint={t('auth.licenceNumberHint')}>
+                <Input
+                  size="lg"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={licence}
+                  onChange={e => setLicence(licenceInput(e.target.value))}
+                  aria-label={t('auth.licenceNumber')}
+                  autoComplete="off"
+                  data-testid="profile-licence"
+                />
+              </Field>
+            </div>
+
+            <button
+              type="submit"
+              disabled={!hasChanges || loading}
+              aria-busy={loading || undefined}
+              className={cn(
+                'inline-flex !mt-5 h-11 w-full items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed',
+                success ? 'bg-emerald-700' : 'bg-red-600 hover:bg-red-700 disabled:bg-stone-300',
+                loading && 'opacity-70',
+                FOCUS_RING
+              )}
+            >
+              {loading
+                ? t('auth.saving', 'Saving...')
+                : success
+                  ? t('auth.infoSaved', 'Info saved')
+                  : t('auth.saveProfile', 'Save profile')}
+            </button>
+          </form>
+
+
+          {/* Danger Zone - Delete Account */}
+          <div className="mt-6 rounded-xl border border-red-100 bg-red-50/60 p-4">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-red-700">
+              {t('auth.dangerZone', 'Danger zone')}
+            </div>
+            <p className="mt-1 mb-3 text-sm text-stone-600">
+              {t('auth.deleteAccountWarning', 'Deleting your account is permanent and cannot be undone.')}
+            </p>
+            <Button
+              variant="danger-outline"
+              size="xl"
+              onClick={() => setShowDeleteConfirm(true)}
+              className="rounded-lg bg-white font-medium"
+            >
+              {t('auth.deleteAccount', 'Delete account')}
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div
+          className="fixed inset-0 flex items-center justify-center bg-stone-900/60 p-4 backdrop-blur-sm"
+          style={{ zIndex: 2100 }}
+          {...backdropDismiss(() => setShowDeleteConfirm(false))}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="profile-delete-title"
+            className="max-h-[calc(var(--ov-vh100)-2rem)] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 id="profile-delete-title" className="text-lg font-bold text-stone-900">
+              {t('auth.confirmDeleteAccount', 'Confirm account deletion')}
+            </h3>
+
+            <p className="mt-2 text-sm text-stone-600">
+              {t('auth.deleteAccountConfirmMessage', 'This action is permanent and cannot be undone.')}
+            </p>
+
+            {/* What the server deletes and what it keeps (backend README "Deleting an account") */}
+            <dl className="mt-3 mb-4 space-y-2 rounded-xl border border-stone-200/70 bg-stone-50/60 p-3 text-sm">
+              <div>
+                <dt className="font-semibold text-stone-800">{t('auth.deleteAccountWhatGoesTitle', 'Deleted from the server')}</dt>
+                <dd className="mt-0.5 text-stone-600">
+                  {t('auth.deleteAccountWhatGoes', 'Your account and profile, your sign-ins, your My matches list, your editor rights on matches, your cloud backups and logs, and your access to the scoresheets you uploaded. Encrypted server backups keep a copy until they expire, after about 6 months at most.')}
+                </dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-stone-800">{t('auth.deleteAccountWhatStaysTitle', 'Kept, without your account')}</dt>
+                <dd className="mt-0.5 text-stone-600">
+                  {t('auth.deleteAccountWhatStays', "The matches you scored and their scoresheets: they are the clubs' official match records, and your name stays on them as the scorer. Matches saved on this device stay on it.")}
+                </dd>
+              </div>
+            </dl>
+
+            {deleteError && (
+              <p role="alert" className="mb-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {deleteError}
+              </p>
+            )}
+
+            <label htmlFor="profile-delete-password" className="mb-1 block text-sm font-medium text-stone-700">
+              {t('accountSecurity.confirmPassword')}
+            </label>
+            <Input
+              id="profile-delete-password"
+              size="lg"
+              type="password"
+              autoComplete="current-password"
+              value={deletePassword}
+              onChange={e => setDeletePassword(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && deletePassword) void handleDeleteAccount(false) }}
+              className="text-sm"
+            />
+            {passkeyHere && (
+              <Button
+                variant="secondary"
+                size="xl"
+                onClick={() => void handleDeleteAccount(true)}
+                disabled={deleteLoading}
+                className="mt-2 w-full rounded-lg font-medium"
+              >
+                {t('accountSecurity.usePasskey')}
+              </Button>
+            )}
+
+            {/* Side by side when both labels fit, else stacked (never a two-line label) */}
+            <div className="mt-6 flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                size="xl"
+                onClick={() => setShowDeleteConfirm(false)}
+                className="min-w-fit flex-1 whitespace-nowrap rounded-lg font-medium"
+              >
+                {t('common.cancel', 'Cancel')}
+              </Button>
+              <Button
+                variant="danger"
+                size="xl"
+                onClick={() => void handleDeleteAccount(false)}
+                disabled={deleteLoading || !deletePassword}
+                className={cn('min-w-fit flex-1 whitespace-nowrap rounded-lg', deleteLoading && 'opacity-70')}
+              >
+                {deleteLoading
+                  ? t('auth.deleting', 'Deleting...')
+                  : t('auth.deleteAccountConfirm', 'Delete my account')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

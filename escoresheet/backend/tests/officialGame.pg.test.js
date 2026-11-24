@@ -1,0 +1,162 @@
+// lib/officialGame.js: the JS season agrees with the SQL season (db/007),
+// findClaim finds the match that holds an official game without leaking
+// anything but the claimant's name and the match status, and the key's
+// season is the server's (db/034 official_season).
+import { describe, it, before, after } from 'node:test'
+import assert from 'node:assert/strict'
+import pg from 'pg'
+import { SEASON_SQL, seasonOf, officialRowsOf, findClaim, publicClaim, OFFICIAL_INDEX } from '../lib/officialGame.js'
+import { SKIP_PG, createTestDatabase } from './helpers/pgTestDb.js'
+
+describe('seasonOf / officialRowsOf (pure)', () => {
+  it('turns on 1 July, Zurich time', () => {
+    assert.equal(seasonOf('2026-06-30T21:59:59Z'), 2025) // 23:59:59 CEST on 30 June
+    assert.equal(seasonOf('2026-06-30T22:00:00Z'), 2026) // 00:00 CEST on 1 July
+    assert.equal(seasonOf('2026-07-01T12:00:00Z'), 2026)
+    assert.equal(seasonOf('2027-01-15T18:00:00Z'), 2026)
+    assert.equal(seasonOf('2026-12-31T23:30:00Z'), 2026) // already 2027 in Zurich, still season 2026
+    assert.equal(seasonOf(new Date('2025-09-01T00:00:00Z')), 2025)
+    assert.equal(seasonOf(null), null)
+    assert.equal(seasonOf('not a date'), null)
+  })
+  it('officialRowsOf keeps non-test rows with a positive game number', () => {
+    const rows = [
+      { game_n: 12 }, { game_n: '13' }, { game_n: 14, test: true }, { game_n: 0 }, { game_n: null },
+      { game_n: 'x' }, { game_n: 1.5 }, { game_n: 15, test: false }, null
+    ]
+    assert.deepEqual(officialRowsOf(rows).map((r) => r.game_n), [12, '13', 15])
+    assert.deepEqual(officialRowsOf({ game_n: 7 }).length, 1)
+  })
+  it('the index name is the one 007 creates', () => {
+    assert.equal(OFFICIAL_INDEX, 'matches_official_game_uidx')
+  })
+})
+
+describe('officialGame on Postgres', { skip: SKIP_PG }, () => {
+  let tdb, pool
+  const users = {}
+  let seq = 0
+  const ext = () => `og_${Date.now().toString(36)}_${seq++}`
+
+  async function user (name, first, last) {
+    const { rows: [u] } = await pool.query("INSERT INTO auth.users (email) VALUES ($1) RETURNING id", [`${name}@example.ch`])
+    await pool.query('INSERT INTO public.profiles (user_id, first_name, last_name, roles) VALUES ($1, $2, $3, $4)', [u.id, first, last, ['scorer']])
+    users[name] = u.id
+    return u.id
+  }
+  async function match (row) {
+    const cols = Object.keys(row)
+    const { rows: [m] } = await pool.query(
+      `INSERT INTO public.matches (${cols.join(', ')}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING id`,
+      cols.map((c) => row[c]))
+    return m.id
+  }
+
+  before(async () => {
+    tdb = await createTestDatabase('officialgame')
+    pool = new pg.Pool({ connectionString: tdb.url, options: '-c TimeZone=UTC' })
+    await user('anna', 'Anna', 'Muster')
+    await user('ben', 'Ben', 'Beispiel')
+    await user('noname', null, null)
+  })
+  after(async () => {
+    await pool?.end()
+    await tdb?.drop()
+  })
+
+  it('SEASON_SQL agrees with seasonOf at the July and DST edges', async () => {
+    const stamps = ['2026-06-30T21:59:59Z', '2026-06-30T22:00:00Z', '2026-07-01T00:00:00Z', '2027-01-15T18:00:00Z',
+      '2026-03-29T00:59:59Z', '2026-03-29T01:00:00Z', '2026-10-25T00:59:59Z', '2026-10-25T01:00:00Z', '2026-12-31T23:30:00Z']
+    for (const s of stamps) {
+      const { rows: [r] } = await pool.query(`SELECT ${SEASON_SQL('$1::timestamptz')} AS season`, [s])
+      assert.equal(r.season, seasonOf(s), s)
+    }
+    const { rows: [n] } = await pool.query(`SELECT ${SEASON_SQL('$1::timestamptz')} AS season`, [null])
+    assert.equal(n.season, seasonOf(null))
+  })
+
+  const vmGame = (n, datetime) => pool.query('INSERT INTO public.svrz_games (game_number, datetime) VALUES ($1, $2)', [String(n), datetime])
+
+  it('finds the claim, with the claimant name and mine for the creator and editors only', async () => {
+    const e = ext()
+    await vmGame(51001, '2026-10-10T18:00:00')
+    const id = await match({ external_id: e, game_n: 51001, status: 'live', created_by: users.anna, scheduled_at: '2026-10-10T16:00:00Z', game_pin: '123456' })
+    const q = { gameN: 51001, sportType: 'indoor' }
+
+    const forBen = await findClaim(pool, { ...q, callerId: users.ben })
+    assert.deepEqual(forBen, {
+      match_id: id, external_id: e, game_n: 51001, season: 2026, sport: 'indoor', status: 'live',
+      scorer_name: 'Anna Muster', mine: false, scheduled_at: '2026-10-10T16:00:00.000Z'
+    })
+    assert.equal((await findClaim(pool, { ...q, callerId: users.anna })).mine, true)
+    await pool.query("INSERT INTO public.match_editors (match_id, user_id, granted_via) VALUES ($1, $2, 'claim')", [id, users.ben])
+    assert.equal((await findClaim(pool, { ...q, callerId: users.ben })).mine, true, 'editor')
+    // The match itself (same external_id) is not a conflict with itself
+    assert.equal(await findClaim(pool, { ...q, excludeExternalId: e }), null)
+    // No PIN, email, user id or (another account's) external_id in what a client sees
+    const text = JSON.stringify(publicClaim(forBen))
+    for (const secret of ['123456', '@example.ch', users.anna, e, id]) assert.equal(text.includes(secret), false, secret)
+    assert.deepEqual(Object.keys(publicClaim(forBen)).sort(), ['game_n', 'mine', 'scheduled_at', 'scorer_name', 'season', 'sport', 'status'])
+    // The caller's own match is named (a device that joined it retires its own refused copy)
+    assert.equal(publicClaim(await findClaim(pool, { ...q, callerId: users.anna })).external_id, e)
+  })
+
+  it('ignores test and exempt matches, separates beach and seasons, null name without a profile name', async () => {
+    await match({ external_id: ext(), game_n: 51002, status: 'live', test: true, scheduled_at: '2026-10-10T16:00:00Z' })
+    assert.equal(await findClaim(pool, { gameN: 51002, scheduledAt: '2026-10-10T16:00:00Z' }), null, 'test')
+
+    await match({ external_id: ext(), game_n: 51003, status: 'live', official_game_exempt: true, scheduled_at: '2026-10-10T16:00:00Z' })
+    assert.equal(await findClaim(pool, { gameN: 51003, scheduledAt: '2026-10-10T16:00:00Z' }), null, 'exempt')
+
+    await match({ external_id: ext(), game_n: 51004, status: 'setup', sport_type: 'beach', created_by: users.noname, scheduled_at: '2026-10-10T16:00:00Z' })
+    assert.equal(await findClaim(pool, { gameN: 51004, scheduledAt: '2026-10-10T16:00:00Z', sportType: 'indoor' }), null, 'beach vs indoor')
+    // db/013: beach game numbers restart with every tournament, no season claim
+    assert.equal(await findClaim(pool, { gameN: 51004, scheduledAt: '2026-10-10T16:00:00Z', sportType: 'beach' }), null, 'beach is not season-official')
+    await match({ external_id: ext(), game_n: 51004, status: 'setup', sport_type: 'beach', created_by: users.noname, scheduled_at: '2026-10-11T16:00:00Z' })
+    await match({ external_id: ext(), game_n: 51007, status: 'setup', created_by: users.noname, scheduled_at: '2026-10-10T16:00:00Z' })
+    assert.equal((await findClaim(pool, { gameN: 51007, scheduledAt: '2026-10-10T16:00:00Z' })).scorer_name, null, 'no profile name')
+
+    // The season of VolleyManager's kick-off (db/034), never the match's scheduled_at
+    await vmGame(51005, '2026-05-10T18:00:00')
+    await match({ external_id: ext(), game_n: 51005, status: 'live', scheduled_at: '2026-10-10T16:00:00Z' })
+    assert.equal(await findClaim(pool, { gameN: 51005, season: 2026 }), null, 'other season')
+    assert.equal((await findClaim(pool, { gameN: 51005, season: 2025 })).season, 2025, 'same season, before July')
+    assert.equal((await findClaim(pool, { gameN: 51005 })).season, 2025, 'the season a new match of the game gets: VolleyManager\'s')
+
+    // A game VolleyManager does not know: the season of the server's clock on both sides
+    await match({ external_id: ext(), game_n: 51006, status: 'live', scheduled_at: '2019-10-10T16:00:00Z' })
+    assert.ok(await findClaim(pool, { gameN: 51006 }))
+    assert.equal(await findClaim(pool, { gameN: 0 }), null)
+    assert.equal(await findClaim(pool, { gameN: 'x' }), null)
+  })
+
+  it('the key\'s season is the server\'s: a kick-off in another season files no second official match', async () => {
+    const insert = (row) => match({ external_id: ext(), status: 'live', ...row })
+    const seasonOfRow = async (id) => (await pool.query('SELECT official_season FROM public.matches WHERE id = $1', [id])).rows[0].official_season
+    await vmGame(51101, '2026-11-14T16:00:00')
+    // the real kick-off first, then one a season earlier: refused by the index
+    const real = await insert({ game_n: 51101, created_by: users.anna, scheduled_at: '2026-11-14T15:00:00Z' })
+    assert.equal(await seasonOfRow(real), 2026)
+    await assert.rejects(insert({ game_n: 51101, created_by: users.ben, scheduled_at: '2025-11-14T15:00:00Z' }), (err) => err.code === '23505' && err.constraint === OFFICIAL_INDEX)
+    // the other order: the shifted one holds the game, the real one is refused (one match per game)
+    await vmGame(51102, '2026-11-15T16:00:00')
+    const shifted = await insert({ game_n: 51102, created_by: users.ben, scheduled_at: '2025-11-15T15:00:00Z' })
+    assert.equal(await seasonOfRow(shifted), 2026, 'VolleyManager\'s season, not the client\'s')
+    await assert.rejects(insert({ game_n: 51102, created_by: users.anna, scheduled_at: '2026-11-15T15:00:00Z' }), (err) => err.code === '23505')
+    // a client value for the column is never kept, on insert or update
+    const t = await insert({ game_n: 51101, created_by: users.ben, test: true, official_season: 2019 })
+    assert.equal(await seasonOfRow(t), 2026)
+    await pool.query("UPDATE public.matches SET official_season = 2019, scheduled_at = '2024-11-14T15:00:00Z' WHERE id = $1", [t])
+    assert.equal(await seasonOfRow(t), 2026, 'an update keeps the key')
+    // so a test match moved to another season cannot become the game's second official match
+    await assert.rejects(pool.query('UPDATE public.matches SET test = false WHERE id = $1', [t]), (err) => err.code === '23505')
+    // a new game number gets its own season (VolleyManager's, else the clock's)
+    await vmGame(51103, '2025-11-20T16:00:00')
+    await pool.query('UPDATE public.matches SET game_n = 51103 WHERE id = $1', [t])
+    assert.equal(await seasonOfRow(t), 2025)
+    // a kick-off Postgres cannot read counts as none (the server's clock)
+    await vmGame(51104, '2026-02-30T16:00:00')
+    const odd = await insert({ game_n: 51104, test: true })
+    assert.equal(await seasonOfRow(odd), seasonOf(new Date()))
+  })
+})

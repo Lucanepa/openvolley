@@ -1,0 +1,463 @@
+/**
+ * signupNotices — "a new account signed up", to the people who approve it
+ * (db/028 notifications, lib/mailer.js kind 'signup').
+ *
+ * Owner, 2026-11-11: "why i don't get emails when there's a new signup";
+ * decisions: the admins AND the approvers of the account's requests; on every
+ * sign-up; as a mail and as a notification in the manager.
+ *
+ * When: once the address is confirmed (lib/auth.js onAccountConfirmed: the
+ * confirmation link, or at sign-up when the server confirms at once). An
+ * address nobody confirmed tells nobody, so a made-up sign-up sends no mail.
+ *
+ * Who (the cascade of lib/accountRequests.js):
+ *   admins          every sign-up, with all its parts; page accounts/<id>
+ *   club managers   sign-ups with a scorer, team manager or club manager part
+ *                   of their club; those parts; page myclub/<club id>
+ *   team managers   sign-ups with a team manager part of their team; those
+ *                   parts; page myteams/<team id>
+ * One notice per person (an admin who also manages the club gets the admin's).
+ * Deactivated accounts (db/027) get none.
+ * Never the new account itself. An OpenBeach sign-up asks for nothing: its
+ * admins only, in the OpenBeach manager (app 'beach').
+ *
+ * The mail goes in the recipient's own language (mail_lang of its sign-up),
+ * on the mailer's 'signup' budget. A notice row is stored even when the mail
+ * is dropped or fails. Without db/028 the mails still go out.
+ *
+ * What is mailed (SEC-34, audit 26.11), so that one sign-up asking for parts
+ * of many clubs and teams cannot mail all their managers, nor a few use up
+ * the hour's notices: every recipient gets the notice in the bell; the admins
+ * get the mail; of the managers only those of the club of the sign-up's
+ * first part (by kind, then club: lib/accountRequests.js REQUEST_KINDS) get
+ * it, at most MANAGER_MAILS_PER_SIGNUP of them, for at most
+ * SIGNUPS_MAILED_PER_CLUB_DAY sign-ups per club and day, and at most
+ * MANAGER_MAILS_PER_HOUR manager mails an hour in all (the rest: the bell).
+ * The self-chosen name is shown as noticeName makes it: letters, spaces,
+ * hyphens and apostrophes only; so is a proposer's (lib/mailer.js mailName).
+ *
+ * A team manager's yes to a team manager request (owner decision 3, db/036,
+ * lib/accountRequests.js decide) is a proposal: the managers of the team's
+ * club confirm it (the admins when the club has none), told by a notice of
+ * kind 'team_manager_proposal' (page myclub/<club id>, admins accounts/<id>)
+ * and the mail 'team_manager_proposal'. One notice per recipient and account:
+ * a later proposal brings a read one back unread (and mails again), an
+ * unread one stays as it is.
+ *
+ * Public API:
+ *   createSignupNotices({ pool, mailer, logger })
+ *     notify(userId)                 -> { recipients, mailed }  (never throws)
+ *     proposal({ userId, teamId, proposerId }) -> { recipients, mailed }  (never throws)
+ *     list({ userId, app })          -> { status, body }  GET /api/notifications?app=
+ *     markRead({ userId, app, body }) -> { status, body } POST /api/notifications/read { ids } | { all: true }
+ */
+import { invalid, isUuid, ok, unavailable } from './accounts.js'
+import { ADMIN_ROLES } from './access.js'
+import { mailApp, mailName, maskEmail, describeMailError } from './mailer.js'
+
+// No db/025 / db/028 yet: a relation or column that does not exist
+const MISSING = new Set(['42P01', '42703'])
+// Notices kept this long (deleted when the list is read)
+export const KEEP_DAYS = 90
+// The most notices a list answers
+export const LIST_LIMIT = 50
+const MAX_READ_IDS = 100
+// A deactivated account (db/027 banned_until) is told nothing; to_jsonb: works before db/027 too
+const ACTIVE = (u) => `coalesce((to_jsonb(${u}) ->> 'banned_until')::timestamptz <= now(), true)`
+// The managers' sign-up mails (see the header): per sign-up, per club and day, per hour in all
+export const MANAGER_MAILS_PER_SIGNUP = 5
+export const SIGNUPS_MAILED_PER_CLUB_DAY = 3
+export const MANAGER_MAILS_PER_HOUR = 30
+const HOUR_MS = 60 * 60 * 1000
+const DAY_MS = 24 * HOUR_MS
+
+const iso = (v) => (v instanceof Date ? v.toISOString() : (v ?? null))
+const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
+const REQUEST_ORDER = ['scorer', 'referee', 'team_manager', 'club_manager']
+const byKind = (a, b) => REQUEST_ORDER.indexOf(a.kind) - REQUEST_ORDER.indexOf(b.kind) ||
+  String(a.club || '').localeCompare(String(b.club || '')) || String(a.team || '').localeCompare(String(b.team || ''))
+
+/**
+ * The recipients of one sign-up: [{ userId, email, lang, admin, target, parts }].
+ * `parts`: [{ kind, club_id, club, team_id, team }] of the account (all of
+ * them); admins: [{ user_id, email, lang }]; clubManagers / teamManagers:
+ * [{ user_id, email, lang, club_id | team_id }]. Pure, for the tests.
+ */
+export function recipientsOf ({ userId, parts = [], admins = [], clubManagers = [], teamManagers = [] }) {
+  const out = new Map()
+  const strip = (p) => ({ kind: p.kind, club: p.club ?? null, team: p.team ?? null })
+  for (const a of admins) {
+    if (a.user_id === userId || !a.email || out.has(a.user_id)) continue
+    out.set(a.user_id, { userId: a.user_id, email: a.email, lang: a.lang || null, admin: true, target: `accounts/${userId}`, parts: parts.map(strip).sort(byKind) })
+  }
+  // a club's managers decide its scorer, team manager and club manager parts
+  for (const m of clubManagers) {
+    if (m.user_id === userId || !m.email || out.has(m.user_id)) continue
+    const mine = parts.filter((p) => p.club_id === m.club_id && p.kind !== 'referee')
+    if (!mine.length) continue
+    out.set(m.user_id, { userId: m.user_id, email: m.email, lang: m.lang || null, admin: false, target: `myclub/${m.club_id}`, parts: mine.map(strip).sort(byKind), clubIds: [m.club_id] })
+  }
+  // a team's managers its team manager parts
+  for (const m of teamManagers) {
+    if (m.user_id === userId || !m.email || out.has(m.user_id)) continue
+    const mine = parts.filter((p) => p.team_id === m.team_id && p.kind === 'team_manager')
+    if (!mine.length) continue
+    out.set(m.user_id, { userId: m.user_id, email: m.email, lang: m.lang || null, admin: false, target: `myteams/${m.team_id}`, parts: mine.map(strip).sort(byKind), clubIds: [...new Set(mine.map((p) => p.club_id).filter(Boolean))] })
+  }
+  return [...out.values()]
+}
+
+/** The club of a sign-up's first part (by kind, then club; a referee has none), or null. Pure. */
+export function firstClubOf (parts = []) {
+  return [...parts].filter((p) => p && p.kind !== 'referee' && p.club_id).sort(byKind)[0]?.club_id ?? null
+}
+
+/**
+ * A self-chosen name as a notice shows it: one line, no control or bidi
+ * characters, nothing that reads as a link or an address (a scheme, www., a
+ * dotted host, also with another dot), and then only letters, spaces,
+ * hyphens and apostrophes (lib/mailer.js mailName: no numbers, colons or
+ * slashes; SEC-34), at most 60 characters. Mails and the bell show it as the
+ * account's name, never as OpenVolley's words.
+ */
+export function noticeName (raw) {
+  return mailName(raw)
+}
+
+export function createSignupNotices ({ pool, mailer = null, logger = console, now = Date.now } = {}) {
+  const log = logger
+  // The managers' mail caps (see the header), in memory: club id -> [times
+  // of its mailed sign-ups], and the times of the manager mails of the hour
+  const clubMailed = new Map()
+  let hourMails = []
+  /** How many managers of `clubId`'s sign-up may be mailed now (0: the bell only). */
+  function managerMailsLeft (clubId) {
+    const t = now()
+    hourMails = hourMails.filter((x) => t - x < HOUR_MS)
+    if (clubMailed.size >= 5000) for (const [k, list] of clubMailed) if (!list.some((x) => t - x < DAY_MS)) clubMailed.delete(k)
+    const club = (clubMailed.get(clubId) || []).filter((x) => t - x < DAY_MS)
+    if (club.length >= SIGNUPS_MAILED_PER_CLUB_DAY) return 0
+    return Math.max(0, Math.min(MANAGER_MAILS_PER_SIGNUP, MANAGER_MAILS_PER_HOUR - hourMails.length))
+  }
+  function managerMailsUsed (clubId, n) {
+    if (!n) return
+    const t = now()
+    clubMailed.set(clubId, [...(clubMailed.get(clubId) || []).filter((x) => t - x < DAY_MS), t])
+    for (let i = 0; i < n; i++) hourMails.push(t)
+  }
+
+  async function partsOf (userId) {
+    try {
+      const { rows } = await pool.query(
+        `SELECT r.kind, r.club_id, c.name AS club, r.team_id, ct.team_name AS team
+           FROM public.account_requests r
+           LEFT JOIN public.clubs c ON c.id = r.club_id
+           LEFT JOIN public.club_teams ct ON ct.id = r.team_id
+          WHERE r.user_id = $1`, [userId])
+      return rows
+    } catch (err) {
+      if (MISSING.has(err?.code)) return []
+      throw err
+    }
+  }
+
+  async function managersOf (table, column, ids) {
+    if (!ids.length) return []
+    try {
+      const { rows } = await pool.query(
+        `SELECT m.user_id, m.${column}, u.email, u.raw_user_meta_data->>'mail_lang' AS lang
+           FROM public.${table} m JOIN auth.users u ON u.id = m.user_id
+          WHERE m.${column} = ANY($1::uuid[]) AND ${ACTIVE('u')}
+          ORDER BY m.added_at, m.user_id`, [ids])
+      return rows
+    } catch (err) {
+      if (MISSING.has(err?.code)) return []
+      throw err
+    }
+  }
+
+  /** The signed-up account: its name (noticeName), address and the app it signed up in. */
+  async function accountOf (userId) {
+    const row = await accountRow(userId)
+    return row ? { ...row, name: noticeName(row.name) } : null
+  }
+
+  async function accountRow (userId) {
+    let rows
+    try {
+      ({ rows } = await pool.query(
+        `SELECT u.email,
+                nullif(trim(coalesce(p.first_name, '') || ' ' || coalesce(p.last_name, '')), '') AS name,
+                (SELECT m.app FROM auth.app_memberships m WHERE m.user_id = u.id AND m.joined_via = 'signup' LIMIT 1) AS app
+           FROM auth.users u LEFT JOIN public.profiles p ON p.user_id = u.id
+          WHERE u.id = $1`, [userId]))
+    } catch (err) {
+      if (!MISSING.has(err?.code)) throw err
+      // no db/012: the account counts as indoor
+      ;({ rows } = await pool.query(
+        `SELECT u.email, nullif(trim(coalesce(p.first_name, '') || ' ' || coalesce(p.last_name, '')), '') AS name, NULL AS app
+           FROM auth.users u LEFT JOIN public.profiles p ON p.user_id = u.id WHERE u.id = $1`, [userId]))
+    }
+    return rows[0] || null
+  }
+
+  async function store (rows) {
+    if (!rows.length) return 0
+    try {
+      const { rowCount } = await pool.query(
+        `INSERT INTO public.notifications (user_id, kind, app, subject_user_id, target, details)
+         SELECT x.u, 'signup', x.a, x.s, x.t, x.d
+           FROM unnest($1::uuid[], $2::text[], $3::uuid[], $4::text[], $5::jsonb[]) AS x(u, a, s, t, d)
+         ON CONFLICT (user_id, kind, subject_user_id) DO NOTHING`,
+        [rows.map((r) => r.userId), rows.map((r) => r.app), rows.map((r) => r.subject), rows.map((r) => r.target), rows.map((r) => JSON.stringify({ parts: r.parts, name: r.subjectName ?? null, email: r.subjectEmail ?? null }))])
+      return rowCount
+    } catch (err) {
+      if (MISSING.has(err?.code)) {
+        log.warn?.('[notices] db/028 is not applied: the sign-up notices were mailed, not stored')
+        return null
+      }
+      throw err
+    }
+  }
+
+  /**
+   * Tell the admins and approvers that `userId` signed up (and confirmed its
+   * address). Stores the notices first: a second call for the same account
+   * (a confirmation link opened twice) finds them and mails nobody again.
+   */
+  async function notify (userId) {
+    if (!isUuid(userId)) return { recipients: 0, mailed: 0 }
+    try {
+      const account = await accountOf(userId)
+      if (!account) return { recipients: 0, mailed: 0 }
+      const app = mailApp(account.app)
+      const parts = app === 'beach' ? [] : await partsOf(userId)
+      const { rows: admins } = await pool.query(
+        `SELECT p.user_id, u.email, u.raw_user_meta_data->>'mail_lang' AS lang
+           FROM public.profiles p JOIN auth.users u ON u.id = p.user_id
+          WHERE p.roles && $1::text[] AND ${ACTIVE('u')}
+          ORDER BY u.created_at, p.user_id`, [[...ADMIN_ROLES]])
+      const clubIds = [...new Set(parts.filter((p) => p.kind !== 'referee').map((p) => p.club_id).filter(Boolean))]
+      const teamIds = [...new Set(parts.filter((p) => p.kind === 'team_manager').map((p) => p.team_id).filter(Boolean))]
+      const clubManagers = await managersOf('club_managers', 'club_id', clubIds)
+      const teamManagers = await managersOf('team_managers', 'team_id', teamIds)
+      const recipients = recipientsOf({ userId, parts, admins, clubManagers, teamManagers })
+      if (!recipients.length) return { recipients: 0, mailed: 0 }
+      const stored = await store(recipients.map((r) => ({ ...r, app, subject: userId, subjectName: account.name || null, subjectEmail: account.email || null })))
+      // all were stored before: this sign-up was told already
+      if (stored === 0) return { recipients: recipients.length, mailed: 0 }
+      let mailed = 0
+      if (mailer?.enabled) {
+        const base = typeof mailer.managerUrlFor === 'function' ? mailer.managerUrlFor(app) : mailer.managerUrl
+        // the admins, and the managers of the first part's club within the caps; the rest: the bell (SEC-34)
+        const club = firstClubOf(parts)
+        const managers = club ? recipients.filter((r) => !r.admin && (r.clubIds || []).includes(club)) : []
+        const allowed = managers.slice(0, club ? managerMailsLeft(club) : 0)
+        const toMail = [...recipients.filter((r) => r.admin), ...allowed]
+        let managerMails = 0
+        for (const r of toMail) {
+          try {
+            const res = await mailer.send('signup', {
+              to: r.email,
+              lang: r.lang,
+              app,
+              link: `${String(base || '').replace(/\/+$/, '')}/#${r.target}`,
+              vars: { name: account.name || '', email: account.email, admin: r.admin, parts: r.parts }
+            })
+            if (res?.sent) {
+              mailed++
+              if (!r.admin) managerMails++
+            }
+          } catch (err) {
+            log.error?.(`[notices] sign-up mail to ${maskEmail(r.email)} failed: ${describeMailError(err)}`)
+          }
+        }
+        if (club) managerMailsUsed(club, managerMails)
+      }
+      log.log?.(`[notices] sign-up ${userId.slice(0, 8)}: ${recipients.length} notified, ${mailed} mailed`)
+      return { recipients: recipients.length, mailed }
+    } catch (err) {
+      log.error?.(`[notices] sign-up notice failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 200)}`)
+      return { recipients: 0, mailed: 0 }
+    }
+  }
+
+  /**
+   * A team manager (`proposerId`) said yes to `userId`'s team manager request
+   * for team `teamId`: the managers of the team's club confirm it, or the
+   * admins of a club without managers (see the header).
+   */
+  async function proposal ({ userId, teamId, proposerId = null } = {}) {
+    if (!isUuid(userId) || !isUuid(teamId)) return { recipients: 0, mailed: 0 }
+    try {
+      const account = await accountOf(userId)
+      if (!account) return { recipients: 0, mailed: 0 }
+      const { rows: [team] } = await pool.query(
+        `SELECT ct.team_name AS team, c.id AS club_id, c.name AS club
+           FROM public.club_teams ct JOIN public.clubs c ON c.id = ct.club_id WHERE ct.id = $1`, [teamId])
+      if (!team) return { recipients: 0, mailed: 0 }
+      const { rows: [proposer] } = isUuid(proposerId)
+        ? await pool.query(
+          `SELECT u.email, nullif(trim(coalesce(p.first_name, '') || ' ' || coalesce(p.last_name, '')), '') AS name
+             FROM auth.users u LEFT JOIN public.profiles p ON p.user_id = u.id WHERE u.id = $1`, [proposerId])
+        : { rows: [] }
+      const skip = new Set([userId, proposerId])
+      const parts = [{ kind: 'team_manager', club: team.club, team: team.team }]
+      const seen = new Set()
+      const once = (list) => list.filter((m) => m.email && !skip.has(m.user_id) && !seen.has(m.user_id) && seen.add(m.user_id))
+      let recipients = once(await managersOf('club_managers', 'club_id', [team.club_id]))
+        .map((m) => ({ userId: m.user_id, email: m.email, lang: m.lang || null, admin: false, target: `myclub/${team.club_id}` }))
+      if (!recipients.length) {
+        const { rows: admins } = await pool.query(
+          `SELECT p.user_id, u.email, u.raw_user_meta_data->>'mail_lang' AS lang
+             FROM public.profiles p JOIN auth.users u ON u.id = p.user_id
+            WHERE p.roles && $1::text[] AND ${ACTIVE('u')}
+            ORDER BY u.created_at, p.user_id`, [[...ADMIN_ROLES]])
+        recipients = once(admins).map((a) => ({ userId: a.user_id, email: a.email, lang: a.lang || null, admin: true, target: `accounts/${userId}` }))
+      }
+      if (!recipients.length) return { recipients: 0, mailed: 0 }
+      let fresh
+      try {
+        // new, or read and brought back; an unread notice stays as it is (no second mail)
+        const { rows } = await pool.query(
+          `INSERT INTO public.notifications (user_id, kind, app, subject_user_id, target, details)
+           SELECT x.u, 'team_manager_proposal', 'indoor', $3, x.t, $4::jsonb
+             FROM unnest($1::uuid[], $2::text[]) AS x(u, t)
+           ON CONFLICT (user_id, kind, subject_user_id) DO UPDATE
+              SET target = EXCLUDED.target, details = EXCLUDED.details, created_at = now(), read_at = NULL
+            WHERE public.notifications.read_at IS NOT NULL
+           RETURNING user_id`,
+          [recipients.map((r) => r.userId), recipients.map((r) => r.target), userId, JSON.stringify({ parts, name: account.name || null, email: account.email || null })])
+        fresh = new Set(rows.map((r) => r.user_id))
+      } catch (err) {
+        if (!MISSING.has(err?.code) && err?.code !== '23514') throw err
+        // no db/028 / db/036 (the kind): mailed, not stored
+        log.warn?.('[notices] db/036 is not applied: the team manager proposal was mailed, not stored')
+        fresh = new Set(recipients.map((r) => r.userId))
+      }
+      let mailed = 0
+      if (mailer?.enabled) {
+        const base = typeof mailer.managerUrlFor === 'function' ? mailer.managerUrlFor('indoor') : mailer.managerUrl
+        for (const r of recipients.filter((x) => fresh.has(x.userId))) {
+          try {
+            const res = await mailer.send('team_manager_proposal', {
+              to: r.email,
+              lang: r.lang,
+              link: `${String(base || '').replace(/\/+$/, '')}/#${r.target}`,
+              vars: { name: account.name || '', email: account.email, team: team.team, club: team.club, proposer: mailName(proposer?.name) || proposer?.email || '', admin: r.admin }
+            })
+            if (res?.sent) mailed++
+          } catch (err) {
+            log.error?.(`[notices] proposal mail to ${maskEmail(r.email)} failed: ${describeMailError(err)}`)
+          }
+        }
+      }
+      log.log?.(`[notices] team manager proposal ${userId.slice(0, 8)}: ${fresh.size} notified, ${mailed} mailed`)
+      return { recipients: fresh.size, mailed }
+    } catch (err) {
+      log.error?.(`[notices] proposal notice failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 200)}`)
+      return { recipients: 0, mailed: 0 }
+    }
+  }
+
+  /**
+   * GET /api/notifications?app=indoor|beach: the account's latest notices of
+   * that manager, newest first, with the signed-up account's name and address
+   * read live, and whether its requests are still open.
+   * { notifications: [{ id, kind, created_at, read, target, user, parts, open }], unread }
+   */
+  // The name and address as they were when the notice was made (details);
+  // a notice from before that read them live, now only while its requests
+  // are open, so a former approver does not keep seeing a changed address.
+  function subjectOf (r) {
+    const d = r.details && typeof r.details === 'object' ? r.details : {}
+    if ('email' in d) return { id: r.subject_user_id, email: d.email ?? null, name: d.name ?? null }
+    return r.open === true
+      ? { id: r.subject_user_id, email: r.subject_email ?? null, name: noticeName(r.subject_name) || null }
+      : { id: r.subject_user_id, email: null, name: null }
+  }
+
+  // An error notice's details (lib/errorAlerts.js ring): what the bell shows
+  function errorOf (d) {
+    const x = d && typeof d === 'object' ? d : {}
+    return {
+      title: typeof x.title === 'string' ? x.title : null,
+      count: Number.isFinite(Number(x.count)) ? Number(x.count) : null,
+      reason: typeof x.reason === 'string' ? x.reason : null,
+      kind: typeof x.kind === 'string' ? x.kind : null,
+      tools: Array.isArray(x.tools) ? x.tools.filter((t) => typeof t === 'string') : []
+    }
+  }
+
+  async function list ({ userId, app } = {}) {
+    if (!isUuid(userId)) return ok({ notifications: [], unread: 0 })
+    const a = mailApp(app)
+    try {
+      await pool.query(`DELETE FROM public.notifications WHERE user_id = $1 AND created_at < now() - interval '${KEEP_DAYS} days'`, [userId])
+      const { rows } = await pool.query(
+        `SELECT n.id, n.kind, n.created_at, n.read_at, n.target, n.details,
+                n.subject_user_id, u.email AS subject_email,
+                nullif(trim(coalesce(p.first_name, '') || ' ' || coalesce(p.last_name, '')), '') AS subject_name,
+                EXISTS (SELECT 1 FROM public.account_requests r WHERE r.user_id = n.subject_user_id) AS open
+           FROM public.notifications n
+           LEFT JOIN auth.users u ON u.id = n.subject_user_id
+           LEFT JOIN public.profiles p ON p.user_id = n.subject_user_id
+          WHERE n.user_id = $1 AND n.app = $2
+          ORDER BY n.created_at DESC, n.id
+          LIMIT ${LIST_LIMIT}`, [userId, a])
+      const { rows: [c] } = await pool.query(
+        'SELECT count(*)::int AS n FROM public.notifications WHERE user_id = $1 AND app = $2 AND read_at IS NULL', [userId, a])
+      return ok({
+        notifications: rows.map((r) => ({
+          id: r.id,
+          kind: r.kind,
+          created_at: iso(r.created_at),
+          read: r.read_at != null,
+          target: r.target,
+          user: r.subject_user_id ? subjectOf(r) : null,
+          parts: Array.isArray(r.details?.parts) ? r.details.parts : [],
+          open: r.open === true,
+          // db/050: an error group (lib/errorAlerts.js), without a subject account
+          ...(r.kind === 'error' ? { error: errorOf(r.details) } : {})
+        })),
+        unread: c?.n ?? 0
+      })
+    } catch (err) {
+      // no db/028 (or db/025): no notices
+      if (MISSING.has(err?.code)) return ok({ notifications: [], unread: 0 })
+      log.error?.(`[notices] list failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 200)}`)
+      return unavailable()
+    }
+  }
+
+  /** POST /api/notifications/read { ids: [id] } | { all: true }: marks the account's own notices read. { unread } */
+  async function markRead ({ userId, app, body } = {}) {
+    if (!isUuid(userId)) return ok({ unread: 0 })
+    if (!isPlainObject(body)) return invalid('body: must be an object')
+    const a = mailApp(app ?? body.app)
+    const all = body.all === true
+    const ids = body.ids ?? []
+    if (!all) {
+      if (!Array.isArray(ids) || ids.length === 0) return invalid('ids: a list of notification ids, or all: true')
+      if (ids.length > MAX_READ_IDS) return invalid(`ids: at most ${MAX_READ_IDS}`)
+      if (!ids.every(isUuid)) return invalid('ids: notification ids')
+    }
+    try {
+      if (all) {
+        await pool.query('UPDATE public.notifications SET read_at = now() WHERE user_id = $1 AND app = $2 AND read_at IS NULL', [userId, a])
+      } else {
+        await pool.query('UPDATE public.notifications SET read_at = now() WHERE user_id = $1 AND id = ANY($2::uuid[]) AND read_at IS NULL',
+          [userId, ids.map((x) => x.toLowerCase())])
+      }
+      const { rows: [c] } = await pool.query(
+        'SELECT count(*)::int AS n FROM public.notifications WHERE user_id = $1 AND app = $2 AND read_at IS NULL', [userId, a])
+      return ok({ unread: c?.n ?? 0 })
+    } catch (err) {
+      if (MISSING.has(err?.code)) return ok({ unread: 0 })
+      log.error?.(`[notices] read failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 200)}`)
+      return unavailable()
+    }
+  }
+
+  return { notify, proposal, list, markRead }
+}

@@ -1,0 +1,3 @@
+OpenVolley 3.0.17
+- Match setup: a green shield on each player and official from the club's lists, a gray one for those typed by hand; tap the gray one to link the row to someone of the club, the green one with a dot to fill in the date of birth.
+- Manager: list cards, tabs that refresh, shields and "save in the club?" on the squad.

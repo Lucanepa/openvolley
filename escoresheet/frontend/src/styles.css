@@ -1,0 +1,4385 @@
+:root {
+  /* Legacy names, re-pointed at the volleyui --ov-* tokens (src/tailwind.css,
+     RESTYLE-SPEC 1.4). About 2,200 inline style={{}} objects read these, so the
+     cool slate greys become warm stone without touching the JSX. */
+  --bg: var(--ov-page);           /* stone-100 page   (was slate-100 #f1f5f9) */
+  --panel: var(--ov-card);        /* white cards and panels */
+  --panel-2: var(--ov-sunken);    /* stone-50 sunken  (was slate-50 #f8fafc) */
+  --text: var(--ov-text);         /* stone-900        (was slate-900 #0f172a) */
+  --muted: var(--ov-text-muted);  /* stone-500        (was slate-500 #64748b) */
+  --border: var(--ov-hairline);   /* stone-200        (was slate-200 #e2e8f0) */
+  /* Was never defined: 16 inline backgrounds read it without a fallback (and
+     drew nothing), TimeInput24 with a dark #1f2937 fallback, which made the
+     set start/end time fields black slabs. White, like --panel. */
+  --bg-secondary: var(--ov-card);
+  /* Unchanged on purpose. --accent is the scoring green (serve badge, colon
+     dots, TO counters, interval timer, captain "C"). --danger is the red of the
+     offline/error status dots (frozen hues) and of the rally controls' Undo
+     button (frozen, and no brand red on the scoreboard: R4). */
+  --accent: #22c55e;
+  --danger: #ef4444;
+  /* Scale factor for dynamic sizing - set by JavaScript */
+  --scale-factor: 1;
+  --vmin-base: 768px;
+}
+
+/* Frozen scoring readouts keep the exact pre-restyle palette (RESTYLE-SPEC 4).
+   The aliases above turn the app from slate to stone. In the scoring centre
+   column (.court-wrapper: big rally score, serve box, referee names, game
+   captain chips, the court with its discs, position tags I-VI and captain
+   marks, the rally controls, the per-set tables), the compact score, the
+   toolbar set-score boxes, the TO/SUB counters and the set-end / match-end
+   readouts the old values are pinned instead, so they stay pixel-identical.
+   The side columns' own buttons (Improper Request / Delay Warning / Delay
+   Penalty chips, IR & Delays, TO/SUB, bench and libero buttons) are pinned
+   too; the side-column surfaces around them take the stone hairlines.
+   The referee dashboard's scoring view (.referee-court in Referee.jsx: team
+   chips, set counters, serve box, score digits, the court floor and lines,
+   TO/SUB counters, sanctions and the last-action line) is pinned whole, as
+   its floor is a translucent tint over these surfaces.
+   This only sets custom properties (and re-resolves the inherited text
+   colour, which the `button` rule overrides as before); the frozen rules
+   themselves are not edited. */
+:where(.court-wrapper, .court, .set-score-display, [data-help-id="scoreboard-set-display"],
+       .to-sub-counter, .set-end-readout, .match-end-score, .team-controls button,
+       .referee-court) {
+  --bg: #f1f5f9;
+  --panel: #ffffff;
+  --panel-2: #f8fafc;
+  --text: #0f172a;
+  --muted: #64748b;
+  --border: #e2e8f0;
+  color: var(--text);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+/* A page that reads like a document (roster.openvolley.app): the page itself
+   scrolls, so everything below the fold can be reached on a phone and a PC.
+   The scoring screens keep the locked frame above. Visible on all three lets
+   the body's overflow reach the viewport, so a modal's scroll lock (inline
+   body overflow: hidden, ui/Modal.jsx) still works. */
+html.ov-page-scroll,
+html.ov-page-scroll body,
+html.ov-page-scroll #root {
+  overflow: visible;
+  height: auto;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  /* Inter Variable (opsz 32) from @fontsource-variable/inter, see src/ui/tokens.css */
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.3;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  /* Prevent text selection */
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+/* Accessibility: visible keyboard-focus rings. Uses :focus-visible so it only
+   shows for keyboard/AT users, not mouse clicks. !important overrides the many
+   inline `outline: none` styles. Interactive elements only. Not inside .ov-kit:
+   the kit draws its own ring (FOCUS_RING), and this !important outline in the
+   lower legacy layer would still beat its focus-visible:outline-none. */
+:where(button, a, input:is([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]),
+       [role="button"], [tabindex]):not(.ov-kit *):focus-visible {
+  outline: 2px solid var(--ring, #3b82f6) !important;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Text fields, selects and textareas: the kit's `focus:ring-2 focus:ring-red-500`
+   (RESTYLE-SPEC 2.4), on any focus, hugging the field's own radius. Drawn as an
+   outline so it still beats the many inline `outline: none` styles. --ring is
+   red-500 (tailwind.css) and slate-900 inside the scoring controls (R4).
+   Not on a kit Select (.ov-select) either: it draws its own ring. */
+:where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]),
+       select:not(.ov-select), textarea):not(.ov-kit *):focus {
+  outline: 2px solid var(--ring, #ef4444) !important;
+  outline-offset: 0;
+}
+
+.app-root {
+  position: relative;
+  height: var(--ov-vh100);
+  width: 100%;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* Respect iOS/Android notches & rounded corners (0 on non-notch devices).
+     Requires viewport-fit=cover on the viewport meta. box-sizing:border-box
+     (global) keeps the shell at the full height while insetting content. */
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* Prevent scroll when on home page */
+body.no-scroll {
+  overflow: hidden;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* Custom scrollbar styling - global, for a mouse only. On a touch screen (the
+   Android app, a phone or tablet browser) the system's own overlay scrollbar
+   stays: it shows only while scrolling, where a styled ::-webkit-scrollbar
+   was a permanent 8px bar beside the content. */
+@media (pointer: fine) {
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--ov-hairline-strong); /* stone-300 */
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--ov-text-faint); /* stone-400 */
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* standard scrollbar properties (Firefox, and Chromium 121+ where they win
+     over the ::-webkit-scrollbar rules): thin stone-300 thumb, as the kit base */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--ov-hairline-strong) transparent;
+  }
+}
+
+/* Allow text selection in form elements */
+input,
+textarea,
+[contenteditable="true"] {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
+.container {
+  margin: 0 0 0 0;
+  padding: 8px 8px;
+}
+
+h1 {
+  margin: 0 0 12px;
+  font-size: 29px;
+}
+
+h2 {
+  margin: 0 0 12px;
+  font-size: 21px;
+}
+
+h3 {
+  margin: 0 0 12px;
+  font-size: 19px;
+}
+
+p {
+  color: var(--muted);
+}
+
+.panel {
+  width: 100%;
+  border-radius: 12px;
+  padding: 2px;
+}
+
+/* App.jsx gives the page panel `flex: 1 1 auto` inline but also a `flexGrow`
+   while match setup is open; when setup closes React removes that key and the
+   browser clears the grow part of the shorthand. The scoreboard then only got
+   its content height. Keep the grow here so .match-record always fills the
+   window and the court can size itself from the height that is left. */
+.container > .panel {
+  flex-grow: 1;
+}
+
+/* The home, coin toss and Match End screens are centred in the scrolling page
+   panel. With plain `center`, a screen taller than the window overflowed at the
+   top too, where no scroll reaches. Auto margins centre while there is room and
+   fall to 0 when there is not, so a tall screen starts at its first line, in
+   every engine. `align-items: safe center` (behind @supports) did not hold: the
+   Android app still cut the home page's title off at the top with it
+   (2026-10-13). A WebView can parse `safe` for grid and still ignore it in
+   flexbox, so the @supports test passes there.
+   !important: this file is the `legacy` layer, and the kit's reset
+   (`.ov-kit { margin: 0 }`, components layer, tailwind.css) sits above it and
+   would zero the margins of the home page, whose root is an .ov-kit. An
+   important declaration in a lower layer beats a normal one in a higher layer. */
+.panel--centred {
+  align-items: flex-start;
+}
+.panel--centred > * {
+  margin-top: auto !important;
+  margin-bottom: auto !important;
+}
+
+/* Laptop mode: allow overflow for scoreboard (960px - 1400px) */
+@media (min-width: 961px) and (max-width: 1400px) {
+  .panel {
+    overflow-y: auto !important;
+  }
+}
+
+.grid-4 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+@media (min-width: 900px) {
+  .grid-4 {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+}
+
+/* Larger gap on desktop/non-compact screens */
+@media (min-width: 1200px) {
+  .grid-4 {
+    gap: 16px;
+  }
+}
+
+/* In landscape mode, use 2-column grid without max-width restriction */
+@media (orientation: landscape) and (min-width: 600px) {
+  .grid-4 {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .grid-4 .card {
+    width: 100%;
+  }
+}
+
+/* For very wide landscape screens */
+@media (orientation: landscape) and (min-width: 1200px) {
+  .grid-4 {
+    gap: 16px;
+  }
+}
+
+/* Page card: the kit Card (white, rounded-2xl, stone-200/70 hairline,
+   shadow-card). Paddings keep the scale-factor steps. */
+.card {
+  background: var(--ov-card);
+  border: 1px solid var(--ov-hairline-soft);
+  border-radius: var(--ov-radius-xl);
+  box-shadow: var(--ov-shadow-card);
+  padding: calc(16px * var(--scale-factor));
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: calc(10px * var(--scale-factor));
+}
+
+/* Larger padding on non-compact screens */
+@media (min-width: 900px) {
+  .card {
+    padding: calc(20px * var(--scale-factor));
+    gap: calc(12px * var(--scale-factor));
+  }
+}
+
+@media (min-width: 1200px) {
+  .card {
+    padding: calc(24px * var(--scale-factor));
+    gap: calc(14px * var(--scale-factor));
+  }
+}
+
+/* Never a card in a card: inside the .setup page card (match end) a .card is
+   the kit Block: sunken stone-50/60, stone-200/70 hairline, one radius step
+   down, no shadow. Its padding and layout are unchanged. The frozen readouts
+   keep their own colours: the paper-sheet Results and Sanctions boxes paint
+   their own white. The Winner card stays white (the inner-box finish without
+   the tint): its 3:0 digits and winner bar have no ground of their own, so the
+   tint would shift those frozen pixels. */
+.setup .card {
+  background: rgb(250 250 249 / 0.6); /* stone-50/60 */
+  border-color: var(--ov-hairline-soft);
+  border-radius: var(--ov-radius-lg);
+  box-shadow: none;
+}
+
+.setup .card.match-end-winner {
+  background: var(--ov-card);
+}
+
+.card h3 {
+  margin: 0 0 calc(6px * var(--scale-factor));
+  font-size: calc(17px * var(--scale-factor));
+}
+
+.card p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.card .actions {
+  display: flex;
+  gap: calc(8px * var(--scale-factor));
+  justify-content: flex-end;
+}
+
+/* Setup page grids */
+.setup-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: calc(10px * var(--scale-factor));
+  max-width: 100%;
+}
+
+@media (min-width: 900px) {
+  .setup-cards-grid {
+    gap: calc(12px * var(--scale-factor));
+  }
+}
+
+@media (min-width: 1200px) {
+  .setup-cards-grid {
+    gap: calc(16px * var(--scale-factor));
+  }
+}
+
+@media (max-width: 600px) {
+  .setup-cards-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Vertical spacing in setup page */
+.setup-section {
+  margin-bottom: calc(10px * var(--scale-factor));
+}
+
+@media (min-width: 900px) {
+  .setup-section {
+    margin-bottom: calc(12px * var(--scale-factor));
+  }
+}
+
+@media (min-width: 1200px) {
+  .setup-section {
+    margin-bottom: calc(16px * var(--scale-factor));
+  }
+}
+
+/* Team shirt (components/TeamShirt.jsx): the box is the shirt's body, the
+   SVG jersey draws the sleeves and the back of the neck outside it */
+.shirt {
+  position: relative;
+  width: calc(38px * var(--scale-factor));
+  height: calc(36px * var(--scale-factor));
+}
+
+.shirt > svg {
+  position: absolute;
+  left: calc(-13px * var(--scale-factor));
+  top: calc(-5px * var(--scale-factor));
+  width: calc(64px * var(--scale-factor));
+  height: calc(43px * var(--scale-factor));
+  overflow: visible;
+  filter: drop-shadow(0 calc(1px * var(--scale-factor)) calc(1.5px * var(--scale-factor)) rgba(28, 25, 23, 0.22));
+}
+
+.shirt .number {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: calc(3px * var(--scale-factor));
+  font-family: var(--font-sans);
+  font-weight: 800;
+  color: #ffffff;
+  font-size: calc(18px * var(--scale-factor));
+  line-height: 1;
+  text-shadow: 0 calc(1px * var(--scale-factor)) calc(2px * var(--scale-factor)) rgba(0, 0, 0, 0.35);
+}
+
+/* Bench row spacing */
+.bench-row {
+  margin-bottom: calc(4px * var(--scale-factor));
+}
+
+/* Officials aligned grid */
+.officials-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(calc(180px * var(--scale-factor)), 1fr));
+  gap: calc(8px * var(--scale-factor));
+  align-items: start;
+}
+
+.setup>div[style*="grid"] {
+  width: 100%;
+  min-width: 100%;
+}
+
+label {
+  display: block;
+  margin: calc(8px * var(--scale-factor)) 0;
+}
+
+/* Form fields: the kit's standard input (white, stone-300 hairline, stone-800
+   text, rounded-lg; RESTYLE-SPEC 3.2). This replaces the dark-theme
+   #0f172a fill, which left dark text on a dark slab. Sizing is unchanged. */
+/* Box metrics stay on every input exactly as before (checkbox and file-input
+   rows were laid out against them; moving them is a layout change). */
+input {
+  width: 100%;
+  padding: calc(8px * var(--scale-factor)) calc(10px * var(--scale-factor));
+  font-size: calc(13px * var(--scale-factor));
+  line-height: 1.2;
+}
+
+/* The field look only on text-like fields, not on checkboxes, radios,
+   sliders, colour pickers or file pickers (RESTYLE-SPEC 2.4), matching the
+   focus rules above. :where keeps the old `input` specificity so every
+   class-level override still wins as before. */
+input:where(:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"])) {
+  background: var(--ov-card);
+  border: 1px solid var(--ov-hairline-strong);
+  border-radius: var(--ov-radius);
+  color: var(--ov-text-body);
+  font-family: inherit;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--ov-text-faint);
+  opacity: 1;
+}
+
+input:disabled,
+select:where(:not(.ov-select)):disabled,
+textarea:disabled {
+  background: var(--ov-sunken);
+  color: var(--ov-text-muted);
+}
+
+/* Checkboxes and radios take the brand red (kit `accent-red-600`); on the
+   scoreboard they stay neutral slate-900 (R4: no brand red next to the court). */
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--ov-brand);
+}
+
+.match-record input[type="checkbox"],
+.match-record input[type="radio"] {
+  accent-color: var(--ov-selected);
+}
+
+/* R4 as well for focus: the scoreboard's own fields (lineup-modal positions,
+   Manual Changes scores, remarks) ring slate-900, not red-500, next to the
+   court. Its modals render inside .match-record (no portal). */
+.match-record {
+  --ring: var(--ov-selected);
+}
+
+textarea {
+  background: var(--ov-card);
+  border: 1px solid var(--ov-hairline-strong);
+  border-radius: var(--ov-radius);
+  color: var(--ov-text-body);
+  font-family: inherit;
+}
+
+/* Remove number spinners */
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type=number] {
+  -webkit-appearance: textfield;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* The raw (legacy) <select>s. Never the kit Select: it carries .ov-select and
+   its whole look (tokens.css + SELECT_SIZES), and these padding, font-size and
+   line-height values used to leak into it, so the text sat low and clipped in
+   its h-9 box. :where keeps the old `select` specificity, so every class-level
+   override still wins as before. Every select rule in this file is scoped the
+   same way (guarded by src/ui/__tests__/selectStyles.test.jsx).
+   The same finish as the kit: appearance none (WebKitGTK and Android WebView
+   drew a grey, inset menulist with its own theme padding) and the kit chevron,
+   sized in em so it follows each select's font size. The chevron's background
+   and the room kept for it are !important because many legacy selects set an
+   inline `background:` / `padding:` shorthand, which would wipe them.
+   No text-transform: option labels are written in sentence case. */
+select:where(:not(.ov-select)) {
+  width: 100%;
+  padding: calc(8px * var(--scale-factor)) calc(10px * var(--scale-factor));
+  background-color: var(--ov-card);
+  color: var(--ov-text-body);
+  border: 1px solid var(--ov-hairline-strong);
+  border-radius: var(--ov-radius);
+  font-family: inherit;
+  font-size: calc(13px * var(--scale-factor));
+  line-height: 1.2;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2378716c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 0.5em center !important;
+  background-size: 1.1em 1.1em !important;
+  padding-right: 1.9em !important;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+select:where(:not(.ov-select)):disabled {
+  cursor: not-allowed;
+}
+
+/* Coin toss "Sign A/B": the kit's outline button (was white text on white).
+   A completed signature is a success state: emerald, not blue. Size unchanged. */
+button.sign {
+  background: var(--ov-card);
+  color: #44403c; /* stone-700 */
+  border: 1px solid var(--ov-hairline-strong);
+  border-radius: var(--ov-radius);
+  padding: calc(8px * var(--scale-factor)) calc(12px * var(--scale-factor));
+  font-weight: 600;
+  cursor: pointer;
+  font-size: calc(13px * var(--scale-factor));
+  width: calc(160px * var(--scale-factor));
+  height: calc(40px * var(--scale-factor));
+  text-align: center;
+  transition: all 0.2s ease;
+}
+
+button.sign:hover:not(:disabled) {
+  background: var(--ov-sunken);
+}
+
+button.sign.signed {
+  background: var(--ov-success-soft);
+  border: 1px solid #6ee7b7; /* emerald-300 */
+  color: var(--ov-success-text);
+}
+
+/* Default <button>: the scoring green stays (Point A/B and other court
+   buttons rely on it). Chrome buttons get kit classes, which now win. */
+button {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background: var(--accent);
+  color: #06110a;
+  border: none;
+  border-radius: calc(10px * var(--scale-factor));
+  padding: calc(8px * var(--scale-factor)) calc(12px * var(--scale-factor));
+  font-weight: 600;
+  cursor: pointer;
+  font-size: calc(13px * var(--scale-factor));
+}
+
+/* Outside the scoring areas: kit radius (rounded-lg) and the app's Inter
+   instead of the browser's control font. Every frozen scoring scope keeps its
+   buttons' exact shape, face and height (muscle memory): the centre column
+   (.court-wrapper, .rally-controls), the side columns (.team-controls: TO/SUB,
+   sanction chips, IR & Delays, bench, liberos) and the phone scoring block
+   (.smartphone-layout: Start Rally, Point L/R, TO). */
+button:where(:not(:is(.court-wrapper, .team-controls, .smartphone-layout, .rally-controls) button)) {
+  border-radius: var(--ov-radius);
+  font-family: inherit;
+}
+
+/* Secondary = the kit's outline button: white, stone-300 hairline, stone-700. */
+button.secondary {
+  background: var(--ov-card);
+  color: #44403c; /* stone-700 */
+  border: 1px solid var(--ov-hairline-strong);
+}
+
+button.secondary:hover:not(:disabled) {
+  background: var(--ov-sunken);
+}
+
+/* Start Rally / Replay: the same outline look, drawn inside the box so the
+   frozen rally buttons keep their exact size and position. */
+.rally-controls button.secondary {
+  color: var(--ov-text-body); /* stone-800: the most-used courtside action reads full strength */
+  border: none;
+  box-shadow: inset 0 0 0 1px var(--ov-hairline-strong);
+}
+
+button.danger {
+  background: var(--danger);
+}
+
+button:disabled {
+  opacity: .6;
+  cursor: default;
+}
+
+.setup {
+  display: grid;
+  gap: calc(12px * var(--scale-factor));
+  width: 100%;
+  max-width: 100%;
+  overflow: auto;
+  /* The containing block of what is absolutely positioned inside (the
+     sr-only "Delete" labels of the stacked roster rows): without it they hang
+     off the page container, out of this scroller, and stretch the page's
+     scroll area by the roster's height (an empty band under the card). */
+  position: relative;
+  box-sizing: border-box;
+  /* the page card around setup, coin toss and match end */
+  border: 1px solid var(--ov-hairline-soft);
+  border-radius: var(--ov-radius-xl);
+  background: var(--ov-card);
+  box-shadow: var(--ov-shadow-card);
+  padding: calc(16px * var(--scale-factor));
+  margin: 0 auto;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.setup>* {
+  min-width: auto;
+}
+
+/* === ROSTER / BENCH GRID (subgrid) === */
+
+/* Player roster grid: 8 columns
+   Badge  |  #  |  Last Name  |  First Name  |  DOB  |  Libero  |  Captain  |  Action */
+.roster-grid {
+  display: grid;
+  grid-template-columns: auto auto auto auto auto auto auto auto;
+  row-gap: calc(8px * var(--scale-factor));
+  width: max-content;
+  margin: 0 auto;
+}
+
+/* With LFP column enabled: 9 columns */
+.roster-grid.has-lfp {
+  grid-template-columns: auto auto auto auto auto auto auto auto auto;
+}
+
+/* Bench officials grid: 6 columns
+   Role  |  Last Name  |  First Name  |  DOB  |  Plays as  |  Action */
+.bench-grid {
+  display: grid;
+  grid-template-columns: auto auto auto auto auto auto;
+  row-gap: calc(8px * var(--scale-factor));
+  width: max-content;
+  margin: 0 auto;
+}
+
+/* The roster editors (MatchSetup): the card's one column is as wide as the
+   card, not as its widest table (at 800-1050 px the bench table widened it:
+   the "Choose players" button, the counts and the Delete column ran off the
+   card). The tables shrink to fit, their inputs down to their min-width (a
+   date of birth keeps room for DD.MM.YYYY: MatchSetup DOB_CELL); narrower
+   still, the card scrolls sideways as before. */
+.setup.setup-roster {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.setup-roster :is(.roster-grid, .bench-grid) {
+  max-width: 100%;
+}
+
+/* Subgrid row — spans all parent columns, inherits column tracks */
+.roster-grid-row,
+.bench-grid-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  gap: calc(8px * var(--scale-factor));
+  padding: calc(6px * var(--scale-factor)) calc(8px * var(--scale-factor));
+  border: 2px solid transparent;
+  border-radius: calc(6px * var(--scale-factor));
+  box-sizing: border-box;
+}
+
+/* No subgrid (Chrome / Android WebView before 117): the rows got one column
+   and each table fell into a narrow stack of fields (WebView 113, Android 14
+   emulator, 2026-11-20). There each row gets its own columns instead, the
+   widths subgrid gives them: an input's 224 px, the date's min-w-32, the
+   number input's 45-60 px, the bench role list's 280 px (the widest role,
+   in English; 4 px to spare for Android's font). The badge and the libero
+   list get what they need at Android's larger text (font scale 1.3: 37 and
+   97 px, "Libero 1" was cut to "Libe..."): text zoom grows the text, not px
+   or rem lengths. Every track but the last is a fixed size or a fixed
+   range, so the head and every row line up whatever they hold (all rows
+   are as wide as the table); the last one takes the rest, at least the
+   Delete / Add button (its width depends on the language). The portrait
+   cards (tailwind.css, "Portrait data entry", unlayered) set their own
+   columns over these. */
+@supports not (grid-template-columns: subgrid) {
+  .roster-grid-row {
+    grid-template-columns: 37px minmax(45px, 60px) minmax(80px, 224px) minmax(80px, 224px) minmax(128px, 224px) minmax(80px, 100px) 40px minmax(68px, 1fr);
+  }
+
+  .roster-grid.has-lfp .roster-grid-row {
+    grid-template-columns: 37px minmax(45px, 60px) minmax(80px, 224px) minmax(80px, 224px) minmax(128px, 224px) minmax(80px, 100px) 40px 24px minmax(68px, 1fr);
+  }
+
+  /* "Add new player": no badge (an empty first cell) */
+  .roster-grid.roster-add .roster-grid-row {
+    grid-template-columns: 0 minmax(45px, 60px) minmax(80px, 224px) minmax(80px, 224px) minmax(128px, 224px) minmax(80px, 100px) 40px minmax(51px, 1fr);
+  }
+
+  .roster-grid.roster-add.has-lfp .roster-grid-row {
+    grid-template-columns: 0 minmax(45px, 60px) minmax(80px, 224px) minmax(80px, 224px) minmax(128px, 224px) minmax(80px, 100px) 40px 24px minmax(51px, 1fr);
+  }
+
+  .bench-grid-row {
+    grid-template-columns: minmax(120px, 284px) minmax(80px, 224px) minmax(80px, 224px) minmax(128px, 224px) minmax(80px, 160px) minmax(68px, 1fr);
+  }
+}
+
+/* "Plays as" (a player who is also this official, a playing coach:
+   domain/playerOfficials): the select in its own column, its label only in
+   the stacked rows (tailwind.css), where no column head names it */
+.bench-grid-row > .cell-plays {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.bench-grid-row > .cell-plays > .plays-label {
+  display: none;
+}
+
+/* Inputs/selects in grid: size to content, not 100% */
+.roster-grid-row input,
+.roster-grid-row select:where(:not(.ov-select)),
+.bench-grid-row input,
+.bench-grid-row select:where(:not(.ov-select)) {
+  width: auto;
+  min-width: calc(80px * var(--scale-factor));
+  box-sizing: border-box;
+}
+
+/* Number input constraints */
+.roster-grid-row input[type="number"] {
+  min-width: calc(45px * var(--scale-factor));
+  max-width: calc(60px * var(--scale-factor));
+  text-align: center;
+  font-weight: 600;
+  font-size: calc(16px * var(--scale-factor));
+}
+
+/* Captain/action cells centered */
+.roster-grid-row .cell-captain,
+.roster-grid-row .cell-action,
+.bench-grid-row .cell-action {
+  display: flex;
+  justify-content: center;
+}
+
+/* Role badge (C, L1, L2) to the left of jersey number */
+.roster-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: center;
+  min-width: calc(24px * var(--scale-factor));
+  font-size: calc(11px * var(--scale-factor));
+  font-weight: 700;
+  border-radius: calc(4px * var(--scale-factor));
+  padding: calc(2px * var(--scale-factor)) calc(4px * var(--scale-factor));
+  line-height: 1;
+  user-select: none;
+}
+
+.roster-badge.badge-captain {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.15);
+  border: 1px solid #22c55e;
+}
+
+.roster-badge.badge-libero {
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+/* Section divider heading (e.g. "Bench Officials — Home") */
+.section-divider {
+  text-align: center;
+  background: var(--ov-sunken-strong); /* stone-100 band (was white text on white) */
+  color: #44403c; /* stone-700 */
+  margin: calc(16px * var(--scale-factor)) 0 calc(8px * var(--scale-factor));
+  padding: calc(6px * var(--scale-factor)) calc(12px * var(--scale-factor));
+  border-radius: calc(6px * var(--scale-factor));
+  font-size: calc(14px * var(--scale-factor));
+  font-weight: 600;
+}
+
+/* Header row styling */
+.roster-grid-row.grid-header,
+.bench-grid-row.grid-header {
+  font-weight: 600;
+  font-size: calc(12px * var(--scale-factor));
+  color: var(--ov-text-muted); /* stone-500 table-head tone (was white on white) */
+}
+
+/* === END ROSTER / BENCH GRID === */
+
+/* Setup pages now fill available space - no max-width restriction */
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: calc(12px * var(--scale-factor));
+}
+
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: calc(12px * var(--scale-factor));
+}
+
+@media (min-width: 900px) {
+  .two-col {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: calc(8px * var(--scale-factor));
+}
+
+.capitalize {
+  text-transform: capitalize;
+}
+
+/* === FIXED GRID CLASSES START === */
+
+/* Mobile-first (default): All grids stack to 1 column */
+.grid-c4,
+.grid-c3,
+.grid-c2 {
+  display: grid;
+  grid-template-columns: 1fr;
+  /* 1 column on small screens */
+  gap: calc(8px * var(--scale-factor));
+  align-items: flex-start;
+}
+
+/* Medium screens (tablets): Go to 2 columns */
+@media (min-width: 600px) {
+
+  .grid-c4,
+  .grid-c3,
+  .grid-c2 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Large screens (desktop): Use your original intended column counts */
+@media (min-width: 900px) {
+  .grid-c4 {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .grid-c3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .grid-c2 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* === FIXED GRID CLASSES END === */
+
+.row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: calc(8px * var(--scale-factor));
+  align-items: center;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: auto;
+}
+
+.row>* {
+  flex-shrink: 0;
+  flex-grow: 0;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.inline {
+  display: flex;
+  align-items: center;
+  gap: calc(8px * var(--scale-factor));
+}
+
+.w-num {
+  width: calc(50px * var(--scale-factor));
+  text-align: center;
+  font-size: calc(16px * var(--scale-factor));
+  font-weight: 600;
+}
+
+.w-dob {
+  width: calc(140px * var(--scale-factor));
+}
+
+.w-name {
+  flex: 1 1 calc(120px * var(--scale-factor));
+  min-width: calc(80px * var(--scale-factor));
+}
+
+.w-90 {
+  width: calc(90px * var(--scale-factor));
+}
+
+.w-captain {
+  width: calc(30px * var(--scale-factor));
+  display: flex;
+  justify-content: center;
+}
+
+.w-action {
+  width: calc(70px * var(--scale-factor));
+  display: flex;
+  justify-content: center;
+}
+
+.w-120 {
+  width: calc(120px * var(--scale-factor));
+}
+
+.w-140 {
+  width: calc(140px * var(--scale-factor));
+}
+
+.w-160 {
+  width: calc(160px * var(--scale-factor));
+}
+
+.w-180 {
+  width: calc(180px * var(--scale-factor));
+}
+
+.w-200 {
+  width: calc(200px * var(--scale-factor));
+}
+
+.w-220 {
+  width: calc(220px * var(--scale-factor));
+}
+
+.w-240 {
+  width: calc(240px * var(--scale-factor));
+}
+
+.w-300 {
+  width: calc(300px * var(--scale-factor));
+}
+
+.w-70 {
+  max-width: 70%;
+  width: 100%;
+}
+
+/* Lists */
+.roster-list {
+  margin: 8px 0;
+  padding-left: 18px;
+}
+
+.roster-list li {
+  margin: 4px 0;
+}
+
+.col-2 {
+  grid-column: span 2;
+}
+
+.col-3 {
+  grid-column: span 3;
+}
+
+.col-4 {
+  grid-column: span 4;
+}
+
+.col-6 {
+  grid-column: span 6;
+}
+
+.col-12 {
+  grid-column: span 12;
+}
+
+@media (max-width: 800px) {
+
+  .col-3,
+  .col-4,
+  .col-6 {
+    grid-column: span 12;
+  }
+}
+
+.w-80 {
+  width: 80px;
+}
+
+.w-120 {
+  width: 120px;
+}
+
+.scoreboard {
+  display: grid;
+  gap: 12px;
+}
+
+.scores {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: calc(8px * var(--scale-factor));
+  align-items: center;
+}
+
+.score {
+  font-size: calc(43px * var(--scale-factor));
+  font-weight: 800;
+  letter-spacing: calc(1px * var(--scale-factor));
+}
+
+/* Small text utilities for dense layouts */
+.text-sm {
+  font-size: calc(14px * var(--scale-factor));
+  letter-spacing: .2px;
+}
+
+.text-xs {
+  font-size: calc(13px * var(--scale-factor));
+  letter-spacing: .2px;
+}
+
+@media (max-width: 520px) {
+  .score {
+    font-size: calc(35px * var(--scale-factor));
+  }
+}
+
+/* Responsive scaling for smaller laptops */
+@media (max-width: 1400px) {
+  .score {
+    font-size: calc(37px * var(--scale-factor));
+  }
+}
+
+@media (max-width: 1280px) {
+  .score {
+    font-size: calc(33px * var(--scale-factor));
+  }
+}
+
+/* Match record layout - full width with user-controlled scaling.
+   Its only items in flow are the toolbar and .match-content (banners, cards
+   and dialogs are fixed), so the gap is the band between the toolbar and the
+   three columns: 2px at every width (owner, 20.11.2026: as close as possible;
+   it was 12px up to 1800px wide). */
+.match-record {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  height: 100%;
+  width: 100%;
+  max-width: 100%;
+  min-width: unset;
+  margin: 0 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+/* Prevent layout shifts during gameplay */
+.match-record * {
+  box-sizing: border-box;
+}
+
+.match-toolbar {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr 1fr;
+  align-items: center;
+  gap: 0.76cqw;
+  padding: 0.6cqw 0.85cqw;
+  background: var(--panel);
+  border: 1px solid var(--ov-hairline-soft);
+  border-radius: calc(12px * var(--scale-factor));
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  flex-shrink: 0;
+  container-type: inline-size;
+  container-name: match-toolbar;
+}
+
+@media (max-width: 1400px) {
+  .match-toolbar {
+    padding: 0.42cqw 0.6cqw;
+  }
+}
+
+.toolbar-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 1.2cqw;
+  flex-wrap: wrap;
+}
+
+.status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5cqw;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  font-size: calc(1.2cqw * var(--cqf, 1));
+}
+
+.status-dot {
+  width: 0.85cqw;
+  height: 0.85cqw;
+  border-radius: 999px;
+  background: var(--danger);
+  box-shadow: 0 0 0.8cqw rgba(239, 68, 68, 0.6);
+  flex-shrink: 0;
+}
+
+/* Offline - Red */
+.status-indicator.status-offline .status-dot {
+  background: var(--danger);
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+}
+
+/* Online but no Supabase - Orange */
+.status-indicator.status-online_no_supabase .status-dot {
+  background: #f59e0b;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
+}
+
+/* Connecting - Yellow/Orange pulsing */
+.status-indicator.status-connecting .status-dot {
+  background: #eab308;
+  box-shadow: 0 0 8px rgba(234, 179, 8, 0.6);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+/* Syncing - Blue pulsing */
+.status-indicator.status-syncing .status-dot {
+  background: #3b82f6;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+/* Synced - Green */
+.status-indicator.status-synced .status-dot {
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
+}
+
+/* Error - Red pulsing */
+.status-indicator.status-error .status-dot {
+  background: var(--danger);
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.6;
+    transform: scale(0.9);
+  }
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 1cqw;
+  background: var(--ov-hairline);
+}
+
+.toolbar-clock {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* The ticking time of the toolbar clock (scoreboard/ToolbarClock), in the
+   toolbar and the folded strip: a box of its own fixed size, so a tick lays
+   out the box alone, not the page (a relayout boundary: size and layout
+   containment). The date before it is plain text: a tight toolbar wraps the
+   time under it as before. The width here is where the box starts: the
+   time in Inter's tabular figures ("23:58:48" 6.8ch to 6.9ch, "23:58" 4.4ch
+   to 4.45ch, in every language but fr-CA); ToolbarClock then sets the box
+   to the time's exact width, so the clock wraps where it did and nothing is
+   cut. Top-aligned (the box has no baseline), one line tall: the toolbar's
+   1.3, the strip's 1 (--clock-lh on its span). Under Android's system font
+   size (a text zoom in the app's WebView) the font grows but 1em does not:
+   ToolbarClock then sets the line's height too. */
+.toolbar-clock-time {
+  display: inline-block;
+  vertical-align: top;
+  width: 6.9ch;
+  height: calc(var(--clock-lh, 1.3) * 1em);
+  line-height: var(--clock-lh, 1.3);
+  white-space: nowrap;
+  overflow: hidden;
+  contain: strict;
+  font-variant-numeric: tabular-nums;
+}
+
+.toolbar-clock-time[data-seconds='off'] {
+  width: 4.5ch;
+}
+
+.toolbar-center {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25cqw;
+  align-items: center;
+  flex: 1;
+  min-width: 12cqw;
+}
+
+.toolbar-title {
+  margin: 0;
+  font-size: calc(1cqw * var(--cqf, 1));
+}
+
+.toolbar-score-section {
+  display: flex;
+  align-items: center;
+  gap: 1cqw;
+  width: 100%;
+  justify-content: space-between;
+}
+
+.toolbar-team-left,
+.toolbar-team-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5cqw;
+  flex: 1;
+}
+
+.toolbar-team-right {
+  justify-content: flex-end;
+}
+
+.toolbar-team-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7cqw;
+  height: 1.7cqw;
+  border-radius: 0.34cqw;
+  font-weight: 700;
+  font-size: calc(0.85cqw * var(--cqf, 1));
+  box-shadow: 0 0.1cqw 0.5cqw rgba(0, 0, 0, 0.2);
+}
+
+.toolbar-team-name {
+  font-weight: 600;
+  font-size: calc(0.85cqw * var(--cqf, 1));
+}
+
+.toolbar-score-display {
+  font-size: calc(2.55cqw * var(--cqf, 1));
+  font-weight: 800;
+  letter-spacing: 0.1cqw;
+  background: var(--panel);
+  padding: 0.6cqw 1.3cqw;
+  border-radius: 0.6cqw;
+  border: 0.1cqw solid var(--ov-hairline);
+  min-width: 7.2cqw;
+  text-align: center;
+}
+
+.toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5cqw;
+  justify-content: flex-end;
+}
+
+.roster-panel {
+  padding: calc(20px * var(--scale-factor));
+  background: var(--panel-2);
+  border: 1px solid var(--ov-hairline);
+  border-radius: calc(12px * var(--scale-factor));
+}
+
+.roster-tables {
+  display: grid;
+  /* min(100%, …): a phone is narrower than one 400px column */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(400px * var(--scale-factor))), 1fr));
+  gap: calc(24px * var(--scale-factor));
+}
+
+.roster-table-wrapper {
+  display: flex;
+  flex-direction: column;
+}
+
+.roster-table-wrapper h3 {
+  margin: 0 0 calc(16px * var(--scale-factor));
+  font-size: calc(19px * var(--scale-factor));
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* Roster tables: the kit table (white body, stone-50 head with 11px uppercase
+   stone-500 labels, stone-200 row rules, stone-50 row hover). */
+.roster-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--ov-card);
+  border-radius: calc(8px * var(--scale-factor));
+  overflow: hidden;
+}
+
+.roster-table thead {
+  background: var(--ov-sunken);
+  border-bottom: 1px solid var(--ov-hairline);
+}
+
+.roster-table th {
+  padding: calc(12px * var(--scale-factor)) calc(8px * var(--scale-factor));
+  text-align: left;
+  font-size: calc(11px * var(--scale-factor));
+  font-weight: 700;
+  color: var(--ov-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+.roster-table td {
+  padding: calc(10px * var(--scale-factor)) calc(8px * var(--scale-factor));
+  font-size: calc(15px * var(--scale-factor));
+  color: var(--text);
+  border-bottom: 1px solid var(--ov-hairline);
+}
+
+.coin-toss-number,
+.coin-toss-name,
+.coin-toss-dob {
+  padding: calc(8px * var(--scale-factor)) calc(8px * var(--scale-factor)) calc(6px * var(--scale-factor)) calc(8px * var(--scale-factor)) !important;
+}
+
+.coin-toss-select {
+  -moz-appearance: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.coin-toss-select option {
+  background: var(--bg) !important;
+  color: var(--text) !important;
+}
+
+/* Line-up entry modal (Scoreboard LineupModal). One constant size from open
+   to confirm: every slot (error messages, the edit tools, the players pool)
+   is reserved up front, so typing, picking, errors and Clear never move it.
+   Court on the left (net on top, front row IV III II, back row V VI I),
+   players and tools on the right; stacked below 940px. */
+.lineup-modal {
+  --lineup-col: 136px;
+  --lineup-gap: 12px;
+  --lineup-chip: 44px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-top: 4px;
+}
+
+.lineup-modal__body {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+}
+
+@media (max-width: 940px) {
+  .lineup-modal__body {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    gap: 20px;
+  }
+  .lineup-modal__side {
+    width: 100%;
+  }
+}
+
+.lineup-court {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: calc(3 * var(--lineup-col) + 2 * var(--lineup-gap));
+  max-width: 100%;
+}
+
+/* The net: exactly the grid's width, right above the front row */
+.lineup-net {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ov-rule);
+}
+
+.lineup-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--lineup-gap);
+}
+
+/* One position: label strip, number field and message slot in one shape
+   with a single hairline. Errors and focus redraw that one outline (a
+   box-shadow / outline, so the box never changes size). */
+.lineup-pos {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--ov-hairline-strong);
+  border-radius: var(--ov-radius-lg);
+  background: var(--ov-card);
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s, background-color 0.15s;
+}
+
+.lineup-pos__label {
+  height: 30px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ov-sunken-strong);
+  border-bottom: 1px solid var(--ov-hairline);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--ov-text-secondary);
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.lineup-pos__field {
+  position: relative;
+  height: 76px;
+  flex: none;
+}
+
+.lineup-modal .lineup-pos__input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: center;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--ov-text);
+  caret-color: var(--ov-text);
+}
+
+/* The box draws the focus ring, not the field (one shape, same corners) */
+.lineup-modal .lineup-pos__input:focus {
+  outline: none !important;
+}
+
+.lineup-pos:focus-within {
+  outline: 2px solid var(--ov-selected);
+  outline-offset: 2px;
+}
+
+/* The filled position: a disc in the shirt colour, as on the court and in
+   the players pool, whether it was typed, clicked or dropped */
+.lineup-disc,
+.lineup-disc-anchor {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 54px;
+  height: 54px;
+  margin: -27px 0 0 -27px;
+  border-radius: 9999px;
+  pointer-events: none;
+}
+
+.lineup-disc {
+  z-index: 0;
+  box-sizing: border-box;
+}
+
+.lineup-disc-anchor {
+  z-index: 2;
+}
+
+.lineup-pos__msg {
+  height: 34px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px 4px;
+  text-align: center;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 14px;
+  color: var(--ov-danger-text);
+  overflow: hidden;
+}
+
+.lineup-pos__msg > span {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.lineup-pos[data-error] {
+  border-color: var(--ov-danger-text);
+  box-shadow: 0 0 0 1px var(--ov-danger-text);
+  background: var(--ov-danger-soft);
+}
+
+.lineup-pos[data-error] .lineup-pos__label {
+  background: var(--ov-danger-border);
+  border-bottom-color: #fecaca;
+  color: var(--ov-danger-text);
+}
+
+.lineup-pos[data-error]:focus-within {
+  outline-color: var(--ov-danger-text);
+}
+
+.lineup-pos[data-over] {
+  border-color: var(--ov-success);
+  box-shadow: 0 0 0 1px var(--ov-success);
+  background: var(--ov-success-soft);
+}
+
+/* Players pool: fixed height for a full roster (two rows of seven), so it
+   never shrinks as players move to the court */
+.lineup-pool {
+  padding: 12px 14px 14px;
+  border: 1px solid var(--ov-hairline);
+  border-radius: var(--ov-radius-lg);
+  background: var(--ov-sunken);
+}
+
+/* Easy match: the two libero boxes above the pool (domain/easyMatch.js) */
+.lineup-libs__row {
+  display: flex;
+  gap: 12px;
+}
+
+.lineup-lib {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 84px;
+  border: 1px solid var(--ov-hairline-strong);
+  border-radius: var(--ov-radius-lg);
+  background: var(--ov-card);
+  overflow: hidden;
+}
+
+.lineup-lib__label {
+  align-self: stretch;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ov-sunken-strong);
+  border-bottom: 1px solid var(--ov-hairline);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--ov-text-secondary);
+}
+
+.lineup-lib__input {
+  width: 100%;
+  height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--ov-text);
+  font-size: 22px;
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.lineup-lib__input:focus {
+  outline: none;
+}
+
+.lineup-lib__input:disabled {
+  color: var(--ov-text-secondary);
+}
+
+.lineup-lib:focus-within {
+  outline: 2px solid var(--ov-selected);
+  outline-offset: 2px;
+}
+
+.lineup-lib__msg {
+  min-height: 18px;
+  padding: 0 4px 3px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--ov-danger-text);
+}
+
+.lineup-lib[data-error] {
+  border-color: var(--ov-danger-text);
+  box-shadow: 0 0 0 1px var(--ov-danger-text);
+  background: var(--ov-danger-soft);
+}
+
+.lineup-pool__title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ov-text-secondary);
+}
+
+.lineup-pool__chips {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, var(--lineup-chip));
+  grid-auto-rows: var(--lineup-chip);
+  gap: 8px;
+  align-content: start;
+  height: calc(2 * var(--lineup-chip) + 8px + 10px);
+  padding: 5px 6px 5px 4px;
+  margin: 0 -6px 0 -4px;
+  overflow-y: auto;
+}
+
+.lineup-chip {
+  position: relative;
+  width: var(--lineup-chip);
+  height: var(--lineup-chip);
+  box-sizing: border-box;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: grab;
+  user-select: none;
+  transition: transform 0.15s, opacity 0.15s, box-shadow 0.15s;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+}
+
+/* The room of a player now on court (LineupModal poolRoom) */
+.lineup-chip--room {
+  visibility: hidden;
+}
+
+.lineup-chip:hover {
+  transform: scale(1.08);
+}
+
+.lineup-chip:focus-visible {
+  outline: 2px solid var(--ov-selected) !important;
+  outline-offset: 2px;
+  border-radius: 9999px !important;
+}
+
+.lineup-chip[data-dragging] {
+  opacity: 0.45;
+  transform: none;
+}
+
+/* Captain mark, the same on a chip and on a filled position: white C on
+   stone-900 (17:1) with a white halo, legible on any shirt colour */
+.lineup-cap {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: var(--ov-text);
+  color: #ffffff;
+  box-shadow: 0 0 0 2px #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  text-shadow: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+/* On an available-players chip: 14px, further into the corner (6px past
+   the right edge, as far as the pool's right padding; 5px above, its top
+   padding), so it clears the digits of a two-digit number: at Android's
+   larger text (1.3) the 18px mark covered the top of the "2" of chip 12 */
+.lineup-chip > .lineup-cap {
+  right: -6px;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  font-size: 10px;
+}
+
+/* Game captain (not the team captain): the court's amber C */
+.lineup-cap--game {
+  color: #fbbf24;
+}
+
+/* Optional game captain choice, under the court: shown once the six are
+   entered without the team captain (FIVB 5.1.2: the team captain on court is
+   the game captain), and still inside 85vh of a 1280x720 screen */
+.lineup-gcapt {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid var(--ov-hairline);
+  border-radius: var(--ov-radius-lg);
+}
+
+.lineup-gcapt__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.lineup-gcapt__title {
+  font-weight: 600;
+  color: var(--ov-text-secondary);
+}
+
+.lineup-gcapt__optional {
+  font-size: 12px;
+  color: var(--ov-text-muted);
+}
+
+.lineup-gcapt__choices {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  height: 36px;
+  overflow: hidden;
+}
+
+.lineup-gcapt__choice {
+  flex: none;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 6px;
+  border: 1px solid var(--ov-hairline-strong);
+  border-radius: var(--ov-radius);
+  background: var(--ov-card);
+  color: var(--ov-text);
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.lineup-gcapt__choice--none {
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.lineup-gcapt__choice:hover:not(:disabled) {
+  border-color: var(--ov-text-muted);
+}
+
+.lineup-gcapt__choice[aria-pressed="true"] {
+  background: var(--ov-selected);
+  border-color: var(--ov-selected);
+  color: var(--ov-on-dark);
+}
+
+.lineup-gcapt__choice:disabled {
+  cursor: default;
+  background: var(--ov-card);
+  border-color: var(--ov-hairline);
+  color: var(--ov-text-faint);
+}
+
+.lineup-gcapt__choice:focus-visible {
+  outline: 2px solid var(--ov-focus);
+  outline-offset: 2px;
+}
+
+/* Two lines reserved (a one-line note does not move the chips), more when
+   Android's larger text needs them: a fixed 32px clipped the second line at
+   font scale 1.3. A unitless line height grows with that text. */
+.lineup-gcapt__note {
+  margin: 0;
+  min-height: 32px;
+  font-size: 12px;
+  line-height: 1.3334;
+  color: var(--ov-text-muted);
+}
+
+.lineup-lfp {
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0 3px;
+  height: 12px;
+  border-radius: 3px;
+  background: #c2410c;
+  color: #ffffff;
+  font-size: 7.5px;
+  font-weight: 700;
+  line-height: 12px;
+  text-shadow: none;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.lineup-modal__side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.lineup-hint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ov-text-muted);
+}
+
+.lineup-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.lineup-tools {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+/* The starting line-up of an earlier set (domain/lineupCopy.js): "Last set's
+   line-up" first, the older sets as short buttons beside it, one row
+   (wrapping only when it must) */
+.lineup-copy {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.lineup-copy button {
+  min-width: 0 !important;
+  gap: 6px;
+  white-space: nowrap;
+}
+/* (SbButton: the class is on the button, its wrapper is display: contents) */
+.lineup-copy .lineup-copy__last {
+  flex: 1 1 auto;
+}
+
+.lineup-rotate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  font-size: 13px;
+  color: var(--ov-text-muted);
+}
+
+.lineup-modal__footer {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--ov-hairline);
+  /* Confirm / Close stay in view while the dialog scrolls (a phone): pinned
+     to the panel's bottom edge, over its 20px padding (Modal p-5) */
+  position: sticky;
+  bottom: -20px;
+  z-index: 3;
+  margin: 0 -20px -20px;
+  padding: 16px 20px 20px;
+  background: var(--ov-card);
+}
+
+/* A phone: the whole dialog in the screen, no scrolling, with the game
+   captain choice shown (360 x 780; it scrolled ~200px: the owner,
+   2026-10-21). One size from open to confirm still. Shorter position boxes;
+   the pool as tall as the roster needs (its room cells, no fixed two or
+   three rows with an empty band below), six chips a row at 360px; the
+   rotate and edit buttons on one row; tighter gaps and footer; the hint in
+   small type. 44px touch targets kept. */
+@media (max-width: 600px) {
+  .lineup-modal {
+    --lineup-gap: 8px;
+    gap: 12px;
+    padding-top: 0;
+  }
+  .lineup-modal__body {
+    gap: 12px;
+  }
+  .lineup-court {
+    gap: 8px;
+  }
+  .lineup-pos__label {
+    height: 22px;
+    font-size: 12px;
+  }
+  .lineup-pos__field {
+    height: 48px;
+  }
+  .lineup-modal .lineup-pos__input {
+    font-size: 22px;
+  }
+  .lineup-pos__msg {
+    height: 24px;
+    padding: 0 4px 2px;
+    font-size: 10.5px;
+    line-height: 11px;
+  }
+  .lineup-disc,
+  .lineup-disc-anchor {
+    width: 40px;
+    height: 40px;
+    margin: -20px 0 0 -20px;
+  }
+  .lineup-gcapt {
+    gap: 4px;
+    padding: 6px 10px 4px;
+  }
+  /* None and six numbers in the row at 360px with Android's larger text:
+     the numbers share what None leaves (the sixth was cut at 360px) */
+  .lineup-gcapt__choices {
+    gap: 5px;
+  }
+  .lineup-gcapt__choice:not(.lineup-gcapt__choice--none) {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0;
+  }
+  .lineup-gcapt__choice--none {
+    padding: 0 8px;
+  }
+  .lineup-gcapt__note {
+    min-height: 0;
+    font-size: 11.5px;
+    line-height: 1.25;
+  }
+  .lineup-modal__side {
+    gap: 10px;
+  }
+  /* the earlier sets' line-ups: a lower row on a phone */
+  .lineup-copy {
+    gap: 6px;
+  }
+  .lineup-copy button {
+    height: 38px !important;
+    font-size: 13px !important;
+  }
+  .lineup-pool {
+    padding: 8px 6px 6px;
+  }
+  .lineup-pool__title {
+    margin-bottom: 2px;
+    font-size: 12px;
+  }
+  .lineup-pool__chips {
+    gap: 6px 4px;
+    height: auto;
+    padding: 4px 4px 4px 2px;
+    margin: 0 -4px 0 -2px;
+    overflow: visible;
+  }
+  .lineup-hint {
+    font-size: 11.5px;
+    line-height: 1.35;
+  }
+  .lineup-edit {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) minmax(0, 1fr) 44px;
+    gap: 6px;
+  }
+  .lineup-tools,
+  .lineup-rotate {
+    display: contents;
+  }
+  /* (SbButton is a display: contents wrapper round its button) */
+  .lineup-rotate > span:not(.ov-kit) {
+    display: none;
+  }
+  .lineup-rotate > :first-child > button {
+    order: -1;
+  }
+  .lineup-rotate > :last-child > button {
+    order: 1;
+  }
+  .lineup-tools button {
+    gap: 4px !important;
+    padding-inline: 4px !important;
+    font-size: 13px !important;
+  }
+  .lineup-tools button > span[aria-hidden] {
+    display: none;
+  }
+  .lineup-modal__footer {
+    padding: 12px 20px 16px;
+  }
+}
+
+/* A phone under 860px of height (most, once the status and navigation bars
+   are off): no hint, which takes three lines at Android's larger text; the
+   chips, the boxes and Undo / Clear say what to do */
+@media (max-width: 600px) and (max-height: 860px) {
+  .lineup-hint {
+    display: none;
+  }
+}
+
+/* The Line-up buttons on the court before a set (Scoreboard.jsx): the button
+   fades to 0.7 and back while its green glow widens from 20 to 30 px. Only
+   opacity is animated, so the flash runs on the compositor; a box-shadow in
+   the keyframes made the main thread restyle, paint and raster the large
+   button 60 times a second through the whole line-up entry. The two glows
+   are layers of their own that cross-fade (::before the narrow one, ::after
+   the wide one). They take the button's own animation (inline, none while
+   the line-up dialog is open over it, with data-still), so the three run in
+   step and stop together; stopped, the button has no glow (as in eink
+   before). Reduced motion changes nothing here: the buttons flash and glow,
+   as on main. */
+.lineup-button::before,
+.lineup-button::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  animation: inherit;
+}
+
+.lineup-button::before {
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.5);
+  animation-name: lineupGlowNarrow;
+}
+
+.lineup-button::after {
+  box-shadow: 0 0 30px rgba(34, 197, 94, 0.8);
+  animation-name: lineupGlowWide;
+}
+
+/* Still with the button while the line-up dialog is open over it (the
+   data-still of Scoreboard.jsx): the glows keep their own animation names, so
+   a 'none' inherited from the button only took their duration to 0 and they
+   ran on from their first start, out of step with the button's flash once it
+   started again. Stopped here, all three start again together. */
+.lineup-button[data-still]::before,
+.lineup-button[data-still]::after {
+  animation: none;
+}
+
+@keyframes lineupFlash {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@keyframes lineupGlowNarrow {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes lineupGlowWide {
+
+  0%,
+  100% {
+    opacity: 0;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes recentSubFlash {
+
+  0%,
+  100% {
+    background: #fdba74;
+    border-color: #f97316;
+    box-shadow: 0 0 10px rgba(253, 186, 116, 0.8);
+  }
+
+  50% {
+    background: #fb923c;
+    border-color: #ea580c;
+    box-shadow: 0 0 20px rgba(251, 146, 60, 1);
+  }
+}
+
+/* "Missing signature" on the scoring screen (PreMatchSignDialog.jsx): a team's
+   coach or captain has not signed yet; it flashes until the match starts.
+   amber-950 on amber-100..300 stays above 7:1 at both ends of the flash.
+   The flash is a layer under the text (::before, the strong amber of its
+   peak) that fades in and out: opacity only, so it runs on the compositor.
+   An animated background, border and ring ran on the main thread 60 times a
+   second, also while a coach signed in the dialog over it. */
+.missing-signature-button {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 2px solid #d97706;
+  border-radius: 10px;
+  background: #fef3c7;
+  color: #451a03;
+  font-weight: 700;
+  line-height: 1.15;
+  text-align: center;
+  cursor: pointer;
+}
+
+/* Over the border too (inset -2px): the peak's darker border is its ring */
+.missing-signature-button::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  z-index: -1;
+  border-radius: inherit;
+  background: #fcd34d;
+  box-shadow: inset 0 0 0 2px #b45309, 0 0 0 4px rgba(217, 119, 6, 0.35);
+  pointer-events: none;
+  opacity: 0;
+  animation: missingSignatureFlash 1.2s ease-in-out infinite;
+}
+
+/* Still while its signing dialog is open over it (the still prop) */
+.missing-signature-button[data-still]::before {
+  animation: none;
+}
+
+.missing-signature-button:focus-visible {
+  outline: 3px solid #b45309;
+  outline-offset: 2px;
+}
+
+.missing-signature-title,
+.missing-signature-detail {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.missing-signature-title {
+  font-weight: 700;
+}
+
+.missing-signature-detail {
+  font-size: 0.8em;
+  font-weight: 600;
+}
+
+@keyframes missingSignatureFlash {
+
+  0%,
+  100% {
+    opacity: 0;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Reduced motion: no flash, the strong amber stays, drawn by the button
+   itself as before the perf pass (the layer over the border left a lighter
+   fringe on the rounded corners) */
+@media (prefers-reduced-motion: reduce) {
+  .missing-signature-button {
+    background: #fcd34d;
+    border-color: #b45309;
+  }
+
+  .missing-signature-button::before {
+    animation: none;
+    display: none;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.roster-table tbody tr:hover {
+  background: var(--ov-sunken);
+}
+
+.roster-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.roster-number {
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: calc(8px * var(--scale-factor));
+}
+
+.roster-number>span:first-child {
+  min-width: calc(30px * var(--scale-factor));
+  text-align: right;
+}
+
+.roster-name {
+  font-weight: 500;
+}
+
+.roster-dob {
+  color: var(--muted);
+  font-size: calc(14px * var(--scale-factor));
+}
+
+.roster-role {
+  display: flex;
+  gap: calc(6px * var(--scale-factor));
+  align-items: center;
+  white-space: nowrap;
+  flex-wrap: nowrap;
+}
+
+.roster-badge {
+  display: inline-block;
+  padding: calc(2px * var(--scale-factor)) calc(8px * var(--scale-factor));
+  border-radius: calc(4px * var(--scale-factor));
+  font-size: calc(12px * var(--scale-factor));
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.roster-badge.captain {
+  background: rgba(234, 179, 8, 0.2);
+  color: #fbbf24;
+  border: 1px solid rgba(234, 179, 8, 0.3);
+}
+
+.roster-badge.libero {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.roster-panel ul {
+  margin: 0;
+  padding-left: calc(16px * var(--scale-factor));
+  line-height: 1.4;
+}
+
+.match-content {
+  display: grid;
+  gap: 6px;
+  /* Side columns never below 190 px: their chips, bench numbers and official
+     names are sized from the column width (cqw), and at 1024 px a plain 1fr
+     (~168 px) shrank them under 12 px. The court is limited by height there
+     anyway, so the centre column can give up the width. */
+  grid-template-columns: minmax(190px, 1fr) minmax(0, 4fr) minmax(190px, 1fr);
+  /* One row exactly as tall as the space under the toolbar: the centre column
+     then knows its height and the court (.court-slot) shrinks to fit, instead
+     of the rally controls overflowing into a hidden inner scroll at 16:10. */
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  align-items: stretch;
+  flex: 1 1 auto;
+  height: auto;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-y: visible;
+  box-sizing: border-box;
+}
+
+
+
+.team-controls {
+  display: flex;
+  flex-direction: column;
+  gap: calc(10px * var(--scale-factor));
+  background: var(--panel);
+  border: 1px solid var(--ov-hairline-soft);
+  border-radius: calc(12px * var(--scale-factor));
+  padding: calc(10px * var(--scale-factor));
+  width: 100%;
+  max-width: 100%;
+  overflow-y: auto;
+  height: auto;
+  container-type: inline-size;
+  container-name: team-toolbar;
+}
+
+/* When the side column is taller than the window it scrolls; its blocks never
+   shrink (the team header has overflow:hidden and used to collapse to 0). */
+.team-controls > * {
+  flex-shrink: 0;
+}
+
+/* Custom scrollbar for team controls */
+.team-controls::-webkit-scrollbar {
+  width: calc(4px * var(--scale-factor));
+}
+
+.team-controls::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: calc(2px * var(--scale-factor));
+}
+
+.team-controls::-webkit-scrollbar-thumb {
+  background: var(--ov-hairline-strong);
+  border-radius: calc(2px * var(--scale-factor));
+}
+
+.team-controls::-webkit-scrollbar-thumb:hover {
+  background: var(--ov-text-faint);
+}
+
+.team-header {
+  display: flex;
+  align-items: center;
+  gap: calc(10px * var(--scale-factor));
+  padding-bottom: calc(8px * var(--scale-factor));
+  border-bottom: 1px solid var(--ov-hairline);
+}
+
+.team-info {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(5px * var(--scale-factor));
+}
+
+.team-info h3 {
+  margin: 0;
+  font-size: calc(17px * var(--scale-factor));
+  font-weight: 600;
+}
+
+.team-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(32px * var(--scale-factor));
+  height: calc(32px * var(--scale-factor));
+  border-radius: calc(6px * var(--scale-factor));
+  font-weight: 700;
+  font-size: calc(17px * var(--scale-factor));
+  box-shadow: 0 calc(2px * var(--scale-factor)) calc(8px * var(--scale-factor)) rgba(0, 0, 0, 0.2);
+}
+
+.court-wrapper {
+  /* The height a screen has beyond 16:10 (0 at 16:10 and wider): 94 px on
+     a 3:2 laptop at 2256 x 1504. The score and the rally buttons grow by a
+     share of it, so a tall screen fills with them instead of empty space
+     around the court (owner, 15.11). */
+  --tall-extra: clamp(0px, 100vh - 62.5vw, 10vh);
+  position: relative;
+  width: 100%;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: calc(16px * var(--scale-factor));
+  padding: calc(16px * var(--scale-factor));
+  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: calc(12px * var(--scale-factor));
+  flex-shrink: 1;
+  flex-grow: 1;
+}
+
+/* Rows 8px apart (was 12), the court takes the rest: Point Hub board at
+   1280 x 800, 2026-11-08 */
+@media (max-width: 1400px) {
+  .court-wrapper {
+    gap: calc(8px * var(--scale-factor));
+    padding: calc(12px * var(--scale-factor));
+  }
+}
+
+/* One side of the row above the court (Scoreboard renderServeSide): the
+   SERVE indicator, whose number box fills the side from the score row down to
+   the court, and that side's Game captain button, which stays in the outer
+   bottom corner. With the button, the box stands beside it where the side
+   leaves the box at least ~70 px next to the longest label ("Capitano in
+   gioco", ~145 px), else above it, in the score row's height. */
+.serve-side {
+  container: serve-side / inline-size;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  row-gap: inherit;
+}
+
+.serve-side__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  row-gap: inherit;
+  column-gap: 8px;
+  min-height: 0;
+}
+
+.serve-side__indicator {
+  grid-column: 1;
+  grid-row: 1 / 3;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  min-height: 0;
+  pointer-events: none;
+}
+
+.serve-side__grid--chip .serve-side__indicator {
+  grid-row: 1;
+}
+
+.serve-side__chip {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.serve-side__grid[data-side='left'] .serve-side__chip {
+  justify-self: start;
+}
+
+.serve-side__grid[data-side='right'] .serve-side__chip {
+  justify-self: end;
+}
+
+@container serve-side (min-width: 225px) {
+  .serve-side__grid--chip[data-side='left'] {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .serve-side__grid--chip[data-side='left'] .serve-side__indicator {
+    grid-column: 2;
+    grid-row: 1 / 3;
+  }
+
+  .serve-side__grid--chip[data-side='right'] {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .serve-side__grid--chip[data-side='right'] .serve-side__indicator {
+    grid-column: 1;
+    grid-row: 1 / 3;
+  }
+
+  .serve-side__grid--chip[data-side='right'] .serve-side__chip {
+    grid-column: 2;
+  }
+}
+
+.set-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(12px * var(--scale-factor));
+}
+
+.set-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(8px * var(--scale-factor));
+  margin-bottom: calc(8px * var(--scale-factor));
+  width: min(100%, calc(240px * var(--scale-factor)));
+}
+
+.set-title {
+  margin: 0;
+  font-size: calc(19px * var(--scale-factor));
+  font-weight: 600;
+  text-align: center;
+  width: min(100%, calc(240px * var(--scale-factor)));
+}
+
+.set-score-display {
+  font-size: calc(61px * var(--scale-factor));
+  font-weight: 800;
+  letter-spacing: 0;
+  background: var(--panel);
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+@media (max-width: 1400px) {
+  .set-score-display {
+    font-size: calc(41px * var(--scale-factor));
+  }
+}
+
+.set-summary>div {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  white-space: nowrap;
+}
+
+.summary-label {
+  color: var(--muted);
+  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+}
+
+.summary-value {
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.court {
+  position: relative;
+  width: calc(95% * var(--scale-factor, 1));
+  max-width: calc(95% * var(--scale-factor, 1));
+  margin: 0 auto;
+  aspect-ratio: 2.2 / 1;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  border-radius: 0px;
+  background: linear-gradient(90deg,
+      rgba(234, 179, 8, 0.12),
+      rgba(234, 179, 8, 0.08));
+  border: 2px solid rgba(255, 255, 255, 0.08);
+  container-type: size;
+  container-name: court;
+}
+
+/* Height budget of the scoreboard centre column: the court gets whatever the
+   score row, referee lines and rally controls leave over. Its width stays the
+   old 95% of the column when there is room (1024x768 looks as before) and is
+   capped by the slot height times the court's 2.2:1 ratio on wider screens.
+   The min-height keeps a usable court on very short windows (the column then
+   scrolls as before). */
+.court-slot {
+  /* As tall as the court at its width, and shrinking (to 140 px) when the
+     column is short: on screens taller than 16:10 (3:2 laptops, 4:3
+     tablets, in fullscreen) the box no longer stretches past the court, so
+     1R and 2R stay next to it and the height left over goes to the score
+     and the rally buttons (--tall-extra, owner 15.11). The aspect ratio
+     is the court's (2.2:1) at its width (95% of the box). */
+  flex: 0 1 auto;
+  aspect-ratio: calc(2.2 / (0.95 * var(--scale-factor, 1)));
+  min-height: 140px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  container-type: size;
+  container-name: court-slot;
+}
+
+.court-slot > .court {
+  width: min(calc(95% * var(--scale-factor, 1)), calc((100cqh - 4px) * 2.2));
+  max-width: min(calc(95% * var(--scale-factor, 1)), calc((100cqh - 4px) * 2.2));
+  flex-shrink: 0;
+}
+
+.court-side {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1 / 1;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.court-net {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: calc(4px * var(--scale-factor));
+  transform: translateX(-50%);
+  background: repeating-linear-gradient(to bottom,
+      rgba(248, 250, 252, 0.85),
+      rgba(248, 250, 252, 0.85) calc(6px * var(--scale-factor)),
+      rgba(148, 163, 184, 0.45) calc(6px * var(--scale-factor)),
+      rgba(148, 163, 184, 0.45) calc(12px * var(--scale-factor)));
+  border-radius: calc(4px * var(--scale-factor));
+  box-shadow: 0 0 calc(14px * var(--scale-factor)) rgba(241, 245, 249, 0.18);
+  z-index: 2;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.court-attack-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: calc(2px * var(--scale-factor));
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 0 calc(8px * var(--scale-factor)) rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.court-attack-line::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: calc(1px * var(--scale-factor));
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.court-attack-left {
+  left: calc(50% - 16.6667%);
+}
+
+.court-attack-right {
+  left: calc(50% + 16.6667%);
+}
+
+.court-team {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.court-row {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9cqh;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+/* Right team: front row (3 players) between net and 3m line */
+.court-team-right .court-row-front {
+  left: 0;
+  width: 33.33%;
+  height: 100%;
+}
+
+/* Right team: back row (3 players) between 3m line and end */
+.court-team-right .court-row-back {
+  left: 33.33%;
+  width: 66.67%;
+  height: 100%;
+}
+
+/* Left team: front row (3 players) between net and 3m line */
+.court-team-left .court-row-front {
+  right: 0;
+  width: 33.33%;
+  height: 100%;
+}
+
+/* Left team: back row (3 players) between 3m line and end */
+.court-team-left .court-row-back {
+  right: 33.33%;
+  width: 66.67%;
+  height: 100%;
+}
+
+.court-player {
+  position: relative;
+  width: 22cqh;
+  height: 22cqh;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  background: rgba(51, 65, 85, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(13cqh * var(--cqf, 1));
+  font-weight: 700;
+  color: var(--text);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.6);
+  flex-shrink: 0;
+}
+
+/* The scoring screen's discs (its court sits in .court-slot): 24cqh, about
+   10% over the 22cqh above, with the number kept at 13cqh, so two digits are
+   not cramped (Point Hub board, 2026-11-08). The rows close up from 9cqh to
+   8cqh, so the bottom row's name label (6cqh under its disc) stays on the
+   court. The bench's live view (MatchEntry) keeps the sizes above. */
+.court-slot .court-row {
+  gap: 8cqh;
+}
+
+.court-slot .court-player {
+  width: 24cqh;
+  height: 24cqh;
+}
+
+/* The number's outline on a mid-tone shirt (inline text-shadow, see
+   utils/teamColours.js) belongs to the number alone, a text node of the disc:
+   the badges and the name label are element children and stay crisp */
+.court-player > * {
+  text-shadow: none;
+}
+
+
+
+
+
+.court-player-position {
+  position: absolute;
+  top: -2cqh;
+  left: -2cqh;
+  width: 5.5cqh;
+  height: 5.5cqh;
+  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 1cqh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(3.2cqh * var(--cqf, 1));
+  font-weight: 700;
+  color: var(--text) !important;
+}
+
+.court-player-captain {
+  position: absolute;
+  bottom: -2cqh;
+  left: -2cqh;
+  width: 5.5cqh;
+  height: 5.5cqh;
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 1cqh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(3.2cqh * var(--cqf, 1));
+  font-weight: 700;
+  color: var(--accent);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  /* above the court name label (z-index 10), so a long surname never hides L / C / LC */
+  z-index: 11;
+}
+
+.rally-controls {
+  /* One fixed box for the rally buttons, so the panel keeps its size
+     when Start rally turns into Point A / Point B and back */
+  --rally-btn-w: calc(150px * var(--scale-factor) + var(--tall-extra, 0px) * 1.3);
+  --rally-btn-h: calc(92px * var(--scale-factor) + var(--tall-extra, 0px) * 1.0);
+  --rally-gap: calc(8px * var(--scale-factor));
+  --rally-block-w: calc(2 * var(--rally-btn-w) + var(--rally-gap));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(12px * var(--scale-factor));
+  margin-top: calc(-15px * var(--scale-factor));
+  max-height: 100%;
+  overflow: visible;
+}
+
+/* The rally buttons and, during a time-out, its countdown in one grid cell:
+   the countdown is drawn over the (hidden) buttons, so the box keeps their
+   size and the court does not move for the time-out */
+.rally-stack {
+  display: grid;
+  position: relative;
+  width: 100%;
+  gap: inherit;
+  /* The rally buttons fit the column (100cqw below): at 800 px wide the
+     column is 175 px, narrower than the two point buttons side by side, and
+     they covered the set tables beside it (device check 2026-10-14) */
+  container-type: inline-size;
+}
+
+/* "Not counted" (RallyTapNotice): a tap on the rally buttons taken as the end
+   of the tap before it. Over the edge above the buttons, out of the layout
+   (the court does not move) and out of reach of the taps; it fades out
+   (Scoreboard removes it after RALLY_TAP_NOTICE_MS). */
+.rally-tap-notice {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translate(-50%, calc(-100% - 6px));
+  z-index: 5;
+  pointer-events: none;
+  white-space: nowrap;
+  padding: calc(4px * var(--scale-factor, 1)) calc(12px * var(--scale-factor, 1));
+  border-radius: 999px;
+  background: rgba(28, 25, 23, 0.92);
+  color: #ffffff;
+  font-size: calc(13px * var(--scale-factor, 1));
+  font-weight: 600;
+  line-height: 1.3;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  animation: rallyTapNotice 1.8s ease-out forwards;
+}
+
+@keyframes rallyTapNotice {
+  0% { opacity: 0; }
+  8% { opacity: 1; }
+  75% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rally-tap-notice {
+    animation: none;
+  }
+}
+
+.rally-stack-layer {
+  grid-area: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: inherit;
+  min-width: 0;
+}
+
+.rally-controls-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--rally-gap);
+  width: min(var(--rally-block-w), 100cqw);
+}
+
+/* Replay rally / Decision change + Undo: two equal halves under the
+   point buttons, same height whichever buttons are shown */
+.rally-secondary-row {
+  display: flex;
+  gap: var(--rally-gap);
+  width: min(var(--rally-block-w), 100cqw);
+}
+
+.rally-secondary-row > * {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: calc(52px * var(--scale-factor));
+  padding: calc(8px * var(--scale-factor)) calc(12px * var(--scale-factor));
+  font-size: calc(14px * var(--scale-factor));
+  line-height: 1.2;
+  /* "Entscheidungsänderung" is one word wider than half the row */
+  hyphens: auto;
+  overflow-wrap: anywhere;
+}
+
+.rally-points {
+  display: flex;
+  gap: calc(12px * var(--scale-factor));
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* Rally point buttons - 15% larger than original */
+.rally-point-button {
+  /* shrinks with a narrow column, its label with it (9cqw: "Punkt A" stays
+     on one line); a wide column keeps the sizes as before */
+  flex: 0 1 var(--rally-btn-w);
+  width: var(--rally-btn-w);
+  min-width: 0;
+  min-height: var(--rally-btn-h);
+  font-size: min(calc(24px * var(--scale-factor) + var(--tall-extra, 0px) * 0.14), calc(9cqw * var(--cqf, 1)));
+  font-weight: 700;
+  padding: calc(18px * var(--scale-factor)) calc(10px * var(--scale-factor));
+  white-space: nowrap;
+}
+
+/* Start Rally button - slightly smaller than point buttons */
+button.start-rally-button {
+  width: min(var(--rally-block-w), 100cqw);
+  min-height: var(--rally-btn-h);
+  font-size: calc(20px * var(--scale-factor) + var(--tall-extra, 0px) * 0.14);
+  font-weight: 700;
+  padding: calc(16px * var(--scale-factor)) calc(28px * var(--scale-factor));
+}
+
+/* Pressed: Point and Start rally / Start set darken the moment the finger
+   lands, before the action is written and the screen redrawn (hundreds of
+   ms on the hall tablet, where a tap looked ignored and was tapped again).
+   A wash drawn inside the button: no transform, filter or blur for the
+   tablet's GPU, and nothing in React (the tap guard and "Not counted" keep
+   their timing). Start rally keeps its hairline. */
+.rally-point-button:not(:disabled):active {
+  box-shadow: inset 0 0 0 999px rgba(0, 0, 0, 0.12);
+}
+
+.rally-controls button.start-rally-button:not(:disabled):active {
+  box-shadow: inset 0 0 0 1px var(--ov-hairline-strong), inset 0 0 0 999px rgba(0, 0, 0, 0.12);
+}
+
+/* A held point (continuous play) has its own pressed wash while it is held
+   (.hold-button[data-holding]::before): not twice as dark with :active, and
+   back to its colour once the point is given, the finger still down. */
+.rally-point-button.hold-button:not(:disabled):active {
+  box-shadow: none;
+}
+
+/* Continuous play (utils/rallyMode, owner 22.11.2026): Point A | Point B are
+   held, not tapped (HoldToConfirmButton, hooks/useHoldToConfirm). Held, the
+   button darkens as a pressed Point does (data-holding: the Android WebView
+   shows no :active once the hold has claimed the touch) and its fill grows
+   from the left over --hold-ms, a transform the compositor runs: nothing in
+   React, no layout. Let go, the fill is gone at once. The touch is the
+   hold's: no scrolling or zooming from it (touch-action), no callout, no
+   selection, no long-press menu, which in the Android WebView cancelled a
+   touch held about 500 ms. With the animations off the fill steps
+   (useHoldToConfirm sets its transform; the transition is stopped in
+   tailwind.css). */
+.hold-button {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* the pressed wash, under the fill: a layer of its own, not a box-shadow
+   (the phone's kit reset and a light team colour's inline ring set that) */
+.hold-button[data-holding]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: rgba(0, 0, 0, 0.12);
+  pointer-events: none;
+}
+
+.hold-fill {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: currentColor;
+  opacity: 0.24;
+  transform: scaleX(0);
+  transform-origin: left center;
+  pointer-events: none;
+}
+
+.hold-button[data-holding] > .hold-fill {
+  transform: scaleX(1);
+  transition: transform var(--hold-ms, 2000ms) linear;
+}
+
+.hold-content {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15em;
+  min-width: 0;
+  max-width: 100%;
+  pointer-events: none;
+}
+
+.hold-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* "Hold": under the label, in its colour, small */
+.hold-caption {
+  font-size: 0.52em;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: 0.02em;
+  opacity: 0.85;
+}
+
+@media (max-width: 1400px) {
+  .rally-controls {
+    gap: calc(8px * var(--scale-factor));
+  }
+
+  .rally-controls {
+    --rally-btn-w: calc(128px * var(--scale-factor) + var(--tall-extra, 0px) * 1.3);
+    --rally-btn-h: calc(75px * var(--scale-factor) + var(--tall-extra, 0px) * 1.0);
+  }
+
+  .rally-point-button {
+    font-size: min(calc(22px * var(--scale-factor) + var(--tall-extra, 0px) * 0.14), calc(9cqw * var(--cqf, 1)));
+    padding: calc(14px * var(--scale-factor)) calc(10px * var(--scale-factor));
+  }
+
+  button.start-rally-button {
+    font-size: calc(18px * var(--scale-factor) + var(--tall-extra, 0px) * 0.14);
+    padding: calc(12px * var(--scale-factor)) calc(23px * var(--scale-factor));
+  }
+}
+
+/* The set tables (Set P W S T) beside the rally buttons: their columns are
+   88 px at 800 px wide, narrower than a table with its usual padding (cut by
+   8 px, device check 2026-10-14). A narrow column tightens the horizontal
+   padding; a wider one keeps it (Scoreboard: --set-card-pad-x,
+   --set-cell-pad-x).
+   A size container (not only inline-size): the column takes the height the
+   rally buttons give the row and its table adds none, so the box stays the
+   same as sets are added; the rows shrink to fit it (setSummaryFit.js). */
+.set-summary-col {
+  container-type: size;
+}
+
+@container (max-width: 127px) {
+  .set-summary-card {
+    --set-card-pad-x: calc(3px * var(--scale-factor));
+    --set-cell-pad-x: calc(1px * var(--scale-factor));
+  }
+}
+
+/* Tablet mode fullscreen - ensure full viewport height */
+.tablet-fullscreen .match-record {
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.tablet-fullscreen .match-content {
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.match-footer {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+  padding: 12px 16px;
+  background: var(--panel);
+  border: 1px solid var(--ov-hairline-soft);
+  border-radius: 12px;
+}
+
+.match-panels {
+  display: grid;
+  gap: 16px;
+}
+
+.log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.remarks-area {
+  width: 100%;
+  min-height: 120px;
+  background: var(--ov-card);
+  border: 1px solid var(--ov-hairline-strong);
+  border-radius: var(--ov-radius);
+  color: var(--ov-text-body);
+  padding: 10px;
+  font-size: 13px;
+  resize: vertical;
+}
+
+/* Game List Styles */
+.game-list {
+  width: 100%;
+}
+
+.game-list-header {
+  margin-bottom: 24px;
+}
+
+.game-list-header h2 {
+  margin: 0 0 8px 0;
+  font-size: 25px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.game-league {
+  margin-bottom: 32px;
+}
+
+.game-league-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1.5px solid var(--ov-rule); /* kit section head: name on a dark rule */
+}
+
+.game-league-header h3 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.game-league-header span {
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.game-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  gap: 16px;
+}
+
+/* Game card: the kit page card; hover lifts to shadow-card-lg (no jump). */
+.game-card {
+  background: var(--ov-card);
+  border: 1px solid var(--ov-hairline-soft);
+  border-radius: var(--ov-radius-xl);
+  box-shadow: var(--ov-shadow-card);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  transition: all 0.2s ease;
+}
+
+.game-card:hover {
+  background: var(--ov-card);
+  border-color: var(--ov-hairline);
+  box-shadow: var(--ov-shadow-card-lg);
+}
+
+.game-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.game-card-date {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--ov-sunken-strong); /* divide-stone-100 inside a card */
+}
+
+.game-card-day {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.game-card-time {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ov-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.game-card-teams {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.game-card-team {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.game-card-vs {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  align-self: center;
+  margin: 4px 0;
+}
+
+.game-card-location {
+  font-size: 14px;
+  color: var(--muted);
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ov-sunken-strong);
+}
+
+.game-card-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ov-sunken-strong);
+}
+
+.game-card-status-label {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.game-card-status-value {
+  font-size: 14px;
+  color: var(--text);
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.game-card-actions {
+  margin-top: auto;
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.game-card-actions button {
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .game-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Match Status Banner */
+.connection-status-banner {
+  background: var(--ov-card);
+  border: 1px solid var(--ov-hairline);
+  border-radius: var(--ov-radius-lg);
+  padding: 12px 20px;
+  margin-bottom: 16px;
+}
+
+.connection-status-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.connection-status-label {
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+/* Test-match notice: kit amber notice (amber-50, amber-200 border, amber-800). */
+.test-match-banner {
+  background: var(--ov-warning-soft);
+  border: 1px solid #fde68a; /* amber-200 */
+  border-radius: var(--ov-radius-lg);
+  padding: 12px 20px;
+  margin-bottom: 16px;
+  display: flex;
+  justify-content: center;
+}
+
+.test-match-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.test-match-label {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ov-warning-text);
+}
+
+.match-status-banner {
+  background: var(--ov-card);
+  border: 1px solid var(--ov-hairline);
+  border-radius: var(--ov-radius-lg);
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+
+.match-status-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.match-status-label {
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.match-status-teams {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.match-status-value {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ov-success-text); /* kit emerald status pill */
+  text-transform: capitalize;
+  margin-left: auto;
+  padding: 4px 12px;
+  background: var(--ov-success-soft);
+  border: 1px solid #a7f3d0; /* emerald-200 */
+  border-radius: var(--ov-radius-pill);
+}
+
+/* Home View */
+.home-view {
+  width: auto;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  box-sizing: border-box;
+}
+
+.home-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  height: auto;
+  box-sizing: border-box;
+  flex: 1;
+  min-height: 0;
+}
+
+.home-title {
+  font-size: calc(clamp(18px, 4vh, 32px) * var(--scale-factor));
+  font-weight: 700;
+  margin: 0;
+  width: auto;
+  text-align: center;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.home-subtitle {
+  font-size: calc(clamp(16px, 3vh, 24px) * var(--scale-factor));
+  font-weight: 600;
+  margin: 0;
+  width: auto;
+  text-align: center;
+  color: var(--muted);
+}
+
+.home-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: calc(clamp(4px, 1vh, 8px) * var(--scale-factor)) 0;
+  width: calc(clamp(100px, 20vw, 250px) * var(--scale-factor));
+  aspect-ratio: 1/1;
+}
+
+.home-logo img {
+  width: auto;
+  height: auto;
+  max-width: 80%;
+}
+
+/* Responsive header elements */
+@media (max-width: 480px) {
+  .fullscreen-btn-text {
+    display: none !important;
+  }
+
+  .header-fullscreen-btn {
+    height: 80% !important;
+    min-width: auto !important;
+    width: auto !important;
+    position: relative;
+  }
+
+  .header-fullscreen-btn::after {
+    content: '⛶';
+    font-size: clamp(12px, 1.5vw, 14px);
+    display: inline-block;
+  }
+}
+
+.home-match-section {
+  width: auto;
+  display: flex;
+  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+/* Landscape: buttons in a row */
+@media (orientation: landscape) {
+  .home-match-section {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 12px;
+    max-width: 100%;
+    padding: 0 20px;
+  }
+}
+
+/* Portrait: buttons in a column */
+@media (orientation: portrait) {
+  .home-match-section {
+    flex-direction: column;
+    max-width: 400px;
+    padding: 0 20px;
+  }
+}
+
+.home-match-section+.home-match-section {
+  margin-top: 16px;
+}
+
+.home-support {
+  font-size: 15px;
+  color: var(--muted);
+  text-align: center;
+  margin-top: 8px;
+}
+
+.home-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: stretch;
+  min-height: 320px;
+}
+
+/* Home card: the kit page card. */
+.home-card {
+  background: var(--ov-card);
+  border: 1px solid var(--ov-hairline-soft);
+  border-radius: var(--ov-radius-xl);
+  box-shadow: var(--ov-shadow-card);
+  padding: 32px;
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.home-card--clickable {
+  cursor: pointer;
+  width: auto;
+  transition: all 0.2s ease;
+}
+
+.home-card--clickable:hover {
+  background: var(--ov-card);
+  width: auto;
+  border-color: var(--ov-hairline);
+  box-shadow: var(--ov-shadow-card-lg);
+}
+
+.home-card h2 {
+  margin: 0;
+  font-size: 25px;
+  width: auto;
+  font-weight: 700;
+  text-align: center;
+}
+
+.home-card-description {
+  margin: 0;
+  width: auto;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.home-card-actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 12px;
+  width: auto;
+  margin-top: 8px;
+}
+
+.home-card-actions button {
+  flex: 1 1 calc(50% - 6px);
+  padding: 16px 24px;
+  font-size: 17px;
+  font-weight: 700;
+  border-radius: 12px;
+  min-height: 56px;
+  display: flex;
+  width: auto;
+  align-items: center;
+  justify-content: center;
+}
+
+.home-card-actions button.disabled,
+.home-card-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Test button: the kit outline button; --danger is the kit danger-soft. */
+.test-button {
+  background: var(--ov-card) !important;
+  border: 1px solid var(--ov-hairline-strong) !important;
+  color: #44403c !important; /* stone-700 */
+  width: auto;
+}
+
+.test-button:hover:not(:disabled) {
+  background: var(--ov-sunken) !important;
+  width: auto;
+}
+
+.test-button--danger {
+  background: var(--ov-danger-soft) !important;
+  border-color: var(--ov-danger-border) !important;
+  width: auto;
+  color: var(--ov-brand) !important; /* red-600 = brand */
+}
+
+.test-button--danger:hover:not(:disabled) {
+  background: var(--ov-danger-border) !important; /* red-100 */
+}
+
+
+.home-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 0;
+  flex-wrap: wrap;
+}
+
+.home-card-hint {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ov-warning-text); /* amber-800: amber-500 on white failed contrast */
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.connection-status-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.connection-status-inline .connection-status-label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.connection-status-inline .status-indicator {
+  font-size: 12px;
+}
+
+/* Sanction Card Icons */
+.sanction-card {
+  width: calc(36px * var(--scale-factor));
+  height: calc(50px * var(--scale-factor));
+  border-radius: calc(6px * var(--scale-factor));
+}
+
+.sanction-card.yellow {
+  background: linear-gradient(160deg, #fde047, #facc15);
+}
+
+.sanction-card.red {
+  background: linear-gradient(160deg, #ef4444, #b91c1c);
+}
+
+/* Combo card (stacked yellow/red together) */
+.sanction-card.combo {
+  position: relative;
+  width: calc(40px * var(--scale-factor));
+  height: calc(50px * var(--scale-factor));
+}
+
+.sanction-card.combo::before,
+.sanction-card.combo::after {
+  content: '';
+  position: absolute;
+  width: calc(20px * var(--scale-factor));
+  height: calc(30px * var(--scale-factor));
+  border-radius: calc(5px * var(--scale-factor));
+}
+
+.sanction-card.combo::before {
+  background: linear-gradient(160deg, #fde047, #facc15);
+  top: calc(3px * var(--scale-factor));
+  left: calc(2px * var(--scale-factor));
+  transform: rotate(-6deg);
+  z-index: 1;
+}
+
+.sanction-card.combo::after {
+  background: linear-gradient(160deg, #ef4444, #b91c1c);
+  top: calc(-3px * var(--scale-factor));
+  right: calc(2px * var(--scale-factor));
+  transform: rotate(6deg);
+  z-index: 0;
+}
+
+/* Separated cards (slightly apart) */
+.sanction-cards-separate {
+  display: flex;
+  gap: calc(10px * var(--scale-factor));
+}
+
+.sanction-cards-separate .sanction-card {
+  transform: rotate(-2deg);
+}
+
+.sanction-cards-separate .sanction-card:nth-child(2) {
+  transform: rotate(2deg);
+}
+
+/* Team sanction buttons - override compact mode styles */
+.sanction-team-btn {
+  font-size: calc(14px * var(--scale-factor)) !important;
+  padding: calc(8px * var(--scale-factor)) !important;
+}
+
+/* Popover roll-in (Scoreboard player / substitution / libero menus).
+   A fade and a short slide only, ending at `transform: none`: no scale. These
+   used to run scale(1.2) -> scale(1.5) and then drop back to the real size (1)
+   when the animation ended, so every menu opened, grew and then shrank. */
+/* The roll animates `translate`, not `transform`: the menus it opens are
+   scaled with an inline transform (scale(1.5)), which an animated transform
+   replaced while it ran, so a menu rolled in at its small size and then
+   jumped to 1.5x ("it opens the menu then it reopens it a little bigger",
+   owner 15.11). `translate` adds to the element's own transform. */
+@keyframes rollDown {
+  from {
+    opacity: 0;
+    translate: 0 -6px;
+  }
+
+  to {
+    opacity: 1;
+    translate: none;
+  }
+}
+
+@keyframes rollUp {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
+
+  to {
+    opacity: 1;
+    translate: none;
+  }
+}
+
+/* Apply animations to inner divs - wrapper handles positioning */
+.modal-wrapper-roll-down>div {
+  animation: rollDown 0.15s ease-out;
+}
+
+.modal-wrapper-roll-up>div {
+  animation: rollUp 0.15s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-wrapper-roll-down>div,
+  .modal-wrapper-roll-up>div {
+    animation: none;
+  }
+}
+
+/* The Point Hub board (<html class="no-popover-motion">, main.jsx): menus just
+   appear. Its webview composites in software, and there the roll-in faded in
+   slowly and then flickered once as the menu's own layer was dropped. */
+.no-popover-motion .modal-wrapper-roll-down>div,
+.no-popover-motion .modal-wrapper-roll-up>div {
+  animation: none;
+}
+
+/* Phone layout (PhoneScoreboard): the two point buttons (and the slots that
+   keep their place between rallies) are squares as wide as their column, and
+   the court is 2:1, as the mockup. When the screen is too short for the whole
+   layout (browser bars, the Android app's system bars: 360x640) they get
+   lower, not narrower: first the point buttons, to the height left in the
+   phone view (its root is the size container) less the rest of the layout
+   (--phone-square-reserve) and the court, down to --phone-square-min; then
+   the court, down to --phone-court-min; then the view scrolls. Without
+   container units both keep their shape. */
+.phone-scoreboard .phone-square {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+}
+
+.phone-scoreboard .phone-court {
+  width: 100%;
+  aspect-ratio: 2 / 1;
+}
+
+@supports (height: 1cqh) {
+  .phone-scoreboard .phone-court {
+    aspect-ratio: auto;
+    height: min((100cqw - 24px) / 2, max(var(--phone-court-min), 100cqh - var(--phone-square-reserve) - var(--phone-square-min)));
+  }
+
+  .phone-scoreboard .phone-square {
+    aspect-ratio: auto;
+    height: min((100cqw - 34px) / 2, max(var(--phone-square-min), 100cqh - var(--phone-square-reserve) - min((100cqw - 24px) / 2, max(var(--phone-court-min), 100cqh - var(--phone-square-reserve) - var(--phone-square-min)))));
+  }
+}
+
+/* Phones and small tablets (.centre-dialogs, phoneLayout.js dialogsCentred):
+   the scoring screen's small menus (player action menu, substitution /
+   libero / sanction dropdowns, bench and libero menus) are anchored next to
+   the tapped player and drawn at 1.5x for the large court. There that puts
+   them off screen, so they open centred, scaled from their middle, and
+   scroll when taller than the screen. The phone layout draws them at 1.25x.
+   A large tablet and the desktop keep their anchored menus. */
+.match-record.centre-dialogs .modal-wrapper-roll-down,
+.match-record.centre-dialogs .modal-wrapper-roll-up,
+.match-record.centre-dialogs .sb-anchored-popover {
+  position: fixed !important;
+  left: 50% !important;
+  right: auto !important;
+  top: 50% !important;
+  bottom: auto !important;
+  transform: translate(-50%, -50%) !important;
+}
+
+.match-record.centre-dialogs .modal-wrapper-roll-down>div,
+.match-record.centre-dialogs .modal-wrapper-roll-up>div,
+.match-record.centre-dialogs .sb-anchored-popover>div {
+  transform-origin: center !important;
+  max-height: calc(var(--ov-vh100) * 0.85 / 1.5);
+  max-width: calc((100vw - 24px) / 1.5);
+  overflow-y: auto;
+}
+
+.match-record.phone-layout .modal-wrapper-roll-down>div,
+.match-record.phone-layout .modal-wrapper-roll-up>div,
+.match-record.phone-layout .sb-anchored-popover>div {
+  transform: scale(1.25) !important;
+  transform-origin: center !important;
+  max-height: calc(var(--ov-vh100) * 0.8 / 1.25);
+  max-width: calc((100vw - 24px) / 1.25);
+  overflow-y: auto;
+}
+
+/* Responsive text visibility for referee view */
+.show-on-small {
+  display: none;
+}
+
+.show-on-large {
+  display: inline;
+}
+
+.hide-on-small {
+  display: inline;
+}
+
+@media (max-width: 480px) {
+  .show-on-small {
+    display: inline;
+  }
+
+  .show-on-large {
+    display: none;
+  }
+
+  .hide-on-small {
+    display: none;
+  }
+}
+
+/* ===========================================
+     RESPONSIVE STYLES FOR ALL COMPONENTS
+     768-1024px = tablet
+     > 1024px = desktop
+     =========================================== */
+
+/* Global responsive adjustments */
+@media (max-width: 1024px) {
+
+  /* Tablet and smaller */
+  .container {
+    padding: 6px 6px;
+  }
+
+  h1 {
+    font-size: 24px;
+  }
+
+  h2 {
+    font-size: 18px;
+  }
+
+  h3 {
+    font-size: 16px;
+  }
+
+  /* Modal responsive */
+  .modal-content {
+    padding: 12px !important;
+  }
+
+  /* Buttons */
+  button {
+    padding: 10px 14px;
+    font-size: 13px;
+  }
+
+  /* Form inputs */
+  input,
+  select:where(:not(.ov-select)),
+  textarea {
+    font-size: 14px;
+    padding: 8px 10px;
+  }
+}
+
+@media (max-width: 768px) {
+
+  /* Smartphone */
+  .container {
+    padding: 4px 4px;
+  }
+
+  h1 {
+    font-size: 20px;
+  }
+
+  h2 {
+    font-size: 16px;
+  }
+
+  h3 {
+    font-size: 14px;
+  }
+
+  /* Buttons */
+  button {
+    padding: 4px 6px;
+    font-size: 12px;
+  }
+
+  /* Form inputs */
+  input,
+  select:where(:not(.ov-select)),
+  textarea {
+    font-size: 13px;
+    padding: 6px 8px;
+  }
+
+  /* Roster tables */
+  .roster-table th,
+  .roster-table td {
+    padding: 6px 4px;
+    font-size: 11px;
+  }
+
+  .roster-table {
+    font-size: 11px;
+  }
+
+  /* Coin toss responsive */
+  .coin-toss-number,
+  .coin-toss-name,
+  .coin-toss-dob {
+    padding: 4px !important;
+    font-size: 11px !important;
+  }
+}
+
+/* MatchSetup responsive */
+@media (max-width: 1024px) {
+  .match-setup-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .match-setup-section {
+    padding: 12px !important;
+  }
+
+  .match-setup-header {
+    flex-direction: column;
+    gap: 8px;
+    text-align: center;
+  }
+}
+
+@media (max-width: 768px) {
+  .match-setup-section {
+    padding: 8px !important;
+  }
+
+  .match-setup-row {
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+
+  .match-setup-input {
+    width: 100% !important;
+  }
+}
+
+/* MatchEnd responsive */
+@media (max-width: 1024px) {
+  .match-end-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .match-end-signatures {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .signature-box {
+    width: 100% !important;
+    max-width: none !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .match-end-section {
+    padding: 12px !important;
+  }
+
+  .match-end-score {
+    font-size: 36px !important;
+  }
+
+  .match-end-team-name {
+    font-size: 14px !important;
+  }
+}
+
+/* SignaturePad responsive */
+@media (max-width: 1024px) {
+  .signature-pad-container {
+    max-width: 100% !important;
+  }
+
+  .signature-pad canvas {
+    max-width: 100%;
+    height: auto !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .signature-pad-container {
+    padding: 8px !important;
+  }
+
+  .signature-pad-label {
+    font-size: 12px !important;
+  }
+}
+
+/* MenuList responsive */
+@media (max-width: 1024px) {
+  .menu-list-dropdown {
+    min-width: 200px !important;
+  }
+
+  .menu-list-item {
+    padding: 10px 12px !important;
+    font-size: 13px !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .menu-list-dropdown {
+    min-width: 160px !important;
+    max-width: 90vw !important;
+  }
+
+  .menu-list-item {
+    padding: 8px 10px !important;
+    font-size: 12px !important;
+  }
+}
+
+/* RosterSetup responsive */
+@media (max-width: 1024px) {
+  .roster-setup-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .roster-setup-panel {
+    padding: 12px !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .roster-setup-panel {
+    padding: 8px !important;
+  }
+
+  .roster-setup-form {
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+
+  .roster-setup-input {
+    width: 100% !important;
+  }
+}
+
+/* MatchEntry responsive */
+@media (max-width: 1024px) {
+  .match-entry-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .match-entry-section {
+    padding: 12px !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .match-entry-section {
+    padding: 8px !important;
+  }
+
+  .match-entry-row {
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+}
+
+/* Coin Toss responsive */
+@media (max-width: 1024px) {
+  .coin-toss-grid {
+    flex-direction: column !important;
+    gap: 16px !important;
+  }
+
+  .coin-toss-team {
+    width: 100% !important;
+  }
+
+  .coin-toss-signatures {
+    flex-direction: column;
+    gap: 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  .coin-toss-section {
+    padding: 8px !important;
+  }
+
+  .coin-toss-option {
+    padding: 8px !important;
+    font-size: 12px !important;
+  }
+
+  .coin-toss-table th,
+  .coin-toss-table td {
+    padding: 4px !important;
+    font-size: 10px !important;
+  }
+}
+
+/* Flex utilities for responsive layouts */
+@media (max-width: 768px) {
+  .flex-wrap-mobile {
+    flex-wrap: wrap !important;
+  }
+
+  .flex-col-mobile {
+    flex-direction: column !important;
+  }
+
+  .gap-sm-mobile {
+    gap: 8px !important;
+  }
+
+  .w-full-mobile {
+    width: 100% !important;
+  }
+
+  .text-center-mobile {
+    text-align: center !important;
+  }
+
+  .hidden-mobile {
+    display: none !important;
+  }
+}
+
+@media (min-width: 769px) {
+  .hidden-desktop {
+    display: none !important;
+  }
+}
+
+/* Touch-friendly tap targets */
+@media (max-width: 768px) {
+
+  button,
+  .btn,
+  input[type="checkbox"],
+  input[type="radio"],
+  select:where(:not(.ov-select)) {
+    min-height: 10px;
+    min-width: 10px;
+  }
+
+  input[type="checkbox"],
+  input[type="radio"] {
+    width: 24px;
+    height: 24px;
+  }
+
+  .header-fullscreen-btn {
+    min-height: unset !important;
+    min-width: unset !important;
+    height: 80% !important;
+  }
+}
+
+/* iOS Simulated Fullscreen Mode */
+/* Since iOS doesn't support the Fullscreen API, we simulate it with CSS */
+body.ios-fullscreen {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: var(--ov-vh100) !important;
+  /* Dynamic viewport height for iOS */
+  overflow: hidden !important;
+  z-index: 9999 !important;
+}
+
+body.ios-fullscreen #root {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: var(--ov-vh100) !important;
+  overflow: auto !important;
+}
+
+/* Hide scrollbars in iOS fullscreen mode */
+body.ios-fullscreen::-webkit-scrollbar {
+  display: none;
+}
+
+body.ios-fullscreen {
+  -ms-overflow-style: none;
+  /* standard scrollbar properties for Firefox */
+  scrollbar-width: none;
+}
+/* Players on the scoring screen are held and dragged by touch (Scoreboard
+   handleTouchDragStart): no text selection, callout or long-press menu,
+   which on an Android tablet cancelled the touch before the drag began
+   (owner, 16.11.2026). */
+[data-bench-player],
+[data-court-position] {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* A popover's own eyebrow title (Connection status, Tablet status ...): as a
+   centred modal on a small screen the modal's title bar names it already
+   (ui/MenuPopover.jsx). */
+[data-menu-modal] .menu-own-title {
+  display: none;
+}
+
+/* Tap hint (owner 22.11.2026): the pointing finger of the time-out box
+   (Scoreboard timeout-tap-hint, lucide Pointer) on every button of the scoring
+   screen, so the scorer sees at a glance what can be tapped. Drawn in the
+   button's own text colour; a disabled button shows none. A tile that is not a
+   <button> (bench players, liberos, officials, SUB) carries data-tap-hint only
+   while a tap does something. The finger's 0.6 is the group opacity inside
+   the mask image, not an opacity on the pseudo-element: the same pixels, one
+   offscreen layer less for each of the 25-35 fingers. */
+.tap-hint,
+[data-tap-hint] {
+  position: relative;
+}
+.tap-hint:not(:disabled)::after,
+[data-tap-hint]::after {
+  content: '';
+  position: absolute;
+  top: var(--tap-hint-inset, 3px);
+  right: var(--tap-hint-inset, 3px);
+  width: var(--tap-hint-size, clamp(10px, 1.05vw, 15px));
+  height: var(--tap-hint-size, clamp(10px, 1.05vw, 15px));
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg opacity='0.6'%3E%3Cpath d='M22 14a8 8 0 0 1-8 8'/%3E%3Cpath d='M18 11v-1a2 2 0 0 0-2-2a2 2 0 0 0-2 2'/%3E%3Cpath d='M14 10V9a2 2 0 0 0-2-2a2 2 0 0 0-2 2v1'/%3E%3Cpath d='M10 9.5V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v10'/%3E%3Cpath d='M18 11a2 2 0 1 1 4 0v3a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15'/%3E%3C/g%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg opacity='0.6'%3E%3Cpath d='M22 14a8 8 0 0 1-8 8'/%3E%3Cpath d='M18 11v-1a2 2 0 0 0-2-2a2 2 0 0 0-2 2'/%3E%3Cpath d='M14 10V9a2 2 0 0 0-2-2a2 2 0 0 0-2 2v1'/%3E%3Cpath d='M10 9.5V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v10'/%3E%3Cpath d='M18 11a2 2 0 1 1 4 0v3a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15'/%3E%3C/g%3E%3C/svg%3E") center / contain no-repeat;
+  pointer-events: none;
+}
+/* Sanction buttons: a smaller finger tucked into the corner. */
+.tap-hint-sm {
+  --tap-hint-size: clamp(9px, 0.8vw, 11px);
+  --tap-hint-inset: 2px;
+}
+/* Bench players, liberos, officials: smaller still (owner 22.11.2026), clear
+   of the number or the label. */
+[data-bench-player][data-tap-hint],
+[data-bench-official][data-tap-hint] {
+  --tap-hint-size: clamp(7px, 0.6vw, 8px);
+  --tap-hint-inset: 2px;
+}
+/* Hold hint: continuous play's point buttons are held, not tapped
+   (HoldToConfirmButton): a stopwatch (lucide Timer, ISC) in the corner where
+   the other buttons show the finger, beside the button's own "Hold"
+   caption. Hidden with the tap hints (the caption stays). */
+.hold-hint:not(:disabled)::after {
+  content: '';
+  position: absolute;
+  top: var(--tap-hint-inset, 3px);
+  right: var(--tap-hint-inset, 3px);
+  width: var(--tap-hint-size, clamp(10px, 1.05vw, 15px));
+  height: var(--tap-hint-size, clamp(10px, 1.05vw, 15px));
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg opacity='0.6'%3E%3Cline x1='10' x2='14' y1='2' y2='2'/%3E%3Cline x1='12' x2='15' y1='14' y2='11'/%3E%3Ccircle cx='12' cy='14' r='8'/%3E%3C/g%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg opacity='0.6'%3E%3Cline x1='10' x2='14' y1='2' y2='2'/%3E%3Cline x1='12' x2='15' y1='14' y2='11'/%3E%3Ccircle cx='12' cy='14' r='8'/%3E%3C/g%3E%3C/svg%3E") center / contain no-repeat;
+  pointer-events: none;
+}
+/* Options › Show tap hints off (utils/tapHints.js): no finger anywhere. */
+html[data-no-tap-hints] .tap-hint::after,
+html[data-no-tap-hints] [data-tap-hint]::after,
+html[data-no-tap-hints] [data-tap-hint-icon] {
+  display: none;
+}
+/* ... and no stopwatch on the held point buttons (their "Hold" stays). */
+html[data-no-tap-hints] .hold-hint::after {
+  display: none;
+}

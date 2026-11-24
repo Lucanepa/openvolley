@@ -1,0 +1,3 @@
+OpenVolley 3.2.3
+- Test matches: the referee and bench tablets list them over the internet too, on "Switch to test matches".
+- The flashing Line-up buttons no longer cover dialogs.

@@ -1,0 +1,8 @@
+OpenVolley 3.2.4
+- Decision change also after a libero replacement; one that no longer fits is taken back.
+- Game captain: fixed once named (FIVB 5.1.2); the last one is proposed when a new one is needed.
+- Fixing a starting line-up after rallies puts the new player on court.
+- Edit match info at any time (Match menu).
+- Deciding set: the serve shows beside the setup buttons.
+- Bigger score and buttons on tall screens; SERVE box in the corner.
+- Informal address in all languages.

@@ -1,0 +1,3 @@
+OpenVolley 3.2.14
+- Time-outs: with both time-outs of a set used, no third one can be asked for; record an improper request with the team's Improper request button.
+- Manager: SQL tab for super admins.

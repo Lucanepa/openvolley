@@ -1,0 +1,636 @@
+/**
+ * MatchEnd: "Confirm and approve" and the scoresheet window's PDF (parity
+ * with OpenBeach, video 2026-10-08):
+ * - closing the scoresheet window while it made the PDF left the approval
+ *   waiting up to 30 s with nothing to press;
+ * - after the approval a remount fell back to "Confirm and approve" (the
+ *   approval lived only in component state).
+ * Now the wait ends at once, the scorer chooses Retry / Approve without PDF /
+ * Cancel (Cancel leaves the match unapproved), Cancel is there while the PDF
+ * is made, the approval and its sync job are written in one transaction and
+ * the approved view comes from the match row.
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, fireEvent, waitFor, cleanup, act } from '@testing-library/react'
+import en from '../../i18n/locales/en.json'
+import { findButton, getButton, queryAllButtons } from '../../__tests__/buttonQueries'
+
+const lookup = (key) => key.split('.').reduce((o, k) => (o == null ? undefined : o[k]), en)
+const interpolate = (text, vars) => String(text).replace(/\{\{(\w+)\}\}/g, (_, k) => (vars && vars[k] !== undefined ? vars[k] : ''))
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key, opts) => {
+      const found = lookup(key)
+      if (typeof found === 'string') return interpolate(found, typeof opts === 'object' ? opts : undefined)
+      return typeof opts === 'string' ? opts : key
+    },
+    i18n: { language: 'en', changeLanguage: () => Promise.resolve() }
+  })
+}))
+
+vi.mock('../../contexts/LoggingContext', () => {
+  const logger = { logHandler: () => {}, logFunction: () => {}, logCallback: () => {}, logHook: () => {}, logEffect: () => {}, logError: () => {}, wrapHandler: (fn) => fn, wrapFunction: (fn) => fn }
+  return { useComponentLogging: () => logger, useLogging: () => ({ createComponentLogger: () => logger, logNavigation: () => {} }) }
+})
+const alerts = vi.hoisted(() => ({ showAlert: null }))
+vi.mock('../../contexts/AlertContext', () => ({ useAlert: () => ({ showAlert: alerts.showAlert, showConfirm: vi.fn() }) }))
+vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => null }))
+vi.mock('../../hooks/useScaledLayout', () => ({ useScaledLayout: () => ({ vmin: (n) => `${n}vmin` }), default: () => ({ vmin: (n) => `${n}vmin` }) }))
+vi.mock('../../utils/comprehensiveLogger', () => ({ exportLogsAsNDJSON: async () => '', downloadLogs: async () => {} }))
+vi.mock('../../utils/backendConfig', async (orig) => ({ ...(await orig()), getCloudApiUrl: () => null }))
+// The activity log's bus: what MatchEnd reports about the PDF (scoresheet.pdf)
+const activity = vi.hoisted(() => ({ calls: [] }))
+vi.mock('../../utils/activity/bus', async (orig) => ({
+  ...(await orig()),
+  emitActivity: (kind, data, opts) => { activity.calls.push({ kind, data, level: opts?.level, matchId: opts?.matchId }) }
+}))
+const pdfLog = () => activity.calls.filter(c => c.kind === 'scoresheet.pdf').map(({ data, level, matchId }) => ({ ...data, level, matchId }))
+// Storage uploads: answered at once, or never (uploads.hang)
+const uploads = vi.hoisted(() => ({ hang: false, paths: [] }))
+vi.mock('../../lib/apiClient', () => {
+  const chain = () => {
+    const b = new Proxy({}, { get: (_, prop) => (prop === 'then' ? (r) => Promise.resolve({ data: null, error: null }).then(r) : () => b) })
+    return b
+  }
+  const upload = (path) => {
+    uploads.paths.push(path)
+    return uploads.hang ? new Promise(() => {}) : Promise.resolve({ data: null, error: null })
+  }
+  return { apiFrom: () => chain(), apiStorage: { from: () => ({ upload }) }, apiRequest: vi.fn() }
+})
+
+// The match end in the cloud live state: not done (offline) until liveEnd.done
+const liveEnd = vi.hoisted(() => ({ done: false, calls: [] }))
+vi.mock('../../utils/matchEndLiveState', () => ({
+  publishMatchEndLiveState: vi.fn(async (match, sets) => {
+    liveEnd.calls.push({ match, sets })
+    return liveEnd.done
+  })
+}))
+
+// The scoresheet window: each open gets a fresh fake window the test can close
+const opened = vi.hoisted(() => [])
+vi.mock('../../utils/openAppWindow', async (orig) => ({
+  ...(await orig()),
+  openAppWindow: vi.fn((url) => {
+    const w = { url, closed: false, close() { this.closed = true } }
+    opened.push(w)
+    return { ok: true, mode: 'window', platform: 'tauri', window: w }
+  })
+}))
+
+// In-memory Dexie (as MatchEndAccountApproval.test.jsx): live queries re-run
+// after writes; transactions record their tables.
+const store = vi.hoisted(() => ({ tables: {}, nextId: 1, listeners: new Set(), transactions: [] }))
+vi.mock('dexie-react-hooks', async () => {
+  const React = await import('react')
+  return {
+    useLiveQuery: (fn, deps = []) => {
+      const [value, setValue] = React.useState(undefined)
+      const [tick, setTick] = React.useState(0)
+      React.useEffect(() => {
+        const l = () => setTick(x => x + 1)
+        store.listeners.add(l)
+        return () => { store.listeners.delete(l) }
+      }, [])
+      React.useEffect(() => {
+        let alive = true
+        Promise.resolve(fn()).then((v) => { if (alive) setValue(v) })
+        return () => { alive = false }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [...deps, tick])
+      return value
+    }
+  }
+})
+vi.mock('../../db/db', () => {
+  const rowsOf = (name) => (store.tables[name] ||= new Map())
+  const changed = () => { for (const l of [...store.listeners]) l() }
+  const collection = (rows) => ({
+    equals: (v) => collection(rows.filter(r => r.__field === undefined ? true : r[r.__field] === v)),
+    toArray: async () => rows,
+    sortBy: async (k) => [...rows].sort((a, b) => (a[k] ?? 0) - (b[k] ?? 0)),
+    filter: (fn) => collection(rows.filter(fn)),
+    first: async () => rows[0],
+    delete: async () => 0,
+    anyOf: () => collection(rows),
+    count: async () => rows.length
+  })
+  const table = (name) => ({
+    name,
+    get: async (id) => rowsOf(name).get(id),
+    add: async (row) => { const id = row?.id ?? store.nextId++; rowsOf(name).set(id, { ...row, id }); changed(); return id },
+    update: async (id, ch) => { const r = rowsOf(name).get(id); if (!r) return 0; rowsOf(name).set(id, { ...r, ...ch }); changed(); return 1 },
+    delete: async (id) => { rowsOf(name).delete(id); changed() },
+    bulkDelete: async () => {},
+    toArray: async () => [...rowsOf(name).values()],
+    where: (field) => {
+      if (typeof field === 'object') return collection([...rowsOf(name).values()])
+      return { equals: (v) => collection([...rowsOf(name).values()].filter(r => r[field] === v)), anyOf: () => collection([]) }
+    },
+    hook: () => {}
+  })
+  const db = new Proxy({}, {
+    get: (_, prop) => {
+      if (prop === 'transaction') {
+        return async (...args) => {
+          const tx = { tables: args.slice(1, -1).map(t => t?.name), writes: [] }
+          store.transactions.push(tx)
+          store.inTx = tx
+          try { return await args[args.length - 1]() } finally { store.inTx = null }
+        }
+      }
+      if (typeof prop !== 'string' || prop === 'then') return undefined
+      const tb = table(prop)
+      // writes made inside a transaction are recorded on it
+      for (const op of ['add', 'update']) {
+        const f = tb[op]
+        tb[op] = async (...a) => { store.inTx?.writes.push(`${prop}.${op}`); return f(...a) }
+      }
+      return tb
+    }
+  })
+  return { db, default: db }
+})
+
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import JSZip from 'jszip'
+import MatchEnd from '../MatchEnd'
+import { matchBackupFromFile } from '../../utils/backupManager'
+
+function seed(matchOver = {}) {
+  store.tables = {}
+  store.nextId = 500
+  store.transactions = []
+  store.tables.matches = new Map([[1, {
+    id: 1, seed_key: 'match_1_pdf', status: 'ended', test: false, coinTossTeamA: 'home', homeTeamId: 1, awayTeamId: 2,
+    officials: [{ role: '1st referee', firstName: 'Anna', lastName: 'Muster' }, { role: 'scorer', firstName: 'Sam', lastName: 'Scorer' }],
+    homePostGameCaptainSignature: 'data:cap-a', awayPostGameCaptainSignature: 'data:cap-b',
+    scorerSignature: 'data:s', ref1Signature: 'data:r1',
+    ...matchOver
+  }]])
+  store.tables.teams = new Map([[1, { id: 1, name: 'Home V' }], [2, { id: 2, name: 'Away V' }]])
+  store.tables.players = new Map()
+  store.tables.sets = new Map([
+    [11, { id: 11, matchId: 1, index: 1, homePoints: 25, awayPoints: 20, finished: true }],
+    [12, { id: 12, matchId: 1, index: 2, homePoints: 25, awayPoints: 23, finished: true }],
+    [13, { id: 13, matchId: 1, index: 3, homePoints: 25, awayPoints: 18, finished: true }]
+  ])
+  store.tables.events = new Map()
+  store.tables.sync_queue = new Map()
+}
+
+const approveButton = () => getButton(en.matchEnd.approveParams)
+const approvedJobs = () => [...store.tables.sync_queue.values()].filter(j => j.payload?.status === 'approved')
+const postFromSheet = (data) => act(async () => {
+  window.dispatchEvent(new MessageEvent('message', { data, origin: window.location.origin }))
+})
+async function approve() {
+  await waitFor(() => expect(approveButton()).toBeEnabled())
+  fireEvent.click(approveButton())
+  await waitFor(() => expect(opened).toHaveLength(1))
+}
+
+beforeEach(() => {
+  seed()
+  opened.length = 0
+  uploads.hang = false
+  uploads.paths.length = 0
+  liveEnd.done = false
+  liveEnd.calls.length = 0
+  alerts.showAlert = vi.fn()
+  activity.calls.length = 0
+  URL.createObjectURL = vi.fn(() => 'blob:x')
+  HTMLAnchorElement.prototype.click = () => {}
+  Object.defineProperty(window.navigator, 'onLine', { configurable: true, get: () => true })
+  globalThis.ResizeObserver ||= class { observe() {} unobserve() {} disconnect() {} }
+})
+afterEach(() => {
+  cleanup()
+})
+
+describe('MatchEnd: the approval PDF', () => {
+  // (soon: its PDF may still arrive for PDF_CLOSED_GRACE_MS, see scoresheetPdfRequest)
+  it('a closed scoresheet window stops the wait soon; Cancel leaves the match unapproved and usable', async () => {
+    render(<MatchEnd matchId={1} />)
+    await approve()
+    opened[0].closed = true // the scorer closes the window (X)
+    const dialog = await screen.findByTestId('export-pdf-failed', {}, { timeout: 4000 })
+    expect(dialog).toHaveTextContent(en.matchEnd.export.reason.closed)
+    fireEvent.click(getButton(en.matchEnd.export.cancel, dialog))
+    await waitFor(() => expect(screen.queryByTestId('export-pdf-failed')).toBeNull())
+    await waitFor(() => expect(approveButton()).toBeEnabled())
+    expect(store.tables.matches.get(1).approved).toBeFalsy()
+    expect(approvedJobs()).toHaveLength(0)
+  }, 10000)
+
+  it('Retry opens the scoresheet again and its PDF approves the match', async () => {
+    render(<MatchEnd matchId={1} />)
+    await approve()
+    await postFromSheet({ type: 'pdfBlobFailed', reason: 'closed' }) // pagehide in the window
+    fireEvent.click(await findButton(en.matchEnd.export.retry))
+    await waitFor(() => expect(opened).toHaveLength(2))
+    await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf' })
+    await findButton(en.matchEnd.closeMatch)
+    expect(store.tables.matches.get(1).approved).toBe(true)
+    expect(approvedJobs()).toHaveLength(1)
+    expect(alerts.showAlert).not.toHaveBeenCalledWith(en.matchEnd.pdfGenerationFailed, 'warning')
+  })
+
+  it('Approve without PDF approves the match (the approval and its sync job in one transaction)', async () => {
+    store.tables.matches.get(1).remarks = 'Actual start time: 18:05'
+    render(<MatchEnd matchId={1} />)
+    await approve()
+    await postFromSheet({ type: 'pdfBlobFailed' })
+    fireEvent.click(await findButton(en.matchEnd.export.approveWithoutPdf))
+    await findButton(en.matchEnd.closeMatch)
+    expect(store.tables.matches.get(1).approved).toBe(true)
+    expect(approvedJobs()).toHaveLength(1)
+    const tx = store.transactions.find(t => t.writes.includes('matches.update'))
+    expect(tx).toBeTruthy()
+    expect(tx.tables).toEqual(expect.arrayContaining(['sync_queue', 'matches']))
+    // db/017: the remarks as approved, their own job just before the approval
+    expect(tx.writes).toEqual(['sync_queue.add', 'sync_queue.add', 'matches.update'])
+    const jobs = [...store.tables.sync_queue.values()]
+    const remarksJob = jobs.find(j => j.payload && 'remarks' in j.payload)
+    expect(remarksJob.payload).toEqual({ id: 'match_1_pdf', remarks: 'Actual start time: 18:05' })
+    expect(jobs.indexOf(remarksJob)).toBeLessThan(jobs.indexOf(approvedJobs()[0]))
+    expect('remarks' in approvedJobs()[0].payload).toBe(false)
+    expect(alerts.showAlert).toHaveBeenCalledWith(en.matchEnd.pdfGenerationFailed, 'warning')
+  })
+
+  it('Cancel while the PDF is made stops at once, closes the window, nothing approved', async () => {
+    render(<MatchEnd matchId={1} />)
+    await approve()
+    fireEvent.click(await screen.findByTestId('export-cancel'))
+    await waitFor(() => expect(approveButton()).toBeEnabled())
+    expect(screen.queryByTestId('export-pdf-failed')).toBeNull()
+    expect(opened[0].closed).toBe(true) // the window is not left behind
+    expect(store.tables.matches.get(1).approved).toBeFalsy()
+    expect(approvedJobs()).toHaveLength(0)
+  })
+
+  it('a late "closed" from the window of an earlier attempt does not end the next one', async () => {
+    render(<MatchEnd matchId={1} />)
+    await approve()
+    const reqOf = (w) => new URL(w.url, 'http://x').searchParams.get('pdfReq')
+    const firstReq = reqOf(opened[0])
+    expect(firstReq).toBeTruthy()
+    fireEvent.click(await screen.findByTestId('export-cancel'))
+    await waitFor(() => expect(approveButton()).toBeEnabled())
+    fireEvent.click(approveButton())
+    await waitFor(() => expect(opened).toHaveLength(2))
+    const secondReq = reqOf(opened[1])
+    expect(secondReq).toBeTruthy()
+    expect(secondReq).not.toBe(firstReq)
+    // the first window's pagehide arrives only now (it was busy capturing)
+    await postFromSheet({ type: 'pdfBlobFailed', reason: 'closed', req: firstReq })
+    await new Promise(r => setTimeout(r, 50))
+    expect(screen.queryByTestId('export-pdf-failed')).toBeNull()
+    expect(opened[1].closed).toBe(false)
+    await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf', req: secondReq })
+    await findButton(en.matchEnd.closeMatch)
+    expect(store.tables.matches.get(1).approved).toBe(true)
+  })
+
+  // Stress test 2026-10-25: on a connection that passed no data the overlay
+  // stayed on "Creating ZIP and uploading to cloud..." for minutes, with no
+  // Cancel, nothing approved and no ZIP
+  it('a scoresheet upload that never answers does not hold the approval', async () => {
+    uploads.hang = true
+    seed({ gameNumber: 4242 })
+    render(<MatchEnd matchId={1} />)
+    await approve()
+    await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf' })
+    await findButton(en.matchEnd.closeMatch)
+    expect(store.tables.matches.get(1).approved).toBe(true)
+    expect(approvedJobs()).toHaveLength(1)
+    expect(screen.queryByTestId('export-modal')).toBeNull()
+  })
+
+  // Stress test 2026-10-25: approved offline (most halls) or with one
+  // connection reset, the PDF and the final JSON never reached the cloud;
+  // they went up once, at the approval, and nothing retried them
+  it('the approval queues the PDF and the final JSON for the cloud, with the files', async () => {
+    uploads.hang = true
+    seed({ gameNumber: 4242 })
+    render(<MatchEnd matchId={1} />)
+    await approve()
+    await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf' })
+    await findButton(en.matchEnd.closeMatch)
+    await waitFor(() => expect([...store.tables.sync_queue.values()].filter(j => j.resource === 'scoresheet')).toHaveLength(2))
+    const files = [...store.tables.sync_queue.values()].filter(j => j.resource === 'scoresheet')
+    expect(files.map(j => [j.action, j.status, j.payload.contentType])).toEqual([
+      ['upload', 'queued', 'application/pdf'],
+      ['upload', 'queued', 'application/json']
+    ])
+    expect(files[0].payload.path).toMatch(/^\d{4}-\d{2}-\d{2}\/game4242_[^/]+\.pdf$/)
+    expect(files[1].payload.path).toMatch(/^\d{4}-\d{2}-\d{2}\/game4242_[^/]+_final\.json$/)
+    expect(files.map(j => j.payload.match_external_id)).toEqual(['match_1_pdf', 'match_1_pdf'])
+    expect(files[0].payload.file).toBeInstanceOf(Blob)
+    expect(JSON.parse(await files[1].payload.file.text()).sets).toHaveLength(3)
+    // nothing went up directly (the queue sends them)
+    expect(uploads.paths).toHaveLength(0)
+  })
+
+  // A reopen and a new approval: the first approval's files, still unsent
+  // (the upload waited out the hall's Wi-Fi), would go first, and after the
+  // close the backend keeps the approval's first PDF (db/033)
+  it('a new approval supersedes the earlier approval\'s files still unsent; other matches\' stay', async () => {
+    uploads.hang = true
+    seed({ gameNumber: 4242 })
+    const old = (id, status, ext, path) => [id, { id, resource: 'scoresheet', action: 'upload', status, payload: { path, file: new Blob(['first approval']), contentType: 'application/pdf', match_external_id: ext } }]
+    store.tables.sync_queue = new Map([
+      old(1, 'error', 'match_1_pdf', '2026-10-25/game4242_kold.pdf'),
+      old(2, 'failed', 'match_1_pdf', '2026-10-25/game4242_kold_final.json'),
+      old(3, 'queued', 'match_9_other', '2026-10-25/game9_kother.pdf')
+    ])
+    render(<MatchEnd matchId={1} />)
+    await approve()
+    await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf' })
+    await findButton(en.matchEnd.closeMatch)
+    await waitFor(() => expect([...store.tables.sync_queue.values()].filter(j => j.resource === 'scoresheet' && j.status === 'queued')).toHaveLength(3))
+    expect(store.tables.sync_queue.get(1)).toMatchObject({ status: 'superseded', payload: { file: null } })
+    expect(store.tables.sync_queue.get(2).status).toBe('superseded')
+    expect(store.tables.sync_queue.get(3).status).toBe('queued')
+    const tx = store.transactions.find(t => t.writes.includes('sync_queue.update'))
+    expect(tx.writes).toEqual(['sync_queue.update', 'sync_queue.update', 'sync_queue.add', 'sync_queue.add'])
+  })
+
+  // Backup plan 2026-10-29: the ZIP's MatchData JSON had the teams inside the
+  // match and no version, and Restore match refused it
+  it('the ZIP\'s match data is a backup file Restore match takes as it is', async () => {
+    const zipFile = vi.spyOn(JSZip.prototype, 'file')
+    try {
+      render(<MatchEnd matchId={1} />)
+      await approve()
+      await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf' })
+      await findButton(en.matchEnd.closeMatch)
+      const call = zipFile.mock.calls.find(([name]) => /^MatchData_.*\.json$/.test(name))
+      expect(call[0]).toMatch(/^MatchData_Home_V_vs_Away_V_/)
+      // sealed when the match has a PIN (the 3.2.5 review): opened as Restore match does
+      const stored = store.tables.matches.get(1)
+      const { openWithKnownPins } = await import('../../utils/backupFile')
+      const data = await openWithKnownPins(JSON.parse(call[1]), [stored.gamePin, stored.refereePin, stored.connection_pins?.referee])
+      expect(data).toMatchObject({ version: 1, match: { id: 1, seed_key: 'match_1_pdf', status: 'ended' }, homeTeam: { name: 'Home V' }, awayTeam: { name: 'Away V' } })
+      expect('homeTeam' in data.match).toBe(false)
+      expect(data.sets.map(s => s.index)).toEqual([1, 2, 3])
+      expect(typeof data.lastUpdated).toBe('string')
+      expect(data.exportedAt).toBe(data.lastUpdated)
+      expect(matchBackupFromFile(data)).toBe(data) // nothing to convert
+    } finally {
+      zipFile.mockRestore()
+    }
+  })
+
+  // 3.2.5 review: the ZIP left the rosters and dates of birth in plain JSON
+  // in Downloads, while every other backup file is sealed
+  it('the ZIP\'s match data of a match with PINs is sealed like a backup file', async () => {
+    seed({ gamePin: '482913', refereePin: '730561' })
+    const zipFile = vi.spyOn(JSZip.prototype, 'file')
+    try {
+      render(<MatchEnd matchId={1} />)
+      await approve()
+      await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf' })
+      await findButton(en.matchEnd.closeMatch)
+      const call = zipFile.mock.calls.find(([name]) => /^MatchData_.*\.json$/.test(name))
+      const { isEncryptedBackup } = await import('../../utils/backupCrypto/envelope')
+      expect(isEncryptedBackup(JSON.parse(call[1]))).toBe(true)
+      expect(call[1]).not.toContain('homePlayers') // the rosters only inside the envelope (its header names the teams)
+    } finally {
+      zipFile.mockRestore()
+    }
+  })
+
+  // Jana Rost (2026-11): on a school iPad the approval only left a ZIP in a
+  // Downloads folder she could not reach, and the native app's hidden
+  // download does nothing at all. On iOS the files wait for Share items.
+  describe('the files after the approval', () => {
+    const IPAD = 'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
+    const original = {}
+    const setNav = (props) => {
+      for (const [k, v] of Object.entries(props)) {
+        if (!(k in original)) original[k] = Object.getOwnPropertyDescriptor(window.navigator, k) || Object.getOwnPropertyDescriptor(Object.getPrototypeOf(window.navigator), k)
+        Object.defineProperty(window.navigator, k, { configurable: true, get: () => v })
+      }
+    }
+    afterEach(() => {
+      for (const [k, d] of Object.entries(original)) { try { Object.defineProperty(window.navigator, k, d) } catch { /* jsdom */ } }
+    })
+
+    it('a desktop browser downloads the ZIP at once', async () => {
+      const clicked = []
+      HTMLAnchorElement.prototype.click = function () { clicked.push(this.download) }
+      render(<MatchEnd matchId={1} />)
+      await approve()
+      await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf' })
+      await findButton(en.matchEnd.closeMatch)
+      expect(clicked.filter(n => /\.zip$/.test(n))).toHaveLength(1)
+      expect(alerts.showAlert).not.toHaveBeenCalledWith(en.matchEnd.approvedShareHint, 'info')
+    })
+
+    it('an iPad downloads nothing, says where the files are, and the Scoresheet menu shares them', async () => {
+      setNav({ userAgent: IPAD, platform: 'iPad', maxTouchPoints: 5 })
+      const clicked = []
+      HTMLAnchorElement.prototype.click = function () { clicked.push(this.download) }
+      render(<MatchEnd matchId={1} />)
+      await approve()
+      await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf' })
+      await findButton(en.matchEnd.closeMatch)
+      expect(clicked.filter(n => /\.zip$/.test(n))).toHaveLength(0)
+      expect(alerts.showAlert).toHaveBeenCalledWith(en.matchEnd.approvedShareHint, 'info')
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(en.matchEnd.scoresheet) }))
+      expect(await screen.findByText(en.matchEnd.sharePdf)).toBeTruthy()
+      expect(await screen.findByText(en.matchEnd.shareAllFiles)).toBeTruthy()
+    })
+  })
+
+  it('the export modal sits above the header (z 1000) and its open menu', async () => {
+    render(<MatchEnd matchId={1} />)
+    await approve()
+    const modal = await screen.findByTestId('export-modal')
+    expect(Number(modal.style.zIndex)).toBeGreaterThan(1000)
+  })
+
+  it('an approved match shows the approved view after a remount', async () => {
+    seed({ approved: true, approvedAt: '2026-10-08T10:00:00Z' })
+    render(<MatchEnd matchId={1} />)
+    await findButton(en.matchEnd.closeMatch)
+    expect(queryAllButtons(en.matchEnd.approveParams)).toHaveLength(0)
+  })
+
+  it('the scoresheet stays at hand once the match is approved (closed), as before it', async () => {
+    seed({ approved: true, approvedAt: '2026-10-08T10:00:00Z' })
+    render(<MatchEnd matchId={1} />)
+    await findButton(en.matchEnd.closeMatch)
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(en.matchEnd.scoresheet) }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: new RegExp(en.matchEnd.preview) }))
+    await waitFor(() => expect(opened).toHaveLength(1))
+    expect(opened[0].url).toBe('/scoresheet/?matchId=1')
+  })
+})
+
+// 3.2.6: a PDF lost at the approval (its window closed before the PDF came)
+// left no trace in the activity log
+describe('MatchEnd: the approval PDF in the activity log', () => {
+  // answers name their window's request: a wait an earlier test left open ignores them
+  const reqOf = (w) => new URL(w.url, 'http://x').searchParams.get('pdfReq')
+  it('a failed attempt, the retry and the PDF that came', async () => {
+    render(<MatchEnd matchId={1} />)
+    await approve()
+    await postFromSheet({ type: 'pdfBlobFailed', reason: 'closed', req: reqOf(opened[0]) })
+    fireEvent.click(await findButton(en.matchEnd.export.retry))
+    await waitFor(() => expect(opened).toHaveLength(2))
+    await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf', req: reqOf(opened[1]) })
+    await findButton(en.matchEnd.closeMatch)
+    const log = pdfLog()
+    expect(log.map(e => [e.step, e.level, e.attempt, e.reason])).toEqual([
+      ['requested', 'info', 1, undefined],
+      ['failed', 'warn', 1, 'closed'],
+      ['requested', 'info', 2, undefined],
+      ['received', 'info', 2, undefined]
+    ])
+    expect(log.every(e => e.purpose === 'approval' && e.matchId === 1)).toBe(true)
+    expect(log[3].bytes).toBe(8)
+    expect(typeof log[3].ms).toBe('number')
+  })
+
+  // Perf pass 22.11.2026: the tablet's 43 s was one number
+  it('the PDF that came, and where its time went (the page\'s own steps, numbers only)', async () => {
+    render(<MatchEnd matchId={1} />)
+    await approve()
+    const req = reqOf(opened[0])
+    await postFromSheet({ type: 'pdfProgress', step: 'loading', req })
+    await postFromSheet({ type: 'pdfProgress', step: 'capture', ms: 3100, req })
+    await postFromSheet({ type: 'pdfProgress', step: 'styles', ms: 2000, req })
+    // the heartbeat: no time, its step already heard
+    await postFromSheet({ type: 'pdfProgress', step: 'capture', req })
+    await postFromSheet({ type: 'pdfProgress', step: 'canvas', ms: 26100, req })
+    await postFromSheet({ type: 'pdfProgress', step: 'jpeg', ms: 900, req })
+    await postFromSheet({ type: 'pdfProgress', step: 'pdf', ms: 1200, req })
+    await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf', req })
+    await findButton(en.matchEnd.closeMatch)
+    const log = pdfLog()
+    expect(log.map(e => e.step)).toEqual(['requested', 'received', 'timing'])
+    expect(log[2]).toMatchObject({ level: 'info', purpose: 'approval', attempt: 1, matchId: 1, ms: log[1].ms })
+    expect(log[2].reason).toMatch(/^load=\d+ capture=\d+ page=3100 styles=2000 canvas=26100 jpeg=900 pdf=1200 events=0 dpr=1 zoom=1$/)
+  })
+
+  it('Approve without PDF is an error entry with the reason', async () => {
+    render(<MatchEnd matchId={1} />)
+    await approve()
+    await postFromSheet({ type: 'pdfBlobFailed', req: reqOf(opened[0]) })
+    fireEvent.click(await findButton(en.matchEnd.export.approveWithoutPdf))
+    await findButton(en.matchEnd.closeMatch)
+    expect(pdfLog().map(e => [e.step, e.level, e.reason])).toEqual([
+      ['requested', 'info', undefined],
+      ['failed', 'warn', 'failed'],
+      ['approved_without_pdf', 'error', 'failed']
+    ])
+  })
+
+  it('Cancel while the PDF is made is logged as cancelled, nothing approved', async () => {
+    render(<MatchEnd matchId={1} />)
+    await approve()
+    fireEvent.click(await screen.findByTestId('export-cancel'))
+    await waitFor(() => expect(approveButton()).toBeEnabled())
+    expect(pdfLog().map(e => [e.step, e.level, e.reason])).toEqual([
+      ['requested', 'info', undefined],
+      ['cancelled', 'info', 'cancelled']
+    ])
+  })
+})
+
+// Stress test 2026-10-25: the app killed right after "Match end" was
+// confirmed reopened here, and the livescore kept the game running (last set
+// 25:0, sets 1-0) for good: the scoreboard's 'match_end' push never came
+describe('MatchEnd: the match end in the cloud live state', () => {
+  it('is published when Match End shows, and again when the queue drains until it is done', async () => {
+    render(<MatchEnd matchId={1} />)
+    await waitFor(() => expect(liveEnd.calls).toHaveLength(1))
+    expect(liveEnd.calls[0].match.seed_key).toBe('match_1_pdf')
+    expect(liveEnd.calls[0].sets.filter(st => st.finished)).toHaveLength(3)
+    // offline: tried again when the queue drains, and no more once done
+    liveEnd.done = true
+    await act(async () => { window.dispatchEvent(new Event('sync-queue-drained')) })
+    await waitFor(() => expect(liveEnd.calls).toHaveLength(2))
+    await act(async () => { window.dispatchEvent(new Event('online')) })
+    await new Promise(r => setTimeout(r, 50))
+    expect(liveEnd.calls).toHaveLength(2)
+  })
+
+  it('never for a test match', async () => {
+    seed({ test: true })
+    render(<MatchEnd matchId={1} />)
+    await findButton(en.matchEnd.approveParams)
+    await new Promise(r => setTimeout(r, 50))
+    expect(liveEnd.calls).toHaveLength(0)
+  })
+})
+
+// Perf pass 22.11.2026: every open of the scoresheet (and the approval)
+// stringified the whole match into sessionStorage, which the page, reading
+// ?matchId= from this device's database, never used.
+describe('MatchEnd: the scoresheet window reads the match from this device', () => {
+  const copies = () => setItem.mock.calls.filter(([key]) => key === 'scoresheetData')
+  let setItem
+  beforeEach(() => {
+    sessionStorage.clear()
+    setItem = vi.spyOn(Storage.prototype, 'setItem')
+  })
+  afterEach(() => setItem.mockRestore())
+
+  it('the approval opens it by match id, with no copy of the match', async () => {
+    render(<MatchEnd matchId={1} />)
+    await approve()
+    expect(opened[0].url).toMatch(/^\/scoresheet\/\?matchId=1&action=getBlob&pdfReq=/)
+    await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf' })
+    await findButton(en.matchEnd.closeMatch)
+    expect(copies()).toHaveLength(0)
+    expect(sessionStorage.getItem('scoresheetData')).toBeNull()
+  })
+
+  it('the preview and the missing PDF open it by match id, with no copy of the match', async () => {
+    seed({ approved: true, approvedAt: '2026-10-08T10:00:00Z', scoresheetPdfMissing: true, gameNumber: 4242 })
+    render(<MatchEnd matchId={1} />)
+    await findButton(en.matchEnd.closeMatch)
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(en.matchEnd.scoresheet) }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: new RegExp(en.matchEnd.preview) }))
+    await waitFor(() => expect(opened).toHaveLength(1))
+    expect(opened[0].url).toBe('/scoresheet/?matchId=1')
+    fireEvent.click(await findButton(en.matchEnd.pdfMissing.create))
+    await waitFor(() => expect(opened).toHaveLength(2))
+    expect(opened[1].url).toMatch(/^\/scoresheet\/\?matchId=1&action=getBlob&pdfReq=/)
+    await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf' })
+    await waitFor(() => expect(store.tables.matches.get(1).scoresheetPdfMissing).toBe(false))
+    expect(copies()).toHaveLength(0)
+    expect(sessionStorage.getItem('scoresheetData')).toBeNull()
+  })
+})
+
+// The ZIP library comes with the app (owner 22.11.2026): the perf pass loaded
+// jszip only once Match End showed, so the approval depended on fetching a
+// chunk at the match end, and a browser without a service worker that had
+// lost the network then could not approve at all ("Failed to fetch
+// dynamically imported module"). Static import, as before.
+describe('MatchEnd: the ZIP library', () => {
+  it('is imported with the app, never loaded at the approval', () => {
+    const source = readFileSync(resolve(__dirname, '../MatchEnd.jsx'), 'utf8')
+    expect(source).toMatch(/^import JSZip from 'jszip'$/m)
+    expect(source).not.toMatch(/import\(\s*['"]jszip['"]\s*\)/)
+  })
+
+  it('makes the approval\'s ZIP with the PDF and the match data', async () => {
+    const zipFile = vi.spyOn(JSZip.prototype, 'file')
+    try {
+      render(<MatchEnd matchId={1} />)
+      await approve()
+      await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf' })
+      await findButton(en.matchEnd.closeMatch)
+      expect(zipFile.mock.calls.map(c => c[0])).toEqual(expect.arrayContaining(['x.pdf', expect.stringMatching(/^MatchData_.*\.json$/)]))
+    } finally {
+      zipFile.mockRestore()
+    }
+  })
+})

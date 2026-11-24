@@ -1,0 +1,132 @@
+import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { render } from '@testing-library/react'
+import { discCssVars, DISC } from '../referee/discSizing.js'
+import PlayerDisc from '../referee/PlayerDisc.jsx'
+import { glyphWidthShare } from '../referee/SanctionCards.jsx'
+
+const full = {
+  number: 88,
+  position: 'III',
+  capPx: 93,
+  side: 'right',
+  background: '#333',
+  color: '#fff',
+  showBall: true,
+  replacedNumber: 14,
+  liberoLabel: 'L1',
+  captain: 'GC',
+  sanctions: { warning: true, penalty: true, expulsion: true },
+  lfp: false
+}
+
+const SIZE_PROPS = ['width', 'height', 'minWidth', 'fontSize', 'top', 'left', 'right', 'bottom', 'padding', 'gap']
+
+// Every length on a disc must be a share of the disc diameter (or 0 / a hairline),
+// never the viewport: that is what let numbers, badges and the ball outgrow it.
+function lengthsOf(el) {
+  const out = []
+  for (const node of [el, ...el.querySelectorAll('*')]) {
+    for (const p of SIZE_PROPS) {
+      const v = node.style[p]
+      if (v) out.push([node.getAttribute('data-disc-badge') || node.tagName.toLowerCase(), p, v])
+    }
+  }
+  return out
+}
+
+describe('referee PlayerDisc', () => {
+  it('sizes the disc, number, badges, cards and ball from --disc only', () => {
+    const { container } = render(<PlayerDisc {...full} />)
+    const disc = container.querySelector('[data-player-disc="III"]')
+    expect(disc).not.toBeNull()
+    expect(disc.style.getPropertyValue('--disc')).toMatch(/^min\(26cqh, 15\.5cqw, 93px\)$/)
+    for (const [who, prop, value] of lengthsOf(disc)) {
+      expect(value, `${who} ${prop}`).not.toMatch(/vw|vh|vmin|vmax|rem/)
+    }
+    expect(disc.style.fontSize).toBe('var(--disc-number)')
+    expect(disc.querySelector('[data-disc-ball]').style.width).toBe('var(--disc-ball)')
+  })
+
+  it('sets the corner badges out on the disc edge by --disc-badge-out only (at most 5 px), off the number (owner 15.11)', () => {
+    const { container } = render(<PlayerDisc {...full} />)
+    const badges = container.querySelectorAll('[data-disc-badge]')
+    expect([...badges].map(b => b.getAttribute('data-disc-badge')).sort()).toEqual(['captain', 'lfp', 'libero', 'position', 'replaced', 'sanctions'])
+    for (const b of badges) {
+      for (const p of ['top', 'left', 'right', 'bottom']) {
+        const v = b.style[p]
+        if (!v || v === 'auto' || v === '50%') continue
+        // never a bare negative length: only the capped outset variable (or a sum with it)
+        expect(v, `${b.getAttribute('data-disc-badge')} ${p}`).toMatch(/var\(--disc-badge-out\)/)
+      }
+    }
+    const vars = discCssVars(80)
+    expect(vars['--disc-badge-out']).toBe(`calc(min(var(--disc-badge) * ${DISC.badgeOutset}, ${DISC.badgeOutsetMaxPx}px) * -1)`)
+    expect(DISC.badgeOutsetMaxPx).toBeLessThanOrEqual(5)
+  })
+
+  it('puts the serve ball on the end-line side', () => {
+    const right = render(<PlayerDisc {...full} side="right" />).container.querySelector('[data-disc-ball]')
+    expect(right.style.left).toBe('calc(100% + var(--disc-ball-gap))')
+    const left = render(<PlayerDisc {...full} side="left" />).container.querySelector('[data-disc-ball]')
+    expect(left.style.right).toBe('calc(100% + var(--disc-ball-gap))')
+  })
+
+  it('shows a redesignated libero as LR (the old code threw on an undefined R)', () => {
+    const { container } = render(<PlayerDisc {...full} captain={null} liberoLabel="L" liberoRedesignated />)
+    expect(container.querySelector('[data-disc-badge="libero"]').textContent).toBe('LR')
+  })
+
+  it('shows LC instead of the L badge for a libero captain', () => {
+    const { container } = render(<PlayerDisc {...full} liberoLabel="L" captain="LC" />)
+    expect(container.querySelector('[data-disc-badge="libero"]')).toBeNull()
+    expect(container.querySelector('[data-disc-badge="captain"]').textContent).toBe('LC')
+  })
+
+  it('writes LC at the size of the other marks (the badge widens, the text does not shrink)', () => {
+    const { container } = render(<PlayerDisc {...full} liberoLabel="L" captain="LC" />)
+    const lc = container.querySelector('[data-disc-badge="captain"]')
+    const pos = container.querySelector('[data-disc-badge="position"]')
+    expect(lc.style.fontSize).toBe(pos.style.fontSize)
+    expect(lc.style.width).toBe('')
+  })
+
+  it('fits LC (or LR) and the widest sanction mark (disqualification) side by side on the smallest disc', () => {
+    // 36 px disc (DISC.minPx), 1 px border: 34 px inside; badges are 11 px (badgeMinPx)
+    const badge = 11
+    const share = (v) => Number(String(v).match(/\*\s*([\d.]+)\)/)[1]) * badge
+    const { container } = render(<PlayerDisc {...full} liberoLabel="L" captain="LC" sanctions={{ warning: true, penalty: true, disqualification: true }} />)
+    const lc = container.querySelector('[data-disc-badge="captain"]')
+    const glyph = container.querySelector('[data-disc-badge="sanctions"] [data-card-glyph]')
+    expect(glyph.getAttribute('data-card-glyph')).toBe('disqualification')
+    // two bold capitals at 0.6 of the badge are at most 1.4 em wide (Inter bold LC measures 1.32 em); 2 px border each side
+    const lcWidth = 1.4 * share(lc.style.fontSize) + 2 * share(lc.style.padding) + 4
+    const cardHeight = share(glyph.style.height)
+    // two cards apart plus the 1 px white rim either side
+    const markWidth = glyphWidthShare('disqualification') * cardHeight + 2
+    expect(lcWidth + markWidth).toBeLessThanOrEqual(34)
+    // the mark stays inside the badge row's height
+    expect(cardHeight).toBeLessThanOrEqual(badge)
+  })
+
+  it('shows the most severe sanction as the cards the referee holds up (rule 21.3)', () => {
+    const mark = (sanctions) => {
+      const { container } = render(<PlayerDisc {...full} sanctions={sanctions} />)
+      const badge = container.querySelector('[data-disc-badge="sanctions"]')
+      return badge ? badge.getAttribute('data-sanction') : null
+    }
+    expect(mark({})).toBeNull()
+    expect(mark({ warning: true })).toBe('warning')
+    expect(mark({ warning: true, penalty: true })).toBe('penalty')
+    expect(mark({ warning: true, penalty: true, expulsion: true })).toBe('expulsion')
+    expect(mark({ penalty: true, disqualification: true })).toBe('disqualification')
+  })
+
+  it('the referee court draws its players with PlayerDisc', () => {
+    const src = readFileSync(resolve(__dirname, '../Referee.jsx'), 'utf8')
+    expect(src).toMatch(/<PlayerDisc\b/)
+    expect(src).toMatch(/containerType: 'size'/)
+    expect(src).not.toMatch(/\{isRedesignated && R\}/)
+  })
+})

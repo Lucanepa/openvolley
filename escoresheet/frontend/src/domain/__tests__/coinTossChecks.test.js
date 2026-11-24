@@ -1,0 +1,96 @@
+import { describe, it, expect } from 'vitest'
+import { coinTossConfirmIssues } from '../coinTossChecks'
+import en from '../../i18n/locales/en.json'
+import de from '../../i18n/locales/de.json'
+import deCH from '../../i18n/locales/de-CH.json'
+import fr from '../../i18n/locales/fr.json'
+import it_ from '../../i18n/locales/it.json'
+
+// The coin toss confirm's checks were English literals shown to every scorer
+// ("Home team captain is not set", "Hall is not set"): they are i18n keys now.
+const player = (number, over = {}) => ({ number, lastName: `P${number}`, firstName: 'X', libero: '', isCaptain: false, dob: '', ...over })
+const roster = (n = 7) => Array.from({ length: n }, (_, i) => player(i + 1, { isCaptain: i === 0 }))
+const coach = [{ role: 'Coach', firstName: 'C', lastName: 'Coach' }]
+const ok = () => ({
+  match: {
+    hall: 'Halle', city: 'Zürich', league: '2L', scheduledAt: '2026-10-21T18:00:00Z',
+    officials: [{ role: '1st referee', firstName: 'A', lastName: 'Ref' }, { role: 'scorer', firstName: 'S', lastName: 'Scorer' }]
+  },
+  home: 'VBC A', away: 'VBC B', homeRoster: roster(), awayRoster: roster(), benchHome: coach, benchAway: coach
+})
+const keys = (input) => coinTossConfirmIssues(input).map(i => i.key)
+
+describe('coinTossConfirmIssues', () => {
+  it('a complete match has none', () => {
+    expect(coinTossConfirmIssues(ok())).toEqual([])
+  })
+
+  it('names, officials and match info', () => {
+    expect(keys({ ...ok(), home: 'Home', away: '', match: {} })).toEqual([
+      'validation.homeTeamNotSet', 'validation.awayTeamNotSet', 'validation.refereeNotSet', 'validation.scorerNotSet',
+      'validation.hallNotSet', 'validation.cityNotSet', 'validation.leagueNotSet', 'validation.dateNotSet'
+    ])
+  })
+
+  it('the rosters: too few, too many, numbers, coach, captain, duplicates', () => {
+    const big = roster(15)
+    const away = [...roster(4), player(6, { libero: 'libero1' }), player(7, { number: '' }), player(3, { lastName: 'P1' }), player(120, { libero: 'libero2' })]
+    const issues = coinTossConfirmIssues({
+      ...ok(),
+      homeRoster: big.map((p, i) => (i === 2 ? { ...p, dob: '01.01.1900' } : p)),
+      awayRoster: away.map(p => ({ ...p, isCaptain: false })),
+      benchAway: []
+    })
+    expect(issues).toEqual([
+      { key: 'validation.tooManyPlayers', params: { team: 'home', max: 14, count: 15 } },
+      { key: 'validation.needMorePlayers', params: { team: 'away', count: 5 } },
+      { key: 'validation.playersWithoutNumbers', params: { team: 'away', count: 1 } },
+      { key: 'validation.coachNotSet', params: { team: 'away' } },
+      { key: 'validation.captainNotSet', params: { team: 'away' } },
+      { key: 'validation.duplicateNumbers', params: { team: 'away', numbers: '3' } },
+      { key: 'validation.duplicatePlayers', params: { team: 'away', names: 'p1 x' } },
+      { key: 'validation.invalidJerseyNumbers', params: { team: 'away', numbers: '120' } }
+    ])
+  })
+
+  // Owner 2026-11-15: "the warning for bday 1.1.xxxx should be in the roster
+  // only, not at coin toss" (the roster editor notes them: JanuaryDobNotice)
+  it('a date of birth on 1 January, the 01.01.1900 placeholder too, does not hold the coin toss', () => {
+    const born = (dob) => roster().map((p, i) => (i === 1 ? { ...p, dob } : p))
+    for (const dob of ['01.01.1900', '01/01/1900', '01.01.2004']) {
+      expect(coinTossConfirmIssues({ ...ok(), homeRoster: born(dob), benchAway: [{ ...coach[0], dob }] }), dob).toEqual([])
+    }
+  })
+
+  // An uploaded roster with three liberos, "Libero 1" twice and two captains
+  // passed (fe-roster-import-5); 7 and '7' were two numbers, 7.5 a valid one
+  it('liberos, libero slots and captains; numbers compared as numbers', () => {
+    const home = [...roster(6), player(7, { libero: 'libero1' }), player(8, { libero: 'libero1' }), player(9, { libero: 'libero2' }), player(10, { isCaptain: true })]
+    const away = [...roster(6), player('7'), player(7, { lastName: 'Q7' }), player(7.5)]
+    expect(coinTossConfirmIssues({ ...ok(), homeRoster: home, awayRoster: away })).toEqual([
+      { key: 'validation.tooManyLiberos', params: { team: 'home', count: 3 } },
+      { key: 'validation.liberoSlotTwice', params: { team: 'home', slot: 'L1' } },
+      { key: 'validation.tooManyCaptains', params: { team: 'home', count: 2 } },
+      { key: 'validation.duplicateNumbers', params: { team: 'away', numbers: '7' } },
+      { key: 'validation.invalidJerseyNumbers', params: { team: 'away', numbers: '7.5' } }
+    ])
+  })
+
+  it.each([['en', en], ['de', de], ['de-CH', deCH], ['fr', fr], ['it', it_]])('every key is in %s', (_, locale) => {
+    const all = ['homeTeamNotSet', 'awayTeamNotSet', 'refereeNotSet', 'scorerNotSet', 'hallNotSet', 'cityNotSet', 'leagueNotSet', 'dateNotSet',
+      'needMorePlayers', 'tooManyPlayers', 'playersWithoutNumbers', 'coachNotSet', 'captainNotSet', 'duplicateNumbers', 'duplicatePlayers',
+      'invalidJerseyNumbers', 'tooManyLiberos', 'liberoSlotTwice', 'tooManyCaptains']
+    for (const k of all) expect(typeof locale.validation[k], k).toBe('string')
+  })
+})
+
+describe('CoinToss confirm uses them, translated', () => {
+  it('no English literal is pushed any more', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { resolve } = await import('node:path')
+    const src = readFileSync(resolve(__dirname, '../../components/CoinToss.jsx'), 'utf8')
+    expect(src).toMatch(/coinTossConfirmIssues\(\{ match, home, away, homeRoster, awayRoster, benchHome, benchAway \}\)/)
+    expect(src).not.toMatch(/validationErrors\.push\(/)
+    for (const literal of ['Home team captain is not set', 'Hall is not set', 'duplicate jersey numbers']) expect(src).not.toContain(literal)
+  })
+})

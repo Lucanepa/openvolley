@@ -1,0 +1,457 @@
+import { useState, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
+import SupportFeedbackModal from '../SupportFeedbackModal'
+import LoginModal from '../auth/LoginModal'
+import { useToolMode } from '../../utils/toolMode'
+import { downloadGlobalTemplate } from '../../utils/globalTemplates'
+import PendingApprovalBanner from '../auth/PendingApprovalBanner'
+import CloudBlockNotice from '../CloudBlockNotice'
+import { Download, LifeBuoy, Loader2, LogIn, Presentation, Settings, Trash2 } from 'lucide-react'
+import { Button, Card, cn, dayLabel, FOCUS_RING, Notice, Row, RowList, RowTool, SectionHeader, StatusPill } from '../../ui'
+import { duplicateGameNumbers } from '../../utils/deviceMatches'
+import { formatTakeOver, scoreText } from '../ScorerMovedModal'
+import { isServedFromLocalServer } from '../../utils/backendConfig'
+import { detectOs } from '../../utils/deviceKind'
+import { BRAND } from '../../brand'
+import { MadeBy } from '../../legal/LegalLinks'
+
+// Where every OpenVolley app is installed from (desktop, Android, Linux
+// repositories): one link on Home (owner 2026-11-09: "just link the
+// downloads page")
+const DOWNLOADS_PAGE = 'https://get.openvolley.app/'
+
+// The desktop app's download for this computer, none on a phone or tablet. An
+// iPad asks for desktop sites as a Mac (Safari and the iOS app alike):
+// detectOs counts it as iOS.
+function detectDesktopOS() {
+  const os = detectOs()
+  return os === 'windows' || os === 'macos' || os === 'linux' ? os : null
+}
+
+// Already running inside the Electron/Tauri desktop app, or served by a local
+// relay (the desktop app's own window loads http://localhost:5173 from it, and
+// venue tablets/laptops have no internet) — no point offering the download.
+function isInsideDesktopApp() {
+  return typeof window !== 'undefined' &&
+    (!!window.electronAPI || !!window.__TAURI__ || !!window.__TAURI_INTERNALS__ ||
+      isServedFromLocalServer())
+}
+
+/**
+ * The home screen (owner plan 2026-10-29, step 3). What a new match can be
+ * follows the sign-in:
+ *   - signed out where sign-in exists: New match (a guest match: Swiss
+ *     format, no account, no private data; owner 2026-11-18), Test match and
+ *     Easy match (never on the cloud database), and a way to sign in;
+ *   - signed in: SV match (the official game) first (today's home games of the account's
+ *     clubs, or typed in: App's onOfficialGame), Test and Easy below;
+ *   - no sign-in at all (offline mode, no cloud: the desktop app offline, a
+ *     venue box): Official game typed in, as before, Test and Easy below.
+ * The Continue card and the device's open matches always stay: a session
+ * that ran out never strands a match being recorded. Scoreboard, below the
+ * new-match buttons in every case, is no match: points and sets on the whole
+ * screen (SimpleScoreboard).
+ */
+export default function HomePage({
+  signedIn = false,
+  signInAvailable = false,
+  onOfficialGame,
+  createNewTestMatch,
+  testMatchLoading,
+  createEasyMatch,
+  onGuestMatch = null,
+  easyMatchLoading = false,
+  // Global tool: a full match kept on this device, no sign-in (App createGlobalMatch)
+  onGlobalMatch = null,
+  // Scoreboard: points and sets only, no match (SimpleScoreboard)
+  onOpenScoreboard = null,
+  currentOfficialMatch,
+  currentTestMatch,
+  deviceMatches,
+  continueMatch,
+  continueTestMatch,
+  showDeleteMatchModal,
+  restartTestMatch,
+  onOpenSettings,
+  onRestoreMatch,
+  // what the self-check found (App, SelfCheckNotice)
+  selfCheckNotice = null,
+  // the device check's recommendation (App, DeviceCheckCard)
+  deviceCheckCard = null,
+  // the match Continue resumes (App): { home, away, score, stage, lastSaved, state, unsent }
+  continueInfo = null
+}) {
+  const { t, i18n } = useTranslation()
+  const [supportFeedbackOpen, setSupportFeedbackOpen] = useState(false)
+  const [loginOpen, setLoginOpen] = useState(false)
+  // Signed out where an account could sign in: no official game here
+  const testOnly = signInAvailable && !signedIn
+  // Swiss or Global: chosen at first open, changed in Options (utils/toolMode)
+  const toolMode = useToolMode()
+  const globalMode = toolMode === 'global' && !!onGlobalMatch
+  const desktopOS = useMemo(() => detectDesktopOS(), [])
+  const inDesktopApp = useMemo(() => isInsideDesktopApp(), [])
+
+
+  return (
+    // Small vertical pad: the panel and the container around it pad already,
+    // and the column is centred, so the pad only counts when it overflows.
+    // A short window gets a smaller lockup (home-short); a wide but short one
+    // (the desktop app's window, a laptop, a phone on its side) two columns,
+    // brand and downloads left, the actions right (home-wide, tailwind.css).
+    <div className="ov-kit flex w-full flex-1 flex-col items-center justify-center px-4 py-2">
+      <div className="w-full max-w-md home-wide:grid home-wide:max-w-4xl home-wide:grid-cols-[minmax(0,1fr)_minmax(0,28rem)] home-wide:grid-rows-[1fr_auto_auto_1fr] home-wide:gap-x-12">
+        <div className="home-wide:col-start-1 home-wide:row-start-2">
+          <h1 className="text-center text-2xl sm:text-3xl font-bold tracking-tight text-stone-900">{t('home.title')}</h1>
+          <div className="mt-4 flex justify-center home-short:mt-2">
+            <img src={BRAND.lockupStacked} alt="OpenVolley" className="ov-ink h-24 w-auto sm:h-28 home-short:h-16 sm:home-short:h-16" />
+          </div>
+          {/* Who makes it: a quiet line under the lockup (owner 2026-11-10) */}
+          <MadeBy className="mt-2 mb-4 text-center text-sm text-stone-500 home-short:mt-1 home-short:mb-2 home-short:text-xs" />
+        </div>
+
+        <div className="home-wide:col-start-2 home-wide:row-span-4 home-wide:row-start-1 home-wide:self-center">
+        {!globalMode && <PendingApprovalBanner className="mb-4" />}
+        {selfCheckNotice}
+
+        <Card className="w-full space-y-3">
+          {/* Continue: the match in progress on this device, first and in one
+              tap. Opening the app always lands here, never on a match (the
+              owner, 2026-10-27, as the established e-scoresheets do): the
+              card says which match, where it stands, when it was last saved
+              and what the server said about it, so the scorer resumes the
+              right one, and sees a copy closed on the server or scored on
+              another device before opening it (read-only then). */}
+          {(currentOfficialMatch || currentTestMatch) && (
+            <div data-testid="continue-card" className="space-y-3 rounded-xl border border-stone-200/70 bg-stone-50/60 p-3">
+              {continueInfo && (
+                <div className="px-1">
+                  <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
+                    <span className="min-w-0 text-base font-semibold leading-snug text-stone-900">
+                      {`${continueInfo.home || t('home.deviceMatches.home')} – ${continueInfo.away || t('home.deviceMatches.away')}`}
+                    </span>
+                    <span className="flex flex-wrap items-center gap-1">
+                      <MatchStateChips state={continueInfo.state} unsent={continueInfo.unsent} />
+                    </span>
+                  </div>
+                  <div className="mt-1 text-xl font-bold tabular-nums text-stone-900">{scoreText(t, continueInfo.score, continueInfo.stage)}</div>
+                  {continueInfo.lastSaved != null && (
+                    <div className="mt-0.5 text-xs tabular-nums text-stone-500">
+                      {t('home.continueCard.lastSaved', { time: formatTakeOver(continueInfo.lastSaved, i18n?.language) || '–' })}
+                    </div>
+                  )}
+                </div>
+              )}
+              <Button
+                variant="dark"
+                block
+                data-help-id="home-continue-button"
+                onClick={() => {
+                  if (currentOfficialMatch) {
+                    continueMatch(currentOfficialMatch.id)
+                  } else if (currentTestMatch) {
+                    continueTestMatch()
+                  }
+                }}
+                className="h-14 rounded-xl text-base font-semibold"
+              >
+                {t('home.continueMatch')}
+              </Button>
+              {/* Delete: right under Continue, in the same card, since it
+                  acts on that match (owner 2026-11-10). Outlined and lower
+                  than Continue so it never competes with it; its
+                  confirmation (App) is unchanged */}
+              <Button
+                variant="danger-outline"
+                block
+                icon={Trash2}
+                data-help-id="home-delete-button"
+                data-testid="home-delete-match"
+                onClick={() => {
+                  if (currentOfficialMatch) {
+                    showDeleteMatchModal()
+                  } else if (currentTestMatch?.global === true || currentTestMatch?.guest === true) {
+                    // a Global or guest match is a real one: the delete dialog with its game PIN
+                    showDeleteMatchModal(currentTestMatch.id)
+                  } else if (currentTestMatch) {
+                    restartTestMatch()
+                  }
+                }}
+                className="h-11 rounded-xl bg-white text-sm font-medium"
+              >
+                {t('home.deleteMatch')}
+              </Button>
+              {/* Game PIN: in the match's card, under Delete, as it belongs
+                  to that match (owner 2026-11-16, was at the card's foot) */}
+              {(currentOfficialMatch || currentTestMatch)?.gamePin && (
+                <div data-testid="home-game-pin" className="rounded-xl border border-stone-200/70 bg-white px-4 py-2.5 text-center">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-500">{t('home.gamePin')}</div>
+                  <div className="mt-0.5 font-mono text-xl font-bold tracking-[0.3em] tabular-nums text-stone-900">
+                    {(currentOfficialMatch || currentTestMatch).gamePin}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* New match: Official game first when it can be scored here,
+              Test and Easy below it (signed out: those two only), then the
+              Scoreboard, which is no match. One block for the help's "Show
+              me" (createMatch), signed in or out */}
+          {globalMode && (
+            <p className="px-1 text-xs text-stone-500" data-testid="home-global-note">
+              {t('home.tool.globalNote', 'Any tournament: no sign-in, no game list. Teams and players stay on this device.')}
+              {' '}
+              <button type="button" className="underline" data-testid="home-template-games" onClick={() => downloadGlobalTemplate('games')}>{t('globalImport.templateGames', 'Games template (Excel)')}</button>
+              {' · '}
+              <button type="button" className="underline" data-testid="home-template-rosters" onClick={() => downloadGlobalTemplate('rosters')}>{t('globalImport.templateRosters', 'Rosters template (Excel)')}</button>
+            </p>
+          )}
+          <div className="space-y-3" data-help-id="home-new-match-button">
+            {globalMode && (
+              <Button
+                variant="primary"
+                block
+                data-help-id="home-global-match-button"
+                data-testid="home-global-match"
+                onClick={onGlobalMatch}
+                className="h-14 rounded-xl text-base font-semibold"
+              >
+                {t('home.match', 'Match')}
+              </Button>
+            )}
+            {!testOnly && !globalMode && (
+              <Button
+                variant="primary"
+                block
+                data-help-id="home-official-button"
+                data-testid="home-sv-match"
+                onClick={onOfficialGame}
+                className="h-14 rounded-xl text-base font-semibold"
+              >
+                {t('home.svMatch', 'SV match')}
+              </Button>
+            )}
+            {/* Signed out (owner 2026-11-18): a real match in the Swiss format
+                without an account, like the Global tool's Match (domain/
+                matchKind isGuestMatch): public schedule and Einsatzliste yes,
+                saved teams, club lists and the referee directory no */}
+            {testOnly && !globalMode && onGuestMatch && (
+              <Button
+                variant="primary"
+                block
+                data-help-id="home-new-match-guest"
+                data-testid="home-new-match"
+                onClick={onGuestMatch}
+                disabled={testMatchLoading || easyMatchLoading}
+                className="h-14 rounded-xl text-base font-semibold"
+              >
+                {t('home.newMatch', 'New match')}
+              </Button>
+            )}
+            <div className={cn('grid gap-2', createEasyMatch && !globalMode && 'grid-cols-2')}>
+              <Button
+                variant={testOnly && !globalMode && !onGuestMatch ? 'primary' : 'secondary'}
+                block
+                data-help-id="home-test-button"
+                onClick={createNewTestMatch}
+                disabled={testMatchLoading}
+                aria-busy={testMatchLoading || undefined}
+                className={cn('rounded-xl text-base font-semibold', testOnly && !onGuestMatch ? 'h-14' : 'h-12')}
+              >
+                {testMatchLoading && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
+                {testMatchLoading ? t('home.preparing') : t('home.testMatch')}
+              </Button>
+              {createEasyMatch && !globalMode && (
+                <Button
+                  variant="secondary"
+                  block
+                  data-help-id="home-easy-button"
+                  onClick={createEasyMatch}
+                  disabled={easyMatchLoading || testMatchLoading}
+                  aria-busy={easyMatchLoading || undefined}
+                  title={t('home.easyMatchHint', 'Unofficial · no rosters or signatures')}
+                  className={cn('rounded-xl text-base font-semibold', testOnly && !onGuestMatch ? 'h-14' : 'h-12')}
+                >
+                  {easyMatchLoading && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
+                  {t('home.easyMatch', 'Easy match')}
+                </Button>
+              )}
+            </div>
+            {onOpenScoreboard && (
+              <Button
+                variant="secondary"
+                block
+                icon={Presentation}
+                data-help-id="home-scoreboard-button"
+                onClick={onOpenScoreboard}
+                title={t('home.scoreboardHint', 'Points and sets only · no match')}
+                className="h-12 rounded-xl text-base font-semibold"
+              >
+                {t('home.scoreboard', 'Scoreboard')}
+              </Button>
+            )}
+          </div>
+          {testOnly && !globalMode && (
+            <div className="rounded-xl bg-stone-50 px-3 py-3 text-center" data-testid="home-sign-in-note">
+              <p className="text-sm text-stone-600">{t('home.signInForOfficial')}</p>
+              <Button variant="secondary" size="xl" icon={LogIn} onClick={() => setLoginOpen(true)} className="mt-2" data-testid="home-sign-in">
+                {t('auth.login', 'Login')}
+              </Button>
+            </div>
+          )}
+
+          {/* The server refused this match for good (pending account, game
+              already scored by someone else, closed): say why */}
+          {currentOfficialMatch?.cloudBlock && <CloudBlockNotice match={currentOfficialMatch} />}
+
+          {/* Restore Match: always, signed out too (a scorer whose device
+              broke gets the match back with its game PIN or a backup file) */}
+          <Button
+            variant="secondary"
+            block
+            data-help-id="home-restore-button"
+            onClick={onRestoreMatch}
+            className="h-12 rounded-xl text-base"
+          >
+            {t('home.restoreMatch')}
+          </Button>
+
+        </Card>
+
+        {/* Two or more open official matches: the buttons above only reach the
+            newest, this list reaches each one (utils/deviceMatches.js) */}
+        {deviceMatches?.length > 1 && (
+          <DeviceMatchList matches={deviceMatches} onContinue={continueMatch} onDelete={showDeleteMatchModal} />
+        )}
+
+        {/* One above the other on a phone: side by side, "Support & feedback"
+            broke onto two lines beside its icon */}
+        <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
+          <Button variant="secondary" size="xl" block onClick={onOpenSettings} icon={Settings}>
+            {t('home.options')}
+          </Button>
+          <Button variant="ghost" size="xl" block onClick={() => setSupportFeedbackOpen(true)} icon={LifeBuoy} className="bg-white">
+            {t('supportFeedback.button')}
+          </Button>
+        </div>
+        </div>
+
+        {/* The downloads page (desktop browsers only, hidden inside the app) */}
+        {desktopOS && !inDesktopApp && (
+          <div className="mt-5 flex justify-center text-center home-wide:col-start-1 home-wide:row-start-3 home-wide:mt-2">
+            <a
+              href={DOWNLOADS_PAGE}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="home-downloads"
+              className={cn('inline-flex min-h-11 max-w-full items-center gap-2 rounded-lg px-2 py-2.5 text-sm text-stone-600 hover:text-stone-900 transition-colors', FOCUS_RING)}
+            >
+              <Download size={16} aria-hidden="true" className="shrink-0 text-stone-400" />
+              <span>{t('home.downloads', 'Download OpenVolley')}</span>
+            </a>
+          </div>
+        )}
+
+        {/* The device check's card (App, DeviceCheckCard): pinned to the foot
+            of the screen, out of the flow, so nothing on Home moves or changes
+            width when it comes in, 3-5 s after Home shows (when a scorer taps
+            New match or Test match), and always in view: on the hall's short
+            tablet screen (1007x545 at a large system font) a slot under the
+            last row was below the fold. Centred on a narrow Home, bottom right
+            on a wide one; under every dialog (z-30, dialogs are z-50) */}
+        {deviceCheckCard && (
+          <div data-testid="device-check-slot" className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center px-4 pb-[max(1rem,env(safe-area-inset-bottom))] home-wide:justify-end">
+            <div className="pointer-events-auto w-full max-w-md rounded-lg shadow-lg">{deviceCheckCard}</div>
+          </div>
+        )}
+
+        {/* Support & Feedback Modal */}
+        <SupportFeedbackModal
+          open={supportFeedbackOpen}
+          onClose={() => setSupportFeedbackOpen(false)}
+          currentPage="mainPage"
+        />
+        {testOnly && <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />}
+      </div>
+    </div>
+  )
+}
+
+const STATUS_PILL_TONE = { scheduled: 'neutral', live: 'planned', ended: 'todo', approved: 'todo' }
+
+// What the server said about a copy (utils/deviceSelfCheck copyState), and
+// whether it holds changes the server does not have yet
+const MATCH_STATE_TONE = { here: 'done', moved: 'attention', closed: 'brand', unchecked: 'neutral' }
+
+function MatchStateChips({ state, unsent = 0 }) {
+  const { t } = useTranslation()
+  return (
+    <>
+      {state && (
+        <span data-testid="match-state" className="inline-flex">
+          <StatusPill tone={MATCH_STATE_TONE[state] || 'neutral'}>{t(`home.matchState.${state}`)}</StatusPill>
+        </span>
+      )}
+      {unsent > 0 && (
+        <span data-testid="match-state" className="inline-flex">
+          <StatusPill tone="todo">{t('home.matchState.unsent')}</StatusPill>
+        </span>
+      )}
+    </>
+  )
+}
+
+function DeviceMatchList({ matches, onContinue, onDelete }) {
+  const { t } = useTranslation()
+  const twice = duplicateGameNumbers(matches)
+  return (
+    <Card className="w-full" aria-labelledby="device-matches-title">
+      <SectionHeader as="h2" title={<span id="device-matches-title">{t('home.deviceMatches.title')}</span>} count={matches.length} />
+      {[...twice].map(game => (
+        <Notice key={game} tone="warning" className="mt-3">{t('home.deviceMatches.duplicateNotice', { game })}</Notice>
+      ))}
+      <RowList className="mt-1">
+        {matches.map(m => {
+          // the same game twice, or two copies of one match (the self-check)
+          const duplicate = (!!m.gameN && twice.has(m.gameN)) || m.duplicate === true
+          const title = m.home || m.away
+            ? `${m.home || t('home.deviceMatches.home')} – ${m.away || t('home.deviceMatches.away')}`
+            : t('home.deviceMatches.noTeams')
+          return (
+            <Row
+              key={m.id}
+              tone={duplicate ? 'amber' : 'stone'}
+              title={title}
+              meta={
+                <>
+                  {m.gameN && <span className="tabular-nums">{t('home.deviceMatches.game', { game: m.gameN })}</span>}
+                  {m.createdAt && <span className="tabular-nums">{dayLabel(m.createdAt, { year: true })}</span>}
+                  {m.cloudBlock && <span>{t('home.deviceMatches.notSynced')}</span>}
+                </>
+              }
+              // on their own line under the title: beside it they squeezed
+              // the team names on a phone
+              chips={
+                <>
+                  <StatusPill tone={STATUS_PILL_TONE[m.status] || 'neutral'}>
+                    {t(`home.deviceMatches.status.${m.status}`, { defaultValue: t('home.deviceMatches.status.scheduled') })}
+                  </StatusPill>
+                  {duplicate && <StatusPill tone="attention">{t('home.deviceMatches.sameGame')}</StatusPill>}
+                  <MatchStateChips state={m.state} unsent={m.unsent} />
+                </>
+              }
+              toolsIndent="pl-[0.875rem] sm:pl-[1.125rem]"
+              tools={
+                <>
+                  <RowTool primary onClick={() => onContinue(m.id)}>{t('home.deviceMatches.continue')}</RowTool>
+                  <RowTool className="text-red-700 hover:bg-red-50" onClick={() => onDelete(m.id)}>{t('home.deviceMatches.delete')}</RowTool>
+                </>
+              }
+            />
+          )
+        })}
+      </RowList>
+    </Card>
+  )
+}

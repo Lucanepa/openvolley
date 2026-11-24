@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# Refuse a push that would publish the purged B6 commits again.
+#
+# On 13.11.2026 the history of this public repo was rewritten to remove match
+# files with players' (minors') dates of birth, signatures and a referee list
+# with contacts. Clones and old branches made before that still hold the
+# commits that added them, and pushing any branch that has one of them in
+# its history (an old fix/* branch, an old local main, `git push --all`)
+# uploads that personal data again. Check: SEC-58 of audit round 3.
+#
+# The commits are listed as the SHA-256 of their 40-character id, not by id:
+# GitHub keeps unreachable commits readable by id until its support runs a
+# garbage collection, so this public file must not name them.
+#
+# Enable in a clone with:  git config core.hooksPath .githooks  (as for
+# pre-commit; core.hooksPath is shared by every worktree of a clone). Never
+# bypass it with --no-verify: GitHub accepts whatever arrives.
+#
+# A refused branch is on the old history: move its own commits onto
+# origin/main (git rebase --onto origin/main <old base> <branch>) or drop it.
+#
+# OV_PREPUSH_EXTRA_PURGED: more SHA-256 values (space separated) to refuse,
+# for tests; it can only add to the list.
+set -euo pipefail
+
+PURGED_SHA256=(
+  49aa9dfccfcab39aaa17a699c55e8623c0e2f9ccedb6898914cac8a477854f7e
+  83db5853041aead005808fdf4e073335b416c785088ffff6a6cb599b79ee106e
+  3a02dcc3d06a55ad2aa396c92d74d90c0a9df01d4dfbb87b93b68b02e2516acd
+  97669bbe2f07711d9fc6e7bb9eca915dfc32e8494a2d8d77e9433b10672cdeec
+)
+# shellcheck disable=SC2206  # word splitting of the test list is wanted
+[[ -z "${OV_PREPUSH_EXTRA_PURGED:-}" ]] || PURGED_SHA256+=(${OV_PREPUSH_EXTRA_PURGED})
+
+remote="${1:-}"
+ZERO=0000000000000000000000000000000000000000
+
+# Reads commit ids on stdin, prints those whose SHA-256 is in PURGED_SHA256.
+purged_among() {
+  local list="${PURGED_SHA256[*]}"
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -I -c '
+import hashlib, sys
+bad = set(sys.argv[1].split())
+for line in sys.stdin:
+    c = line.strip()
+    if c and hashlib.sha256(c.encode()).hexdigest() in bad:
+        print(c)
+' "$list"
+  elif command -v perl >/dev/null 2>&1; then
+    perl -MDigest::SHA=sha256_hex -ne 'BEGIN { %bad = map { $_ => 1 } split " ", shift @ARGV } chomp; print "$_\n" if $_ ne "" && $bad{sha256_hex($_)}' "$list"
+  else
+    local c h
+    while read -r c; do
+      [[ -n "$c" ]] || continue
+      h=$(printf '%s' "$c" | sha256sum | cut -d' ' -f1)
+      [[ " $list " != *" $h "* ]] || printf '%s\n' "$c"
+    done
+  fi
+}
+
+refused=()
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [[ -n "${local_sha:-}" ]] || continue
+  # a delete publishes nothing
+  [[ "$local_sha" != "$ZERO" ]] || continue
+  # Only what the remote lacks can be new there; when its tip is not here
+  # (a branch not fetched, a force-push), the whole history is checked.
+  if [[ "$remote_sha" != "$ZERO" ]] && git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
+    range=("$remote_sha..$local_sha")
+  else
+    range=("$local_sha")
+  fi
+  # tags and other objects: the commits they point to
+  if ! commits=$(git rev-list "${range[@]}" 2>/dev/null); then
+    commits=$(git rev-list "$local_sha" 2>/dev/null) || continue
+  fi
+  if [[ -n "$(purged_among <<<"$commits")" ]]; then
+    refused+=("$local_ref -> $remote_ref")
+  fi
+done
+
+if (( ${#refused[@]} > 0 )); then
+  {
+    echo "pre-push: REFUSED. These refs hold a commit purged from the public history"
+    echo "(personal data of players and referees, removed 13.11.2026):"
+    printf '  %s\n' "${refused[@]}"
+    echo "Pushing them${remote:+ to $remote} would publish that data again. The branch is on the old"
+    echo "history: rebase its own commits onto origin/main, or delete it. Never use --no-verify here."
+  } >&2
+  exit 1
+fi
+exit 0

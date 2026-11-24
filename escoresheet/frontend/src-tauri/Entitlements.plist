@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The macOS app's entitlements (both apps). Notarization needs the hardened
+     runtime (tauri.macos.conf.json). It blocks the camera and the microphone
+     unless they are entitled: the desktop app only shows QR codes and records
+     nothing, so it is entitled to neither (main.rs also refuses every page's
+     request for them). NSCameraUsageDescription stays in Info.plist, so a
+     stray request is refused rather than ending the app. -->
+<plist version="1.0">
+<dict>
+</dict>
+</plist>

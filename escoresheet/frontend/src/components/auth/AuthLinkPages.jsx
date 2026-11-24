@@ -1,0 +1,235 @@
+import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { CircleCheck, KeyRound, LinkIcon, MailCheck } from 'lucide-react'
+import { apiAuth } from '../../lib/apiClient'
+import { BUTTON_VARIANTS, Button, Checkbox, cn, Field, FOCUS_RING, FormError, Input } from '../../ui'
+import { scorerAppUrlFor } from '../../utils/managerSite'
+import { useManagerBrand } from '../../managerBrand'
+import { requestPartLabel, sortRequestParts } from '../../domain/signUpRequests'
+
+/**
+ * The pages behind the links of the account emails, shown by the manager
+ * (manager.openvolley.app/#reset?token=... and #confirm?token=...). The token
+ * was already removed from the address bar (utils/authLinks.js) and is only
+ * ever sent to its endpoint.
+ */
+
+const MIN_PASSWORD = 10 // as SignUpForm MIN_PASSWORD_LENGTH and the server's minPasswordLength
+const MAX_PASSWORD_BYTES = 72
+
+const quietLink = cn('inline-flex min-h-11 w-full items-center justify-center rounded-lg text-sm text-stone-500 transition-colors hover:text-stone-800', FOCUS_RING)
+const heroLink = cn('inline-flex w-full items-center justify-center', BUTTON_VARIANTS.hero, FOCUS_RING)
+
+function Heading({ icon: Icon, tone = 'stone', title, children }) {
+  const ring = tone === 'green' ? 'bg-green-50 text-green-600' : 'bg-stone-100 text-stone-500'
+  return (
+    <div className="text-center">
+      <div className={cn('mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full', ring)}>
+        <Icon size={26} strokeWidth={2.25} aria-hidden="true" />
+      </div>
+      <h1 className="text-xl font-bold tracking-tight text-stone-900">{title}</h1>
+      {children && <p className="mt-2 text-sm text-stone-600">{children}</p>}
+    </div>
+  )
+}
+
+/** Error text of a failed link request (never the raw token, never logged). */
+function linkErrorText(t, error) {
+  if (error?.status === 429) return t('authEmail.tooManyAttempts')
+  if (error?.network || error?.status === 0) return t('authEmail.offline')
+  return t('authEmail.genericError')
+}
+
+function AppLinks({ onSignIn }) {
+  const brand = useManagerBrand()
+  const { t } = useTranslation()
+  return (
+    <div className="mt-6 space-y-1">
+      <a href={scorerAppUrlFor(brand)} className={heroLink}>{t(brand.app === 'beach' ? 'managerBeach.openAppLong' : 'managerSite.openAppLong')}</a>
+      <button type="button" onClick={onSignIn} className={quietLink}>{t('managerSite.signIn')}</button>
+    </div>
+  )
+}
+
+function InvalidLink({ body, onRequestNew, onSignIn }) {
+  const brand = useManagerBrand()
+  const { t } = useTranslation()
+  return (
+    <div data-testid="auth-link-invalid">
+      <Heading icon={LinkIcon} title={t('authEmail.invalidLinkTitle')}>{body}</Heading>
+      <div className="mt-6 space-y-1">
+        {onRequestNew
+          ? <Button variant="hero" block onClick={onRequestNew}>{t('authEmail.requestNewLink')}</Button>
+          : <a href={scorerAppUrlFor(brand)} className={heroLink}>{t(brand.app === 'beach' ? 'managerBeach.openAppLong' : 'managerSite.openAppLong')}</a>}
+        <button type="button" onClick={onSignIn} className={quietLink}>{t('managerSite.signIn')}</button>
+      </div>
+    </div>
+  )
+}
+
+const fullName = (d) => [d?.first_name, d?.last_name].filter((x) => typeof x === 'string' && x.trim()).join(' ')
+
+/**
+ * What the sign-up of a not yet confirmed address gave (audit 2611 SEC-15):
+ * whoever set it may not be the owner of the address, so the owner keeps or
+ * drops each part with the new password. All kept unless unticked.
+ */
+function SignUpDetails({ details, keep, onChange }) {
+  const { t } = useTranslation()
+  const name = fullName(details)
+  const parts = sortRequestParts(details.requests)
+  return (
+    <fieldset data-testid="signup-details" className="space-y-2 rounded-lg border border-stone-200 p-3">
+      <legend className="px-1 text-sm font-medium text-stone-700">{t('authEmail.signUpDetailsTitle')}</legend>
+      <p className="text-xs text-stone-500">{t('authEmail.signUpDetailsBody')}</p>
+      {name && (
+        <Checkbox label={t('authEmail.signUpDetailsName', { name })} checked={keep.name}
+          onChange={(e) => onChange({ ...keep, name: e.target.checked })} data-testid="signup-keep-name" />
+      )}
+      {details.license_number && (
+        <Checkbox label={t('authEmail.signUpDetailsLicence', { licence: details.license_number })} checked={keep.licence}
+          onChange={(e) => onChange({ ...keep, licence: e.target.checked })} data-testid="signup-keep-licence" />
+      )}
+      {parts.map((part) => (
+        <Checkbox key={part.id} label={t('authEmail.signUpDetailsRequest', { part: requestPartLabel(part, t) })}
+          checked={keep.requests.includes(part.id)}
+          onChange={(e) => onChange({ ...keep, requests: e.target.checked ? [...keep.requests, part.id] : keep.requests.filter((id) => id !== part.id) })}
+          data-testid={`signup-keep-request-${part.id}`} />
+      ))}
+    </fieldset>
+  )
+}
+
+/** #reset?token=: a new password, twice. */
+export function ResetPasswordPage({ token, lang, onSignIn, onRequestNew }) {
+  const { t } = useTranslation()
+  const brand = useManagerBrand()
+  const [password, setPassword] = useState('')
+  const [repeat, setRepeat] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [state, setState] = useState(token ? 'form' : 'invalid')
+  // the sign-up's details when this password confirms the address, and what of them to keep
+  const [details, setDetails] = useState(null)
+  const [keep, setKeep] = useState(null)
+
+  useEffect(() => {
+    if (!token) return undefined
+    let live = true
+    Promise.resolve(apiAuth.signUpDetails?.(token)).then((res) => {
+      const d = res?.error ? null : res?.data?.signup_details
+      if (!live || !d) return
+      setDetails(d)
+      setKeep({ name: true, licence: true, requests: (d.requests || []).map((r) => r.id) })
+    }, () => {})
+    return () => { live = false }
+  }, [token])
+
+  const submit = async (e) => {
+    e.preventDefault()
+    if (busy) return
+    setError('')
+    if (password.length < MIN_PASSWORD) return setError(t('auth.passwordTooShort'))
+    if (new TextEncoder().encode(password).length > MAX_PASSWORD_BYTES) return setError(t('authEmail.genericError'))
+    if (password !== repeat) return setError(t('auth.passwordsDoNotMatch'))
+    setBusy(true)
+    // OpenBeach's manager: the "password changed" notice is OpenBeach's
+    const res = details
+      ? await apiAuth.confirmPasswordReset(token, password, lang || undefined, brand.app === 'beach' ? brand.app : undefined, keep)
+      : brand.app === 'beach'
+        ? await apiAuth.confirmPasswordReset(token, password, lang || undefined, brand.app)
+        : await apiAuth.confirmPasswordReset(token, password, lang || undefined)
+    setBusy(false)
+    if (!res?.error) {
+      setPassword('')
+      setRepeat('')
+      setState('done')
+      return
+    }
+    if (res.error.code === 'invalid_link') return setState('invalid')
+    if (res.error.code === 'weak_password') return setError(res.error.message || t('auth.passwordTooShort'))
+    setError(linkErrorText(t, res.error))
+  }
+
+  if (state === 'invalid') {
+    return <InvalidLink body={t('authEmail.invalidLink')} onRequestNew={onRequestNew} onSignIn={onSignIn} />
+  }
+  if (state === 'done') {
+    return (
+      <div data-testid="reset-done">
+        <Heading icon={CircleCheck} tone="green" title={t('authEmail.passwordSavedTitle')}>{t('authEmail.passwordSaved')}</Heading>
+        <AppLinks onSignIn={onSignIn} />
+      </div>
+    )
+  }
+  return (
+    <form data-testid="reset-form" onSubmit={submit} className="space-y-3" noValidate>
+      <Heading icon={KeyRound} title={t('authEmail.newPasswordTitle')}>{t(brand.app === 'beach' ? 'managerBeach.newPasswordBody' : 'authEmail.newPasswordBody')}</Heading>
+      <FormError size="md">{error}</FormError>
+      <Field label={t('authEmail.newPassword')} hint={t('authEmail.passwordHint')}>
+        <Input size="lg" type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password" required minLength={MIN_PASSWORD} />
+      </Field>
+      <Field label={t('authEmail.repeatPassword')}>
+        <Input size="lg" type="password" value={repeat} onChange={e => setRepeat(e.target.value)} autoComplete="new-password" required />
+      </Field>
+      {details && keep && <SignUpDetails details={details} keep={keep} onChange={setKeep} />}
+      <Button variant="hero" block type="submit" disabled={busy || !password || !repeat} loading={busy}>
+        {busy ? t('authEmail.saving') : t('authEmail.savePassword')}
+      </Button>
+    </form>
+  )
+}
+
+/**
+ * #confirm?token=: confirms on a click, not on load, so a mail scanner that
+ * opens links cannot confirm an address for whoever signed up with it.
+ */
+export function ConfirmEmailPage({ token, onSignIn }) {
+  const { t } = useTranslation()
+  const brand = useManagerBrand()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [state, setState] = useState(token ? 'ask' : 'invalid')
+  const [password, setPassword] = useState('')
+  const [setPasswordToken, setSetPasswordToken] = useState(null)
+
+  const confirm = async (e) => {
+    e?.preventDefault?.()
+    if (busy) return
+    setError('')
+    setBusy(true)
+    const res = await apiAuth.confirmEmail(token, password)
+    setBusy(false)
+    // Not shown to be whoever signed up: the server kept no password, the
+    // clicker chooses one now
+    if (!res?.error && res?.data?.set_password_token) return setSetPasswordToken(res.data.set_password_token)
+    if (!res?.error) return setState(res?.data?.already_confirmed ? 'already' : 'done')
+    if (res.error.code === 'invalid_link') return setState('invalid')
+    setError(linkErrorText(t, res.error))
+  }
+
+  if (setPasswordToken) return <ResetPasswordPage token={setPasswordToken} onSignIn={onSignIn} />
+  if (state === 'invalid') return <InvalidLink body={t('authEmail.confirmInvalid')} onSignIn={onSignIn} />
+  if (state === 'done' || state === 'already') {
+    return (
+      <div data-testid="confirm-done">
+        <Heading icon={CircleCheck} tone="green" title={t('authEmail.confirmedTitle')}>
+          {state === 'already' ? t('authEmail.alreadyConfirmed') : t('authEmail.confirmed')}
+        </Heading>
+        <AppLinks onSignIn={onSignIn} />
+      </div>
+    )
+  }
+  return (
+    <form data-testid="confirm-ask" onSubmit={confirm} className="space-y-3" noValidate>
+      <Heading icon={MailCheck} title={t('authEmail.confirmTitle')}>{t(brand.app === 'beach' ? 'managerBeach.confirmBody' : 'authEmail.confirmBody')}</Heading>
+      <FormError size="md">{error}</FormError>
+      <Field label={t('authEmail.confirmPassword')} hint={t('authEmail.confirmPasswordHint')}>
+        <Input size="lg" type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" data-testid="confirm-password" />
+      </Field>
+      <Button type="submit" variant="hero" block disabled={busy} loading={busy} className="mt-3">
+        {busy ? t('authEmail.confirming') : t('authEmail.confirmButton')}
+      </Button>
+    </form>
+  )
+}

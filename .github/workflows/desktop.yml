@@ -1,0 +1,836 @@
+name: Build Desktop App (Tauri)
+
+# Builds the offline scoretable desktop apps (Rust/Tauri) for Windows, Linux
+# and macOS (one universal .dmg + the updater's .app.tar.gz, signed with the
+# Developer ID of team T2Q99T2KH5 and notarized by Apple, tickets stapled so the
+# first start works offline in a sports hall).
+# macOS is built ad-hoc signed like every other job, without any secret. Only
+# on a tag push the sign-macos job signs, notarizes and staples that .app and
+# makes the .dmg: it runs no npm, cargo or third-party action, and it is the
+# only job that sees the Developer ID certificate and the App Store Connect
+# key (secrets APPLE_* of the GitHub environment macos-signing, see there).
+# One shell, two apps (src-tauri/src/flavour.rs):
+#   - OpenVolley eScoresheet: push a tag like `desktop-v2.2.0`;
+#   - OpenBeach: push a tag like `beach-desktop-v2.0.0`. It builds the
+#     Lucanepa/openbeach frontend at the same tag name (tag both repos), checked
+#     out at ./openbeach (tauri.beach.conf.json reads it from there).
+# Or trigger it manually and pick the app (and, for OpenBeach, the openbeach ref).
+# A manual run only builds: it uploads workflow artifacts (macOS ad-hoc signed)
+# and never signs, notarizes, creates or edits a GitHub release (sign-macos and
+# the release jobs run for tag pushes only).
+# A release is never replaced: run again on a published tag, the release jobs
+# only add installers it does not hold yet (a macOS build that failed: "Re-run
+# failed jobs"), the published files stay as they are.
+# CI never signs updater files: publish-pkgs.sh --desktop signs them on lenovoserver.
+# Third-party actions are pinned by commit (version in the comment; Dependabot
+# proposes updates, .github/dependabot.yml).
+on:
+  workflow_dispatch:
+    inputs:
+      flavour:
+        description: 'App to build'
+        type: choice
+        options: [openvolley, beach]
+        default: openvolley
+      openbeach_ref:
+        description: 'OpenBeach only: Lucanepa/openbeach branch, tag or commit (default main)'
+        required: false
+        default: ''
+  push:
+    tags:
+      - 'desktop-v*'
+      - 'beach-desktop-v*'
+
+# Every job reads only; the two release jobs ask for contents: write.
+permissions:
+  contents: read
+
+jobs:
+  # Which app this run builds (the flavour axis of the build matrix) and,
+  # for OpenBeach, which openbeach ref.
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      flavour: ${{ steps.pick.outputs.flavour }}
+      flavours: ${{ steps.pick.outputs.flavours }}
+      openbeach_ref: ${{ steps.pick.outputs.openbeach_ref }}
+    steps:
+      - id: pick
+        env:
+          REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_FLAVOUR: ${{ inputs.flavour }}
+          INPUT_REF: ${{ inputs.openbeach_ref }}
+        run: |
+          case "$REF" in
+            refs/tags/beach-desktop-v*) flavour=beach; ref=$REF_NAME ;;
+            refs/tags/desktop-v*) flavour=openvolley; ref= ;;
+            *) flavour=${INPUT_FLAVOUR:-openvolley}; ref=${INPUT_REF:-main} ;;
+          esac
+          [ "$flavour" = beach ] || ref=
+          echo "flavour=$flavour" >> "$GITHUB_OUTPUT"
+          echo "flavours=[\"$flavour\"]" >> "$GITHUB_OUTPUT"
+          echo "openbeach_ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "building $flavour${ref:+ (openbeach $ref)}"
+
+  build:
+    needs: setup
+    strategy:
+      fail-fast: false
+      matrix:
+        flavour: ${{ fromJSON(needs.setup.outputs.flavours) }}
+        platform: [windows, linux, linux-arm64, macos]
+        include:
+          - platform: windows
+            os: windows-latest
+            label: windows
+          - platform: linux
+            os: ubuntu-22.04
+            label: linux
+          # The Point Hub board (Pi 5) runs the scoretable on its own screen. A .deb only, kept as a
+          # workflow artifact and NOT attached to the release: publish-pkgs.sh expects exactly one
+          # .deb per release, and APT, the updater and every store stay amd64. A failure here holds
+          # nothing back (see continue-on-error).
+          - platform: linux-arm64
+            os: ubuntu-22.04-arm
+            label: linux-arm64
+          # One arm64 runner builds both slices (universal-apple-darwin): the
+          # Intel images are going away (macos-13 retired in Dec 2025,
+          # macos-15-intel is the last one), and one universal .dmg means no
+          # "which chip?" for the scorer, one cask URL and one updater file.
+          # Ad-hoc signed here; sign-macos makes the release files from it.
+          - platform: macos
+            os: macos-15
+            label: macos-adhoc
+    runs-on: ${{ matrix.os }}
+    # macOS is new: a failed macOS build does not hold back the Windows and
+    # Linux release (that release then has no macOS files, and
+    # publish-pkgs.sh announces no darwin update for it).
+    continue-on-error: ${{ matrix.platform == 'macos' || matrix.platform == 'linux-arm64' }}
+    timeout-minutes: ${{ matrix.platform == 'macos' && 75 || 40 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # OpenBeach's frontend (tauri.beach.conf.json: frontendDist and version
+      # from ./openbeach/escoresheet/frontend)
+      - name: Check out openbeach
+        if: matrix.flavour == 'beach'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Lucanepa/openbeach
+          ref: ${{ needs.setup.outputs.openbeach_ref }}
+          path: openbeach
+          persist-credentials: false
+
+      - name: Install Linux system dependencies
+        if: startsWith(matrix.os, 'ubuntu-')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: 'npm'
+          # OpenVolley's lock file, and openbeach's when it is checked out
+          cache-dependency-path: '**/escoresheet/frontend/package-lock.json'
+
+      # rustup of the runner image, a fixed toolchain (no third-party action).
+      # No Rust build cache: a release is built from scratch, never from a
+      # cache another run may have written.
+      - name: Install Rust toolchain
+        shell: bash
+        env:
+          RUST_TOOLCHAIN: '1.96.0'
+          # macOS: both slices of the universal binary
+          RUST_TARGETS: ${{ matrix.platform == 'macos' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+        run: |
+          set -euo pipefail
+          command -v rustup >/dev/null || { echo "::error::no rustup on this runner image"; exit 1; }
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --no-self-update ${RUST_TARGETS:+--target "$RUST_TARGETS"}
+          rustup default "$RUST_TOOLCHAIN"
+          rustc --version
+
+      - name: Install frontend dependencies
+        working-directory: escoresheet/frontend
+        run: npm ci
+
+      # Native canvas is not needed for the desktop bundle and can break installs.
+      - name: Remove canvas native dependency
+        working-directory: escoresheet/frontend
+        shell: bash
+        run: |
+          if [ -d "node_modules/canvas" ]; then rm -rf node_modules/canvas; fi
+
+      # OpenVolley's identity (identifier, names, ports, package, firewall
+      # rule, update endpoints) never changes, and OpenBeach shares none of it.
+      - name: Check the desktop app identities
+        if: matrix.platform == 'linux'
+        working-directory: escoresheet/frontend
+        run: npx vitest run src/__tests__/desktopFlavours.test.js
+
+      # Before the long build: the tag must be the version OpenBeach reports
+      # (release-beach checks it again on the files it publishes).
+      - name: Check the tag matches the OpenBeach version
+        if: startsWith(github.ref, 'refs/tags/beach-desktop-v')
+        shell: bash
+        run: |
+          tag=${GITHUB_REF_NAME#beach-desktop-v}
+          app=$(jq -r .version openbeach/escoresheet/frontend/package.json)
+          if [ "$tag" != "$app" ]; then
+            echo "::error::tag $GITHUB_REF_NAME is version $tag, openbeach's escoresheet/frontend/package.json says $app"
+            exit 1
+          fi
+
+      - name: Install openbeach frontend dependencies
+        if: matrix.flavour == 'beach'
+        working-directory: openbeach/escoresheet/frontend
+        shell: bash
+        run: |
+          npm ci
+          if [ -d "node_modules/canvas" ]; then rm -rf node_modules/canvas; fi
+
+      # The Tauri CLI of the lock file; cargo builds with Cargo.lock as it is
+      # (--locked). No VITE_BACKEND_URL on purpose: the desktop window is
+      # served by the app's own LAN relay, and a fixed backend URL would send
+      # the scorer's match relay to the cloud instead of to the venue tablets.
+      # Cloud sync still works: cloud calls use their own base (backendConfig
+      # getCloudApiUrl), backend.openvolley.app by default on a page served by
+      # a local relay; set VITE_CLOUD_API_URL to point it elsewhere.
+      - name: Build Tauri app
+        if: matrix.flavour == 'openvolley'
+        working-directory: escoresheet/frontend
+        shell: bash
+        env:
+          NODE_OPTIONS: '--max-old-space-size=4096'
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          args=(--ci)
+          if [ "$PLATFORM" = linux-arm64 ]; then args+=(--bundles deb); fi
+          if [ "$PLATFORM" = macos ]; then args+=(--target universal-apple-darwin); fi
+          npx tauri build "${args[@]}" -- --locked
+
+      # OpenBeach: the same shell with tauri.beach.conf.json (+ the Linux one)
+      # merged on top; its beforeBuildCommand builds ./openbeach. Same reason
+      # for no VITE_BACKEND_URL as above.
+      - name: Build Tauri app (OpenBeach)
+        if: matrix.flavour == 'beach'
+        working-directory: escoresheet/frontend
+        shell: bash
+        env:
+          NODE_OPTIONS: '--max-old-space-size=4096'
+        run: |
+          args=(--ci --config src-tauri/tauri.beach.conf.json)
+          case "${{ matrix.platform }}" in linux*) args+=(--config src-tauri/tauri.beach.linux.conf.json) ;; esac
+          if [ "${{ matrix.platform }}" = linux-arm64 ]; then args+=(--bundles deb); fi
+          # macOS: tauri.macos.conf.json is merged first, OpenBeach's names on top
+          if [ "${{ matrix.platform }}" = macos ]; then args+=(--target universal-apple-darwin); fi
+          npx tauri build "${args[@]}" -- --locked
+
+      # macOS: check the ad-hoc bundle (both slices, the app's own identifier),
+      # give the .dmg a name without spaces, and make the updater's archive:
+      # <Name>.app at the top of a .tar.gz (tauri-plugin-updater drops the
+      # first path component and puts the rest in place of the running
+      # bundle). sign-macos signs the .app of that archive and makes the
+      # release files from it; the .dmg here is the manual run's. The updater
+      # signature is not made here: publish-pkgs.sh --desktop makes it on
+      # lenovoserver, over the finished files.
+      - name: Package the macOS app (ad-hoc dmg + updater archive)
+        id: mac
+        if: matrix.platform == 'macos'
+        working-directory: escoresheet/frontend/src-tauri
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.flavour }}" = beach ]; then
+            pkg=openbeach-escoresheet; id=com.openvolley.beach; name=OpenBeach; data=OpenBeach; port=5174
+          else
+            pkg=openvolley-escoresheet; id=com.openvolley.escoresheet; name='OpenVolley eScoresheet'; data=OpenVolley; port=5173
+          fi
+          b=target/universal-apple-darwin/release/bundle
+          app="$b/macos/$name.app"
+          if [ ! -d "$app" ]; then ls -la "$b/macos" || true; echo "::error::no $app"; exit 1; fi
+          plist="$app/Contents/Info.plist"
+          pb() { /usr/libexec/PlistBuddy -c "Print :$1" "$plist"; }
+          v=$(pb CFBundleShortVersionString)
+          [ "$(pb CFBundleIdentifier)" = "$id" ] || { echo "::error::identifier $(pb CFBundleIdentifier), expected $id"; exit 1; }
+          [ "$(pb CFBundleExecutable)" = "$pkg" ] || { echo "::error::executable $(pb CFBundleExecutable), expected $pkg"; exit 1; }
+          [ "$(pb LSMinimumSystemVersion)" = 11.0 ] || { echo "::error::LSMinimumSystemVersion $(pb LSMinimumSystemVersion), expected 11.0"; exit 1; }
+          pb NSLocalNetworkUsageDescription >/dev/null
+          pb NSCameraUsageDescription >/dev/null
+          exe="$app/Contents/MacOS/$pkg"
+          archs=$(lipo -archs "$exe" | tr ' ' '\n' | sort | xargs)
+          [ "$archs" = "arm64 x86_64" ] || { echo "::error::$exe has slices '$archs', expected arm64 x86_64"; exit 1; }
+          codesign --verify --deep --strict --verbose=2 "$app"
+          sig=$(codesign -dvvv "$app" 2>&1)
+          grep -qx 'Signature=adhoc' <<<"$sig" || { echo "$sig"; echo "::error::not ad-hoc signed"; exit 1; }
+
+          # the bundler's own "<Name>.app.tar.gz" (no updater signature) never
+          # goes on: only ours, so a release has one archive
+          rm -f "$b"/macos/*.app.tar.gz "$b"/macos/*.app.tar.gz.sig
+          tgz="$b/macos/${pkg}_${v}_universal.app.tar.gz"
+          # no AppleDouble ._ files, no extended attributes (quarantine, provenance)
+          COPYFILE_DISABLE=1 tar --no-xattrs -czf "$tgz" -C "$b/macos" "$name.app"
+          tar -tzf "$tgz" | awk -v top="$name.app/" 'index($0, top) != 1 { bad = 1; print "outside " top ": " $0 } END { exit bad }'
+          x=$(mktemp -d)
+          tar -xzf "$tgz" -C "$x"
+          codesign --verify --deep --strict "$x/$name.app"
+          rm -rf "$x"
+
+          n=0; src=
+          for f in "$b"/dmg/*.dmg; do if [ -e "$f" ]; then n=$((n + 1)); src=$f; fi; done
+          [ "$n" = 1 ] || { ls -la "$b/dmg" || true; echo "::error::expected one .dmg, found $n"; exit 1; }
+          dmg="$b/dmg/${name// /.}_${v}_universal.dmg"
+          [ "$src" = "$dmg" ] || mv "$src" "$dmg"
+          hdiutil verify "$dmg"
+          m=$(mktemp -d)
+          hdiutil attach -nobrowse -readonly -mountpoint "$m" "$dmg" >/dev/null
+          ok=1
+          [ -d "$m/$name.app" ] && [ -L "$m/Applications" ] && codesign --verify --deep --strict "$m/$name.app" || ok=0
+          hdiutil detach "$m" >/dev/null || hdiutil detach -force "$m" >/dev/null
+          [ "$ok" = 1 ] || { echo "::error::$dmg does not hold $name.app and the Applications link"; exit 1; }
+          ls -la "$b/macos" "$b/dmg"
+          # the Homebrew cask for this dmg (escoresheet/deploy/homebrew) is valid Ruby
+          tap=$(mktemp -d)
+          app_arg=(); [ "${{ matrix.flavour }}" = beach ] && app_arg=(--app beach)
+          OV_CASK_DMG="$dmg" ../../deploy/homebrew/bump-cask.sh ${app_arg[@]+"${app_arg[@]}"} "$v" "$tap"
+          ruby -c "$tap"/Casks/*.rb
+          { echo "exe=$PWD/$exe"; echo "port=$port"; echo "logs=$HOME/Library/Logs/$data"; } >> "$GITHUB_OUTPUT"
+
+      # macOS: each slice runs the tablet relay (x86_64 under Rosetta), then
+      # the app starts with its window, serves the page and quits on SIGTERM.
+      # The screenshot and the log are uploaded below.
+      - name: Smoke test the macOS app
+        if: matrix.platform == 'macos'
+        shell: bash
+        env:
+          EXE: ${{ steps.mac.outputs.exe }}
+          PORT: ${{ steps.mac.outputs.port }}
+          LOGS: ${{ steps.mac.outputs.logs }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/mac-smoke"; mkdir -p "$out"
+          # wait_http URL SECONDS
+          wait_http() { for _ in $(seq 1 "$2"); do curl -fsS -o /dev/null "$1" && return 0; sleep 1; done; return 1; }
+          for a in arm64 x86_64; do
+            if ! arch "-$a" /usr/bin/true 2>/dev/null; then echo "::warning::cannot run $a here (no Rosetta?): its slice is not smoke-tested"; continue; fi
+            OPENVOLLEY_HTTP_PORT=18090 OPENVOLLEY_WS_PORT=18091 arch "-$a" "$EXE" --server-only > "$out/relay-$a.log" 2>&1 &
+            pid=$!
+            ok=1; wait_http http://127.0.0.1:18090/ 40 || ok=0
+            kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
+            [ "$ok" = 1 ] || { cat "$out/relay-$a.log"; echo "::error::the $a relay did not answer"; exit 1; }
+            echo "$a: relay answers"
+          done
+          "$EXE" > "$out/app.log" 2>&1 &
+          pid=$!
+          wait_http "http://127.0.0.1:$PORT/" 60 || { cat "$out/app.log"; echo "::error::the app's relay did not answer"; exit 1; }
+          sleep 20
+          kill -0 "$pid" || { cat "$out/app.log"; echo "::error::the app ended by itself"; exit 1; }
+          screencapture -x "$out/screen.png" || echo "::warning::no screenshot"
+          kill -TERM "$pid"
+          for _ in $(seq 1 15); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+          if kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid"; echo "::error::the app did not quit on SIGTERM"; exit 1; fi
+          cp "$LOGS/desktop.log" "$out/" || { echo "::error::no desktop.log in $LOGS"; exit 1; }
+          grep -q 'window.open from scripts allowed' "$out/desktop.log" || echo "::warning::WKWebView did not take javaScriptCanOpenWindowsAutomatically (see desktop.log)"
+          # the bundle (Contents/MacOS in a .app) is an installed copy for the updater
+          grep -q '\[update\] .* MacApp: checking' "$out/desktop.log" || echo "::warning::the updater did not take this bundle for an installed macOS app (see desktop.log)"
+
+      - name: Upload the macOS smoke test
+        if: always() && matrix.platform == 'macos'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ matrix.flavour == 'beach' && 'openbeach' || 'escoresheet' }}-desktop-macos-smoke
+          path: ${{ runner.temp }}/mac-smoke
+          retention-days: 14
+          if-no-files-found: ignore
+
+      # The .deb updates itself through a root helper and a polkit policy
+      # (src-tauri/linux, updater.rs): lint both, and check that the helper is
+      # packaged as an executable owned by root (the bundler's tar writes the
+      # numeric owner, 0/0).
+      # Each app's .deb: its own package name, command, desktop entry, update
+      # helper and polkit action, and none of the other app's.
+      - name: Check the deb's update helper
+        if: startsWith(matrix.os, 'ubuntu-')
+        working-directory: escoresheet/frontend/src-tauri
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.flavour }}" = beach ]; then
+            pkg=openbeach-escoresheet; action=com.openvolley.beach.update; name=OpenBeach; dir=linux/beach; other=openvolley-escoresheet
+          else
+            pkg=openvolley-escoresheet; action=com.openvolley.escoresheet.update; name='OpenVolley eScoresheet'; dir=linux; other=openbeach-escoresheet
+          fi
+          sudo apt-get install -y shellcheck libxml2-utils
+          shellcheck "$dir/apt-upgrade"
+          xmllint --noout "$dir"/*.policy
+          deb=$(ls target/release/bundle/deb/*.deb | head -n1)
+          [ "$(dpkg-deb -f "$deb" Package)" = "$pkg" ]
+          files=$(dpkg-deb -c "$deb")
+          grep -E "^-rwxr-xr-x (root/root|0/0) .*usr/libexec/$pkg/apt-upgrade\$" <<<"$files"
+          grep -E "^-rw-r--r-- (root/root|0/0) .*usr/share/polkit-1/actions/${action//./\\.}\.policy\$" <<<"$files"
+          grep -E " (\./)?usr/bin/$pkg\$" <<<"$files"
+          if grep "$other" <<<"$files"; then echo "::error::$pkg ships files of $other"; exit 1; fi
+          entry="$RUNNER_TEMP/$pkg.desktop"
+          dpkg-deb --fsys-tarfile "$deb" | tar -xO --wildcards "*usr/share/applications/$pkg.desktop" > "$entry"
+          grep -qxF "Name=$name" "$entry"
+          grep -qxF 'Categories=Utility;Sports;' "$entry"
+
+      - name: Upload installers
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ matrix.flavour == 'beach' && 'openbeach' || 'escoresheet' }}-desktop-${{ matrix.label }}
+          path: |
+            escoresheet/frontend/src-tauri/target/release/bundle/**/*.exe
+            escoresheet/frontend/src-tauri/target/release/bundle/**/*.msi
+            escoresheet/frontend/src-tauri/target/release/bundle/**/*.AppImage
+            escoresheet/frontend/src-tauri/target/release/bundle/**/*.deb
+            escoresheet/frontend/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            escoresheet/frontend/src-tauri/target/universal-apple-darwin/release/bundle/macos/*_universal.app.tar.gz
+          # publish-pkgs.sh --desktop compares the release assets with these
+          # artifacts before it signs them (desktop_provenance): publish within 90 days.
+          retention-days: 90
+          if-no-files-found: warn
+
+  # macOS release files, from the ad-hoc .app the build job made: Developer
+  # ID signature (hardened runtime, Entitlements.plist of this tag), Apple's
+  # notarization with its ticket stapled into the .app, the updater archive,
+  # and a .dmg that is signed, notarized and stapled too. Tag pushes only.
+  # This job runs no npm, cargo or third-party action and never starts the
+  # app; it is the only job with the certificate and the App Store Connect
+  # key. Secrets APPLE_CERTIFICATE (.p12, base64), APPLE_CERTIFICATE_PASSWORD,
+  # APPLE_SIGNING_IDENTITY ("Developer ID Application: ..."), APPLE_API_KEY
+  # (key id), APPLE_API_ISSUER and APPLE_API_PRIVATE_KEY (.p8 text), in the
+  # environment macos-signing (Settings › Environments: deployment tags
+  # desktop-v* and beach-desktop-v* only). A failure here holds the Windows and
+  # Linux release back no more than a failed macOS build does: that release
+  # goes out without macOS files ("Re-run failed jobs" adds them).
+  sign-macos:
+    needs: [setup, build]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    runs-on: macos-15
+    environment: macos-signing
+    continue-on-error: true
+    timeout-minutes: 75
+    env:
+      FLAVOUR: ${{ needs.setup.outputs.flavour }}
+    steps:
+      # the entitlements of this tag; nothing of it is built or run
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: escoresheet/frontend/src-tauri/Entitlements.plist
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Download the ad-hoc macOS build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.setup.outputs.flavour == 'beach' && 'openbeach' || 'escoresheet' }}-desktop-macos-adhoc
+          path: adhoc
+
+      # The Developer ID certificate in a keychain of its own that only
+      # codesign may use without a prompt (codesign finds the identity by
+      # name), and the App Store Connect API key for notarytool. A tag build
+      # never ships an ad-hoc app: without the secrets it fails here.
+      - name: Set up macOS signing
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$APPLE_CERTIFICATE" ] || [ -z "$APPLE_API_PRIVATE_KEY" ]; then
+            echo "::error::no APPLE_* secrets: a release is never ad-hoc signed"; exit 1
+          fi
+          kc="$RUNNER_TEMP/signing.keychain-db"
+          kcpw=$(openssl rand -base64 24)
+          security create-keychain -p "$kcpw" "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p "$kcpw" "$kc"
+          p12="$RUNNER_TEMP/developer-id.p12"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$p12"
+          security import "$p12" -k "$kc" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm -f "$p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$kcpw" "$kc" >/dev/null
+          # ours first, the runner's keychains after it
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning "$kc" | grep -F "\"$APPLE_SIGNING_IDENTITY\"" \
+            || { security find-identity -v -p codesigning "$kc"; echo "::error::no identity $APPLE_SIGNING_IDENTITY in the certificate"; exit 1; }
+          key="$RUNNER_TEMP/AuthKey_$APPLE_API_KEY.p8"
+          printf '%s\n' "$APPLE_API_PRIVATE_KEY" > "$key"
+          chmod 600 "$key"
+          {
+            echo "MAC_KEYCHAIN=$kc"
+            echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY"
+            echo "APPLE_API_KEY=$APPLE_API_KEY"
+            echo "APPLE_API_ISSUER=$APPLE_API_ISSUER"
+            echo "APPLE_API_KEY_PATH=$key"
+          } >> "$GITHUB_ENV"
+
+      # Sign every Mach-O in the bundle (Tauri: the main executable only) and
+      # the bundle, notarize and staple the .app (Gatekeeper then passes it
+      # without asking Apple: no internet in many halls), make the updater
+      # archive of it, then the .dmg (the app and an Applications link),
+      # signed, notarized and stapled as well.
+      - name: Sign, notarize and package the macOS app
+        run: |
+          set -euo pipefail
+          # stapler looks the ticket up in Apple's CloudKit: a lost connection
+          # (error 68 on the runner) is tried again, a missing ticket still fails
+          retry() { local i; for i in 1 2 3 4 5; do "$@" && return 0; [ "$i" = 5 ] || { echo "::warning::try $i of 5 failed: $*"; sleep $((i * 15)); }; done; return 1; }
+          notarize() {
+            local out sid
+            out=$(xcrun notarytool submit "$1" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" \
+              --wait --timeout 45m --output-format json) || true
+            echo "$out"
+            if [ "$(jq -r '.status // empty' <<<"$out" 2>/dev/null)" != Accepted ]; then
+              sid=$(jq -r '.id // empty' <<<"$out" 2>/dev/null || true)
+              [ -z "$sid" ] || xcrun notarytool log "$sid" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" || true
+              echo "::error::Apple did not accept $1"; return 1
+            fi
+          }
+          if [ "$FLAVOUR" = beach ]; then
+            pkg=openbeach-escoresheet; id=com.openvolley.beach; name=OpenBeach; tagv=${GITHUB_REF_NAME#beach-desktop-v}
+          else
+            pkg=openvolley-escoresheet; id=com.openvolley.escoresheet; name='OpenVolley eScoresheet'; tagv=${GITHUB_REF_NAME#desktop-v}
+          fi
+          ent="$GITHUB_WORKSPACE/escoresheet/frontend/src-tauri/Entitlements.plist"
+          plutil -lint "$ent"
+          src=$(find adhoc -type f -name "${pkg}_*_universal.app.tar.gz")
+          # BSD wc pads its count with spaces ("       1"): count the lines with grep
+          [ -n "$src" ] && [ "$(grep -c '' <<<"$src")" = 1 ] || { find adhoc -type f; echo "::error::expected one ${pkg}_*_universal.app.tar.gz from the build"; exit 1; }
+          w="$RUNNER_TEMP/mac"; rm -rf "$w"; mkdir -p "$w/app" "$w/out/macos" "$w/out/dmg" "$w/dmg-root"
+          tar -tzf "$src" | awk -v top="$name.app/" 'index($0, top) != 1 { bad = 1; print "outside " top ": " $0 } END { exit bad }'
+          tar -xzf "$src" -C "$w/app"
+          app="$w/app/$name.app"
+          plist="$app/Contents/Info.plist"
+          pb() { /usr/libexec/PlistBuddy -c "Print :$1" "$plist"; }
+          v=$(pb CFBundleShortVersionString)
+          [ "$v" = "$tagv" ] || { echo "::error::the app is version $v, the tag $GITHUB_REF_NAME"; exit 1; }
+          [ "$(pb CFBundleIdentifier)" = "$id" ] || { echo "::error::identifier $(pb CFBundleIdentifier), expected $id"; exit 1; }
+          [ "$(pb CFBundleExecutable)" = "$pkg" ] || { echo "::error::executable $(pb CFBundleExecutable), expected $pkg"; exit 1; }
+          exe="$app/Contents/MacOS/$pkg"
+          while IFS= read -r -d '' f; do
+            [ "$f" = "$exe" ] && continue
+            if file -b "$f" | grep -q 'Mach-O'; then
+              codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$f"
+            fi
+          done < <(find "$app/Contents" -type f -print0)
+          codesign --force --options runtime --timestamp --entitlements "$ent" --sign "$APPLE_SIGNING_IDENTITY" "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          sig=$(codesign -dvvv "$app" 2>&1)
+          grep -qxF "Authority=$APPLE_SIGNING_IDENTITY" <<<"$sig" || { echo "$sig"; echo "::error::not signed by $APPLE_SIGNING_IDENTITY"; exit 1; }
+          grep -qE '^CodeDirectory .*flags=0x[0-9a-f]*\(.*runtime' <<<"$sig" || { echo "$sig"; echo "::error::no hardened runtime"; exit 1; }
+          grep -q '^Timestamp=' <<<"$sig" || { echo "$sig"; echo "::error::no secure timestamp"; exit 1; }
+          # no camera / microphone entitlement: the app has no feature that needs them
+          ! codesign -d --entitlements - --xml "$app" 2>/dev/null | grep -qE 'com\.apple\.security\.device\.(camera|audio-input|microphone)' || { echo "::error::camera or microphone entitlement"; exit 1; }
+          ditto -c -k --keepParent "$app" "$w/notarize.zip"
+          notarize "$w/notarize.zip"
+          rm -f "$w/notarize.zip"
+          retry xcrun stapler staple "$app"
+          retry xcrun stapler validate "$app"
+          gk=$(spctl --assess --type execute --verbose=4 "$app" 2>&1) || { echo "$gk"; echo "::error::Gatekeeper rejects $app"; exit 1; }
+          echo "$gk"
+          grep -q 'source=Notarized Developer ID' <<<"$gk" || { echo "::error::$app is not notarized"; exit 1; }
+
+          tgz="$w/out/macos/${pkg}_${v}_universal.app.tar.gz"
+          # no AppleDouble ._ files, no extended attributes (quarantine, provenance)
+          COPYFILE_DISABLE=1 tar --no-xattrs -czf "$tgz" -C "$w/app" "$name.app"
+          tar -tzf "$tgz" | awk -v top="$name.app/" 'index($0, top) != 1 { bad = 1; print "outside " top ": " $0 } END { exit bad }'
+          x=$(mktemp -d)
+          tar -xzf "$tgz" -C "$x"
+          codesign --verify --deep --strict "$x/$name.app"
+          # the ticket lives in the bundle (Contents/CodeResources), so the update keeps it
+          retry xcrun stapler validate "$x/$name.app"
+          rm -rf "$x"
+
+          ditto "$app" "$w/dmg-root/$name.app"
+          ln -s /Applications "$w/dmg-root/Applications"
+          dmg="$w/out/dmg/${name// /.}_${v}_universal.dmg"
+          hdiutil create -volname "$name" -srcfolder "$w/dmg-root" -fs HFS+ -format UDZO -ov "$dmg"
+          # the disk image too: signed, notarized and stapled, so opening the
+          # download asks nothing either (before its SHA-256 goes into the cask)
+          codesign --force --sign "$APPLE_SIGNING_IDENTITY" --timestamp "$dmg"
+          notarize "$dmg"
+          retry xcrun stapler staple "$dmg"
+          retry xcrun stapler validate "$dmg"
+          gk=$(spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg" 2>&1) || { echo "$gk"; echo "::error::Gatekeeper rejects $dmg"; exit 1; }
+          echo "$gk"
+          grep -q 'source=Notarized Developer ID' <<<"$gk" || { echo "::error::$dmg is not notarized"; exit 1; }
+          hdiutil verify "$dmg"
+          m=$(mktemp -d)
+          hdiutil attach -nobrowse -readonly -mountpoint "$m" "$dmg" >/dev/null
+          ok=1
+          [ -d "$m/$name.app" ] && [ -L "$m/Applications" ] && codesign --verify --deep --strict "$m/$name.app" || ok=0
+          # the copy in the image carries its own ticket too (dragged to Applications)
+          if [ "$ok" = 1 ]; then retry xcrun stapler validate "$m/$name.app" || ok=0; fi
+          hdiutil detach "$m" >/dev/null || hdiutil detach -force "$m" >/dev/null
+          [ "$ok" = 1 ] || { echo "::error::$dmg does not hold $name.app and the Applications link"; exit 1; }
+          ls -la "$w/out/macos" "$w/out/dmg"
+
+      - name: Upload the macOS release files
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ needs.setup.outputs.flavour == 'beach' && 'openbeach' || 'escoresheet' }}-desktop-macos
+          path: |
+            ${{ runner.temp }}/mac/out/dmg/*.dmg
+            ${{ runner.temp }}/mac/out/macos/*_universal.app.tar.gz
+          # publish-pkgs.sh --desktop compares the release assets with these
+          # artifacts before it signs them (desktop_provenance): publish within 90 days.
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Remove the macOS signing keychain
+        if: always()
+        run: |
+          [ -z "${MAC_KEYCHAIN:-}" ] || security delete-keychain "$MAC_KEYCHAIN" || true
+          [ -z "${APPLE_API_KEY_PATH:-}" ] || rm -f "$APPLE_API_KEY_PATH"
+
+  # Publish the installers as a public GitHub Release so the app's main page
+  # can link them directly (the home page looks up the newest desktop-v* release).
+  # Tag pushes only. A release that exists already is never replaced or
+  # edited: a run again on its tag only adds the installers it lacks (Tauri
+  # builds are not bit-identical, and the updater signatures, latest.json and
+  # every store pin the published bytes).
+  release:
+    needs: [setup, build, sign-macos]
+    if: ${{ !cancelled() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/desktop-v') && needs.build.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # The tag is the version the updater announces (publish-pkgs.sh --desktop
+      # signs the files for it), so it must be the version the app reports.
+      # (and release-files.sh)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: |
+            escoresheet/frontend/package.json
+            .github/scripts/release-files.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Check the tag matches the app version
+        run: |
+          tag=${GITHUB_REF_NAME#desktop-v}
+          app=$(jq -r .version escoresheet/frontend/package.json)
+          if [ "$tag" != "$app" ]; then
+            echo "::error::tag $GITHUB_REF_NAME is version $tag, escoresheet/frontend/package.json says $app"
+            exit 1
+          fi
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: artifacts
+
+      - name: Collect the installers
+        id: files
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+          .github/scripts/release-files.sh "$GITHUB_REF_NAME" upload notes-sha256.md \
+            artifacts/escoresheet-desktop-windows/**/*.exe \
+            artifacts/escoresheet-desktop-linux/**/*.AppImage \
+            artifacts/escoresheet-desktop-linux/**/*.deb \
+            artifacts/escoresheet-desktop-macos/**/*.dmg \
+            artifacts/escoresheet-desktop-macos/**/*_universal.app.tar.gz
+
+      - name: Write the release notes
+        if: steps.files.outputs.exists == 'false'
+        run: |
+          cat > notes.md <<'NOTES'
+          ## Offline desktop scoretable + LAN tablet server
+
+          Runs the volleyball e-scoresheet **fully offline** and doubles as a LAN
+          server: referee / bench / livescore tablets on the same Wi-Fi connect to
+          the addresses shown under the header menu → **Connect tablets** — no
+          internet, no accounts. Online, matches also sync to the cloud.
+
+          ### Install
+          - **Windows**: download and run the `…x64-setup.exe` installer. It installs for all
+            users and asks once for an administrator, so it can let the tablets on the local
+            network through Windows Firewall. An older per-user install of the same Windows
+            account is replaced; matches and backups stay. (A standard account that types an
+            administrator's password keeps its older copy too: remove it in Settings › Apps.)
+          - **Linux (AppImage)**: download, `chmod +x` it, run it.
+          - **Linux (Debian/Ubuntu)**: `curl -fsSL https://get.openvolley.app/install.sh | sudo sh`
+            (signed APT repository, package `openvolley-escoresheet`; `sudo apt upgrade` keeps it current),
+            or download the `.deb` and `sudo apt install ./openvolley-escoresheet_*_amd64.deb`.
+            To check install.sh before it runs as root, compare its SHA-256 with the one in the
+            [README](https://github.com/Lucanepa/openvolley#check-the-downloads), which also lists
+            the fingerprints of every package signing key.
+          - **macOS 11 or newer** (Apple silicon and Intel): download `OpenVolley.eScoresheet_…_universal.dmg`,
+            open it and drag the app to Applications, or `brew install --cask lucanepa/tap/openvolley`.
+            Signed and notarized by Apple: it opens like any other app, offline too.
+            The tablet Wi-Fi is not available on macOS: use the venue's Wi-Fi, a travel router
+            or macOS Internet Sharing.
+
+          ### Updates
+          From 2.2.0 the app updates itself: it downloads in the background and installs when
+          you quit, never during a match. On Windows each update asks once for an administrator.
+          On macOS it updates itself once it runs from Applications.
+          Versions before 2.2.0: install 2.2.0 once by hand (APT users: `sudo apt update && sudo apt upgrade`).
+          NOTES
+          cat notes-sha256.md >> notes.md
+
+      - name: Create Release
+        if: steps.files.outputs.exists == 'false'
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: eScoresheet Desktop ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          # The desktop updater's fallback endpoint is
+          # releases/latest/download/latest.json, so the newest desktop-v*
+          # release must stay "Latest" (server v* releases set make_latest
+          # "false" in release.yml and Android releases are created with
+          # --latest=false for the same reason; publish-pkgs.sh --desktop takes
+          # "Latest" back for the version latest.json announces).
+          make_latest: "true"
+          body_path: notes.md
+          files: upload/*
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Add the installers the release lacks
+        if: steps.files.outputs.exists == 'true' && steps.files.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "$GITHUB_REF_NAME" upload/*
+
+  # OpenBeach's installers as a GitHub release of this repo, never GitHub's
+  # "Latest": OpenVolley's updater falls back to
+  # releases/latest/download/latest.json, so "Latest" stays on the newest
+  # desktop-v* release. OpenBeach's updater reads
+  # get.openvolley.app/desktop/beach/latest.json first and falls back to the
+  # beach-desktop-latest prerelease (publish-pkgs.sh --desktop V --app beach
+  # puts latest.json there). Never replaced, as above.
+  release-beach:
+    needs: [setup, build, sign-macos]
+    if: ${{ !cancelled() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/beach-desktop-v') && needs.build.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # release-files.sh of this repository
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts/release-files.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Lucanepa/openbeach
+          ref: ${{ needs.setup.outputs.openbeach_ref }}
+          path: openbeach
+          sparse-checkout: escoresheet/frontend/package.json
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Check the tag matches the app version
+        id: version
+        run: |
+          tag=${GITHUB_REF_NAME#beach-desktop-v}
+          app=$(jq -r .version openbeach/escoresheet/frontend/package.json)
+          if [ "$tag" != "$app" ]; then
+            echo "::error::tag $GITHUB_REF_NAME is version $tag, openbeach's escoresheet/frontend/package.json says $app"
+            exit 1
+          fi
+          echo "version=$app" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git -C openbeach rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Download the OpenBeach artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: openbeach-desktop-*
+          path: artifacts
+
+      - name: Collect the installers
+        id: files
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+          .github/scripts/release-files.sh "$GITHUB_REF_NAME" upload notes-sha256.md \
+            artifacts/openbeach-desktop-windows/**/*.exe \
+            artifacts/openbeach-desktop-linux/**/*.AppImage \
+            artifacts/openbeach-desktop-linux/**/*.deb \
+            artifacts/openbeach-desktop-macos/**/*.dmg \
+            artifacts/openbeach-desktop-macos/**/*_universal.app.tar.gz
+
+      - name: Write the release notes
+        if: steps.files.outputs.exists == 'false'
+        env:
+          OPENBEACH_COMMIT: ${{ steps.version.outputs.commit }}
+        run: |
+          cat > notes.md <<'NOTES'
+          ## OpenBeach: offline beach volleyball scoretable + LAN tablet server
+
+          Runs the beach volleyball e-scoresheet **fully offline** and doubles as a LAN
+          server for the referee and livescore tablets and the court displays on the same
+          Wi-Fi: no internet, no accounts. It runs next to OpenVolley eScoresheet on the
+          same computer (OpenBeach uses ports 5174 and 8081).
+
+          ### Install
+          - **Windows**: download and run the `OpenBeach_…_x64-setup.exe` installer. It installs
+            for all users and asks once for an administrator, so it can let the tablets on the
+            local network through Windows Firewall.
+          - **Linux (AppImage)**: download, `chmod +x` it, run it.
+          - **Linux (Debian/Ubuntu)**: `curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s openbeach-escoresheet`
+            (signed APT repository, package `openbeach-escoresheet`; `sudo apt upgrade` keeps it current),
+            or download the `.deb` and `sudo apt install ./openbeach-escoresheet_*_amd64.deb`.
+            To check install.sh before it runs as root, compare its SHA-256 with the one in the
+            [README](https://github.com/Lucanepa/openvolley#check-the-downloads), which also lists
+            the fingerprints of every package signing key.
+          - **macOS 11 or newer** (Apple silicon and Intel): download `OpenBeach_…_universal.dmg`,
+            open it and drag the app to Applications, or `brew install --cask lucanepa/tap/openbeach`.
+            Signed and notarized by Apple: it opens like any other app, offline too.
+
+          ### Updates
+          The app updates itself: it downloads in the background and installs when you quit,
+          never during a match. On Windows each update asks once for an administrator.
+          NOTES
+          printf '\nBuilt from Lucanepa/openbeach at `%s`.\n' "$OPENBEACH_COMMIT" >> notes.md
+          cat notes-sha256.md >> notes.md
+
+      - name: Create Release
+        if: steps.files.outputs.exists == 'false'
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: OpenBeach desktop ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          make_latest: "false"
+          body_path: notes.md
+          files: upload/*
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Add the installers the release lacks
+        if: steps.files.outputs.exists == 'true' && steps.files.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "$GITHUB_REF_NAME" upload/*

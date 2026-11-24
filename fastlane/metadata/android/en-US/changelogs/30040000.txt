@@ -1,0 +1,5 @@
+OpenVolley 3.4.0
+- Global: a match is a real match now (referee and bench tablets, livescore and TV list it as one), with a game PIN.
+- Global: optional "Save in the cloud" in Match setup, no account: share link, tournament list for the organizer, continue on another device.
+- Global matches with a live screen code appear on livescore.openvolley.app (can be switched off in Options, Live screen).
+- Android: the approval PDF no longer fails on slow tablets.

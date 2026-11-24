@@ -1,0 +1,53 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Openvolley eScoresheet",
+  "version": "../package.json",
+  "identifier": "com.openvolley.escoresheet",
+  "build": {
+    "frontendDist": "../dist",
+    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:5173"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-hAC66PTngtOWJY571phiLXHzeuEYS3pprPNjnV1uBik=' 'sha256-mEG3trr/2+bNH35eWodBg+Kvbb2CTl/9fvqyZgpWiCY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://openvolley.app https://openvolley-media.openvolley.app; font-src 'self' data:; connect-src 'self' https: wss: http: ws: ipc:; worker-src 'self' blob:; frame-src 'self' blob:; media-src 'self' data: blob: https://openvolley.app https://openvolley-media.openvolley.app; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'",
+      "capabilities": ["default"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "appimage", "deb"],
+    "category": "Sports",
+    "shortDescription": "Open Source Volleyball eScoresheet",
+    "longDescription": "Fully offline volleyball e-scoresheet. Runs the scoretable and a built-in LAN server so referee, bench and livescore tablets connect over the same Wi-Fi — no internet, no accounts.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine",
+        "installerHooks": "windows/installer-hooks.nsh"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDEwRDIwRUUyRDIwOTczQzUKUldURmN3blM0ZzdTRUdBejdOSEdYSEZ4NEY2NVphSi85enFlZGpOWjY2MUtleW0yVGtoNklHcngK",
+      "endpoints": [
+        "https://get.openvolley.app/desktop/latest.json",
+        "https://github.com/Lucanepa/openvolley/releases/latest/download/latest.json"
+      ],
+      "requireSignedVersion": true,
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

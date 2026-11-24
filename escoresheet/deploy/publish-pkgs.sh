@@ -1,0 +1,642 @@
+#!/usr/bin/env bash
+# Rebuild and publish the public package repos behind https://get.openvolley.app
+#
+#   escoresheet/deploy/publish-pkgs.sh [--no-sync] [FILE.deb | FILE.apk ...]
+#   escoresheet/deploy/publish-pkgs.sh --desktop VERSION [--app beach] [--staging] [--flatpak] [--pacman] [--no-sync] [FILE.apk ...]
+#   escoresheet/deploy/publish-pkgs.sh --resign [--no-sync]
+#   (any publish) [--without-resign-timer]
+#
+# Runs on lenovoserver (never on the VM: the signing keys live only here).
+#
+# Two apps share this repo: OpenVolley eScoresheet (APT openvolley-escoresheet,
+# Android com.openvolley.escoresheet, desktop tags desktop-v*) and OpenBeach
+# (openbeach-escoresheet, com.openvolley.beach, beach-desktop-v*). --app beach
+# makes --desktop handle an OpenBeach desktop release: tag beach-desktop-vVERSION,
+# manifests in public/desktop/beach/, the tauri.beach.conf.json key, and its
+# GitHub release never becomes "Latest" (OpenVolley's updater falls back to
+# GitHub's "Latest"; OpenBeach's to the beach-desktop-latest prerelease,
+# which gets its latest.json). Without --app it is OpenVolley, as before.
+#
+# A third goes through APT only: svrz-rc, the SVRZ Referee Coaching app
+# (github.com/Lucanepa/svrz_rc; installers in the releases native-vV of
+# Lucanepa/svrz-referee-coaching, the .deb named "SVRZ.RC_V_amd64.deb"). A
+# .deb install of it has no in-app updater, so APT is how it stays current,
+# and --desktop, --staging, latest.json and the APT hold-back never touch it.
+# Its .deb is published like a plain file, given by hand, and APT lists it at
+# once, but only with the signature its own release build made next to it
+# (<deb>.sig, the svrz-rc updater key committed in lib/publish-lib.sh): the
+# OpenVolley APT key vouches only for what that project's CI signed.
+#   gh release download native-vV -R Lucanepa/svrz-referee-coaching -p '*.deb' -p '*.deb.sig'
+#   escoresheet/deploy/publish-pkgs.sh "SVRZ.RC_V_amd64.deb"
+# Its APK goes to its own F-Droid repo (svrz_rc), not this one.
+#
+#   0. --desktop VERSION (a desktop app release; replaces downloading the .deb
+#      by hand): downloads the Windows installer, the AppImage and the .deb of
+#      the GitHub release desktop-vVERSION and checks each is that version
+#      (and the macOS updater archive *_universal.app.tar.gz when the release
+#      has one: latest.json then announces darwin-aarch64 and darwin-x86_64;
+#      without it, no macOS update);
+#      checks where they come from (lib/publish-lib.sh desktop_provenance):
+#      the tag's commit is on main and each file is byte for byte one the
+#      tag's desktop.yml push run built (its workflow artifacts, kept 90 days:
+#      publish within that time), so a release asset replaced after CI is
+#      never signed;
+#      signs each with the updater key (tauri signer, signature bound to
+#      VERSION); verifies each signature against the key the app trusts
+#      (plugins.updater.pubkey in tauri.conf.json, also with minisign when it is
+#      installed); writes latest.json (tauri-plugin-updater format; notes from
+#      the fastlane changelog of that version). The .deb then goes through 1.
+#      like any other (with --staging it enters the pool but not the index,
+#      see 2.). After step 4 the manifest goes to public/desktop/:
+#      latest-VERSION.json and staging.json always, latest.json unless
+#      --staging (then only clients started with
+#      OPENVOLLEY_UPDATE_CHANNEL=staging see it). After the sync the .sig files,
+#      and latest.json unless --staging, go to the GitHub release (the
+#      updater's fallback endpoint), which is then made GitHub's "Latest"
+#      unless --staging. Needs gh, node and tauri-cli >= 2.12
+#      (escoresheet/frontend: npm ci). OV_DESKTOP_RELEASE_DIR=DIR takes the
+#      installers from DIR instead of GitHub (tests; only with --no-sync).
+#   1. Adds the given packages: a .deb goes to the APT pool, a signed .apk to
+#      the F-Droid repo. An APK must already be signed with its app's own key
+#      (lib/publish-lib.sh app_cert_sha256: OpenVolley's from ANDROID.md,
+#      OpenBeach's from ~/.config/openbeach-android/cert.sha256, ReadVolley's
+#      committed in the lib); any other app id or key is refused. Nothing is
+#      ever re-signed. Its app id needs F-Droid metadata in
+#      fdroid/metadata/<app id>.yml (fdroid update would leave it out of the
+#      index without).
+#      APT packages: openvolley-escoresheet, openbeach-escoresheet and svrz-rc
+#      (each with the command /usr/bin/<package>); any other name is refused,
+#      except OpenVolley's old names: a .deb named openvolley-e-scoresheet
+#      (Tauri builds up to 1.48.19) or openvolley is repacked first:
+#      same version, depends and files, plus Provides/Replaces/Conflicts:
+#      openvolley-e-scoresheet, openvolley (and its own old name), so
+#      `apt install openvolley-escoresheet` takes over an old install. Old-name
+#      files already in the pool are migrated the same way. Repacking is
+#      deterministic: the same input always gives the same bytes. A .deb given
+#      by hand that is newer than desktop/latest.json is refused (use
+#      --desktop VERSION); svrz-rc has no latest.json and is never refused.
+#   2. Rebuilds the APT index (Packages, Release, InRelease, Release.gpg) and
+#      exports the public key as apt/openvolley.gpg and apt/openvolley.asc.
+#      The Release file is valid for 30 days (Valid-Until), so a host that
+#      keeps serving an old signed index cannot hold clients on an old
+#      version for longer: apt refuses an expired one. Every run signs it
+#      anew; systemd/openvolley-pkgs-resign.timer runs --resign (below)
+#      every week so that it never expires between releases.
+#      The index never lists a desktop version newer than its app's latest.json
+#      (desktop/ or desktop/beach/; lib/publish-lib.sh, APT hold-back): the in-app .deb updater installs
+#      APT's newest, so a staging .deb, or one the kill switch withdrew from
+#      latest.json, stays in the pool but out of the index. svrz-rc is not
+#      held back: every version in the pool is listed.
+#   3. Rebuilds the F-Droid index (fdroid update) and copies repo/ over.
+#   3b. --flatpak (with --desktop, never with --staging: Flatpak users would get
+#      it at once): builds the signed .deb as a Flatpak and commits it, signed,
+#      into public/flatpak/repo/ (../packaging/flatpak/publish-flatpak.sh;
+#      needs flatpak, flatpak-builder, ostree and the Flatpak repo key in
+#      flatpak-gpg/). Without --flatpak public/flatpak/ is left as it is (and
+#      still synced): run publish-flatpak.sh VERSION by hand, then this script.
+#   3c. --pacman (with --desktop, never with --staging: pacman -Syu would
+#      install it at once): builds the AUR PKGBUILD (../packaging/aur/<package>-bin,
+#      which must be at VERSION: run aur/bump.sh and commit first) from the
+#      .deb of step 0 and adds it, signed, to the pacman repo public/arch/
+#      (../packaging/pacman/publish-pacman.sh; needs docker and the pacman repo
+#      key in pacman-gpg/). Without --pacman public/arch/ is left as it is (and
+#      still synced): run publish-pacman.sh by hand, then this script.
+#   4. Copies the landing page and the installer (pkgs/index.html, pkgs/install.sh).
+#      The repository's README.md must give install.sh's SHA-256 (the
+#      second channel a first install checks it against).
+#      The page's OpenBeach section appears once an OpenBeach .deb or APK is
+#      published, the Flatpak and Arch (pacman) cards once those repos are;
+#      install.sh takes the package name (default openvolley-escoresheet;
+#      `sh -s svrz-rc` for SVRZ RC).
+#   5. Refuses if anything key-like ended up in the public tree, then rsyncs
+#      that tree to ${OV_PKGS_DEST} (default ov-vps:/data/openvolley/pkgs/: the
+#      Infomaniak VPS serves get.openvolley.app since 09.11.2026, the folder
+#      belongs to its ssh user; a local path also works, written with sudo when
+#      it is not ours, as on lenovoserver 16.10.-09.11.2026), unless --no-sync.
+#
+# --resign (the weekly timer, unattended): only step 2 and its sync. Signs
+# the APT index of the pool already published again, with a new Valid-Until,
+# and syncs apt/dists/ alone; no package is added, no page, install.sh,
+# F-Droid, Flatpak or pacman step runs. It refuses when the index it builds
+# lists anything other than the one it replaces (a re-sign changes dates and
+# signatures only: publish changes by hand), and unless this checkout is clean
+# and its HEAD is on ${OV_PKGS_RESIGN_REF} (default origin/main): it signs
+# with the APT key unattended, so it runs reviewed code only.
+#
+# OV_PKGS_KUMA_PUSH_URL (optional, an Uptime Kuma push monitor): every run that
+# signed the index pushes up, a refusal pushes down. With a heartbeat interval
+# of about 8 days the monitor also alerts when the timer is missing or never
+# runs, well before the 30-day Valid-Until runs out.
+#
+# Re-sign timer guard (SEC-54): a publish signs the index for 30 days and only
+# the weekly --resign keeps it valid after that, so a publish that syncs
+# refuses unless systemd/openvolley-pkgs-resign.timer is enabled here and the
+# newest successful re-sign on record is at most
+# ${OV_PKGS_RESIGN_MAX_AGE_DAYS:-9} days old: ${OV_PKGS_HOME}/resign-heartbeat
+# (written by every --resign that synced) or systemd's record of the
+# service's last run, if it succeeded (until the next boot; it also covers a
+# re-sign checkout from before the heartbeat). Right after installing the
+# timer, or when the refusal says no re-sign is on record: move
+# ~/ov-ops/pkgs-resign to origin/main (the unit's header), then
+# sudo systemctl start openvolley-pkgs-resign.service once.
+# --without-resign-timer publishes anyway (say why: APT clients get "Release
+# file is expired" 30 days later unless something re-signs before then).
+#
+# Layout under ${OV_PKGS_HOME} (default ~/.config/openvolley-pkgs, mode 700):
+#   gnupg/            APT signing key (GNUPGHOME). Vaultwarden: "OpenVolley APT signing key"
+#   gpg-passphrase    its passphrase (mode 600)
+#   fdroid/           fdroid working dir: config.yml + keystore.p12 (repo signing
+#                     key, Vaultwarden: "OpenVolley F-Droid repo key"), metadata/, repo/
+#   public/           the served tree, rebuilt here and mirrored to the server:
+#                       index.html  install.sh  apt/{dists,pool,openvolley.gpg,openvolley.asc}  fdroid/repo/
+#                       desktop/{latest,staging,latest-<version>}.json
+#                       desktop/beach/{latest,staging,latest-<version>}.json (OpenBeach)
+#                       flatpak/{repo/,openvolley.flatpakrepo,<app id>.flatpakref,openvolley-flatpak.gpg}
+#                       arch/{openvolley.gpg,fingerprint.txt,x86_64/}  (pacman repo [openvolley])
+#   flatpak-gpg/      Flatpak repo signing key (GNUPGHOME), flatpak-gpg-passphrase its
+#                     passphrase. Vaultwarden: "OpenVolley Flatpak repo key"
+#   pacman-gpg/       pacman repo signing key (GNUPGHOME), pacman-gpg-passphrase its
+#                     passphrase. Vaultwarden: "OpenVolley pacman repo key"
+# Desktop updater key under ${OV_DESKTOP_KEYS} (default ~/.config/openvolley-desktop):
+#   updater.key       tauri signer private key, key-password its password (both
+#                     mode 600). Vaultwarden: "OpenVolley desktop updater key"
+#
+# Only public/ ever leaves this machine. Removing a .deb from public/apt/pool/main
+# or an .apk from fdroid/repo and re-running un-publishes it.
+set -euo pipefail
+umask 022
+
+PKGS=${OV_PKGS_HOME:-$HOME/.config/openvolley-pkgs}
+DEST=${OV_PKGS_DEST:-ov-vps:/data/openvolley/pkgs/}
+KIT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+APT_SIGNER_FPR=AB469DA8DC3EC90F8057320D285B18D76C16B82C
+# The Android signing certificate of each app id: APP_CERT_SHA256 below (from
+# lib/publish-lib.sh: OPENVOLLEY_APP_CERT_SHA256, OPENBEACH_APP_CERT_SHA256 /
+# ~/.config/openbeach-android/cert.sha256).
+
+PUB="$PKGS/public"
+APT="$PUB/apt"
+DIST="$APT/dists/stable"
+FD="$PKGS/fdroid"
+export GNUPGHOME="$PKGS/gnupg"
+
+KUMA_URL=${OV_PKGS_KUMA_PUSH_URL:-}
+kuma() {  # status msg
+  [[ -n "$KUMA_URL" ]] || return 0
+  curl -fsS -m 10 -G --data-urlencode "status=$1" --data-urlencode "msg=$2" "$KUMA_URL" >/dev/null || true
+}
+# OV_PKGS_NTFY_URL (optional, an ntfy topic): a --resign that fails (unattended,
+# the timer) posts there; an interactive publish only prints.
+NTFY_URL=${OV_PKGS_NTFY_URL:-}
+resign_alert() {
+  [[ -n "$NTFY_URL" && "${RESIGN:-0}" == 1 ]] || return 0
+  curl -fsS -m 10 -H "Title: OpenVolley APT re-sign FAILED" -H "Priority: high" -H "Tags: rotating_light" \
+    -d "$1 (journalctl -u openvolley-pkgs-resign)" "$NTFY_URL" >/dev/null || true
+}
+die() { echo "publish-pkgs: $*" >&2; kuma down "$*"; resign_alert "$*"; exit 1; }
+# shellcheck source=SCRIPTDIR/lib/publish-lib.sh
+. "$KIT_DIR/lib/publish-lib.sh"
+# app id -> SHA-256 of its signing certificate, for the APKs given below.
+declare -A APP_CERT_SHA256=()
+
+SYNC=1
+FILES=()
+DESKTOP_V=
+STAGING=0
+APP=
+FLATPAK=0
+PACMAN=0
+RESIGN=0
+RESIGN_TIMER_GUARD=1
+while (( $# )); do
+  case "$1" in
+    --no-sync) SYNC=0 ;;
+    --desktop)
+      [[ -z "$DESKTOP_V" ]] || die "--desktop given twice"
+      (( $# > 1 )) || die "--desktop needs a version"
+      DESKTOP_V=${2#v}; shift
+      desktop_version_ok "$DESKTOP_V" || die "--desktop $DESKTOP_V: not a version like 2.2.0"
+      ;;
+    --app)
+      [[ -z "$APP" ]] || die "--app given twice"
+      (( $# > 1 )) || die "--app needs openvolley or beach"
+      APP=$2; shift
+      [[ "$APP" == openvolley || "$APP" == beach ]] || die "--app $APP: expected openvolley or beach"
+      ;;
+    --staging) STAGING=1 ;;
+    --flatpak) FLATPAK=1 ;;
+    --pacman) PACMAN=1 ;;
+    --resign) RESIGN=1 ;;
+    --without-resign-timer) RESIGN_TIMER_GUARD=0 ;;
+    -h|--help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 0 ;;
+    -*) die "unknown option $1" ;;
+    *) FILES+=("$1") ;;
+  esac
+  shift
+done
+if (( RESIGN )); then
+  [[ -z "$DESKTOP_V$APP" ]] && (( ! STAGING && ! FLATPAK && ! PACMAN && ${#FILES[@]} == 0 )) ||
+    die "--resign goes only with --no-sync: it publishes nothing new"
+  resign_checkout_ok "$KIT_DIR" "${OV_PKGS_RESIGN_REF:-origin/main}"
+fi
+(( ! STAGING )) || [[ -n "$DESKTOP_V" ]] || die "--staging needs --desktop VERSION"
+[[ -z "$APP" ]] || [[ -n "$DESKTOP_V" ]] || die "--app needs --desktop VERSION"
+(( ! FLATPAK )) || [[ -n "$DESKTOP_V" ]] || die "--flatpak needs --desktop VERSION (or run ../packaging/flatpak/publish-flatpak.sh VERSION, then this script)"
+(( ! FLATPAK || ! STAGING )) || die "--flatpak cannot go with --staging: Flatpak users would get the staging version at once"
+(( ! PACMAN )) || [[ -n "$DESKTOP_V" ]] || die "--pacman needs --desktop VERSION (or run ../packaging/pacman/publish-pacman.sh, then this script)"
+(( ! PACMAN || ! STAGING )) || die "--pacman cannot go with --staging: pacman -Syu would install the staging version at once"
+FLATPAK_PUBLISH="$KIT_DIR/../packaging/flatpak/publish-flatpak.sh"
+PACMAN_PUBLISH="$KIT_DIR/../packaging/pacman/publish-pacman.sh"
+desktop_app_select "${APP:-openvolley}"
+if (( PACMAN )); then
+  # The PKGBUILD must already be at this release (aur/bump.sh needs the GitHub
+  # release, which --desktop downloads from anyway): checked before any signing.
+  pb="${OV_PACMAN_PKGBUILDS:-$KIT_DIR/../packaging/aur}/$DESKTOP_DEB_NAME-bin/PKGBUILD"
+  [[ -f "$pb" ]] || die "--pacman: no $pb"
+  pb_ver=$(sed -n 's/^pkgver=//p' "$pb" | head -n1)
+  [[ "$pb_ver" == "$DESKTOP_V" ]] ||
+    die "--pacman: $pb is at $pb_ver, not $DESKTOP_V: run packaging/aur/bump.sh $([[ ${APP:-openvolley} == beach ]] && echo openbeach || echo openvolley) $DESKTOP_V and commit it first"
+fi
+[[ -z "$DESKTOP_RELEASE_DIR" ]] || (( ! SYNC )) || die "OV_DESKTOP_RELEASE_DIR is for tests: use it with --no-sync"
+
+# --- re-sign timer guard (see the header) -------------------------------------
+RESIGN_TIMER_UNIT=openvolley-pkgs-resign.timer
+RESIGN_SERVICE_UNIT=openvolley-pkgs-resign.service
+RESIGN_HEARTBEAT="$PKGS/resign-heartbeat"
+RESIGN_MAX_AGE_DAYS=${OV_PKGS_RESIGN_MAX_AGE_DAYS:-9}
+[[ "$RESIGN_MAX_AGE_DAYS" =~ ^[1-9][0-9]*$ ]] || die "OV_PKGS_RESIGN_MAX_AGE_DAYS must be a whole number of days"
+# the way to a first run on record (the unit's header has the install steps)
+RESIGN_FIRST_RUN="git -C ~/ov-ops/pkgs-resign checkout --detach origin/main (after reading what changed in escoresheet/deploy/), then sudo systemctl start $RESIGN_SERVICE_UNIT once"
+resign_timer_problem() {  # prints why the index would expire unattended, nothing when the timer is fine
+  local k v result='' status='' exit_ts='' last=0 failed='' age
+  if ! command -v systemctl >/dev/null 2>&1 || ! systemctl is-enabled --quiet "$RESIGN_TIMER_UNIT" 2>/dev/null; then
+    echo "the re-sign timer $RESIGN_TIMER_UNIT is not enabled here (install it: systemd/openvolley-pkgs-resign.service)"
+    return 0
+  fi
+  # The newest successful re-sign on record: the heartbeat (every --resign that
+  # synced writes it), or systemd's record of the service's last run (kept until
+  # the next boot), which also covers a re-sign checkout from before the
+  # heartbeat. The unit runs --resign without --no-sync, so a success synced.
+  [[ ! -f "$RESIGN_HEARTBEAT" ]] || last=$(stat -c %Y "$RESIGN_HEARTBEAT")
+  while IFS='=' read -r k v; do
+    case "$k" in Result) result=$v ;; ExecMainStatus) status=$v ;; ExecMainExitTimestamp) exit_ts=$v ;; esac
+  done < <(systemctl show --timestamp=unix -p Result,ExecMainStatus,ExecMainExitTimestamp "$RESIGN_SERVICE_UNIT" 2>/dev/null || true)
+  if [[ "$exit_ts" =~ ^@([0-9]+)$ ]]; then
+    if [[ "$result" == success && "$status" == 0 ]]; then
+      (( BASH_REMATCH[1] <= last )) || last=${BASH_REMATCH[1]}
+    else
+      failed="its last run failed (systemd: Result=$result, status $status)"
+    fi
+  fi
+  if (( last == 0 )); then
+    echo "no successful re-sign on record${failed:+ and $failed} (no $RESIGN_HEARTBEAT, no successful run of $RESIGN_SERVICE_UNIT since boot): $RESIGN_FIRST_RUN, and journalctl -u openvolley-pkgs-resign"
+    return 0
+  fi
+  age=$(( ($(date +%s) - last) / 86400 ))
+  (( age <= RESIGN_MAX_AGE_DAYS )) ||
+    echo "the last re-sign was $age days ago (more than $RESIGN_MAX_AGE_DAYS)${failed:+; $failed}: see journalctl -u openvolley-pkgs-resign; to run it again: $RESIGN_FIRST_RUN"
+}
+if (( SYNC && ! RESIGN )); then
+  problem=$(resign_timer_problem)
+  if [[ -n "$problem" ]]; then
+    if (( RESIGN_TIMER_GUARD )); then
+      die "refusing to publish: $problem. The APT index expires 30 days after a publish unless it is re-signed; --without-resign-timer publishes anyway"
+    fi
+    echo "publish-pkgs: WARNING (--without-resign-timer): $problem; the APT index expires 30 days after this publish unless it is re-signed" >&2
+  fi
+fi
+
+if (( RESIGN )); then tools=(dpkg-deb dpkg-scanpackages apt-ftparchive gpg gpgv rsync python3)
+else tools=(dpkg-deb dpkg-scanpackages apt-ftparchive gpg gpgv fdroid rsync curl python3 node sha256sum); fi
+for t in "${tools[@]}"; do
+  command -v "$t" >/dev/null || die "$t not found"
+done
+[[ -d "$GNUPGHOME" && -f "$PKGS/gpg-passphrase" ]] || die "no signing key in $PKGS (restore it from Vaultwarden)"
+(( RESIGN )) || [[ -f "$FD/config.yml" && -f "$FD/keystore.p12" ]] || die "no F-Droid repo in $FD (restore it from Vaultwarden)"
+(( ! RESIGN )) || [[ -f "$DIST/main/binary-amd64/Packages" ]] || die "--resign: no APT index in $DIST to sign again (publish once without --resign)"
+[[ -z "$DESKTOP_V" ]] || desktop_check_setup
+if (( FLATPAK )); then
+  [[ -x "$FLATPAK_PUBLISH" ]] || die "$FLATPAK_PUBLISH not found"
+  for t in flatpak flatpak-builder ostree; do command -v "$t" >/dev/null || die "--flatpak: $t not found"; done
+  [[ -d "${OV_FLATPAK_GNUPG:-$PKGS/flatpak-gpg}" ]] || die "--flatpak: no Flatpak repo key in ${OV_FLATPAK_GNUPG:-$PKGS/flatpak-gpg} (publish-flatpak.sh --init-key, or restore it from Vaultwarden)"
+fi
+if (( PACMAN )); then
+  [[ -x "$PACMAN_PUBLISH" ]] || die "$PACMAN_PUBLISH not found"
+  command -v docker >/dev/null || die "--pacman: docker not found"
+  [[ -d "${OV_PACMAN_GNUPG:-$PKGS/pacman-gpg}" ]] || die "--pacman: no pacman repo key in ${OV_PACMAN_GNUPG:-$PKGS/pacman-gpg} (publish-pacman.sh --init-key, or restore it from Vaultwarden)"
+fi
+
+build_tool() {
+  local bt
+  bt=$(ls -d "${ANDROID_HOME:-$HOME/Android/Sdk}"/build-tools/* 2>/dev/null | sort -V | tail -1)
+  [[ -x "$bt/$1" ]] || die "$1 not found in Android build-tools (set ANDROID_HOME)"
+  "$bt/$1" "${@:2}"
+}
+
+# --- 1. add packages --------------------------------------------------------
+# OpenVolley's package, and the names it was published under before (the
+# package takes them over). OpenBeach has no old names.
+OV_APT_NAME=openvolley-escoresheet
+LEGACY_NAMES=(openvolley-e-scoresheet openvolley)
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
+
+# --- 0. desktop release: fetch, sign, verify, latest.json -------------------
+if [[ -n "$DESKTOP_V" ]]; then
+  desktop_fetch "$DESKTOP_V" "$WORK/desktop"
+  desktop_provenance "$DESKTOP_V" "$WORK/desktop"
+  # (+ the macOS .app.tar.gz, when the release has one)
+  desktop_sign "$DESKTOP_V" "$DESKTOP_EXE" "$DESKTOP_APPIMAGE" "$DESKTOP_DEB" ${DESKTOP_MAC:+"$DESKTOP_MAC"}
+  desktop_verify "$DESKTOP_V" "$DESKTOP_EXE" "$DESKTOP_APPIMAGE" "$DESKTOP_DEB" ${DESKTOP_MAC:+"$DESKTOP_MAC"}
+  desktop_manifest "$DESKTOP_V" "$WORK/desktop" "$WORK/desktop/latest.json"
+  FILES+=("$DESKTOP_DEB")
+fi
+apt_hold_init "$PUB" "$DESKTOP_V" "$STAGING"
+
+# add_rel CONTROL FIELD NAME: append NAME to FIELD (creating it) unless listed.
+add_rel() {
+  local control=$1 field=$2 name=$3
+  if grep -q "^$field:" "$control"; then
+    grep -Eq "^$field:(.*[ ,])?$name( *(\(|,|$))" "$control" || sed -i "s/^$field: .*/&, $name/" "$control"
+  else
+    sed -i "/^Description:/i $field: $name" "$control"
+  fi
+}
+
+# repack_deb IN OUT: rewrite IN (an OpenVolley .deb under an old Package name)
+# as $OV_APT_NAME. Same version, depends, maintainer scripts and files; adds
+# Provides/Replaces/Conflicts for the legacy names and IN's own name, and makes
+# sure /usr/bin/$OV_APT_NAME exists (a symlink to /usr/bin/openvolley if only that
+# is there). Every mtime is set to the newest one in IN and dpkg-deb builds with
+# fixed owner, compressor and thread count, so the same IN gives the same bytes.
+repack_deb() {
+  local in=$1 out=$2 root="$WORK/repack" old epoch f n
+  old=$(dpkg-deb -f "$in" Package)
+  rm -rf "$root"
+  dpkg-deb -R "$in" "$root"
+  if [[ ! -e "$root/usr/bin/$OV_APT_NAME" ]]; then
+    [[ -e "$root/usr/bin/openvolley" ]] || die "$in: package $old has neither /usr/bin/$OV_APT_NAME nor /usr/bin/openvolley; not an OpenVolley desktop .deb"
+  fi
+  # Newest mtime among the packaged files (tar restored them; the top dir and
+  # DEBIAN/ were created just now and do not count).
+  epoch=$(find "$root" -mindepth 1 ! -path "$root/DEBIAN" ! -path "$root/DEBIAN/*" -printf '%T@\n' | sort -n | tail -1)
+  epoch=${epoch%.*}
+  [[ "$epoch" =~ ^[0-9]+$ ]] || die "$in: no files to take a timestamp from"
+  for f in Provides Replaces Conflicts; do
+    for n in "${LEGACY_NAMES[@]}" "$old"; do
+      add_rel "$root/DEBIAN/control" "$f" "$n"
+    done
+  done
+  sed -i "s/^Package: .*/Package: $OV_APT_NAME/" "$root/DEBIAN/control"
+  if [[ ! -e "$root/usr/bin/$OV_APT_NAME" ]]; then
+    ln -s openvolley "$root/usr/bin/$OV_APT_NAME"
+  fi
+  find "$root" -exec touch -h -d "@$epoch" {} +
+  SOURCE_DATE_EPOCH=$epoch dpkg-deb --root-owner-group --threads-max=1 -Zxz -z9 -b "$root" "$out" >/dev/null
+  rm -rf "$root"
+}
+
+# legacy_name NAME: one of OpenVolley's old package names.
+legacy_name() {
+  local n
+  for n in "${LEGACY_NAMES[@]}"; do [[ "$1" != "$n" ]] || return 0; done
+  return 1
+}
+
+# add_deb FILE: put FILE in the pool as <package>_<version>_amd64.deb, its
+# package one of APT_NAMES (an OpenVolley old name is repacked first).
+add_deb() {
+  local f=$1 pkg ver arch target files
+  pkg=$(dpkg-deb -f "$f" Package); ver=$(dpkg-deb -f "$f" Version); arch=$(dpkg-deb -f "$f" Architecture)
+  [[ -n "$pkg" && -n "$ver" && "$arch" == amd64 ]] || die "$f: not an amd64 .deb"
+  if legacy_name "$pkg"; then
+    repack_deb "$f" "$WORK/repacked.deb"
+    echo "repacked $f ($pkg) as $OV_APT_NAME $ver"
+    f="$WORK/repacked.deb" pkg=$OV_APT_NAME
+  fi
+  apt_name_ok "$pkg" || die "$f: package $pkg is not published here (${APT_NAMES[*]})"
+  # Whole listing first: grep -q exiting early would kill dpkg-deb (pipefail).
+  files=$(dpkg-deb -c "$f") || die "$f: cannot list its files"
+  grep -Eq " (\./)?usr/bin/$pkg( |$)" <<<"$files" || die "$f: no /usr/bin/$pkg in the package"
+  target="$APT/pool/main/${pkg}_${ver}_${arch}.deb"
+  if [[ -e "$target" ]] && ! cmp -s "$f" "$target"; then
+    die "$target exists with different content; bump the version instead (apt and caches treat versions as immutable)"
+  fi
+  install -m 644 "$f" "$target"
+  echo "added $target"
+}
+
+mkdir -p "$APT/pool/main" "$FD/repo"
+for f in "${FILES[@]}"; do
+  [[ -f "$f" ]] || die "$f: no such file"
+  case "$f" in
+    *.deb)
+      ver=$(dpkg-deb -f "$f" Version) || die "$f: not a .deb"
+      pkg=$(dpkg-deb -f "$f" Package)
+      if legacy_name "$pkg"; then pkg=$OV_APT_NAME; fi
+      # another project's build: only with its own release signature
+      if [[ "$pkg" == svrz-rc ]]; then svrz_rc_verify "$f" "$ver"; fi
+      # (never true for svrz-rc: no latest.json holds it back)
+      if [[ "$f" != "$DESKTOP_DEB" ]] && apt_held "$ver" "$pkg"; then
+        app=openvolley; [[ "$pkg" != openbeach-escoresheet ]] || app=beach
+        die "$f: version $ver is not announced by ${APP_DESKTOP_DIR[$app]}/latest.json, so APT would not list it; publish desktop releases with --desktop $ver$([[ $app == beach ]] && echo ' --app beach') [--staging]"
+      fi
+      add_deb "$f"
+      ;;
+    *.apk)
+      certs=$(build_tool apksigner verify --print-certs "$f") || die "$f: not a validly signed APK"
+      badging=$(build_tool aapt2 dump badging "$f" | sed -n '/^package:/p')
+      app_id=$(sed -E "s/^package: name='([^']+)'.*/\1/" <<<"$badging")
+      code=$(sed -E "s/.*versionCode='([0-9]+)'.*/\1/" <<<"$badging")
+      [[ -n "${APP_CERT_SHA256[$app_id]:-}" ]] || APP_CERT_SHA256[$app_id]=$(app_cert_sha256 "$app_id")
+      grep -q "SHA-256 digest: ${APP_CERT_SHA256[$app_id]}" <<<"$certs" || die "$f: $app_id is not signed with its app key"
+      # fdroid update only warns about an APK without metadata and leaves it out
+      # of the index: it would be "added" here and never reach a tablet.
+      [[ -f "$FD/metadata/$app_id.yml" ]] ||
+        die "$f: no F-Droid metadata $FD/metadata/$app_id.yml (fdroid update would leave $app_id out of the index)"
+      target="$FD/repo/${app_id}_${code}.apk"
+      if [[ -e "$target" ]] && ! cmp -s "$f" "$target"; then
+        die "$target exists with different content; raise versionCode instead (ANDROID.md, Version rule)"
+      fi
+      install -m 644 "$f" "$target"
+      echo "added $target"
+      ;;
+    *) die "$f: expected a .deb or .apk" ;;
+  esac
+done
+# Old-name packages still in the pool: repack them (unless that version is
+# already there as $OV_APT_NAME, which then wins), then drop the original.
+# Never with --resign: the pool on the server must stay as it is.
+for f in "$APT/pool/main"/*.deb; do
+  [[ -e "$f" ]] || continue
+  pkg=$(dpkg-deb -f "$f" Package)
+  ! apt_name_ok "$pkg" || continue
+  (( ! RESIGN )) || die "--resign: $f ($pkg) would be repacked; run publish-pkgs.sh without --resign"
+  legacy_name "$pkg" || die "$f: package $pkg in the pool is not published here (${APT_NAMES[*]}); remove it"
+  ver=$(dpkg-deb -f "$f" Version)
+  if [[ ! -e "$APT/pool/main/${OV_APT_NAME}_${ver}_amd64.deb" ]]; then
+    cp "$f" "$WORK/old.deb"
+    add_deb "$WORK/old.deb"
+  fi
+  rm -f "$f"
+  echo "removed $f ($pkg $ver)"
+done
+
+# --- 2. APT -----------------------------------------------------------------
+mkdir -p "$DIST/main/binary-amd64"
+gpg_sign() {
+  gpg --batch --yes --pinentry-mode loopback --passphrase-file "$PKGS/gpg-passphrase" \
+    --local-user "$APT_SIGNER_FPR" "$@"
+}
+
+(
+  cd "$APT"
+  # Paths in Packages are relative to the repo root (apt/). --multiversion keeps
+  # every version installable (rollback: apt install <pkg>=<old version>).
+  dpkg-scanpackages --multiversion --arch amd64 pool/main > "$WORK/Packages"
+)
+apt_hold_packages "$WORK/Packages"
+if (( RESIGN )) && ! cmp -s "$WORK/Packages" "$DIST/main/binary-amd64/Packages"; then
+  diff "$DIST/main/binary-amd64/Packages" "$WORK/Packages" | grep -E '^[<>] (Package|Version):' >&2 || true
+  die "--resign: the pool or desktop/latest.json no longer gives the published index; publish the change without --resign"
+fi
+mv "$WORK/Packages" "$DIST/main/binary-amd64/Packages"
+gzip -9nkf "$DIST/main/binary-amd64/Packages"
+
+conf="$WORK/apt-ftparchive.conf"
+cat > "$conf" <<'CONF'
+APT::FTPArchive::Release::Origin "OpenVolley";
+APT::FTPArchive::Release::Label "OpenVolley";
+APT::FTPArchive::Release::Suite "stable";
+APT::FTPArchive::Release::Codename "stable";
+APT::FTPArchive::Release::Architectures "amd64";
+APT::FTPArchive::Release::Components "main";
+APT::FTPArchive::Release::Description "OpenVolley eScoresheet and OpenBeach desktop apps (https://get.openvolley.app)";
+APT::FTPArchive::Release::ValidTime "2592000";
+CONF
+apt-ftparchive -c "$conf" release "$DIST" > "$DIST/Release.tmp"
+mv "$DIST/Release.tmp" "$DIST/Release"
+rm -f "$DIST/InRelease" "$DIST/Release.gpg"
+gpg_sign --clearsign -o "$DIST/InRelease" "$DIST/Release"
+gpg_sign -abs -o "$DIST/Release.gpg" "$DIST/Release"
+
+gpg --batch --yes --export "$APT_SIGNER_FPR" > "$APT/openvolley.gpg"
+gpg --batch --yes --armor --export "$APT_SIGNER_FPR" > "$APT/openvolley.asc"
+# Check the signatures against exactly the keyring users download.
+gpgv --keyring "$APT/openvolley.gpg" "$DIST/InRelease" 2>/dev/null || die "InRelease does not verify"
+gpgv --keyring "$APT/openvolley.gpg" "$DIST/Release.gpg" "$DIST/Release" 2>/dev/null || die "Release.gpg does not verify"
+grep -q '^Valid-Until: ' "$DIST/Release" || die "the Release file has no Valid-Until"
+
+if (( RESIGN )); then
+  refuse_key_material "$PUB/apt"
+  chmod -R u=rwX,go=rX "$DIST"
+  vu=$(sed -n 's/^Valid-Until: //p' "$DIST/Release")
+  echo "APT index signed again, valid until $vu"
+  if (( SYNC )); then
+    # apt/dists/ only (the filter leaves the rest of DEST alone), put in
+    # place together at the end (as in step 5).
+    SUDO=()
+    [[ "$DEST" != /* || ! -d "$DEST" || -w "$DEST" ]] || SUDO=(sudo)
+    "${SUDO[@]}" rsync -rlt --delete-after --delay-updates --chmod=D755,F644 \
+      --include='/dists/***' --exclude='*' "$APT/" "${DEST%/}/apt/"
+    echo "synced $APT/dists/ to ${DEST%/}/apt/dists/"
+    # the heartbeat a publish checks (re-sign timer guard)
+    printf '%s %s\n' "$(date -u +%FT%TZ)" "$vu" >"$RESIGN_HEARTBEAT.tmp" && mv -f "$RESIGN_HEARTBEAT.tmp" "$RESIGN_HEARTBEAT"
+    kuma up "APT index valid until $vu"
+  else
+    echo "not synced (--no-sync); tree: $PUB"
+  fi
+  exit 0
+fi
+
+# --- 3. F-Droid -------------------------------------------------------------
+(cd "$FD" && fdroid update -q)
+mkdir -p "$PUB/fdroid"
+# status/ is fdroidserver's run log (host OS, tool paths); clients never read it.
+rsync -a --delete --delete-excluded --exclude=/status/ "$FD/repo/" "$PUB/fdroid/repo/"
+
+# --- 3b. Flatpak (--flatpak) --------------------------------------------------
+# The signed .deb (same bytes as the pool's, checked below) into the Flatpak repo.
+if (( FLATPAK )); then
+  OV_PKGS_HOME="$PKGS" "$FLATPAK_PUBLISH" --app "${APP:-openvolley}" --deb "$DESKTOP_DEB" "$DESKTOP_V"
+fi
+
+# --- 3c. pacman (--pacman) --------------------------------------------------------
+# The AUR PKGBUILD built from the same .deb (makepkg checks its sha256).
+if (( PACMAN )); then
+  OV_PKGS_HOME="$PKGS" "$PACMAN_PUBLISH" --app "${APP:-openvolley}" --deb "$DESKTOP_DEB" "$DESKTOP_V"
+fi
+
+# --- 4. landing page and installer -----------------------------------------
+# The newest .deb and APK of each app fill the version links in the template
+# (lib/publish-lib.sh landing_page; OpenBeach's section only once published).
+landing_page "$KIT_DIR/pkgs/index.html" "$DIST/main/binary-amd64/Packages" "$FD/repo/index-v2.json" "$PUB/index.html"
+# curl -fsSL https://get.openvolley.app/install.sh | sudo sh [-s openbeach-escoresheet]
+check_install_sh "$KIT_DIR/pkgs/install.sh" "$APT_SIGNER_FPR"
+install_sh_ok "$KIT_DIR/pkgs/install.sh" "$KIT_DIR/../../README.md"
+install -m 644 "$KIT_DIR/pkgs/install.sh" "$PUB/install.sh"
+
+# The deb the updater announces is the pool file: same bytes as the signed one.
+if [[ -n "$DESKTOP_V" ]]; then
+  cmp -s "$DESKTOP_DEB" "$APT/pool/main/${DESKTOP_DEB_NAME}_${DESKTOP_V}_amd64.deb" ||
+    die "pool .deb for $DESKTOP_V differs from the signed one"
+  desktop_publish_tree "$DESKTOP_V" "$STAGING" "$WORK/desktop/latest.json" "$PUB"
+fi
+
+# --- 5. check and sync ------------------------------------------------------
+refuse_key_material "$PUB"
+chmod -R u=rwX,go=rX "$PUB"
+
+echo "published (APT index $(sed -n 's/^Valid-Until: /valid until /p' "$DIST/Release")):"
+grep -E '^(Package|Version):' "$DIST/main/binary-amd64/Packages" | paste - - | sed 's/^/  apt     /'
+python3 - "$FD/repo/index-v2.json" <<'EOF'
+import json, sys
+d = json.load(open(sys.argv[1]))
+for app, p in d["packages"].items():
+    for v in p["versions"].values():
+        m = v["manifest"]
+        print(f"  fdroid  {app} {m['versionName']} ({m['versionCode']})")
+EOF
+for f in "$PUB"/desktop/latest.json "$PUB"/desktop/staging.json "$PUB"/desktop/beach/latest.json "$PUB"/desktop/beach/staging.json; do
+  if [[ -f "$f" ]]; then
+    echo "  $(dirname "${f#"$PUB"/}") $(basename "$f" .json) $(manifest_version "$f")"
+  fi
+done
+if [[ -f "$PUB/flatpak/repo/config" ]] && command -v ostree >/dev/null; then
+  for r in $(ostree --repo="$PUB/flatpak/repo" refs | grep '^app/'); do
+    echo "  flatpak $r: $(ostree --repo="$PUB/flatpak/repo" log "$r" | awk '/^    [^ ]/ { sub(/^ +/, ""); print; exit }')"
+  done
+fi
+
+if [[ -f "$PUB/arch/x86_64/openvolley.db" ]]; then
+  python3 - "$PUB/arch/x86_64/openvolley.db" <<'EOF'
+import sys, tarfile
+with tarfile.open(sys.argv[1]) as t:
+    for m in sorted(t.getmembers(), key=lambda m: m.name):
+        if m.name.endswith("/desc"):
+            lines = t.extractfile(m).read().decode().split("\n")
+            f = {lines[i]: lines[i + 1] for i in range(len(lines) - 1) if lines[i].startswith("%")}
+            print(f"  pacman  {f['%NAME%']} {f['%VERSION%']}")
+EOF
+fi
+
+if (( SYNC )); then
+  # --delay-updates puts every changed file in place at the end, so a client
+  # never sees a new index that points at a package not uploaded yet.
+  # The Flatpak repo's tmp/ and .lock are OSTree's own working files.
+  # A local DEST that exists but is not ours (the default) is written with sudo.
+  SUDO=()
+  [[ "$DEST" != /* || ! -d "$DEST" || -w "$DEST" ]] || SUDO=(sudo)
+  "${SUDO[@]}" rsync -rlt --delete-after --delay-updates --chmod=D755,F644 \
+    --exclude=/flatpak/repo/tmp/ --exclude=/flatpak/repo/.lock "$PUB/" "$DEST"
+  echo "synced to $DEST"
+  # Only now: latest.json on GitHub must not point at a .deb not yet in the pool.
+  [[ -z "$DESKTOP_V" ]] || desktop_upload "$DESKTOP_V" "$STAGING" "$WORK/desktop"
+  kuma up "published; APT index valid until $(sed -n 's/^Valid-Until: //p' "$DIST/Release")"
+else
+  echo "not synced (--no-sync); tree: $PUB"
+  if [[ -n "$DESKTOP_V" ]]; then
+    if (( STAGING )); then up="the .sig files"; else up="the .sig files and latest.json"; fi
+    echo "not uploaded to $(desktop_tag "$DESKTOP_V") (--no-sync): $up"
+  fi
+fi

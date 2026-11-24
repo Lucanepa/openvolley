@@ -1,0 +1,27 @@
+OpenVolley est une feuille de match électronique pour le volleyball en salle, conçue pour la table de marque. Elle suit les règles de la FIVB et les règlements de Swiss Volley et remplace la feuille de match papier.
+
+Marquer
+- Préparation du match : équipes, listes de joueurs, liberos, officiels, arbitres, données du match
+- Tirage au sort, alignements et rotations, ordre de service
+- Saisie échange par échange, avec annulation et changement de décision
+- Temps morts, remplacements (réguliers et exceptionnels), remplacements du libero
+- Demandes irrégulières, avertissements pour retard et sanctions
+- Pauses entre les sets, fin de set et de match, signatures
+- Feuille de match en PDF à la fin du match
+- Matchs de test avec des équipes d'exemple pour s'entraîner
+
+Hors ligne d'abord
+Chaque match est enregistré sur la tablette. La saisie n'attend jamais le réseau : l'application fonctionne sans aucune connexion et se synchronise dès qu'elle est de nouveau en ligne.
+
+Des tablettes autour du terrain
+La même application ouvre aussi les vues arbitre, banc (équipe) et livescore, pour qu'une deuxième tablette suive le match en direct pour le 2e arbitre, l'entraîneur ou le public. Choix dans les Options.
+
+Serveur de salle (sans internet)
+Dans les salles sans internet, les tablettes se connectent à un serveur OpenVolley local sur le même réseau (application de bureau OpenVolley, serveur autonome ou boîtier de salle). Saisir son adresse, par exemple 192.168.1.20:8080, dans Options, Serveur.
+
+Synchronisation cloud
+Avec internet, les matchs sont synchronisés avec le backend OpenVolley (backend.openvolley.app), pour que les vues sur d'autres appareils suivent le match. Le backend est un logiciel libre du même dépôt et peut être auto-hébergé. Les matchs de test ne sont jamais envoyés.
+
+Langues : anglais, allemand, suisse allemand, français, italien.
+
+Conçue pour les tablettes en mode paysage.

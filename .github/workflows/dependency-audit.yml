@@ -1,0 +1,59 @@
+name: Dependency audit
+
+# Published advisories in what ships: npm audit of the production
+# dependencies of the backend, the frontend and the render service (the
+# Chromium that prints the official PDF; high and critical fail the job), and
+# cargo audit of the desktop app's Cargo.lock (a vulnerability fails
+# it; unmaintained and yanked crates, e.g. Tauri's GTK 3 bindings on Linux,
+# are listed as warnings). On every pull request, and weekly, so an advisory published
+# for an unchanged lock file shows up too. Dependabot (.github/dependabot.yml)
+# proposes the updates. Reads the lock files only: nothing is installed or
+# built.
+on:
+  pull_request:
+  schedule:
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  npm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: [escoresheet/backend, escoresheet/frontend, escoresheet/render]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+
+      - name: npm audit (production dependencies)
+        working-directory: ${{ matrix.dir }}
+        run: npm audit --omit=dev --audit-level=high
+
+  cargo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # crates.io versions never change; raise it by hand when the advisory
+      # database needs a newer one
+      CARGO_AUDIT_VERSION: '0.23.0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked --version "$CARGO_AUDIT_VERSION"
+
+      - name: cargo audit (desktop app)
+        working-directory: escoresheet/frontend/src-tauri
+        run: cargo audit

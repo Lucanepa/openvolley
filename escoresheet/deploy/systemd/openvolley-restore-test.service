@@ -1,0 +1,35 @@
+# lenovoserver only (holds the openvolley-backup PRIVATE key). Restores the
+# newest dump of the NAS copy (ov-backup-pull.sh carries the dumps, their
+# .counts and the secrets-*.env.gpg there) and boots the backend on it.
+# It runs from its own checkout, never the shared working copy (other
+# sessions switch its branch): a detached checkout of main that nothing else
+# uses. Install:
+#   git -C ~/repos/openvolley worktree add --detach ~/ov-ops/restore-test origin/main
+#   sudo install -m 644 openvolley-restore-test.service openvolley-restore-test.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now openvolley-restore-test.timer
+#   sudo systemctl start openvolley-restore-test.service   # once, then: journalctl -u openvolley-restore-test
+# Move it to a newer main only after reading what changed in escoresheet/deploy/:
+#   git -C ~/ov-ops/restore-test checkout --detach origin/main
+# A failure posts to the ntfy topic below (RT_NTFY_URL); set RT_KUMA_PUSH_URL
+# in restore-test.env (a push monitor, heartbeat about 8 days) to be told when
+# it does not run at all. The ssh alias of RT_SOURCE (nas-ts) must work for
+# User= without a prompt. Adjust User= and the paths if the checkout lives elsewhere.
+[Unit]
+Description=OpenVolley weekly restore test (newest NAS dump -> throwaway postgres + backend, /health + floors)
+Wants=docker.service network-online.target
+After=docker.service network-online.target tailscaled.service
+
+[Service]
+Type=oneshot
+User=lucanepa
+# Passphrase of the openvolley-backup key (file mode 0600). The script reads
+# it from $CREDENTIALS_DIRECTORY/gpg-pass.
+LoadCredential=gpg-pass:/home/lucanepa/.config/openvolley/gpg-passphrase
+# The owner's alerts on this host (as ov-backup-pull); restore-test.env may override it
+Environment=RT_NTFY_URL=http://127.0.0.1:8445/homelab
+# Optional overrides (RT_SOURCE, RT_BACKEND_IMAGE, RT_BACKEND_ENV_FILE, RT_KUMA_PUSH_URL, ...).
+EnvironmentFile=-/home/lucanepa/.config/openvolley/restore-test.env
+ExecStart=/home/lucanepa/ov-ops/restore-test/escoresheet/deploy/restore-test.sh
+TimeoutStartSec=30min
+Nice=10
+NoNewPrivileges=yes

@@ -1,0 +1,4991 @@
+import { memo, useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { db, persistentStorage } from './db/db'
+import { wipeMatchEvents } from './db/eventHistory'
+import SavedBackupsList from './components/SavedBackupsList'
+import MatchSetup, { preloadMatchSetup } from './components/MatchSetup'
+import ScoreboardScreen, { preloadScoreboard } from './components/Scoreboard'
+import CoinToss from './components/CoinToss'
+import MatchEnd, { preloadMatchEnd } from './components/MatchEnd'
+import ManualAdjustments from './components/ManualAdjustments'
+import Modal from './components/Modal'
+import ContextualHelpPanel from './components/help/ContextualHelpPanel'
+import SpotlightOverlay from './components/help/SpotlightOverlay'
+import { OPEN_HELP_EVENT } from './components/help/helpEvents'
+import ConnectionStatus from './components/ConnectionStatus'
+import StartupConnectivityModal from './components/StartupConnectivityModal'
+import MainHeader from './components/MainHeader'
+import BackupTable from './components/BackupTable'
+import RestorePreview from './components/RestorePreview'
+import HomePage from './components/pages/HomePage'
+import EasyMatchModal from './components/EasyMatchModal'
+import SimpleScoreboard from './components/SimpleScoreboard'
+import TodayGamesModal from './components/TodayGamesModal'
+import { useAuth } from './contexts/AuthContext'
+import { EASY_TEAM_SEED_KEYS, easyMatchPrefill } from './domain/easyMatch'
+import { SIMPLE_BOARD_OPEN_KEY } from './domain/simpleScoreboard'
+import { takesUploadedRoster } from './domain/uploadedRoster'
+import HomeOptionsModal from './components/options/HomeOptionsModal'
+import ConnectTabletsModal from './components/connect/ConnectTabletsModal'
+import { useSyncQueue, useUserMatchLink, checkScorerMoved, askScoringDevice, matchEndUpdateNeeded, isClosedHere, hasStoredSessionToken, noteMatchClosedOnServer } from './hooks/useSyncQueue'
+import { isScorerMoved, takeBackScoring, relaySyncDevice, serverScoreForTakeBack } from './utils/matchHandover'
+import ScorerMovedModal from './components/ScorerMovedModal'
+import ClosedOnServerModal from './components/ClosedOnServerModal'
+import SelfCheckNotice from './components/SelfCheckNotice'
+import DeviceCheckCard from './components/DeviceCheckCard'
+import { homeQuietForCheck, useAutoDeviceCheck } from './utils/deviceCheck'
+import { readRallyMode } from './utils/rallyMode'
+import { logState } from './utils/comprehensiveLogger'
+import { isKnownClosedOnServer, isStaleClosedCopy, wasClosedOnServer } from './utils/matchReopen'
+import { readHomeMatchStatus } from './utils/homeMatchStatus'
+import { BACKGROUND_HOME_MS, SERVER_CHECK_TIMEOUT_MS, checkCopiesOnServer, cleanUpDuplicateCopies, clearOpenMatch, findDuplicateCopies, copyState, duplicateCopyIds, hasOtherLocalCopy, isOpenOfficialCopy, lastActivityAt, matchToReopen, newestEventOf, noteOpenMatch, readOpenMatch, readServerMatchRows, runDeviceSelfCheck, trackBackground, unsentOfMatch, withinTimeout } from './utils/deviceSelfCheck'
+import SyncSignInBanner from './components/auth/SyncSignInBanner'
+import useAutoBackup from './hooks/useAutoBackup'
+import { useLatestCallback } from './hooks/useLatestCallback'
+import { pickNativeBackupFile } from './utils/nativeBackup'
+import { useBackupUnlock } from './hooks/useBackupUnlock'
+import { useDashboardServer } from './hooks/useDashboardServer'
+import { publishEndedLiveStates } from './utils/matchEndLiveState'
+import ballFallback from './ball_fallback.png'
+import { isLocalOnly, usesKeyStore } from './domain/matchKind'
+
+// The scoring screen renders on its own state, data and contexts only: App's
+// renders while scoring (its live queries, the sync status) stop here. Its
+// callbacks keep one identity (useLatestCallback in App).
+const Scoreboard = memo(ScoreboardScreen)
+
+// Primary ball image (with a bundled copy as fallback)
+// The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
+// stay cached (old green ball) after an update
+const ballImage = ballFallback
+
+// The start-up's live-state repair of ended matches (publishEndedLiveStates):
+// tried again at most this often, this many times
+const ENDED_LIVE_STATE_RETRY_MS = 60 * 1000
+const ENDED_LIVE_STATE_TRIES = 10
+// The home screen's "opening the match" spinner at most this long: the
+// server check (SERVER_CHECK_TIMEOUT_MS), the lock and Match Setup's reads
+// (SETUP_READS_WAIT_MS) fit well inside
+const OPENING_MATCH_MAX_MS = 10000
+// The home screen's first paint waits this long at most for its local reads
+const HOME_READS_WAIT_MS = 3000
+
+import {
+  TEST_REFEREE_SEED_DATA,
+  TEST_SCORER_SEED_DATA,
+  TEST_TEAM_SEED_DATA,
+  newTestMatchSeedKey,
+  isTestMatchSeedKey,
+  testMatchSeedKeyFor,
+  TEST_MATCH_EXTERNAL_ID,
+  TEST_HOME_TEAM_EXTERNAL_ID,
+  TEST_AWAY_TEAM_EXTERNAL_ID,
+  TEST_MATCH_DEFAULTS,
+  TEST_HOME_BENCH,
+  TEST_AWAY_BENCH,
+  getNextTestMatchStartTime,
+  getTestHomeTeamShortName,
+  getTestAwayTeamShortName,
+  getTestTeamByExternalId,
+  seedTeamPatch
+} from './constants/testSeeds'
+import { cleanIdValue } from './domain/idMode'
+import { apiFrom, apiMatchRestoreByPin, writingDevice } from './lib/apiClient'
+import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
+import { fetchMatchByPin, fetchMatchToContinue, importMatchFromSupabase, cloudBestOf, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, matchBackupFromFile, parseBackupText, restoreErrorText, localLossOnReplace, restoreLossText, RESTORE_LOSES_LOCAL, continueWithLocalCopy } from './utils/backupManager'
+import UpdateBanner from './components/UpdateBanner'
+import DesktopUpdateNotice from './components/DesktopUpdateNotice'
+import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from './utils/matchFormat'
+import { getMatchWinner, opensAtMatchEnd } from './domain/matchEnd'
+import { jobMatchKey, setExtId } from './utils/syncIds'
+import { deviceMatchRows, jobsOfMatch, matchGameNumber, resumeStage, setScore } from './utils/deviceMatches'
+import { PhoneIcon } from './components/icons'
+import { Maximize } from 'lucide-react'
+import ToolModeChooser from './components/ToolModeChooser'
+import { newGlobalKey, loadGlobal, isGlobalKey, markGlobalMatch, globalRestoreData, upgradeGlobalMatches } from './utils/globalCloud'
+import { startGlobalPendingRetry } from './utils/globalPending'
+import { useToolMode, getToolMode, setToolMode, toolModeLocked, impliedToolMode } from './utils/toolMode'
+import { Button, cn, FormError, Input, ScreenLoading } from './ui'
+import { getBackendOverride, getCloudApiUrl, getLocalServerStatusUrl, isCloudBlockedOnThisPort, isNativeApp, isStaticHost } from './utils/backendConfig'
+// the Android app (Capacitor): its own plugin hides the system bars
+const isAndroidApp = () => isNativeApp() && window.Capacitor?.getPlatform?.() === 'android'
+import { isViewportTooSmall } from './utils/formLayout'
+import { onPointHubBoard } from './utils/pointHubBoard'
+import { installAppLifecycle, liveOf, setLiveMatch } from './utils/appLifecycle'
+import { installAndroidUpdates, liveMatchKnown } from './utils/androidUpdate'
+import AndroidUpdateNotice from './components/AndroidUpdateNotice'
+import { detectAppPlatform, openAppWindow, openFailedMessageKey } from './utils/openAppWindow'
+import ManageConsole from './components/manage/ManageConsole'
+import ManagerSiteLink from './components/ManagerSiteLink'
+import { OPEN_MANAGE_EVENT, OPEN_RESTORE_EVENT, openRestore, restorePrefill } from './utils/manageNav'
+import { relayMatchKey, relayMatchPayload, liveStateNow } from './utils/serverDataSync'
+import { needsEventCheck, pickCurrentMatch, newOfficialMatchStep, OFFICIAL_MATCH_KEPT_STEPS, relayPublishedMatch } from './utils/currentMatch'
+import { isRelayErrorFor, relayConnectionStatus, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
+import { relayMatchBundle, relaySyncTrigger } from './utils/relayMatchSync'
+import { PHONE_MAX_WIDTH, isPhoneScreen, phoneLayoutKept } from './components/scoreboard/phoneLayout'
+import { useSystemBarsHidden } from './utils/nativeSystemBars'
+import { generateSecurePin } from './utils/stringUtils'
+import { setErrorView } from './utils/errorReport'
+import { benchPlays } from './db/matchRepository'
+import { rosterNumberIssues } from './domain/coinTossChecks'
+
+function readStoredDisplayMode() {
+  try {
+    return localStorage.getItem('displayMode') || 'auto'
+  } catch {
+    return 'auto'
+  }
+}
+
+function parseDateTime(dateTime) {
+  const [datePart, timePart] = dateTime.split(' ')
+  const [day, month, year] = datePart.split('.').map(Number)
+  const [hours, minutes] = timePart.split(':').map(Number)
+  const date = new Date(Date.UTC(year, month - 1, day, hours, minutes))
+  return date.toISOString()
+}
+
+// sessionStorage: survives the tab's own reloads, not a new start of the app
+const STARTUP_CHECK_KEY = 'ov.startupCheckAt'
+const STARTUP_CHECK_WINDOW_MS = 120000
+function startupCheckShownRecently(now = Date.now()) {
+  try {
+    const last = Number(sessionStorage.getItem(STARTUP_CHECK_KEY))
+    const recent = last > 0 && now - last >= 0 && now - last < STARTUP_CHECK_WINDOW_MS
+    if (!recent) sessionStorage.setItem(STARTUP_CHECK_KEY, String(now))
+    return recent
+  } catch {
+    return false
+  }
+}
+// read once per page load (not in a render: StrictMode calls initializers twice)
+const STARTUP_CHECK_SHOWN_RECENTLY = typeof window !== 'undefined' && startupCheckShownRecently()
+
+// The device check stops when a match screen is noted open (deviceSelfCheck
+// noteOpenMatch), whatever App's state says; its result goes into the local
+// interaction log (numbers only, never sent: utils/comprehensiveLogger)
+const matchOpenNoted = () => readOpenMatch() != null
+const logDeviceCheck = (r) => logState('DeviceCheck', 'result', {
+  tier: r.tier, score: r.score, workMs: r.workMs, layoutMs: r.layoutMs, platform: r.hints?.platform, cores: r.hints?.cores, memoryGb: r.hints?.memoryGb, from: 'home'
+})
+
+export default function App() {
+  const { t, i18n } = useTranslation()
+  const [matchId, setMatchId] = useState(null)
+  const [showMatchSetup, setShowMatchSetup] = useState(false)
+  const [showCoinToss, setShowCoinToss] = useState(false)
+  const [showMatchEnd, setShowMatchEnd] = useState(false)
+  const [showManualAdjustments, setShowManualAdjustments] = useState(false)
+  // opened from the scoreboard (Edit match info) or the match end: where Close goes back to
+  const [manualAdjustmentsFrom, setManualAdjustmentsFrom] = useState('matchEnd')
+  // The match just closed from Match End (deleted): left out of the home
+  // screen and the header at once, while the live queries still see it for
+  // a moment (laptop run 2026-10-08, OV-17: one frame of its 'Continue match
+  // / Delete match' and 'Test match')
+  const [closedMatchId, setClosedMatchId] = useState(null)
+  // The home screen's matches as they were when a new test match was asked
+  // for, until its Match Setup opens: the new match's 'Continue match /
+  // Delete match' showed for a frame first (OpenBeach OB-2, laptop run
+  // 2026-10-08)
+  const [homeWhilePreparing, setHomeWhilePreparing] = useState(null)
+  // A copy closed on the server that Continue asked for (ClosedOnServerModal
+  // over the home screen); the open match's own copy needs no id here
+  const [closedCopyId, setClosedCopyId] = useState(null)
+  // What the self-check found (utils/deviceSelfCheck), on the home screen
+  // until dismissed: { closed, flagged, removed }
+  const [selfCheck, setSelfCheck] = useState(null)
+  // The local matches the last server check found scored here ("Scoring
+  // here" on the home screen); any other open official copy is "Not
+  // checked" until a check answers for it. Sorted ids.
+  const [serverHere, setServerHere] = useState([])
+  const [deleteMatchModal, setDeleteMatchModal] = useState(null)
+  const [deletePinInput, setDeletePinInput] = useState('')
+  const [deletePinError, setDeletePinError] = useState('')
+  const [newMatchModal, setNewMatchModal] = useState(null)
+  const [restoreMatchModal, setRestoreMatchModal] = useState(false)
+  const [restoreMatchIdInput, setRestoreMatchIdInput] = useState('')
+  // Manage console (admins, competition managers): the open tab, or null
+  const [manageTab, setManageTab] = useState(null)
+  const [restorePin, setRestorePin] = useState('')
+  const [restoreError, setRestoreError] = useState('')
+  const [restoreLoading, setRestoreLoading] = useState(false)
+  const [cloudBackups, setCloudBackups] = useState([])
+  const [cloudBackupPin, setCloudBackupPin] = useState('')
+  const [cloudBackupGameN, setCloudBackupGameN] = useState('')
+  // Global: the match's backup code (utils/globalCloud) to restore from
+  const [globalRestoreCode, setGlobalRestoreCode] = useState('')
+  const [globalRestoreBusy, setGlobalRestoreBusy] = useState(false)
+  // what the restore by backup code says, under its own field (restoreByCodeSection)
+  const [globalRestoreError, setGlobalRestoreError] = useState('')
+  const [cloudBackupLoading, setCloudBackupLoading] = useState(false)
+  const [cloudBackupError, setCloudBackupError] = useState('')
+  const [restorePreviewData, setRestorePreviewData] = useState(null) // { data, source: 'database'|'cloud'|'local' }
+  // The error reports name the screen that was open (utils/errorReport; this app has no router)
+  useEffect(() => {
+    setErrorView(!matchId ? 'home' : showCoinToss ? 'coinToss' : showMatchSetup ? 'matchSetup' : showManualAdjustments ? 'manualAdjustments' : showMatchEnd ? 'matchEnd' : 'scoreboard')
+  }, [matchId, showCoinToss, showMatchSetup, showManualAdjustments, showMatchEnd])
+  // utils/manageNav: the user menu opens the console; sync notices and
+  // MatchSetup open "restore a match" with the game number filled in (join
+  // an official game with its game PIN). The console never opens over a
+  // match in progress.
+  useEffect(() => {
+    const onManage = (e) => {
+      if (matchId || getToolMode() === 'global') return
+      setManageTab(e?.detail?.tab || 'accounts')
+    }
+    const onRestore = (e) => {
+      // The dialog's game number field is cloudBackupGameN (restoreMatchIdInput is not shown)
+      const fill = restorePrefill(e?.detail)
+      setManageTab(null)
+      setCloudBackupGameN(fill.cloudBackupGameN)
+      setCloudBackupPin(fill.cloudBackupPin)
+      setCloudBackupError(fill.cloudBackupError)
+      setCloudBackups([])
+      setRestoreMatchModal(true)
+    }
+    window.addEventListener(OPEN_MANAGE_EVENT, onManage)
+    window.addEventListener(OPEN_RESTORE_EVENT, onRestore)
+    return () => {
+      window.removeEventListener(OPEN_MANAGE_EVENT, onManage)
+      window.removeEventListener(OPEN_RESTORE_EVENT, onRestore)
+    }
+  }, [matchId])
+  const [testMatchLoading, setTestMatchLoading] = useState(false)
+  // A match opened from the home screen (owner 2026-11-11: "every time I
+  // click something or start new game etc it seems it loads something,
+  // stops, loads it again"): the branded spinner from the tap until the next
+  // screen has what it shows. Continue waits up to 3 s for the server's
+  // self-check, then the session lock and the setup's reads; the home screen
+  // stood still meanwhile and Match Setup filled in after it came.
+  // 'running' while the opening runs; 'done' after it, until Match Setup says
+  // it is ready (onReady) or the next screen is not Match Setup.
+  const [openingMatch, setOpeningMatch] = useState(null)
+  const openFromHome = useCallback(async (open) => {
+    setOpeningMatch('running')
+    try {
+      return await open()
+    } finally {
+      setOpeningMatch((o) => (o === 'running' ? 'done' : o))
+    }
+  }, [])
+  const setupOpen = showMatchSetup && matchId != null
+  useEffect(() => {
+    // the opening ended on another screen (scoreboard, coin toss, Match End,
+    // a dialog on the home screen): nothing more to wait for
+    if (openingMatch === 'done' && !setupOpen) setOpeningMatch(null)
+  }, [openingMatch, setupOpen])
+  useEffect(() => {
+    // never stuck: offline first, the screen shows what it has
+    if (!openingMatch) return undefined
+    const timer = setTimeout(() => setOpeningMatch(null), OPENING_MATCH_MAX_MS)
+    return () => clearTimeout(timer)
+  }, [openingMatch])
+  // Easy match form: { prefill } while open. A page address with ?easy=...
+  // (domain/easyMatch.js easyMatchPrefill) opens it on that game.
+  const [easyMatchForm, setEasyMatchForm] = useState(() => {
+    const prefill = typeof window !== 'undefined' ? easyMatchPrefill(window.location.search) : null
+    return prefill ? { prefill } : null
+  })
+  const [easyMatchLoading, setEasyMatchLoading] = useState(false)
+  // Home's Scoreboard (domain/simpleScoreboard.js): open over Home, and again
+  // after a reload in this tab (sessionStorage), as a match is
+  const [simpleBoardOpen, setSimpleBoardOpenState] = useState(() => {
+    try { return sessionStorage.getItem(SIMPLE_BOARD_OPEN_KEY) === '1' } catch { return false }
+  })
+  const setSimpleBoardOpen = useCallback((open) => {
+    setSimpleBoardOpenState(open)
+    try {
+      if (open) sessionStorage.setItem(SIMPLE_BOARD_OPEN_KEY, '1')
+      else sessionStorage.removeItem(SIMPLE_BOARD_OPEN_KEY)
+    } catch { /* storage blocked: the board only stays open until a reload */ }
+  }, [])
+  const [alertModal, setAlertModal] = useState(null) // { message: string }
+  const [confirmModal, setConfirmModal] = useState(null) // { message: string, onConfirm: function, onCancel: function }
+  // Official game, signed in: today's home games of the account's clubs; the
+  // game picked fills the new match's setup (MatchSetup initialOfficialGame)
+  const [todayGamesOpen, setTodayGamesOpen] = useState(false)
+  const [pendingOfficialGame, setPendingOfficialGame] = useState(null)
+  const { user: signedInUser } = useAuth()
+  const [homeOptionsModal, setHomeOptionsModal] = useState(false)
+  const [helpPanelOpen, setHelpPanelOpen] = useState(false)
+  // A dialog's help button opens the panel on the dialog's own screen
+  // (components/help/helpEvents.js); the header's ? on the page's
+  const [helpDialogScreen, setHelpDialogScreen] = useState(null)
+  useEffect(() => {
+    const onOpenHelp = (e) => {
+      if (!e?.detail?.screen) return
+      setHelpDialogScreen(e.detail.screen)
+      setHelpPanelOpen(true)
+    }
+    window.addEventListener(OPEN_HELP_EVENT, onOpenHelp)
+    return () => window.removeEventListener(OPEN_HELP_EVENT, onOpenHelp)
+  }, [])
+  const [spotlightTarget, setSpotlightTarget] = useState(null)
+  const [connectionSetupModal, setConnectionSetupModal] = useState(false)
+  const { syncStatus, retryErrors, isOnline } = useSyncQueue()
+  // The sync indicator reads the queue counts itself (a live query there, so a
+  // queue write does not re-render the whole app); it only needs to know
+  // whether the cloud is waiting for a sign-in.
+  const queueStats = useMemo(() => ({ authRequired: syncStatus === 'auth_required' }), [syncStatus])
+  // The native backup status (folder, last file, error) is shown on Home, in
+  // Match Setup and in the Options dialog only: while scoring, App does not
+  // re-render at each backup file (one after nearly every scoring write)
+  const backup = useAutoBackup(matchId, { watchStatus: !matchId || showMatchSetup || homeOptionsModal })
+  const { unlock: unlockBackup, dialog: backupUnlockDialog } = useBackupUnlock()
+  // Backup file for a restore: the desktop app opens its own dialog in the
+  // backup folder; elsewhere the browser file picker. A whole-database export
+  // (an older set-end download) and a Match End file (the ZIP's MatchData
+  // JSON) are previewed and restored as the match they hold. An encrypted app
+  // backup asks for the game PIN or the referee PIN first (null: cancelled).
+  const pickBackupFile = useCallback(async () => {
+    const native = await pickNativeBackupFile()
+    const data = native === undefined ? await selectBackupFile() : native
+    return data && unlockBackup(matchBackupFromFile(data))
+  }, [unlockBackup])
+  // Options > Backup > Restore from a backup file: same preview + restore path
+  // as the Restore match dialog.
+  const restoreFromBackupFile = useCallback(async () => {
+    try {
+      const jsonData = await pickBackupFile()
+      if (!jsonData) return // cancelled
+      setHomeOptionsModal(false)
+      setRestorePreviewData({ data: jsonData, source: 'local' })
+    } catch (err) {
+      setAlertModal(restoreErrorText(err, t))
+    }
+  }, [pickBackupFile, t])
+  // My Matches: link the signed-in account to the match open here (sync queue)
+  useUserMatchLink(matchId)
+
+  // Compute current page for contextual help
+  const currentPage = useMemo(() => {
+    if (showManualAdjustments && matchId) return 'manualAdjustments'
+    if (showMatchEnd && matchId) return 'matchEnd'
+    if (showCoinToss && matchId) return 'coinToss'
+    if (showMatchSetup && matchId) return 'matchSetup'
+    if (matchId) return 'scoreboard'
+    return 'home'
+  }, [matchId, showMatchSetup, showCoinToss, showMatchEnd, showManualAdjustments])
+
+  // Dashboard Server state (only available in Electron desktop app)
+  const isElectron = typeof window !== 'undefined' && !!window.electronAPI
+  const [dashboardServerEnabled, setDashboardServerEnabled] = useState(
+    () => localStorage.getItem('dashboardServerEnabled') === 'true'
+  )
+  const dashboardServerData = useDashboardServer({
+    enabled: isElectron && dashboardServerEnabled,
+    matchId: matchId
+  })
+  const [serverStatus, setServerStatus] = useState(null)
+  const [showConnectionMenu, setShowConnectionMenu] = useState(false)
+  const [connectionStatuses, setConnectionStatuses] = useState({
+    api: 'unknown',
+    server: 'unknown',
+    websocket: 'unknown',
+    scoreboard: 'unknown',
+    match: 'unknown',
+    db: 'unknown',
+    supabase: 'unknown'
+  })
+  const [connectionDebugInfo, setConnectionDebugInfo] = useState({})
+  const [scorerAttentionTrigger, setScorerAttentionTrigger] = useState(null)
+  const [showDebugMenu, setShowDebugMenu] = useState(null) // Which connection type to show debug for
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [viewportSize, setViewportSize] = useState({ width: window.innerWidth, height: window.innerHeight })
+  const [matchInfoMenuOpen, setMatchInfoMenuOpen] = useState(false)
+  const [offlineMode, setOfflineMode] = useState(() => {
+    const saved = localStorage.getItem('offlineMode')
+    return saved === 'true'
+  })
+  // Once per start (owner 2026-11-11: "it checked internet, ok, checked
+  // again"): the desktop app reloads itself right after the first start of a
+  // new build (applyUpdateAtStart, UpdateBanner), and that reload no longer
+  // shows the connection check a second time (this tab showed it < 2 min ago)
+  const [showStartupConnectivity, setShowStartupConnectivity] = useState(() => {
+    if (localStorage.getItem('offlineMode') === 'true') return false
+    return !STARTUP_CHECK_SHOWN_RECENTLY
+  })
+  // Display mode: 'desktop' | 'tablet' | 'auto'
+  const [displayMode, setDisplayMode] = useState(() => {
+    const saved = localStorage.getItem('displayMode')
+    return saved || 'auto' // default to auto-detect
+  })
+  const [detectedDisplayMode, setDetectedDisplayMode] = useState('desktop') // What mode was auto-detected
+  // Options › Point entry: rallies or continuous play, this device (utils/rallyMode)
+  const [rallyMode, setRallyMode] = useState(() => readRallyMode())
+  const [checkAccidentalRallyStart, setCheckAccidentalRallyStart] = useState(() => {
+    const saved = localStorage.getItem('checkAccidentalRallyStart')
+    return saved === 'true' // default false
+  })
+  const [accidentalRallyStartDuration, setAccidentalRallyStartDuration] = useState(() => {
+    const saved = localStorage.getItem('accidentalRallyStartDuration')
+    return saved ? parseInt(saved, 10) : 3 // default 3 seconds
+  })
+  const [checkAccidentalPointAward, setCheckAccidentalPointAward] = useState(() => {
+    const saved = localStorage.getItem('checkAccidentalPointAward')
+    return saved === 'true' // default false
+  })
+  const [accidentalPointAwardDuration, setAccidentalPointAwardDuration] = useState(() => {
+    const saved = localStorage.getItem('accidentalPointAwardDuration')
+    return saved ? parseInt(saved, 10) : 3 // default 3 seconds
+  })
+  const [manageCaptainOnCourt, setManageCaptainOnCourt] = useState(() => {
+    const saved = localStorage.getItem('manageCaptainOnCourt')
+    // on unless switched off in Options (the owner, 2026-10-21; it was off)
+    return saved !== 'false'
+  })
+  const [liberoExitConfirmation, setLiberoExitConfirmation] = useState(() => {
+    const saved = localStorage.getItem('liberoExitConfirmation')
+    return saved !== 'false' // default true
+  })
+  const [liberoEntrySuggestion, setLiberoEntrySuggestion] = useState(() => {
+    const saved = localStorage.getItem('liberoEntrySuggestion')
+    return saved !== 'false' // default true
+  })
+  const [setIntervalDuration, setSetIntervalDuration] = useState(() => {
+    const saved = localStorage.getItem('setIntervalDuration')
+    return saved ? parseInt(saved, 10) : 180 // default 3 minutes = 180 seconds
+  })
+  const [keybindingsEnabled, setKeybindingsEnabled] = useState(() => {
+    const saved = localStorage.getItem('keybindingsEnabled')
+    return saved === 'true' // default false
+  })
+  const [lfpTrackingEnabled, setLfpTrackingEnabled] = useState(() => {
+    return localStorage.getItem('lfpTrackingEnabled') === 'true' // default false
+  })
+  const [lfpMinimumOnCourt, setLfpMinimumOnCourt] = useState(() => {
+    const saved = localStorage.getItem('lfpMinimumOnCourt')
+    return saved ? parseInt(saved, 10) : 3 // default 3
+  })
+
+  // Wake lock refs and state
+  const wakeLockRef = useRef(null)
+  const noSleepVideoRef = useRef(null)
+  const [wakeLockActive, setWakeLockActive] = useState(false)
+
+  // Request wake lock to prevent screen from sleeping
+  useEffect(() => {
+    const enableNoSleep = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          if (wakeLockRef.current) { try { await wakeLockRef.current.release() } catch (e) { } }
+          wakeLockRef.current = await navigator.wakeLock.request('screen')
+          setWakeLockActive(true)
+          wakeLockRef.current.addEventListener('release', () => {
+            if (!wakeLockRef.current) setWakeLockActive(false)
+          })
+        }
+      } catch (err) { /* WakeLock failed, ignore */ }
+      try {
+        if (!noSleepVideoRef.current) {
+          const video = document.createElement('video')
+          video.setAttribute('playsinline', '')
+          video.setAttribute('loop', '')
+          video.setAttribute('muted', '')
+          video.style.cssText = 'position:fixed;left:-1px;top:-1px;width:1px;height:1px;opacity:0.01;pointer-events:none;'
+          video.src = 'data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAAIZnJlZQAAAAhmcmVlAAAACG1kYXQAAAAfAgAABQAJJMAAkMAAKQAAH0AAOMAAH0AAOAAAAB9GABtB'
+          document.body.appendChild(video)
+          noSleepVideoRef.current = video
+        }
+        await noSleepVideoRef.current.play()
+      } catch (err) { /* NoSleep video failed, ignore */ }
+    }
+    const handleInteraction = async () => { await enableNoSleep() }
+    enableNoSleep()
+    document.addEventListener('click', handleInteraction, { once: true })
+    document.addEventListener('touchstart', handleInteraction, { once: true })
+    const handleVisibilityChange = async () => { if (document.visibilityState === 'visible') await enableNoSleep() }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      document.removeEventListener('click', handleInteraction)
+      document.removeEventListener('touchstart', handleInteraction)
+      if (wakeLockRef.current) { wakeLockRef.current.release().catch(() => { }); wakeLockRef.current = null }
+      if (noSleepVideoRef.current) { noSleepVideoRef.current.pause(); noSleepVideoRef.current.remove(); noSleepVideoRef.current = null }
+    }
+  }, [])
+
+  const reEnableWakeLock = useCallback(async () => {
+    try {
+      if ('wakeLock' in navigator) {
+        if (wakeLockRef.current) { try { await wakeLockRef.current.release() } catch (e) { } }
+        wakeLockRef.current = await navigator.wakeLock.request('screen')
+        setWakeLockActive(true)
+        wakeLockRef.current.addEventListener('release', () => { })
+        return true
+      }
+    } catch (err) { /* Failed to re-acquire, ignore */ }
+    return false
+  }, [])
+
+  const toggleWakeLock = useCallback(async () => {
+    if (wakeLockActive) {
+      if (wakeLockRef.current) { try { await wakeLockRef.current.release(); wakeLockRef.current = null } catch (e) { } }
+      setWakeLockActive(false)
+    } else {
+      const success = await reEnableWakeLock()
+      if (!success) setWakeLockActive(true)
+    }
+  }, [wakeLockActive, reEnableWakeLock])
+
+  // Preload assets that are used later (e.g., coin toss volleyball image)
+  useEffect(() => {
+    const assetsToPreload = [
+      ballImage,
+      ballFallback
+    ]
+
+    assetsToPreload.forEach(src => {
+      const img = new Image()
+      img.src = src
+    })
+  }, [])
+
+  // Fetch server status periodically
+  useEffect(() => {
+    // Only the dev server and a local server (Pi, desktop app) have one: a
+    // static deployment (*.openvolley.app, *.pages.dev) answers with its SPA
+    const statusUrl = getLocalServerStatusUrl()
+    if (!statusUrl) return
+
+    const fetchServerStatus = async () => {
+      try {
+        const response = await fetch(statusUrl)
+        if (response.ok && (response.headers?.get?.('content-type') || '').includes('json')) {
+          const status = await response.json()
+          setServerStatus(status)
+        }
+      } catch (err) {
+        // Server might not be running, that's okay
+        if (import.meta.env.DEV) {
+          console.log('[App] Server status not available:', err.message)
+        }
+      }
+    }
+
+    fetchServerStatus()
+    const interval = setInterval(fetchServerStatus, 10000) // Check every 10 seconds
+    return () => clearInterval(interval)
+  }, [])
+
+  // Screen size detection for display mode
+  // portrait under 600px = phone, <= 1024px = tablet, > 1024px = desktop
+  useEffect(() => {
+    const checkScreenSize = () => {
+      const width = window.innerWidth
+      const height = window.innerHeight
+      let detected = 'desktop'
+
+      if (height > width && width < PHONE_MAX_WIDTH) {
+        detected = 'phone'
+      } else if (width <= 1024) {
+        detected = 'tablet'
+      }
+      // > 1024px = desktop (default)
+
+      setDetectedDisplayMode(detected)
+      setViewportSize({ width, height })
+    }
+
+    // Check on mount
+    checkScreenSize()
+
+    // Check on resize
+    window.addEventListener('resize', checkScreenSize)
+    return () => window.removeEventListener('resize', checkScreenSize)
+  }, [])
+
+  // Fullscreen for tablet mode
+  const enterDisplayMode = useCallback((mode) => {
+    // Request fullscreen
+    if (document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(err => {
+        console.log('Fullscreen request failed:', err)
+      })
+    }
+
+    // Note: Orientation locking is now handled by Scoreboard and Scoresheet components
+    // so other screens (MatchSetup, CoinToss, etc.) can work in portrait mode
+
+    // Set the display mode
+    setDisplayMode(mode)
+    localStorage.setItem('displayMode', mode)
+  }, [])
+
+  // Exit fullscreen and reset to desktop mode
+  const exitDisplayMode = useCallback(() => {
+    if (document.exitFullscreen && document.fullscreenElement) {
+      document.exitFullscreen().catch(err => {
+        console.log('Exit fullscreen failed:', err)
+      })
+    }
+
+    setDisplayMode('desktop')
+    localStorage.setItem('displayMode', 'desktop')
+  }, [])
+
+  // Get the active display mode
+  const activeDisplayMode = displayMode === 'auto' ? detectedDisplayMode : displayMode
+
+  // Toggle no-scroll class on body when on home page
+  useEffect(() => {
+    if (!matchId && !showMatchSetup && !showMatchEnd) {
+      document.body.classList.add('no-scroll')
+    } else {
+      document.body.classList.remove('no-scroll')
+    }
+    return () => {
+      document.body.classList.remove('no-scroll')
+    }
+  }, [matchId, showMatchSetup, showMatchEnd])
+
+  // Never a copy the server has closed (isStaleClosedCopy): a phone reopened
+  // one on its scoring screen at every start (2026-10-23). It is not the
+  // live match either, for the update check and the Back / close prompts.
+  // Only its status and test flag, as one string ('live|1'): a write of the
+  // live match's row (the heartbeat) no longer re-renders App. undefined when
+  // there is none (first() finds nothing), null when it cannot be read.
+  const activeMatch = useLiveQuery(async () => {
+    try {
+      const live = await db.matches
+        .where('status')
+        .equals('live')
+        .filter(m => !isStaleClosedCopy(m))
+        .first()
+      return live ? `${live.status}|${live.test ? 1 : 0}` : live
+    } catch (error) {
+      console.error('Unable to load active match', error)
+      return null
+    }
+  }, [])
+
+  // Closing / quitting the app: the desktop app hides to the tray and asks
+  // before it quits, Android's Back asks before it exits, a browser asks
+  // before it leaves a live match (utils/appLifecycle.js)
+  useEffect(() => installAppLifecycle(), [])
+  // Android app: who installed it, the opt-in update check (utils/androidUpdate.js)
+  useEffect(() => installAndroidUpdates(), [])
+  const [activeMatchStatus, activeMatchTest] = typeof activeMatch === 'string' ? activeMatch.split('|') : []
+  const activeMatchIsTest = activeMatchTest === '1'
+  // undefined until the live query has answered: before that "no live match"
+  // is only a guess, and the Android update check must not run on a guess
+  const activeMatchLoaded = activeMatch !== undefined
+  useEffect(() => {
+    setLiveMatch(liveOf(activeMatchStatus ? { status: activeMatchStatus, test: activeMatchIsTest } : null))
+    if (activeMatchLoaded) liveMatchKnown()
+  }, [activeMatchStatus, activeMatchIsTest, activeMatchLoaded])
+
+  // Current match: the newest unfinished one by createdAt, never one created,
+  // edited and scheduled more than 7 days ago without a single event
+  // (abandoned: it was offered to
+  // the hall's tablets as "Home – Away" for months). utils/currentMatch.js.
+  // Only those old matches' events are read, so scoring the current match
+  // does not re-run this query.
+  const currentMatch = useLiveQuery(async () => {
+    try {
+      const now = Date.now()
+      const matches = (await db.matches.toArray()).filter(m => m.status !== 'final')
+      const withEvents = new Set()
+      for (const m of matches) {
+        if (needsEventCheck(m, now) && await db.events.where('matchId').equals(m.id).count() > 0) withEvents.add(m.id)
+      }
+      return pickCurrentMatch(matches, { now, hasEvents: (id) => withEvents.has(id) })
+    } catch (error) {
+      console.error('Unable to load current match', error)
+      return null
+    }
+  }, [])
+
+  // The open match's cloud block: OV_SCORER_MOVED shows ScorerMovedModal on
+  // every scoring screen of the match (another device scores it now, db/019)
+  const openMatchBlock = useLiveQuery(async () => {
+    if (!matchId) return null
+    try {
+      return (await db.matches.get(matchId))?.cloudBlock ?? null
+    } catch {
+      return null
+    }
+  }, [matchId])
+
+  // A copy the server has closed (utils/matchReopen isStaleClosedCopy): the
+  // one Continue asked for, else the open match (scored here when the first
+  // OV_MATCH_CLOSED came). ClosedOnServerModal shows in place of its scoring
+  // screen, and goes away once the copy is removed or replaced.
+  const shownClosedCopy = useLiveQuery(async () => {
+    const id = closedCopyId ?? matchId
+    if (id == null) return null
+    try {
+      const m = await db.matches.get(id)
+      return isStaleClosedCopy(m) ? { id: m.id, gameN: matchGameNumber(m) } : null
+    } catch {
+      return null
+    }
+  }, [closedCopyId, matchId], null)
+  // the live query keeps its last answer until it has read the new id
+  const closedCopy = shownClosedCopy && shownClosedCopy.id === (closedCopyId ?? matchId) ? shownClosedCopy : null
+  const closedCopyOpen = matchId != null && closedCopy?.id === matchId
+
+  const currentOfficialMatch = useLiveQuery(async () => {
+    try {
+      const matches = await db.matches.orderBy('createdAt').reverse().toArray()
+      // Only consider matches that have been confirmed (matchInfoConfirmedAt set)
+      // This prevents showing Continue/Delete for matches where user hasn't clicked "Create Match"
+      // A copy closed on the server is always reachable (Load the official
+      // version, Remove), even a restored row without matchInfoConfirmedAt
+      return matches.find(m => !isLocalOnly(m) && m.status !== 'final' && (m.matchInfoConfirmedAt || isStaleClosedCopy(m))) || null
+    } catch (error) {
+      console.error('Unable to load official match', error)
+      return null
+    }
+  }, [])
+
+  // Every open official match on this device, for the home screen's list
+  // (utils/deviceMatches.js): Continue and Delete above only reach the newest.
+  // Copies of one match that the self-check flagged are listed and marked;
+  // each row says what the server said about it (deviceSelfCheck copyState).
+  // The same array while the rows are equal: a match-row write while scoring
+  // (the heartbeat) re-reads the list but no longer re-renders App. Still read
+  // off Home: the list is current when the home screen comes back, in one
+  // change (AppCloseMatchOneChange).
+  const serverHereKey = serverHere.join(',')
+  const deviceMatchesShown = useRef(null)
+  const deviceMatches = useLiveQuery(async () => {
+    try {
+      const matches = await db.matches.toArray()
+      const teamIds = [...new Set(matches.flatMap(m => [m.homeTeamId, m.awayTeamId]).filter(id => id != null))]
+      const teams = teamIds.length ? await db.teams.bulkGet(teamIds) : []
+      const names = new Map(teams.filter(Boolean).map(tm => [tm.id, tm.name]))
+      const here = new Set(serverHereKey ? serverHereKey.split(',').map(Number) : [])
+      const rows = deviceMatchRows(matches, names, {
+        duplicateIds: duplicateCopyIds(matches),
+        stateOf: (m) => copyState(m, { checkedHere: here.has(m.id) })
+      })
+      const key = JSON.stringify(rows)
+      if (deviceMatchesShown.current?.key === key) return deviceMatchesShown.current.rows
+      deviceMatchesShown.current = { key, rows }
+      return rows
+    } catch (error) {
+      console.error('Unable to list the matches on this device', error)
+      return []
+    }
+  }, [serverHereKey])
+
+  // The changes each match holds that the server does not have yet (unsent,
+  // or set aside: deviceSelfCheck unsentOfMatch), for the home screen only:
+  // a live query of the sync queue re-renders the whole app at every write,
+  // and the scoring screen writes one at every rally
+  const onHome = matchId == null
+  const unsentByKey = useLiveQuery(async () => {
+    if (!onHome) return null
+    try {
+      const jobs = await db.sync_queue.toArray()
+      const keys = new Set(jobs.map(j => jobMatchKey(j)).filter(Boolean))
+      return new Map([...keys].map(k => [k, unsentOfMatch(jobs, k)]))
+    } catch {
+      return null
+    }
+  }, [onHome], null)
+
+  // The browser refused durable storage (db persistentStorage): it may clear
+  // this device's database, and with it writes of a match not sent yet.
+  // Apps keep their data; a browser says so on Home while writes wait
+  const [storageRefused, setStorageRefused] = useState(false)
+  useEffect(() => {
+    if (isNativeApp()) return
+    let live = true
+    Promise.resolve(persistentStorage).then(v => { if (live) setStorageRefused(v === false) }, () => {})
+    return () => { live = false }
+  }, [])
+  const unsentAtRisk = storageRefused && !!unsentByKey && [...unsentByKey.values()].some(u => u.changes > 0)
+
+  // Every local match id -> whether it is a copy the server has closed, for
+  // the self-check's notice (below) while there is one
+  const selfCheckShown = selfCheck != null
+  const localMatchState = useLiveQuery(async () => {
+    if (!selfCheckShown) return null
+    try {
+      return new Map((await db.matches.toArray()).map(m => [m.id, isStaleClosedCopy(m)]))
+    } catch {
+      return null
+    }
+  }, [selfCheckShown], null)
+
+  // Fullscreen functionality. In the Android app the page's fullscreen does
+  // not reach the status and navigation bars (the WebView keeps them, tablet
+  // check 16.11.2026): the button hides them through the app's own plugin
+  // instead (nativeSystemBars, the scoring screen's), on every screen until
+  // pressed again.
+  const [nativeBarsFullscreen, setNativeBarsFullscreen] = useState(false)
+  const toggleFullscreen = useCallback(async () => {
+    if (isAndroidApp()) {
+      setNativeBarsFullscreen(!nativeBarsFullscreen)
+      setIsFullscreen(!nativeBarsFullscreen)
+      return
+    }
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen()
+        setIsFullscreen(true)
+      } else {
+        await document.exitFullscreen()
+        setIsFullscreen(false)
+      }
+    } catch (error) {
+      console.error('Error toggling fullscreen:', error)
+      // Fallback: try alternative fullscreen methods
+      const doc = document.documentElement
+      if (doc.webkitRequestFullscreen) {
+        doc.webkitRequestFullscreen()
+        setIsFullscreen(true)
+      } else if (doc.msRequestFullscreen) {
+        doc.msRequestFullscreen()
+        setIsFullscreen(true)
+      } else if (doc.mozRequestFullScreen) {
+        doc.mozRequestFullScreen()
+        setIsFullscreen(true)
+      }
+    }
+  }, [nativeBarsFullscreen])
+
+  // Listen for fullscreen changes
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange)
+    document.addEventListener('msfullscreenchange', handleFullscreenChange)
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange)
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
+      document.removeEventListener('msfullscreenchange', handleFullscreenChange)
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange)
+    }
+  }, [])
+
+  // One connection status entry; no re-render when it did not change
+  const updateConnectionStatus = useCallback((key, status, debug) => {
+    setConnectionStatuses(prev => (prev[key] === status ? prev : { ...prev, [key]: status }))
+    setConnectionDebugInfo(prev => {
+      const old = prev[key]
+      if (old && old.status === debug?.status && old.message === debug?.message && old.details === debug?.details) return prev
+      return { ...prev, [key]: debug }
+    })
+  }, [])
+
+  // Match and cloud sync statuses come from state this component already has:
+  // set on change, without the network checks below (a match write or a
+  // syncing/synced flip must not re-run those).
+  const hasCurrentMatch = !!currentMatch
+  const currentMatchStatus = currentMatch?.status
+  const currentMatchIsTest = !!currentMatch?.test
+  useEffect(() => {
+    const updateStatus = updateConnectionStatus
+
+    // --- Match status ---
+    if (hasCurrentMatch) {
+      const matchStatus = currentMatchStatus === 'live' ? 'live' : currentMatchStatus === 'scheduled' ? 'scheduled' : currentMatchStatus === 'final' ? 'final' : 'unknown'
+      updateStatus('match', matchStatus, { status: matchStatus, message: `Match status: ${matchStatus} (${currentMatchIsTest ? 'Test' : 'Official'} match)` })
+    } else {
+      updateStatus('match', 'no_match', { status: 'no_match', message: 'No match found. Create a new match to start.' })
+    }
+
+    // --- Cloud sync status (from syncStatus) ---
+    // (status key 'supabase' kept for the UI; the cloud is the OpenVolley backend now)
+    if (syncStatus === 'synced' || syncStatus === 'syncing') {
+      updateStatus('supabase', 'connected', { status: 'connected', message: 'Cloud backend is connected and syncing' })
+    } else if (syncStatus === 'auth_required') {
+      // The backend is reachable; writes wait for a sign-in (banner + indicator say so)
+      updateStatus('supabase', 'connected', {
+        status: 'connected',
+        message: 'Cloud backend is reachable. Sign in to sync this device\'s matches.'
+      })
+    } else if (syncStatus === 'update_required') {
+      // Reachable, but it refuses this version's writes (426): they wait on
+      // the device; the indicator says "Update needed"
+      updateStatus('supabase', 'connected', {
+        status: 'connected',
+        message: 'Cloud backend is reachable. This app version is too old to write: update the app.'
+      })
+    } else if (syncStatus === 'online_no_supabase' && isCloudBlockedOnThisPort()) {
+      const port = window.location.port
+      updateStatus('supabase', 'not_configured', {
+        status: 'not_configured',
+        message: `Cloud sync unavailable on port ${port}`,
+        details: `The cloud accepts the desktop app only on port 5173; this window runs on port ${port} (OPENVOLLEY_HTTP_PORT). Free port 5173 and start the app without OPENVOLLEY_HTTP_PORT to sync. Matches stay on this computer and the tablets keep working through the relay.`
+      })
+    } else if (syncStatus === 'online_no_supabase') {
+      updateStatus('supabase', 'not_configured', {
+        status: 'not_configured',
+        message: 'Offline: no cloud backend here',
+        details: 'This server is an offline LAN relay (desktop app or venue server) or the build has no backend URL. Matches are kept on this device and on the local server; tablets connect through the relay.'
+      })
+    } else if (syncStatus === 'connecting') {
+      updateStatus('supabase', 'connecting', { status: 'connecting', message: 'Connecting to the cloud backend...' })
+    } else if (syncStatus === 'error') {
+      updateStatus('supabase', 'error', {
+        status: 'error',
+        message: 'Cloud backend error',
+        details: 'The backend answered with an error. Sync keeps retrying in the background.'
+      })
+    } else if (syncStatus === 'offline') {
+      updateStatus('supabase', 'offline', { status: 'offline', message: 'Device is offline or the cloud backend is unreachable' })
+    } else {
+      updateStatus('supabase', 'unknown', { status: 'unknown', message: 'Cloud backend status unknown' })
+    }
+  }, [hasCurrentMatch, currentMatchStatus, currentMatchIsTest, syncStatus, updateConnectionStatus])
+
+  // The relay's WS port (Electron server status); the port, not serverStatus,
+  // which is a new object every 10 s
+  const relayWsPort = serverStatus?.wsPort ?? null
+
+  // Network checks (IndexedDB, API/server, relay): every 30 s and on demand,
+  // each status set as its check resolves
+  const checkConnectionStatuses = useCallback(async () => {
+    const updateStatus = updateConnectionStatus
+
+    // Check if we're on a static deployment (GitHub Pages, Cloudflare Pages, etc.)
+    // (backendConfig.isStaticHost: *.openvolley.app, *.pages.dev, *.github.io)
+    const isStaticDeployment = !import.meta.env.DEV && isStaticHost(window.location.hostname)
+
+    // Check if we have a configured backend URL (cloud backend), or the venue
+    // LAN relay the Android app was pointed at (NativeServerSection)
+    const configuredBackendUrl = getBackendOverride() || import.meta.env.VITE_BACKEND_URL
+    const hasBackendUrl = !!configuredBackendUrl
+
+    // --- Run async checks in parallel ---
+    const asyncChecks = []
+
+    // DB check (IndexedDB — fast)
+    asyncChecks.push(
+      db.matches.count()
+        .then(() => updateStatus('db', 'connected', { status: 'connected', message: 'IndexedDB is accessible' }))
+        .catch(err => updateStatus('db', 'disconnected', { status: 'disconnected', message: `IndexedDB error: ${err.message || 'Database not accessible'}` }))
+    )
+
+    // API/Server + Scoreboard check
+    const checkApiServer = async () => {
+      if (isStaticDeployment && !hasBackendUrl) {
+        updateStatus('api', 'not_available', { status: 'not_available', message: 'API not available in static deployment (using local database only)' })
+        updateStatus('server', 'not_available', { status: 'not_available', message: 'Server not available in static deployment (using local database only)' })
+        updateStatus('scoreboard', 'not_available', { status: 'not_available', message: 'Server not available in static deployment (using local database only)' })
+      } else if (hasBackendUrl) {
+        try {
+          const backendUrl = configuredBackendUrl
+          const controller = new AbortController()
+          const fetchTimeout = setTimeout(() => controller.abort(), 5000)
+          const response = await fetch(`${backendUrl}/health`, { signal: controller.signal })
+          clearTimeout(fetchTimeout)
+          if (response.ok) {
+            const data = await response.json()
+            const apiDebug = { status: 'connected', message: `Cloud backend responding (${data.mode} mode)` }
+            const serverDebug = { status: 'connected', message: `Backend healthy, ${data.connections} connections, ${data.activeRooms} active rooms` }
+            updateStatus('api', 'connected', apiDebug)
+            updateStatus('server', 'connected', serverDebug)
+            updateStatus('scoreboard', 'connected', serverDebug)
+          } else {
+            const debug = { status: 'disconnected', message: `Backend returned status ${response.status}` }
+            updateStatus('api', 'disconnected', debug)
+            updateStatus('server', 'disconnected', debug)
+            updateStatus('scoreboard', 'disconnected', debug)
+          }
+        } catch (err) {
+          const message = err.name === 'AbortError' ? 'Backend request timed out (5s)' : `Backend unreachable: ${err.message}`
+          const debug = { status: 'disconnected', message }
+          updateStatus('api', 'disconnected', debug)
+          updateStatus('server', 'disconnected', debug)
+          updateStatus('scoreboard', 'disconnected', debug)
+        }
+      } else {
+        try {
+          const controller = new AbortController()
+          const fetchTimeout = setTimeout(() => controller.abort(), 5000)
+          // A health check: /api/server/status (every relay has it), not the
+          // match list, which grows with every published match
+          const response = await fetch('/api/server/status', { signal: controller.signal })
+          clearTimeout(fetchTimeout)
+          if (response.ok) {
+            updateStatus('api', 'connected', { status: 'connected', message: 'API endpoint responding' })
+            updateStatus('server', 'connected', { status: 'connected', message: 'Server is reachable' })
+            updateStatus('scoreboard', 'connected', { status: 'connected', message: 'Server is reachable' })
+          } else {
+            const debug = { status: 'disconnected', message: `API returned status ${response.status}: ${response.statusText}` }
+            updateStatus('api', 'disconnected', debug)
+            updateStatus('server', 'disconnected', debug)
+            updateStatus('scoreboard', 'disconnected', debug)
+          }
+        } catch (err) {
+          const errMsg = err.name === 'AbortError'
+            ? 'Server request timed out (5s)'
+            : import.meta.env.DEV
+              ? `Network error: ${err.message || 'Failed to connect to API'}`
+              : 'Server not available (running in standalone mode)'
+          const debug = { status: 'disconnected', message: errMsg }
+          updateStatus('api', 'disconnected', debug)
+          updateStatus('server', 'disconnected', debug)
+          updateStatus('scoreboard', 'disconnected', debug)
+        }
+      }
+    }
+    asyncChecks.push(checkApiServer())
+
+    // Relay check: the app's own relay socket when it is open, else an HTTP
+    // GET /api/server/status (as RefereeApp/BenchApp do); no probe socket
+    const checkWebSocket = async () => {
+      // The url the shared scorer connection uses (scorerRelayUrl)
+      const wsUrl = scorerRelayUrl({ wsPort: relayWsPort })
+      const debug = await relayConnectionStatus({ wsUrl, ws: scorerRelay.socket })
+      updateStatus('websocket', debug.status, debug)
+    }
+    asyncChecks.push(checkWebSocket())
+
+    await Promise.all(asyncChecks)
+  }, [updateConnectionStatus, relayWsPort])
+
+  // Periodically check connection statuses
+  useEffect(() => {
+    checkConnectionStatuses()
+    const interval = setInterval(checkConnectionStatuses, 30000) // Check every 30 seconds
+    return () => clearInterval(interval)
+  }, [checkConnectionStatuses])
+
+  // Show startup connectivity popup when toggling from offline to online
+  const prevOfflineModeRef = useRef(offlineMode)
+  useEffect(() => {
+    if (prevOfflineModeRef.current === true && offlineMode === false) {
+      setShowStartupConnectivity(true)
+      checkConnectionStatuses()
+    }
+    prevOfflineModeRef.current = offlineMode
+  }, [offlineMode, checkConnectionStatuses])
+
+  const handleStartupGoOffline = useCallback(() => {
+    setOfflineMode(true)
+    localStorage.setItem('offlineMode', 'true')
+    setShowStartupConnectivity(false)
+  }, [])
+
+  const handleStartupDismiss = useCallback(() => {
+    setShowStartupConnectivity(false)
+  }, [])
+
+  const currentTestMatch = useLiveQuery(async () => {
+    try {
+      const matches = await db.matches.orderBy('createdAt').reverse().toArray()
+      // The device's one local match: a test, easy or Global match
+      // (domain/matchKind), whatever its setup status
+      const testMatch = matches.find(m => isLocalOnly(m) && m.status !== 'final')
+      return testMatch || null
+    } catch (error) {
+      console.error('Unable to load test match', error)
+      return null
+    }
+  }, [])
+
+  // Swiss or Global (utils/toolMode): asked at the first open, changed in
+  // Options while no match is on the device. A device that never chose but
+  // holds a match takes that match's tool.
+  const toolMode = useToolMode()
+  const globalTool = toolMode === 'global'
+  // Global has no Swiss German: a device on de-CH takes German (de)
+  useEffect(() => {
+    if (globalTool && i18n.language === 'de-CH') i18n.changeLanguage('de')
+  }, [globalTool, i18n.language, i18n])
+  const matchesLoaded = currentOfficialMatch !== undefined && currentTestMatch !== undefined
+  const toolLocked = toolModeLocked(currentOfficialMatch, currentTestMatch)
+  useEffect(() => {
+    if (toolMode || !matchesLoaded) return
+    const implied = impliedToolMode(currentOfficialMatch) || impliedToolMode(currentTestMatch)
+    if (implied) setToolMode(implied)
+  }, [toolMode, matchesLoaded, currentOfficialMatch, currentTestMatch])
+
+  // The current match's status (utils/homeMatchStatus): the header's match
+  // chip and Home's New match / Test match / Easy warnings. { match, status }
+  // for the match the status was read for. The same object while neither
+  // changes: the query re-runs at every point (it reads the sets), but App
+  // re-renders only when the status or the match row changes (useLiveQuery
+  // compares by identity), and a live match's events are not read at all.
+  const matchStatusShown = useRef(null)
+  const matchStatus = useLiveQuery(async () => {
+    const status = await readHomeMatchStatus(db, currentMatch)
+    if (status == null) return null
+    const shown = matchStatusShown.current
+    if (shown && shown.match === currentMatch && shown.status === status) return shown
+    const next = { match: currentMatch, status }
+    matchStatusShown.current = next
+    return next
+  }, [currentMatch])
+
+  // Query for match info menu (teams for active match or home view)
+  const matchInfoData = useLiveQuery(async () => {
+    // For active match
+    if (matchId && currentMatch) {
+      const homeTeamPromise = currentMatch.homeTeamId ? db.teams.get(currentMatch.homeTeamId) : Promise.resolve(null)
+      const awayTeamPromise = currentMatch.awayTeamId ? db.teams.get(currentMatch.awayTeamId) : Promise.resolve(null)
+      const [homeTeam, awayTeam] = await Promise.all([homeTeamPromise, awayTeamPromise])
+      return {
+        homeTeam,
+        awayTeam,
+        match: currentMatch
+      }
+    }
+
+    // For home view (use currentOfficialMatch or currentTestMatch)
+    if (!matchId) {
+      const matchToUse = currentOfficialMatch || currentTestMatch
+      if (matchToUse) {
+        const homeTeamPromise = matchToUse.homeTeamId ? db.teams.get(matchToUse.homeTeamId) : Promise.resolve(null)
+        const awayTeamPromise = matchToUse.awayTeamId ? db.teams.get(matchToUse.awayTeamId) : Promise.resolve(null)
+        const [homeTeam, awayTeam] = await Promise.all([homeTeamPromise, awayTeamPromise])
+        return {
+          homeTeam,
+          awayTeam,
+          match: matchToUse
+        }
+      }
+    }
+
+    return null
+  }, [matchId, currentMatch, currentOfficialMatch, currentTestMatch])
+
+  // The start-up's decision and self-check (once per page load: StrictMode
+  // runs effects twice)
+  const startupCheckRef = useRef(null)
+  // The start-up reopen decided (a reload goes back to its match screen):
+  // until then the home screen waits, else it showed for a frame before the
+  // match screen came back (owner 2026-11-11: "loads, stops, loads again")
+  const [startupDecided, setStartupDecided] = useState(false)
+  // The match on the screen, for the start-up and the background rule
+  const openMatchIdRef = useRef(null)
+  useEffect(() => {
+    openMatchIdRef.current = matchId
+  }, [matchId])
+
+  // Preload the ball images when app loads
+  useEffect(() => {
+    const imagesToPreload = [ballImage, ballFallback]
+
+    imagesToPreload.forEach(src => {
+      // Preload the image
+      const img = new Image()
+      img.src = src
+
+      // Also add a preload link to the document head for early loading
+      const link = document.createElement('link')
+      link.rel = 'preload'
+      link.as = 'image'
+      link.href = src
+      document.head.appendChild(link)
+    })
+
+    return () => {
+      // Cleanup: remove preload links if component unmounts
+      imagesToPreload.forEach(src => {
+        const existingLink = document.querySelector(`link[href="${src}"]`)
+        if (existingLink) {
+          document.head.removeChild(existingLink)
+        }
+      })
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const disableRefreshKeys = event => {
+      const key = event.key?.toLowerCase?.()
+      const isRefresh =
+        key === 'f5' ||
+        ((event.ctrlKey || event.metaKey) && key === 'r') ||
+        ((event.ctrlKey || event.metaKey) && event.shiftKey && key === 'r') || // Ctrl+Shift+R
+        (event.shiftKey && key === 'f5')
+
+      if (isRefresh) {
+        event.preventDefault()
+        event.stopPropagation()
+        return false
+      }
+    }
+
+    const disableBackspaceNavigation = event => {
+      // Prevent backspace from navigating back (but allow it in input fields)
+      if (event.key === 'Backspace' || event.keyCode === 8) {
+        const target = event.target || event.srcElement
+        const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable
+        if (!isInput) {
+          event.preventDefault()
+          return false
+        }
+      }
+    }
+
+    const blockHistoryNavigation = event => {
+      // Push a new state to prevent back/forward navigation
+      history.pushState(null, '', window.location.href)
+    }
+
+    // Android app: the Back button is MainActivity's (it goes back in real
+    // history, e.g. out of the scoresheet's in-app view, and on the first
+    // page asks "Exit OpenVolley?", utils/appLifecycle.js). An entry pushed
+    // here would make WebView.canGoBack() true, and Back then only replayed
+    // this block instead of asking.
+    const blockHistory = detectAppPlatform() !== 'capacitor'
+
+    // Push initial state to prevent back navigation
+    if (blockHistory) {
+      try {
+        history.pushState(null, '', window.location.href)
+      } catch (err) {
+        // Ignore history errors (e.g., older browsers or restricted environments)
+      }
+
+      // Prevent browser back/forward buttons
+      window.addEventListener('popstate', blockHistoryNavigation)
+    }
+
+    // Prevent refresh keyboard shortcuts
+    window.addEventListener('keydown', disableRefreshKeys, { passive: false })
+
+    // Prevent backspace navigation (except in input fields)
+    window.addEventListener('keydown', disableBackspaceNavigation, { passive: false })
+
+    // Also prevent context menu refresh option (right-click refresh)
+    window.addEventListener('contextmenu', event => {
+      // Allow context menu but we can't prevent refresh from it directly
+      // The keydown handler will catch Ctrl+R if user tries that
+    })
+
+    return () => {
+      window.removeEventListener('keydown', disableRefreshKeys)
+      window.removeEventListener('keydown', disableBackspaceNavigation)
+      window.removeEventListener('popstate', blockHistoryNavigation)
+    }
+  }, [])
+
+  // The self-check's server side (utils/deviceSelfCheck): only online, signed
+  // in, with a cloud, and not in offline mode. Read each time it runs.
+  const selfCheckServer = useCallback(() => {
+    const online = typeof navigator === 'undefined' || navigator.onLine !== false
+    let offlineChosen = false
+    try { offlineChosen = localStorage.getItem('offlineMode') === 'true' } catch { /* no storage */ }
+    if (!online || offlineChosen || !hasStoredSessionToken() || !getCloudApiUrl('/api/db')) return null
+    return { readRows: readServerMatchRows, noteClosed: noteMatchClosedOnServer, scoringDevice: askScoringDevice }
+  }, [])
+
+  // What the server said, for the home screen's states (deviceSelfCheck
+  // copyState): the copies it found scored here are "Scoring here". A check
+  // that could not ask (offline, signed out, no answer) leaves the copies it
+  // covered "Not checked". only: the copies one check covered (Continue: one)
+  const noteServerAnswers = useCallback((r, { only = null } = {}) => {
+    const covered = (id) => only == null || only.includes(id)
+    setServerHere(prev => {
+      const next = new Set(prev.filter(id => !covered(id)))
+      if (r?.asked) for (const id of r.here || []) if (covered(id)) next.add(id)
+      const sorted = [...next].sort((a, b) => a - b)
+      return sorted.join(',') === prev.join(',') ? prev : sorted
+    })
+  }, [])
+
+  // What a check found, for the home screen's notice; nothing found leaves
+  // the notice as it is (no notice at every start when nothing is wrong)
+  const showSelfCheck = useCallback((report) => {
+    const found = { closed: report?.closed || [], flagged: report?.flagged || [], removed: [] }
+    if (found.closed.length || found.flagged.length) setSelfCheck(found)
+  }, [])
+
+  // The self-check (utils/deviceSelfCheck), at start-up and back from the
+  // background: copies of one match flagged, the server asked about every
+  // open official copy. Never waited for, and it removes nothing.
+  const runSelfCheck = useCallback((openMatchId = null) => (
+    runDeviceSelfCheck({ database: db, server: selfCheckServer(), openMatchId })
+      .then((report) => {
+        showSelfCheck(report)
+        noteServerAnswers(report)
+      })
+      .catch((error) => console.error('[SelfCheck] The check failed:', error))
+  ), [selfCheckServer, showSelfCheck, noteServerAnswers])
+
+  // Start-up (utils/deviceSelfCheck, rules 1 and 2). Opening the app always
+  // lands on Home: the desktop or Android app started, a new tab, the reopen
+  // after a crash or a kill. 2026-10-27: the owner's PC opened match 406970
+  // on its scoring screen, live, a week after a phone had continued and
+  // closed it; a 12-hour rule would still have reopened a copy scored that
+  // morning, and resuming a match on its own is how duplicate scoring starts.
+  // None of the established e-scoresheets does it: Home's Continue card
+  // resumes the match in one tap. A reload (the sessionStorage marker of the
+  // match screen) or a tab the browser discarded goes straight back to the
+  // screen it showed, offline too: the scoring tab's lock (Scoreboard),
+  // the set-end recovery, the update's reload and the size gate rely on a
+  // reload landing on the scoring screen. Never over a match opened in the
+  // meantime. The self-check runs once, in the background.
+  useEffect(() => {
+    let alive = true
+    startupCheckRef.current ??= matchToReopen(db).catch(() => null).then((reopen) => {
+      runSelfCheck(reopen?.id ?? null)
+      return reopen
+    })
+    startupCheckRef.current.then(async (reopen) => {
+      if (!alive) return
+      if (!reopen) {
+        if (openMatchIdRef.current == null) clearOpenMatch()
+        return
+      }
+      if (openMatchIdRef.current != null) return
+      // Match Setup opens filled (OV-18)
+      if (reopen.view === 'matchSetup') await preloadMatchSetup(reopen.id).catch(() => {})
+      if (!alive || openMatchIdRef.current != null) return
+      console.info(`[Start] Reloaded: back to match ${reopen.id} (${reopen.view})`)
+      setMatchId(reopen.id)
+      setShowMatchSetup(reopen.view === 'matchSetup')
+      setShowCoinToss(reopen.view === 'coinToss')
+      setShowMatchEnd(reopen.view === 'matchEnd')
+    }).catch((error) => console.error('[Start] Could not reopen the match:', error))
+      .finally(() => { if (alive) setStartupDecided(true) })
+    return () => { alive = false }
+  }, [runSelfCheck])
+
+  // A Global match made before 2026-11-17 was test-flagged: a real match now
+  // (utils/globalCloud upgradeGlobalMatches), once at start-up
+  useEffect(() => { upgradeGlobalMatches(db).catch(() => {}) }, [])
+
+  // The final uploads of a Global match the server refused for now (a hall's
+  // daily share spent, a busy server): sent again after its Retry-After
+  // (utils/globalPending, 2611 review SR-4)
+  useEffect(() => startGlobalPendingRetry(), [])
+
+  // Match End's live-state repair (utils/matchEndLiveState, fbf159bf) at
+  // start-up, for every official match this device holds as ended. An app
+  // killed between the last rally and the scoreboard's 'match_end' push used
+  // to reopen on Match End, which repairs it; it opens on Home now, and the
+  // livescore kept the game running until the scorer pressed Continue, or
+  // for good. No screen opens and nothing waits for it: tried when the app
+  // is online and signed in, again when it comes online or the queue drains
+  // (at most once a minute, a few times), until every match is done.
+  useEffect(() => {
+    const done = new Set()
+    let stopped = false
+    let running = false
+    let tries = 0
+    let lastTry = 0
+    async function attempt() {
+      if (stopped || running || !selfCheckServer()) return
+      if (tries > 0 && Date.now() - lastTry < ENDED_LIVE_STATE_RETRY_MS) return
+      running = true
+      tries++
+      lastTry = Date.now()
+      try {
+        const { pending } = await publishEndedLiveStates(db, { done })
+        if (pending === 0 || tries >= ENDED_LIVE_STATE_TRIES) stop()
+      } catch (error) {
+        console.warn('[Start] Could not publish the match end to the live state:', error?.message)
+      } finally {
+        running = false
+      }
+    }
+    function stop() {
+      stopped = true
+      window.removeEventListener('online', attempt)
+      window.removeEventListener('sync-queue-drained', attempt)
+    }
+    window.addEventListener('online', attempt)
+    window.addEventListener('sync-queue-drained', attempt)
+    attempt()
+    return stop
+  }, [selfCheckServer])
+
+  // The match screen on show, for a reload (rule 2): noted whenever it
+  // changes, cleared when the scorer leaves it for Home (Home, Close match,
+  // Delete, the background rule below). Never before the start-up read it.
+  const markedOpenRef = useRef(false)
+  useEffect(() => {
+    if (matchId != null) {
+      noteOpenMatch({ id: matchId, view: currentPage === 'manualAdjustments' ? 'matchEnd' : currentPage })
+      markedOpenRef.current = true
+    } else if (markedOpenRef.current) {
+      clearOpenMatch()
+      markedOpenRef.current = false
+    }
+  }, [matchId, currentPage])
+
+  // Back after 15 minutes or more in the background (rule 3; deviceSelfCheck
+  // trackBackground counts only the time the page was hidden, so a screen
+  // left on through a long set break or a medical time-out is never acted
+  // on): Home with its Continue card. Only the screen changes: nothing is
+  // closed, locked or unlocked, set aside or deleted, and Continue opens the
+  // match where it was. The self-check runs again, the server asked as on
+  // open. (It replaces the check after an hour in the background.)
+  useEffect(() => trackBackground((gone) => {
+    if (openMatchIdRef.current != null) {
+      console.info(`[Start] Back after ${Math.round(gone / 60000)} min in the background: the home screen`)
+      setMatchId(null)
+      setShowMatchSetup(false)
+      setShowCoinToss(false)
+      setShowMatchEnd(false)
+      setShowManualAdjustments(false)
+    }
+    runSelfCheck(null)
+  }, { minHiddenMs: BACKGROUND_HOME_MS }), [runSelfCheck])
+
+  // A roster waiting for the open match (uploaded by a team, or restored from
+  // the cloud with it): its Match Setup. Only for the match on the screen: on
+  // Home it opened the match by itself, at start too, against the start rule
+  // (the app opens on Home; utils/deviceSelfCheck). As OpenBeach #14. Only
+  // before the coin toss: a running match takes no uploaded roster (Match
+  // Setup offers only Reject then), and "Return to match" came straight back.
+  useEffect(() => {
+    if (!currentMatch || matchId == null || currentMatch.id !== matchId) return
+    if (!takesUploadedRoster(currentMatch)) return
+
+    // Check if there are pending rosters
+    const hasPendingHomeRoster = currentMatch.pendingHomeRoster !== null && currentMatch.pendingHomeRoster !== undefined
+    const hasPendingAwayRoster = currentMatch.pendingAwayRoster !== null && currentMatch.pendingAwayRoster !== undefined
+
+    // If there are pending rosters and we're not already in match setup, open it
+    if ((hasPendingHomeRoster || hasPendingAwayRoster) && !showMatchSetup) {
+      setShowMatchSetup(true)
+    }
+  }, [currentMatch, matchId, showMatchSetup])
+
+  // Update document title based on match type
+  useEffect(() => {
+    if (!currentMatch) {
+      document.title = 'OpenVolley eScoresheet'
+      return
+    }
+
+    if (isLocalOnly(currentMatch)) {
+      // Test matches don't have a game number - just show base title
+      document.title = 'OpenVolley eScoresheet'
+    } else {
+      // Official match - show game number only
+      const gameNumber = currentMatch.externalId || 'Official match'
+      document.title = `OpenVolley eScoresheet - ${gameNumber}`
+    }
+  }, [currentMatch])
+
+  // The match on the relay (referee / bench / livescore follow it there), from
+  // any view. One relay connection per scorer, shared with the Scoreboard
+  // (utils/relayPublisher scorerRelay): one socket owns the match, so the two
+  // no longer refuse each other. Refs keep the socket from being rebuilt.
+  const syncIntervalRef = useRef(null)
+  const currentMatchIdRef = useRef(null)
+  // The relay key this device last published its current match under
+  const publishedRelayKeyRef = useRef(null)
+  // The effect's sync, to publish at once when the match gets its seed key
+  const relaySyncRef = useRef(null)
+
+  // Tell the relay at once, not after the 30 s backup sync, when the match it
+  // gets has a change the tablets wait for: a blank match is not published
+  // (no seed key, see relayMatchKey) until Create Match gives it one; a role
+  // let in or out (Connect tablets, Match setup) or a new PIN: the relay
+  // checks the PINs itself, so until then a tablet just let in was told its
+  // right PIN is wrong (and each retry counted toward the per-minute PIN
+  // limit), and one just switched off could still get in. An open Scoreboard
+  // syncs on these changes itself; a second sync of the same data is
+  // harmless. The match is the one the effect below publishes: the open one,
+  // on Home the newest unfinished one (with an older match open next to a
+  // newer one, the newer one's changes synced the open one and the open
+  // one's waited). A string (relaySyncTrigger): no re-render on other writes.
+  const openMatchRelayTrigger = useLiveQuery(async () => {
+    if (!matchId) return null
+    try {
+      return relaySyncTrigger(await db.matches.get(matchId))
+    } catch {
+      return null
+    }
+  }, [matchId])
+  const relayTrigger = matchId ? openMatchRelayTrigger : relaySyncTrigger(currentMatch)
+  // The match the relay publishes (the open one, on Home the newest
+  // unfinished one): the header's tablet chip and Connect tablets follow it
+  const openMatchRow = useLiveQuery(async () => {
+    if (!matchId) return null
+    try { return (await db.matches.get(matchId)) || null } catch { return null }
+  }, [matchId])
+  const relayMatch = relayPublishedMatch(matchId, openMatchRow, currentMatch)
+  useEffect(() => {
+    if (relayTrigger != null && relaySyncRef.current) relaySyncRef.current()
+  }, [relayTrigger])
+
+  useEffect(() => {
+    // Keep the match on the relay even on the home screen (for dashboards):
+    // the open match, on Home the newest unfinished one. Everything the relay
+    // gets comes from that ONE match (relayMatchBundle): with two unfinished
+    // matches on the device, one match's room got the other's sets and events.
+    const activeMatchId = matchId || currentMatch?.id
+    if (!activeMatchId) {
+      currentMatchIdRef.current = null
+      return
+    }
+    currentMatchIdRef.current = activeMatchId
+
+    // The relay the Scoreboard and the tablets use (backendConfig)
+    const wsUrl = scorerRelayUrl({ wsPort: serverStatus?.wsPort })
+    if (!wsUrl) return // page opened from disk: no relay
+
+    // The relay room key this device published the match under (null before)
+    const relayKeyOfCurrent = () => publishedRelayKeyRef.current
+    // The stored row of the match on the relay (PIN and game-number checks)
+    const relayMatchRow = async () => (currentMatchIdRef.current === activeMatchId ? db.matches.get(activeMatchId) : null)
+
+    // The match for the relay: never game_pin / connection_pins. `mark`: the
+    // live-state order marked before the IndexedDB reads (applyNewerLiveState)
+    const relayMatchOf = (match, mark) => relayMatchPayload(match, null, { mark }).match
+
+    // What an unauthenticated caller may learn about the match (no PINs)
+    const publicMatchSummary = (m) => ({
+      id: m.id,
+      seed_key: m.seed_key,
+      gameNumber: m.gameNumber,
+      game_n: m.game_n,
+      status: m.status,
+      scheduledAt: m.scheduledAt,
+      homeTeamId: m.homeTeamId,
+      awayTeamId: m.awayTeamId,
+      refereeConnectionEnabled: m.refereeConnectionEnabled,
+      homeTeamConnectionEnabled: m.homeTeamConnectionEnabled,
+      awayTeamConnectionEnabled: m.awayTeamConnectionEnabled
+    })
+
+    const syncMatchData = async () => {
+      const ws = scorerRelay.socket
+      if (!ws || ws.readyState !== WebSocket.OPEN || currentMatchIdRef.current !== activeMatchId) {
+        return
+      }
+
+      try {
+        // Before the reads: a live state numbered after this mark is newer
+        // than what this sync carries (applyNewerLiveState on the tablets)
+        const syncMark = scorerLiveOrder.mark()
+        // The match, whole, or none: no seed key yet (a blank match before
+        // Create Match: a Dexie id is no room key), a test match on the cloud
+        // relay, a match another device scores now (its tablets follow that
+        // one, db/019) or a copy the server has closed (2026-10-23)
+        const [bundle, device] = await Promise.all([
+          relayMatchBundle(db, activeMatchId, { relayUrl: scorerRelay.url }),
+          relaySyncDevice(db, activeMatchId, writingDevice())
+        ])
+        if (!bundle || scorerRelay.socket !== ws || currentMatchIdRef.current !== activeMatchId) return
+        const { relayKey } = bundle
+
+        // Another match than the one published before (the scorer switched
+        // matches): take that one off the relay, this socket owns it
+        const previousKey = publishedRelayKeyRef.current
+        if (previousKey && previousKey !== relayKey) {
+          scorerRelay.send({ type: 'delete-match', matchId: previousKey })
+        }
+
+        // Full match object - scoreboard is source of truth, always overwrite.
+        // PINs only on this connection's first sync of the key and when one
+        // changed; never game_pin / connection_pins (see relayMatchPayload).
+        const { match: fullMatch, commit: commitPins } = scorerRelay.pins.payloadFor(ws, bundle.match, relayKey, syncMark)
+
+        // Sync full match data to server - this ALWAYS overwrites existing data (scoreboard is source of truth)
+        // The relay keys the room by the seed_key (what the tablets know).
+        // Teams and rosters without dates of birth, events without the undo
+        // snapshots (relayMatchBundle)
+        const syncPayload = {
+          type: 'sync-match-data',
+          matchId: relayKey,
+          match: fullMatch,
+          homeTeam: bundle.homeTeam,
+          awayTeam: bundle.awayTeam,
+          homePlayers: bundle.homePlayers,
+          awayPlayers: bundle.awayPlayers,
+          sets: bundle.sets,
+          events: bundle.events,
+          // This installation (db/019): the cloud relay refuses the copy of a
+          // device the match has moved away from ('scorer-moved'), which
+          // re-syncs at once when it comes back online; a venue relay, the
+          // copy of a claim another device took over (device.claim)
+          device
+        }
+
+        // Periodic sync - don't log every time to reduce noise
+
+        ws.send(JSON.stringify(syncPayload))
+        commitPins()
+        publishedRelayKeyRef.current = relayKey
+      } catch (err) {
+        console.error('[App WebSocket] Error syncing match data:', err)
+      }
+    }
+
+    const handlePinValidationRequest = async (request) => {
+      const ws = scorerRelay.socket
+      if (!ws || ws.readyState !== WebSocket.OPEN) return
+
+      try {
+        const currentMatchData = await relayMatchRow()
+        if (!currentMatchData || scorerRelay.socket !== ws) return
+        const { pin, pinType, requestId } = request
+        const pinStr = String(pin).trim()
+
+        let matchPin = null
+        let connectionEnabled = false
+
+        if (pinType === 'referee') {
+          matchPin = currentMatchData.refereePin
+          connectionEnabled = currentMatchData.refereeConnectionEnabled === true
+        } else if (pinType === 'homeTeam') {
+          matchPin = currentMatchData.homeTeamPin
+          connectionEnabled = currentMatchData.homeTeamConnectionEnabled === true
+        } else if (pinType === 'awayTeam') {
+          matchPin = currentMatchData.awayTeamPin
+          connectionEnabled = currentMatchData.awayTeamConnectionEnabled === true
+        }
+
+        if (matchPin && String(matchPin).trim() === pinStr && connectionEnabled && currentMatchData.status !== 'final') {
+          // Current relays validate PINs themselves and never ask. An older one
+          // relays this to whoever typed ONE PIN: a PIN-free summary only.
+          ws.send(JSON.stringify({
+            type: 'pin-validation-response',
+            requestId,
+            success: true,
+            match: publicMatchSummary(currentMatchData)
+          }))
+        } else {
+          ws.send(JSON.stringify({
+            type: 'pin-validation-response',
+            requestId,
+            success: false,
+            error: connectionEnabled === false ? 'Connection is disabled' : 'Invalid PIN code'
+          }))
+        }
+      } catch (err) {
+        console.error('[App WebSocket] Error handling PIN validation:', err)
+      }
+    }
+
+    const handleMatchDataRequest = async (request) => {
+      const ws = scorerRelay.socket
+      if (!ws || ws.readyState !== WebSocket.OPEN || currentMatchIdRef.current !== activeMatchId) return
+
+      try {
+        const { requestId, matchId: requestedMatchId } = request
+
+        // Only by the relay room key (seed_key): a Dexie id is not unique
+        // across scorers, answering it would open a second, frozen room. The
+        // same one match, under the same rules, as sync-match-data.
+        const syncMark = scorerLiveOrder.mark()
+        const bundle = await relayMatchBundle(db, activeMatchId, { relayUrl: scorerRelay.url })
+        if (scorerRelay.socket !== ws) return
+        const relayKey = bundle?.relayKey ?? null
+        if (!relayKey || String(requestedMatchId) !== relayKey) {
+          ws.send(JSON.stringify({
+            type: 'match-data-response',
+            requestId,
+            matchId: requestedMatchId,
+            success: false,
+            error: 'Match ID mismatch'
+          }))
+          return
+        }
+
+        ws.send(JSON.stringify({
+          type: 'match-data-response',
+          requestId,
+          matchId: relayKey,
+          success: true,
+          matchData: {
+            match: relayMatchOf(bundle.match, syncMark),
+            homeTeam: bundle.homeTeam,
+            awayTeam: bundle.awayTeam,
+            homePlayers: bundle.homePlayers,
+            awayPlayers: bundle.awayPlayers,
+            sets: bundle.sets,
+            // without the undo snapshots (relayEvents)
+            events: bundle.events
+          }
+        }))
+      } catch (err) {
+        console.error('[App WebSocket] Error handling match data request:', err)
+      }
+    }
+
+    const handleGameNumberRequest = async (request) => {
+      const ws = scorerRelay.socket
+      if (!ws || ws.readyState !== WebSocket.OPEN) return
+
+      try {
+        const currentMatchData = await relayMatchRow()
+        if (!currentMatchData || scorerRelay.socket !== ws) return
+        const { requestId, gameNumber } = request
+        const gameNumStr = String(gameNumber).trim()
+        const matchGameNumber = String(currentMatchData.gameNumber || '')
+        const matchGameN = String(currentMatchData.game_n || '')
+        const matchIdStr = String(currentMatchData.id || '')
+        const relayKey = relayMatchKey(currentMatchData)
+
+        if (relayKey && (matchGameNumber === gameNumStr || matchGameN === gameNumStr || matchIdStr === gameNumStr)) {
+          // PIN-free summary: the relay hands this to an unauthenticated caller.
+          // matchId is the room key the relay stores the match under.
+          ws.send(JSON.stringify({
+            type: 'game-number-response',
+            requestId,
+            success: true,
+            match: publicMatchSummary(currentMatchData),
+            matchId: relayKey
+          }))
+        } else {
+          ws.send(JSON.stringify({
+            type: 'game-number-response',
+            requestId,
+            success: false,
+            error: 'Match not found'
+          }))
+        }
+      } catch (err) {
+        console.error('[App WebSocket] Error handling game number request:', err)
+      }
+    }
+
+    // Removed handleMatchUpdateRequest - using sync-match-data instead
+
+    // (No 'clear-all-matches' on open or on cleanup: a fresh socket owns
+    // nothing, and the one socket also carries the Scoreboard's match.)
+    const detachRelay = scorerRelay.attach(wsUrl, {
+      onOpen: () => {
+        syncMatchData()
+        // Periodic sync as backup only (every 30 seconds), without PINs
+        // unless one changed. Primary sync happens in the Scoreboard: while it
+        // is open (attached too) it syncs every action itself.
+        if (syncIntervalRef.current) clearInterval(syncIntervalRef.current)
+        syncIntervalRef.current = setInterval(() => {
+          if (scorerRelay.userCount === 1) syncMatchData()
+        }, 30000)
+      },
+      onMessage: (message) => {
+        if (message.type === 'pin-validation-request') {
+          handlePinValidationRequest(message)
+        } else if (message.type === 'match-data-request') {
+          handleMatchDataRequest(message)
+        } else if (message.type === 'game-number-request') {
+          handleGameNumberRequest(message)
+        } else if (message.type === 'scorer-moved') {
+          // Another device took a match over (db/019): the server says whether
+          // it is this device's (ScorerMovedModal), the message names no device
+          checkScorerMoved(message.matchId)
+        } else if (isRelayErrorFor(message, [relayKeyOfCurrent()])) {
+          // The relay refused or lost this match: the next sync carries the PINs
+          scorerRelay.pins.reset()
+          // (an open Scoreboard resyncs itself)
+          if (message.code === 'pins-required' && scorerRelay.userCount === 1) syncMatchData()
+        }
+      }
+    })
+    relaySyncRef.current = syncMatchData
+
+    return () => {
+      relaySyncRef.current = null
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current)
+        syncIntervalRef.current = null
+      }
+      detachRelay()
+    }
+  }, [matchId, currentMatch?.id, serverStatus?.wsPort]) // Only depend on matchId and wsPort, not the full objects
+
+  async function finishSet(cur) {
+    const matchRecord = await db.matches.get(cur.matchId)
+    const isTestMatch = isLocalOnly(matchRecord)
+
+    // Calculate current set scores
+    const sets = await db.sets.where({ matchId: cur.matchId }).toArray()
+    const finishedSets = sets.filter(s => s.finished)
+    const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
+    const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
+
+    // Match end: a team has won enough sets, OR the scoreboard already ended the
+    // match (forfeit / impossibility to resume set status 'ended' without the
+    // sets being won). Either way no further set may be created.
+    const isMatchEnd = isMatchFinishedUtil(homeSetsWon, awaySetsWon, matchRecord?.bestOf) ||
+      matchRecord?.status === 'ended'
+
+    if (isMatchEnd) {
+      // IMPORTANT: When match ends, preserve ALL data in database:
+      // - All sets remain in db.sets
+      // - All events remain in db.events
+      // - All players remain in db.players
+      // - All teams remain in db.teams
+      // - Set status to 'ended' - MatchEnd component will set to 'approved' after approval
+      // Status flow: live -> ended -> approved
+
+      // Unlock session when match ends
+      try {
+        await unlockMatchSession(cur.matchId)
+      } catch (error) {
+        console.error('Error unlocking session:', error)
+      }
+
+      // A match closed here (approved on this device, final, closed on the
+      // server) only shows its Match End again: its status and the server
+      // copy stay as they are (matchEndUpdateNeeded)
+      const closed = isClosedHere(matchRecord)
+
+      // Update local match status to 'ended' (may already be set by Scoreboard)
+      if (!closed) await db.matches.update(cur.matchId, { status: 'ended' })
+
+      // Only sync official matches with seed_key
+      if (!isTestMatch && matchRecord?.seed_key && !closed) {
+        // Build set results array
+        const setResults = finishedSets
+          .sort((a, b) => a.index - b.index)
+          .map(s => ({ set: s.index, home: s.homePoints, away: s.awayPoints }))
+
+        // Determine winner (null for a match stopped without a winner)
+        const winner = getMatchWinner(sets, matchRecord?.bestOf, { forfeitTeam: matchRecord?.forfeitTeam })
+        const finalScore = `${homeSetsWon}-${awaySetsWon}`
+
+        const endPayload = {
+          id: matchRecord.seed_key, // Use seed_key (external_id) for Supabase lookup
+          status: 'ended', // Match ended, awaiting approval
+          set_results: setResults,
+          winner,
+          final_score: finalScore,
+          sanctions: matchRecord?.sanctions || null
+        }
+        // Once per result: the Scoreboard's "already finished" effect can
+        // call this again on every render until Match End shows
+        const pendingOfMatch = await db.sync_queue.where('status').anyOf('queued', 'sending', 'error').toArray()
+        if (matchEndUpdateNeeded(matchRecord, pendingOfMatch, endPayload)) {
+          await db.sync_queue.add({
+            resource: 'match',
+            action: 'update',
+            payload: endPayload,
+            ts: new Date().toISOString(),
+            status: 'queued'
+          })
+        }
+      }
+
+      // The match stays on the relay: the referee and bench keep showing the
+      // result. (The 'delete-match' sent here named the Dexie id, which is no
+      // relay key: the relay refused it as not this socket's match.)
+
+      // Show match end screen, filled at once: the scoreboard's set-end
+      // screen stays until it has read the match (OV-14)
+      await preloadMatchEnd(cur.matchId)
+      setShowMatchEnd(true)
+      return
+    }
+
+    // Continue to next set (legacy logic - shouldn't reach here with new logic;
+    // the Scoreboard creates the next set itself). Never duplicate a set, and keep
+    // the best-of-3 2 -> 5 jump.
+    const nextIndex = getNextSetIndex(cur.index, homeSetsWon, awaySetsWon, matchRecord?.bestOf)
+    if (sets.some(s => s.index === nextIndex)) return
+    const setId = await db.sets.add({ matchId: cur.matchId, index: nextIndex, homePoints: 0, awayPoints: 0, finished: false })
+
+    // Only sync official matches with seed_key
+    if (!isTestMatch && matchRecord?.seed_key) {
+      await db.sync_queue.add({
+        resource: 'set',
+        action: 'insert',
+        payload: {
+          external_id: setExtId(matchRecord.seed_key, setId),
+          match_id: matchRecord.seed_key, // Use seed_key (external_id) for Supabase lookup
+          index: nextIndex,
+          home_points: 0,
+          away_points: 0,
+          finished: false,
+          start_time: new Date().toISOString()
+        },
+        ts: new Date().toISOString(),
+        status: 'queued'
+      })
+    }
+  }
+
+  const openMatchSetup = () => {
+    setMatchId(null)
+    setShowManualAdjustments(false)
+    // Leaving Match End too: left on, the NEXT match opened as "Match
+    // complete" right after its coin toss (Match End shows while
+    // showMatchEnd && matchId)
+    setShowMatchEnd(false)
+  }
+
+  // Match Setup opens filled (OV-18): the scoreboard stays until it has read the match
+  const openMatchSetupView = async () => {
+    if (matchId) await preloadMatchSetup(matchId)
+    setShowMatchSetup(true)
+  }
+
+  const openCoinTossView = () => {
+    setShowMatchSetup(false)
+    setShowCoinToss(true)
+  }
+
+  // The match info alone, over the scoring screen (its Menu)
+  const openMatchInfoFromScoreboard = () => {
+    setManualAdjustmentsFrom('scoreboard')
+    setShowManualAdjustments(true)
+  }
+
+  // Leaving the match info / corrections (Close, Save): back to Match End, or
+  // to the scoring screen once it has read the match (preloadScoreboard), so
+  // its remount paints the match instead of "Loading..." while it reads every
+  // event. Save calls onSave and onClose one after the other: one read.
+  const scoreboardReturn = useRef(null)
+  const leaveManualAdjustments = async () => {
+    const from = manualAdjustmentsFrom
+    if (from === 'scoreboard') {
+      if (!scoreboardReturn.current) {
+        scoreboardReturn.current = preloadScoreboard(matchId).finally(() => { scoreboardReturn.current = null })
+      }
+      await scoreboardReturn.current
+    }
+    setShowManualAdjustments(false)
+    if (from !== 'scoreboard') setShowMatchEnd(true)
+    setManualAdjustmentsFrom('matchEnd')
+  }
+
+  // The memoized scoring screen's callbacks: one identity, App's newest closure
+  const scoreboardFinishSet = useLatestCallback(finishSet)
+  const scoreboardOpenSetup = useLatestCallback(openMatchSetup)
+  const scoreboardOpenMatchSetup = useLatestCallback(openMatchSetupView)
+  const scoreboardOpenMatchInfo = useLatestCallback(openMatchInfoFromScoreboard)
+  const scoreboardOpenCoinToss = useLatestCallback(openCoinTossView)
+
+  const returnToMatch = () => setShowMatchSetup(false)
+
+  // A match restored or joined from the cloud: the screen its state needs.
+  // Priority: finished match → MatchEnd, live with activity → Scoreboard,
+  // else → Setup
+  const openRestoredMatch = (newMatchId, cloudData) => {
+    // the loaded match replaced any closed copy the dialog was about
+    setClosedCopyId(null)
+    setMatchId(newMatchId)
+    const matchStatus = cloudData.match?.status
+    const hasEvents = cloudData.events && cloudData.events.length > 0
+    const hasSets = cloudData.sets && cloudData.sets.length > 0
+    const finishedSets = (cloudData.sets || []).filter(s => s.finished)
+    const homeSetsWon = finishedSets.filter(s => (s.homePoints ?? s.home_points ?? 0) > (s.awayPoints ?? s.away_points ?? 0)).length
+    const awaySetsWon = finishedSets.filter(s => (s.awayPoints ?? s.away_points ?? 0) > (s.homePoints ?? s.home_points ?? 0)).length
+    // A match over is over on every device: its sets decide it, or it is
+    // ended (also stopped for impossibility to resume, its set unfinished),
+    // approved or final: its Match End, never the scoring screen
+    if (opensAtMatchEnd({ status: matchStatus, homeSetsWon, awaySetsWon, bestOf: cloudBestOf(cloudData.match) })) {
+      setShowMatchSetup(false)
+      setShowMatchEnd(true)
+    } else if ((matchStatus === 'live' || hasEvents || hasSets) && (hasEvents || hasSets)) {
+      setShowMatchEnd(false)
+      setShowMatchSetup(false)
+    } else {
+      setShowMatchEnd(false)
+      setShowMatchSetup(true)
+    }
+  }
+
+  const goHome = async () => {
+    // Unlock session if match was open
+    if (matchId) {
+      try {
+        await unlockMatchSession(matchId)
+      } catch (error) {
+        console.error('Error unlocking session:', error)
+      }
+    }
+    setMatchId(null)
+    setShowMatchSetup(false)
+    setShowManualAdjustments(false)
+    setShowMatchEnd(false)
+  }
+
+  // Home > Restore match, Confirm: the previewed backup or server copy
+  // replaces this device's copy of the match. replaceNewer: the scorer
+  // confirmed losing what this device's copy holds beyond it
+  const runHomeRestore = async (replaceNewer = false) => {
+    setRestoreLoading(true)
+    setRestoreError('')
+    try {
+      let cloudData = restorePreviewData.data
+      let newMatchId
+
+      if (restorePreviewData.source === 'database') {
+        // Compared before the claim, which stops the other device: the
+        // server's copy over a copy here with more events or unsent writes
+        // only on a second confirmation (audit var-local-delete-1)
+        const loss = replaceNewer ? null : await localLossOnReplace(cloudData?.match?.external_id, cloudData?.events)
+        if (loss) throw Object.assign(new Error('This device holds newer data of the match'), { code: RESTORE_LOSES_LOCAL, loss })
+        // Read again with the claim: this device scores the
+        // match from here on (backupManager.fetchMatchToContinue)
+        cloudData = await fetchMatchToContinue(cloudData)
+        newMatchId = await importMatchFromSupabase(cloudData, { replaceNewer: true })
+      } else {
+        newMatchId = await restoreMatchFromJson(cloudData, { replaceNewer })
+      }
+
+      // Close modals
+      setRestorePreviewData(null)
+      setRestoreMatchModal(false)
+      setRestoreMatchIdInput('')
+      setRestorePin('')
+      setCloudBackups([])
+      setCloudBackupPin('')
+      setCloudBackupGameN('')
+      setCloudBackupError('')
+      openRestoredMatch(newMatchId, cloudData)
+    } catch (err) {
+      // backupManager refuses a backup of a match the server
+      // has closed, before it writes anything: a restored
+      // closed copy left a sync error nothing could clear
+      // (2026-10-23). Said here; back to the backup list.
+      if (err?.code === RESTORE_LOSES_LOCAL) {
+        // asked a second time, naming what this device's copy loses
+        setConfirmModal({
+          message: restoreLossText(err.loss, t),
+          onConfirm: () => { setConfirmModal(null); runHomeRestore(true) },
+          onCancel: () => setConfirmModal(null)
+        })
+      } else if (err?.code === 'OV_MATCH_CLOSED') {
+        setRestorePreviewData(null)
+        setAlertModal(t('cloudBlock.restoreRefused'))
+      } else {
+        setRestoreError(restoreErrorText(err, t))
+      }
+    } finally {
+      setRestoreLoading(false)
+    }
+  }
+
+  // The server's copy of a match in place of this device's (take back
+  // scoring, Load the official version): fetched with the game PIN this
+  // device kept, imported over the local copy (its jobs set aside; the
+  // take-back's own confirmation compared the scores), then the screen the
+  // loaded match needs. keepLocal: this device's own score, its unsent points
+  // included, goes to the server instead
+  const loadOfficialVersion = async (id, { keepLocal = false } = {}) => {
+    const online = typeof navigator === 'undefined' || navigator.onLine !== false
+    const r = await takeBackScoring(db, id, {
+      fetchCloud: fetchMatchByPin,
+      importCloud: (cloud) => importMatchFromSupabase(cloud, { replaceNewer: true }),
+      keepLocal: keepLocal ? continueWithLocalCopy : null,
+      online
+    })
+    if (!r.ok) return { error: r.reason }
+    openRestoredMatch(r.matchId, r.cloud)
+    try { window.dispatchEvent(new Event('sync-queue-write')) } catch { /* no window */ }
+    return { ok: true }
+  }
+
+  // A copy closed on the server or scored on another device opens read-only
+  // (the owner, 2026-10-27): no scoring controls, but its scoresheet stays
+  // reachable, to view, print or save, from the dialog over its screen
+  // (ScoresheetApp reads it from this device's database)
+  const openCopyScoresheet = (id) => {
+    const opened = openAppWindow(`/scoresheet/?matchId=${id}`, { features: 'width=1200,height=900', title: t('header.scoresheet') })
+    if (!opened.ok) setAlertModal(t(openFailedMessageKey(opened, 'header.allowPopups')))
+  }
+
+  // Before "Take back scoring here" (ScorerMovedModal): the server's score
+  // now, to compare with the scoreboard in its confirmation. A lookup with
+  // the game PIN, no claim; online only, as the take-back itself, which then
+  // loads the server's copy first as before (loadOfficialVersion)
+  const previewTakeBack = async (id) => {
+    const online = typeof navigator === 'undefined' || navigator.onLine !== false
+    const r = await serverScoreForTakeBack(db, id, { lookup: (gameN, pin) => apiMatchRestoreByPin(gameN, pin), online })
+    if (!r.ok) return { error: r.reason }
+    // this device's points the server never got (set aside on the move):
+    // the confirmation offers to keep them
+    const local = await db.matches.get(id)
+    const unsent = unsentOfMatch(await db.sync_queue.toArray(), local?.seed_key).events
+    return { score: r.score, unsent }
+  }
+
+  // Home's Clean up (SelfCheckNotice), after one question: the copies of a
+  // match that hold nothing of their own go, this device only; a copy that
+  // holds something stays with its own Remove (utils/deviceSelfCheck)
+  const confirmCleanUp = ({ key, gameN, count }) => {
+    setConfirmModal({
+      message: t('home.selfCheck.cleanUpConfirm', { game: gameN ?? '–', count }),
+      onConfirm: async () => {
+        setConfirmModal(null)
+        try {
+          const { removed } = await cleanUpDuplicateCopies(db, { openMatchId: matchId, keys: [key] })
+          // a copy that holds something of its own (since the check) stays,
+          // and keeps its line with Remove
+          const { flagged } = await findDuplicateCopies(db, { openMatchId: matchId, keys: [key] })
+          setSelfCheck(prev => ({
+            closed: prev?.closed || [],
+            flagged: [...(prev?.flagged || []).filter(f => f.key !== key), ...flagged],
+            removed: [...(prev?.removed || []), ...removed]
+          }))
+        } catch (error) {
+          console.error('[SelfCheck] Clean up failed:', error)
+        }
+      },
+      onCancel: () => setConfirmModal(null)
+    })
+  }
+
+  // The practice matches of this device (test and easy matches) with their
+  // events, sets and test teams. Never a Global or guest match
+  // (domain/matchKind usesKeyStore): a real match whose only full copy is on
+  // this device, kept with the test-match slot's external id. It goes only by
+  // Close match or by Delete match, which asks for its game PIN and names
+  // what it loses (audit LOG-01: Test match, Easy match and a new Global or
+  // guest match wiped it without a question)
+  async function clearLocalTestData() {
+    await db.transaction('rw', db.events, db.event_history, db.sets, db.matches, db.players, db.teams, async () => {
+      const testMatches = await db.matches
+        .filter(m => !usesKeyStore(m) && (m.test === true || m.externalId === TEST_MATCH_EXTERNAL_ID))
+        .toArray()
+      for (const match of testMatches) {
+        // a wipe, not an undo: no event history (db/eventHistory)
+        await wipeMatchEvents(db, match.id, { dropHistory: true })
+        await db.sets.where('matchId').equals(match.id).delete()
+        await db.matches.delete(match.id)
+      }
+
+      // (a team row a kept match still uses stays with its players)
+      const keptTeamIds = new Set()
+      await db.matches.each(m => { keptTeamIds.add(m.homeTeamId); keptTeamIds.add(m.awayTeamId) })
+      const testTeams = await db.teams
+        .filter(
+          t =>
+            !keptTeamIds.has(t.id) && (
+              t.externalId === TEST_HOME_TEAM_EXTERNAL_ID ||
+              t.externalId === TEST_AWAY_TEAM_EXTERNAL_ID ||
+              (t.seedKey && t.seedKey.startsWith('test-')))
+        )
+        .toArray()
+
+      for (const team of testTeams) {
+        await db.players.where('teamId').equals(team.id).delete()
+        await db.teams.delete(team.id)
+      }
+    })
+
+  }
+
+  async function resetSupabaseTestMatch() {
+    const { data: matchRecord, error: matchLookupError } = await apiFrom('matches')
+      .select('id')
+      .eq('external_id', TEST_MATCH_EXTERNAL_ID)
+      .single()
+
+    if (matchLookupError) {
+      throw new Error(matchLookupError.message)
+    }
+    if (!matchRecord) {
+      throw new Error('Test match not found on Supabase.')
+    }
+
+    const matchUuid = matchRecord.id
+
+    const { error: deleteEventsError } = await apiFrom('events')
+      .delete()
+      .eq('match_id', matchUuid)
+    if (deleteEventsError) {
+      throw new Error(deleteEventsError.message)
+    }
+
+    const { error: deleteSetsError } = await apiFrom('sets')
+      .delete()
+      .eq('match_id', matchUuid)
+    if (deleteSetsError) {
+      throw new Error(deleteSetsError.message)
+    }
+
+    const newScheduled = getNextTestMatchStartTime()
+    const { error: updateMatchError } = await apiFrom('matches')
+      .update({
+        status: 'scheduled',
+        scheduled_at: newScheduled,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', matchUuid)
+
+    if (updateMatchError) {
+      throw new Error(updateMatchError.message)
+    }
+  }
+
+  async function loadTestMatchFromSupabase({ resetRemote = false, targetView = 'setup' } = {}) {
+    if (resetRemote) {
+      await resetSupabaseTestMatch()
+    }
+
+    const { data: matchData, error: matchError } = await apiFrom('matches')
+      .select('*')
+      .eq('external_id', TEST_MATCH_EXTERNAL_ID)
+      .single()
+
+    if (matchError) {
+      throw new Error(matchError.message)
+    }
+    if (!matchData) {
+      throw new Error('Test match not found on Supabase.')
+    }
+
+
+    const [homeTeamRes, awayTeamRes] = await Promise.all([
+      apiFrom('teams').select('*').eq('id', matchData.home_team_id).single(),
+      apiFrom('teams').select('*').eq('id', matchData.away_team_id).single()
+    ])
+
+    if (homeTeamRes.error) {
+      throw new Error(homeTeamRes.error.message)
+    }
+    if (awayTeamRes.error) {
+      throw new Error(awayTeamRes.error.message)
+    }
+
+    const homeTeamData = homeTeamRes.data
+    const awayTeamData = awayTeamRes.data
+
+
+    const { data: playersData, error: playersError } = await apiFrom('players')
+      .select('*')
+      .in('team_id', [matchData.home_team_id, matchData.away_team_id])
+
+    if (playersError) {
+      throw new Error(playersError.message)
+    }
+
+    const { data: setsData, error: setsError } = await apiFrom('sets')
+      .select('*')
+      .eq('match_id', matchData.id)
+      .order('index')
+
+    if (setsError) {
+      throw new Error(setsError.message)
+    }
+
+    const { data: eventsData, error: eventsError } = await apiFrom('events')
+      .select('*')
+      .eq('match_id', matchData.id)
+      .order('ts')
+
+    if (eventsError) {
+      throw new Error(eventsError.message)
+    }
+
+    await clearLocalTestData()
+
+    const normalizeBenchMember = member => ({
+      role: member?.role || '',
+      firstName: member?.firstName || member?.first_name || '',
+      lastName: member?.lastName || member?.last_name || '',
+      dob: member?.dob || member?.date_of_birth || member?.dateOfBirth || '',
+      // a playing coach's link (domain/playerOfficials)
+      ...benchPlays(member)
+    })
+
+    const homeBenchRaw = Array.isArray(homeTeamData?.bench_staff)
+      ? homeTeamData.bench_staff
+      : Array.isArray(matchData.bench_home)
+        ? matchData.bench_home
+        : TEST_HOME_BENCH
+
+    const awayBenchRaw = Array.isArray(awayTeamData?.bench_staff)
+      ? awayTeamData.bench_staff
+      : Array.isArray(matchData.bench_away)
+        ? matchData.bench_away
+        : TEST_AWAY_BENCH
+
+    const homeBench = (() => {
+      const normalized = homeBenchRaw.map(normalizeBenchMember)
+      const hasNamedMember = normalized.some(member => member.firstName || member.lastName)
+      return hasNamedMember ? normalized : TEST_HOME_BENCH.map(normalizeBenchMember)
+    })()
+
+    const awayBench = (() => {
+      const normalized = awayBenchRaw.map(normalizeBenchMember)
+      const hasNamedMember = normalized.some(member => member.firstName || member.lastName)
+      return hasNamedMember ? normalized : TEST_AWAY_BENCH.map(normalizeBenchMember)
+    })()
+
+    const homeTeamId = await db.teams.add({
+      name: homeTeamData?.name || 'Home',
+      shortName: homeTeamData?.short_name || getTestHomeTeamShortName(),
+      color: homeTeamData?.color || '#3b82f6',
+      seedKey: homeTeamData?.seed_key || TEST_HOME_TEAM_EXTERNAL_ID,
+      externalId: homeTeamData?.external_id || TEST_HOME_TEAM_EXTERNAL_ID,
+      benchStaff: homeBench,
+      test: true,
+      createdAt: homeTeamData?.created_at || new Date().toISOString()
+    })
+
+    const awayTeamId = await db.teams.add({
+      name: awayTeamData?.name || 'Away',
+      shortName: awayTeamData?.short_name || getTestAwayTeamShortName(),
+      color: awayTeamData?.color || '#dc2626',
+      seedKey: awayTeamData?.seed_key || TEST_AWAY_TEAM_EXTERNAL_ID,
+      externalId: awayTeamData?.external_id || TEST_AWAY_TEAM_EXTERNAL_ID,
+      benchStaff: awayBench,
+      test: true,
+      createdAt: awayTeamData?.created_at || new Date().toISOString()
+    })
+
+    const normalizePlayer = (player, teamId) => ({
+      teamId,
+      number: player.number,
+      name: `${player.last_name || ''} ${player.first_name || ''}`.trim(),
+      lastName: player.last_name || '',
+      firstName: player.first_name || '',
+      dob: player.dob || '',
+      libero: player.libero || '',
+      isCaptain: player.is_captain || false,
+      functions: Array.isArray(player.functions) && player.functions.length > 0 ? player.functions : ['player'],
+      test: player.test ?? true,
+      createdAt: player.created_at || new Date().toISOString(),
+      externalId: player.external_id
+    })
+
+    const buildFallbackPlayers = (externalId) => {
+      const teamSeed = getTestTeamByExternalId(externalId)
+      if (!teamSeed) return []
+      return teamSeed.players.map(player => ({
+        team_id: null,
+        number: player.number,
+        first_name: player.firstName,
+        last_name: player.lastName,
+        dob: player.dob,
+        libero: player.libero || '',
+        is_captain: player.isCaptain || false,
+        is_lfp: player.isLfp || false,
+        functions: player.functions || (player.libero ? ['player'] : ['player'])
+      }))
+    }
+
+    let homePlayersData = (playersData || []).filter(p => p.team_id === matchData.home_team_id)
+    if (!homePlayersData.length) {
+      homePlayersData = buildFallbackPlayers(TEST_HOME_TEAM_EXTERNAL_ID)
+      console.warn('[TestMatch] Supabase returned no home players, using fallback seed roster')
+    }
+
+    let awayPlayersData = (playersData || []).filter(p => p.team_id === matchData.away_team_id)
+    if (!awayPlayersData.length) {
+      awayPlayersData = buildFallbackPlayers(TEST_AWAY_TEAM_EXTERNAL_ID)
+      console.warn('[TestMatch] Supabase returned no away players, using fallback seed roster')
+    }
+
+    const fetchOfficialByExternalId = async (table, externalId) => {
+      if (!externalId) return null
+      const { data, error } = await apiFrom(table).select('first_name,last_name,country').eq('external_id', externalId).maybeSingle()
+      if (error) {
+        console.warn(`Unable to load ${table} ${externalId}:`, error.message)
+        return null
+      }
+      return data
+    }
+
+    const resolvedOfficials = async () => {
+      const officialTemplates = [
+        {
+          role: '1st referee',
+          table: 'referees',
+          defaultExternalId: 'test-referee-alpha',
+          fallback: TEST_REFEREE_SEED_DATA[0] || {}
+        },
+        {
+          role: '2nd referee',
+          table: 'referees',
+          defaultExternalId: 'test-referee-bravo',
+          fallback: TEST_REFEREE_SEED_DATA[1] || TEST_REFEREE_SEED_DATA[0] || {}
+        },
+        {
+          role: 'scorer',
+          table: 'scorers',
+          defaultExternalId: 'test-scorer-alpha',
+          fallback: TEST_SCORER_SEED_DATA[0] || {}
+        },
+        {
+          role: 'assistant scorer',
+          table: 'scorers',
+          defaultExternalId: 'test-scorer-bravo',
+          fallback: TEST_SCORER_SEED_DATA[1] || TEST_SCORER_SEED_DATA[0] || {}
+        }
+      ]
+
+      const sourceOfficials = Array.isArray(matchData.officials) ? matchData.officials : []
+
+      const normalizeOfficialEntry = async (template) => {
+        const record = sourceOfficials.find(o => o.role === template.role) || {}
+        const externalId = record.external_id || record.externalId || template.defaultExternalId
+
+        let fetched = null
+        if (externalId && (!record.firstName && !record.lastName) && (!record.first_name && !record.last_name)) {
+          fetched = await fetchOfficialByExternalId(template.table, externalId)
+        }
+
+        const firstName = record.firstName || record.first_name || fetched?.first_name || template.fallback.firstName || ''
+        const lastName = record.lastName || record.last_name || fetched?.last_name || template.fallback.lastName || ''
+        const country = record.country || fetched?.country || template.fallback.country || 'CHE'
+        const dob = record.dob || template.fallback.dob || ''
+
+        return {
+          role: template.role,
+          firstName,
+          lastName,
+          country,
+          dob,
+          externalId
+        }
+      }
+
+      const results = await Promise.all(officialTemplates.map(normalizeOfficialEntry))
+      const missingNames = results.filter(o => !o.firstName || !o.lastName)
+
+      if (missingNames.length === 0) {
+        return results
+      }
+
+      // As a safety fallback, merge with seed data for any remaining blanks
+      return results.map(entry => {
+        if (entry.firstName && entry.lastName) return entry
+        const fallback = officialTemplates.find(t => t.role === entry.role)?.fallback || {}
+        return {
+          ...entry,
+          firstName: entry.firstName || fallback.firstName || '',
+          lastName: entry.lastName || fallback.lastName || '',
+          country: entry.country || fallback.country || 'CHE',
+          dob: entry.dob || fallback.dob || ''
+        }
+      })
+    }
+
+    const officials = await resolvedOfficials()
+
+    if (homePlayersData.length) {
+      await db.players.bulkAdd(homePlayersData.map(p => normalizePlayer(p, homeTeamId)))
+    }
+    if (awayPlayersData.length) {
+      await db.players.bulkAdd(awayPlayersData.map(p => normalizePlayer(p, awayTeamId)))
+    }
+
+    // Extract JSONB data with fallback to legacy columns
+    const matchInfo = matchData.match_info || {}
+    const coinToss = matchData.coin_toss || {}
+    const signatures = matchData.signatures || {}
+    const connections = matchData.connections || {}
+    const connectionPins = matchData.connection_pins || {}
+
+    const matchDexieId = await db.matches.add({
+      status: matchData.status || 'scheduled',
+      scheduledAt: matchData.scheduled_at,
+      // Match info: prefer JSONB, fallback to legacy
+      hall: matchInfo.hall || matchData.hall || TEST_MATCH_DEFAULTS.hall,
+      city: matchInfo.city || matchData.city || TEST_MATCH_DEFAULTS.city,
+      league: matchInfo.league || matchData.league || TEST_MATCH_DEFAULTS.league,
+      gameNumber: matchData.game_number || TEST_MATCH_DEFAULTS.gameNumber,
+      // Connection PINs: prefer JSONB, fallback to legacy
+      refereePin: connectionPins.referee || matchData.referee_pin || generateSecurePin(),
+      homeTeamPin: connectionPins.bench_home || matchData.bench_home_pin || null,
+      awayTeamPin: connectionPins.bench_away || matchData.bench_away_pin || null,
+      homeTeamUploadPin: connectionPins.upload_home || matchData.home_team_upload_pin || null,
+      awayTeamUploadPin: connectionPins.upload_away || matchData.away_team_upload_pin || null,
+      homeTeamId,
+      awayTeamId,
+      // the set boxes, rosters and the PDF's file name read them from the match
+      homeShortName: homeTeamData?.short_name || getTestHomeTeamShortName(),
+      awayShortName: awayTeamData?.short_name || getTestAwayTeamShortName(),
+      bench_home: homeBench,
+      bench_away: awayBench,
+      officials,
+      test: matchData.test ?? true,
+      createdAt: matchData.created_at || new Date().toISOString(),
+      updatedAt: matchData.updated_at || new Date().toISOString(),
+      externalId: matchData.external_id,
+      seedKey: newTestMatchSeedKey(),
+      supabaseId: matchData.id,
+      // Signatures: prefer JSONB, fallback to legacy
+      homeCoachSignature: signatures.home_coach || matchData.home_coach_signature || null,
+      homeCaptainSignature: signatures.home_captain || matchData.home_captain_signature || null,
+      awayCoachSignature: signatures.away_coach || matchData.away_coach_signature || null,
+      awayCaptainSignature: signatures.away_captain || matchData.away_captain_signature || null,
+      // Coin toss: prefer JSONB, fallback to legacy
+      coinTossTeamA: coinToss.team_a || matchData.coin_toss_team_a || null,
+      coinTossTeamB: coinToss.team_b || matchData.coin_toss_team_b || null,
+      coinTossServeA: coinToss.serve_a !== undefined ? coinToss.serve_a : (matchData.coin_toss_serve_a ?? null),
+      coinTossServeB: matchData.coin_toss_serve_b ?? null,
+      coinTossConfirmed: coinToss.confirmed !== undefined ? coinToss.confirmed : (matchData.coin_toss_confirmed ?? false),
+      // Connection enables: prefer JSONB, fallback to legacy
+      refereeConnectionEnabled: connections.referee_enabled !== undefined ? connections.referee_enabled : matchData.referee_connection_enabled,
+      homeTeamConnectionEnabled: connections.home_bench_enabled !== undefined ? connections.home_bench_enabled : matchData.home_team_connection_enabled,
+      awayTeamConnectionEnabled: connections.away_bench_enabled !== undefined ? connections.away_bench_enabled : matchData.away_team_connection_enabled
+    })
+
+    if (Array.isArray(setsData) && setsData.length > 0) {
+      await db.sets.bulkAdd(setsData.map(set => ({
+        matchId: matchDexieId,
+        index: set.index ?? set.set_index ?? 1,
+        homePoints: set.home_points ?? 0,
+        awayPoints: set.away_points ?? 0,
+        finished: set.finished ?? false,
+        startTime: set.start_time || null,
+        endTime: set.end_time || null,
+        externalId: set.external_id,
+        createdAt: set.created_at,
+        updatedAt: set.updated_at
+      })))
+    } else {
+      await db.sets.add({
+        matchId: matchDexieId,
+        index: 1,
+        homePoints: 0,
+        awayPoints: 0,
+        finished: false
+      })
+    }
+
+    if (Array.isArray(eventsData) && eventsData.length > 0) {
+      await db.events.bulkAdd(eventsData.map(event => ({
+        matchId: matchDexieId,
+        setIndex: event.set_index ?? 1,
+        type: event.type,
+        payload: event.payload || {},
+        ts: event.ts || new Date().toISOString()
+      })))
+    }
+
+    setMatchId(matchDexieId)
+    setShowCoinToss(false)
+    setShowMatchSetup(targetView === 'setup')
+  }
+
+
+  const firstNames = ['Max', 'Luca', 'Tom', 'Jonas', 'Felix', 'Noah', 'David', 'Simon', 'Daniel', 'Michael', 'Anna', 'Sarah', 'Lisa', 'Emma', 'Sophie', 'Laura', 'Julia', 'Maria', 'Nina', 'Sara']
+  const lastNames = ['Müller', 'Schmidt', 'Schneider', 'Fischer', 'Weber', 'Meyer', 'Wagner', 'Becker', 'Schulz', 'Hoffmann', 'Koch', 'Bauer', 'Richter', 'Klein', 'Wolf', 'Schröder', 'Neumann', 'Schwarz', 'Zimmermann', 'Braun']
+
+  function formatISODateToDisplay(dateString) {
+    if (!dateString) return null
+    // the value beside an official's name: a licence number stays as it is, a date becomes dd.mm.yyyy
+    return cleanIdValue('licence', dateString) || null
+  }
+
+
+  function generateRandomPlayers(teamId, config = {}) {
+    // Config options: { totalPlayers: 12, liberoCount: 1 } or { totalPlayers: 11, liberoCount: 1 }
+    // Valid combinations: 11+1, 12+0, 11+2, 12+2
+    // At least 6 non-libero players required
+    const { totalPlayers = 12, liberoCount = 1 } = config
+    const nonLiberoCount = totalPlayers - liberoCount
+
+    if (nonLiberoCount < 6) {
+      throw new Error('At least 6 non-libero players required')
+    }
+
+    const numbers = Array.from({ length: totalPlayers }, (_, i) => i + 1)
+    const shuffled = numbers.sort(() => Math.random() - 0.5)
+
+    let captainAssigned = false
+
+    return shuffled.slice(0, totalPlayers).map((number, idx) => {
+      const firstName = firstNames[Math.floor(Math.random() * firstNames.length)]
+      const lastName = lastNames[Math.floor(Math.random() * lastNames.length)]
+      const dob = String(100000 + Math.floor(Math.random() * 900000)) // a made-up licence number
+
+      // Assign libero roles
+      let libero = ''
+      if (idx < liberoCount) {
+        libero = idx === 0 ? 'libero1' : 'libero2'
+      }
+
+      // Assign captain to first non-libero player
+      let isCaptain = false
+      if (!captainAssigned && libero === '') {
+        isCaptain = true
+        captainAssigned = true
+      }
+
+      return {
+        teamId,
+        number,
+        name: `${lastName} ${firstName}`,
+        lastName,
+        firstName,
+        dob,
+        libero,
+        isCaptain,
+        role: null,
+        createdAt: new Date().toISOString()
+      }
+    })
+  }
+
+  // targetId: a match of the home screen's list; none = the newest open one
+  async function showDeleteMatchModal(targetId) {
+    const matchToDelete = targetId != null ? await db.matches.get(targetId) : (currentOfficialMatch || currentMatch)
+    if (!matchToDelete) return
+
+    const [homeTeam, awayTeam] = await Promise.all([
+      matchToDelete.homeTeamId ? db.teams.get(matchToDelete.homeTeamId) : null,
+      matchToDelete.awayTeamId ? db.teams.get(matchToDelete.awayTeamId) : null
+    ])
+    const matchName = `${homeTeam?.name || 'Home'} vs ${awayTeam?.name || 'Away'}`
+
+    // one of two copies of the match here (utils/deviceSelfCheck): the other
+    // copy, the match's jobs and the server's match stay
+    const otherCopy = await hasOtherLocalCopy(db, matchToDelete)
+    // What removing it loses (the owner, 2026-10-27): the changes of the
+    // match the server does not have, unsent or set aside (deviceSelfCheck
+    // unsentOfMatch). Named in the dialog before Delete; a copy the server
+    // has closed or another device scores goes without that warning only
+    // when there is none. Not for one of two copies: the jobs stay.
+    const unsent = otherCopy ? { changes: 0, events: 0 } : unsentOfMatch(await db.sync_queue.toArray(), matchToDelete.seed_key)
+
+    setDeletePinInput('')
+    setDeletePinError('')
+    setDeleteMatchModal({
+      matchName,
+      matchId: matchToDelete.id,
+      gamePin: matchToDelete.gamePin || null,
+      // the server keeps its closed record (also after an admin reopen,
+      // db/039): only this device's copy goes
+      closedOnServer: wasClosedOnServer(matchToDelete),
+      // another device scores it: the server's match and its relay room are
+      // that device's, only this device's copy goes
+      moved: isScorerMoved(matchToDelete) && !isKnownClosedOnServer(matchToDelete),
+      otherCopy,
+      unsent,
+      // a Global match never reached the cloud database (domain/matchKind)
+      deviceOnly: isLocalOnly(matchToDelete)
+    })
+  }
+
+  async function confirmDeleteMatch() {
+    if (!deleteMatchModal) return
+
+    // Require PIN confirmation if match has a gamePin
+    if (deleteMatchModal.gamePin) {
+      if (!deletePinInput.trim()) {
+        setDeletePinError('Please enter the game PIN to confirm deletion')
+        return
+      }
+      if (deletePinInput.trim() !== deleteMatchModal.gamePin) {
+        setDeletePinError('Incorrect PIN. Please enter the correct game PIN.')
+        return
+      }
+    }
+
+    const matchIdToDelete = deleteMatchModal.matchId
+
+    // Get match before deleting to check status and seed_key
+    const matchToDelete = await db.matches.get(matchIdToDelete)
+    // One of two copies of the match on this device (the self-check's list,
+    // utils/deviceSelfCheck): this copy's rows go, nothing more. The match's
+    // sync jobs carry its key, which the other copy shares, as do its relay
+    // room and its server match.
+    const otherCopy = !!matchToDelete && await hasOtherLocalCopy(db, matchToDelete)
+    // Remove from this device is local only for a copy the server reported
+    // closed or scored on another device (the owner, 2026-10-27): no server
+    // delete and no relay delete-match. The server keeps the closed record
+    // (and refused every request of such a delete job); a match another
+    // device scores is that device's, on the server and in its relay room.
+    // So is a match an admin reopened (db/039: once closed, only an admin
+    // deletes it on the server).
+    const localOnly = !!matchToDelete && (wasClosedOnServer(matchToDelete) || isScorerMoved(matchToDelete))
+    const shouldDeleteFromSupabase = matchToDelete && matchToDelete.status !== 'final' && matchToDelete.seed_key && !localOnly && !otherCopy
+    console.log('[Delete Match] 🗑️ Preparing to delete match:', {
+      matchId: matchIdToDelete,
+      status: matchToDelete?.status,
+      seed_key: matchToDelete?.seed_key,
+      otherCopy,
+      localOnly,
+      shouldDeleteFromSupabase
+    })
+
+    await db.transaction('rw', db.matches, db.sets, db.events, db.event_history, db.players, db.teams, db.sync_queue, db.match_setup, async () => {
+      console.log('[Delete Match] Starting local deletion of match:', matchIdToDelete)
+
+      // Delete sets
+      const sets = await db.sets.where('matchId').equals(matchIdToDelete).toArray()
+      console.log('[Delete Match] Found', sets.length, 'sets to delete')
+      if (sets.length > 0) {
+        await db.sets.bulkDelete(sets.map(s => s.id))
+      }
+
+      // Delete events - use direct delete instead of bulkDelete for better reliability
+      const eventsCount = await db.events.where('matchId').equals(matchIdToDelete).count()
+      console.log('[Delete Match] Found', eventsCount, 'events to delete')
+      // a wipe, not an undo: no event history (db/eventHistory)
+      await wipeMatchEvents(db, matchIdToDelete, { dropHistory: true })
+
+      // Get match to find team IDs
+      const match = await db.matches.get(matchIdToDelete)
+      // A team row another local match still uses stays with its players: a
+      // restore before 92a288da shared one row between two matches (two
+      // copies of one match too), and deleting either took it from the other
+      const sharedTeam = async (teamId) => (await db.matches.filter(m => m.id !== matchIdToDelete && (m.homeTeamId === teamId || m.awayTeamId === teamId)).count()) > 0
+      const keepHomeTeam = match?.homeTeamId ? await sharedTeam(match.homeTeamId) : false
+      const keepAwayTeam = match?.awayTeamId ? await sharedTeam(match.awayTeamId) : false
+
+      // Delete players
+      if (match?.homeTeamId && !keepHomeTeam) {
+        const homePlayersCount = await db.players.where('teamId').equals(match.homeTeamId).count()
+        console.log('[Delete Match] Deleting', homePlayersCount, 'home players')
+        await db.players.where('teamId').equals(match.homeTeamId).delete()
+      }
+      if (match?.awayTeamId && !keepAwayTeam) {
+        const awayPlayersCount = await db.players.where('teamId').equals(match.awayTeamId).count()
+        console.log('[Delete Match] Deleting', awayPlayersCount, 'away players')
+        await db.players.where('teamId').equals(match.awayTeamId).delete()
+      }
+
+      // Delete teams
+      if (match?.homeTeamId && !keepHomeTeam) {
+        await db.teams.delete(match.homeTeamId)
+      }
+      if (match?.awayTeamId && !keepAwayTeam) {
+        await db.teams.delete(match.awayTeamId)
+      }
+
+      // This match's unsent jobs; the other matches on the device keep theirs
+      // (and so does the other copy of this match: the jobs may be its own)
+      const matchJobs = otherCopy ? [] : jobsOfMatch(await db.sync_queue.toArray(), match?.seed_key)
+      console.log('[Delete Match] Removing', matchJobs.length, 'sync queue items of the match')
+      if (matchJobs.length > 0) await db.sync_queue.bulkDelete(matchJobs.map(j => j.id))
+
+      // Delete match setup draft
+      await db.match_setup.clear()
+
+      // Delete match
+      await db.matches.delete(matchIdToDelete)
+      console.log('[Delete Match] Match deleted successfully')
+    })
+
+    // Take the match off the relay, by its room key (the seed key); not the
+    // room the other copy of the match still has, nor that of a match closed
+    // on the server or scored on another device (local only)
+    const deletedRelayKey = otherCopy || localOnly ? null : relayMatchKey(matchToDelete)
+    if (deletedRelayKey) {
+      scorerRelay.send({ type: 'delete-match', matchId: deletedRelayKey })
+      if (publishedRelayKeyRef.current === deletedRelayKey) publishedRelayKeyRef.current = null
+    }
+
+    // Delete from Supabase if match hasn't ended (not 'final')
+    // This prevents clutter from test matches while preserving completed match history
+    if (shouldDeleteFromSupabase) {
+      try {
+        await db.sync_queue.add({
+          resource: 'match',
+          action: 'delete',
+          payload: {
+            id: matchToDelete.seed_key
+          },
+          ts: new Date().toISOString(),
+          status: 'queued'
+        })
+        console.log('[Delete Match] ✅ Queued Supabase delete for seed_key:', matchToDelete.seed_key)
+      } catch (err) {
+        console.error('[App] Error queuing Supabase match deletion:', err)
+      }
+    } else {
+      console.log('[Delete Match] ⏭️ Skipping Supabase delete (final status, no seed_key, closed on the server, scored on another device or another local copy)')
+    }
+
+    setDeleteMatchModal(null)
+    setClosedCopyId(null)
+    setMatchId(null)
+    setShowMatchSetup(false)
+    setShowManualAdjustments(false)
+  }
+
+  function cancelDeleteMatch() {
+    setDeleteMatchModal(null)
+    setDeletePinInput('')
+    setDeletePinError('')
+  }
+
+  // utils/currentMatch newOfficialMatchStep for `match`, with its writes the
+  // server does not have yet (deviceSelfCheck unsentOfMatch) among `jobs`
+  function officialMatchStep(match, jobs) {
+    const unsent = match && !isLocalOnly(match) ? unsentOfMatch(jobs, match.seed_key) : { changes: 0, events: 0 }
+    const step = newOfficialMatchStep(match, matchStatus?.status, {
+      closedCopy: isStaleClosedCopy(match) || isKnownClosedOnServer(match),
+      movedCopy: isScorerMoved(match),
+      unsent: unsent.changes
+    })
+    return { step, unsent }
+  }
+
+  // Why the official match stays, what to do first, and how many of its
+  // changes have not reached the server (Delete match names them too)
+  function officialMatchKeptMessage(step, unsent) {
+    const why = step === 'ended'
+      ? t('home.modals.officialMatchNotClosed', 'The official match on this device has ended and is not closed. Continue it and close it with "Close match" on its match end, or delete it with "Delete match", before creating a new official match.')
+      : step === 'unsent'
+        ? t('home.modals.officialMatchUnsent', 'The official match on this device has changes the server does not have yet. Go online so they can be sent, or delete it with "Delete match", before creating a new official match.')
+        : t('home.modals.officialMatchStillRecording', 'An official match is still recording on this device. Continue it, or delete it with "Delete match", before creating a new official match.')
+    return unsent?.changes > 0 ? `${why} ${t('home.modals.officialMatchUnsentCount', { count: unsent.changes })}` : why
+  }
+
+  async function createNewOfficialMatch() {
+    // utils/currentMatch newOfficialMatchStep. An official match being
+    // recorded, one that ended or was approved here and is not closed, and
+    // one with writes the server does not have yet are not replaced: the
+    // scorer is told to close or delete it first (Delete match asks for the
+    // game PIN and names what it loses). A test or easy match is replaced,
+    // after the question (this button did nothing at all while one was being
+    // recorded). A copy closed on the server or scored on another device
+    // never blocks it and is never deleted on the way: it stays, read-only,
+    // on the home screen's list (the owner, 2026-10-27). Unconfirmed matches
+    // (user started but didn't click "Create Match") are silently deleted.
+    const { step, unsent } = officialMatchStep(currentMatch, currentMatch ? await db.sync_queue.toArray() : [])
+    if (OFFICIAL_MATCH_KEPT_STEPS.includes(step)) {
+      setPendingOfficialGame(null)
+      setAlertModal(officialMatchKeptMessage(step, unsent))
+      return
+    }
+    if (step === 'replace') {
+      setNewMatchModal({
+        type: 'official',
+        message: currentMatch.test !== true
+          ? t('home.modals.existingMatchWarning')
+          : currentMatch.easy === true
+            ? t('home.modals.officialMatchReplaceEasy', 'The easy match on this device is replaced by the official match and its data deleted. Continue?')
+            : t('home.modals.officialMatchReplaceTest', 'The test match on this device is replaced by the official match and its data deleted. Continue?')
+      })
+      return
+    }
+    if (step === 'discard') {
+      console.log('[New Match] Deleting unconfirmed match:', currentMatch.id)
+      await db.matches.delete(currentMatch.id)
+    }
+
+    // Clear any stray draft data from previous sessions
+    await db.match_setup.clear()
+
+    // Create new blank match
+    const newMatchId = await db.matches.add({
+      status: 'scheduled',
+      refereePin: generateSecurePin(),
+      coinTossConfirmed: false,
+      createdAt: new Date().toISOString()
+    })
+
+    setMatchId(newMatchId)
+    setShowMatchSetup(true)
+    setShowCoinToss(false) // Ensure we go to match setup, not coin toss
+  }
+
+  async function confirmNewMatch() {
+    if (!newMatchModal) return
+
+    // Delete current match first
+    if (currentMatch) {
+      const kept = await db.transaction('rw', db.matches, db.sets, db.events, db.event_history, db.players, db.teams, db.sync_queue, db.match_setup, async () => {
+        // Asked again at Yes, in the deletion's own transaction: since the
+        // question the match may have started, ended or queued a write the
+        // server does not have. Then it stays with its jobs, and the scorer
+        // is told why (createNewOfficialMatch); a copy since found closed on
+        // the server or scored on another device stays too.
+        const jobs = await db.sync_queue.toArray()
+        const { step, unsent } = officialMatchStep(await db.matches.get(currentMatch.id), jobs)
+        if (OFFICIAL_MATCH_KEPT_STEPS.includes(step)) return { step, unsent }
+        if (step !== 'replace' && step !== 'discard') return null
+
+        console.log('[New Match] Deleting existing match:', currentMatch.id)
+
+        // Delete sets
+        await db.sets.where('matchId').equals(currentMatch.id).delete()
+
+        // Delete events - use direct delete for reliability
+        await wipeMatchEvents(db, currentMatch.id, { dropHistory: true })
+
+        // A team row another local match still uses stays with its players
+        // (as Delete match keeps it: confirmDeleteMatch sharedTeam)
+        const sharedTeam = async (teamId) => (await db.matches.filter(m => m.id !== currentMatch.id && (m.homeTeamId === teamId || m.awayTeamId === teamId)).count()) > 0
+        const keepHomeTeam = currentMatch.homeTeamId ? await sharedTeam(currentMatch.homeTeamId) : false
+        const keepAwayTeam = currentMatch.awayTeamId ? await sharedTeam(currentMatch.awayTeamId) : false
+
+        // Delete players
+        if (currentMatch.homeTeamId && !keepHomeTeam) {
+          await db.players.where('teamId').equals(currentMatch.homeTeamId).delete()
+        }
+        if (currentMatch.awayTeamId && !keepAwayTeam) {
+          await db.players.where('teamId').equals(currentMatch.awayTeamId).delete()
+        }
+
+        // Delete teams
+        if (currentMatch.homeTeamId && !keepHomeTeam) {
+          await db.teams.delete(currentMatch.homeTeamId)
+        }
+        if (currentMatch.awayTeamId && !keepAwayTeam) {
+          await db.teams.delete(currentMatch.awayTeamId)
+        }
+
+        // This match's jobs, none of them left to send (an unsent one keeps
+        // the match, above); the other matches on the device keep theirs
+        const matchJobs = jobsOfMatch(jobs, currentMatch.seed_key)
+        if (matchJobs.length > 0) await db.sync_queue.bulkDelete(matchJobs.map(j => j.id))
+
+        // Delete match setup draft
+        await db.match_setup.clear()
+
+        // Delete match
+        await db.matches.delete(currentMatch.id)
+        console.log('[New Match] Existing match deleted')
+        return null
+      })
+      if (kept) {
+        setNewMatchModal(null)
+        setPendingOfficialGame(null)
+        setAlertModal(officialMatchKeptMessage(kept.step, kept.unsent))
+        return
+      }
+    }
+
+    setNewMatchModal(null)
+
+    if (newMatchModal.type === 'official') {
+      // Create new blank match
+      const newMatchId = await db.matches.add({
+        status: 'scheduled',
+        refereePin: generateSecurePin(),
+        coinTossConfirmed: false,
+        createdAt: new Date().toISOString()
+      })
+      setMatchId(newMatchId)
+      setShowMatchSetup(true)
+      setShowCoinToss(false) // Ensure we go to match setup, not coin toss
+    } else if (newMatchModal.type === 'test') {
+      // Create test match (reuse the existing createNewTestMatch logic)
+      await createTestMatchData()
+      setShowCoinToss(false) // Ensure we go to match setup, not coin toss
+    }
+  }
+
+  function cancelNewMatch() {
+    setNewMatchModal(null)
+    setPendingOfficialGame(null)
+  }
+
+  // Home's Official game (owner plan 2026-10-29, step 3): signed in, today's
+  // home games of the account's clubs first; else the blank setup, typed in
+  // (the desktop app offline, a venue box: no sign-in there)
+  const signInAvailable = !offlineMode && !!getCloudApiUrl('/api/auth/sign-in')
+  function openOfficialGame() {
+    if (signedInUser && signInAvailable) {
+      setTodayGamesOpen(true)
+      return
+    }
+    setPendingOfficialGame(null)
+    createNewOfficialMatch()
+  }
+
+  useEffect(() => {
+    // on start a seed team a match plays with keeps its players, also none
+    ensureSeedTestTeams({ refillInUse: false }).catch(error => {
+      console.error('Failed to ensure seeded test teams:', error)
+    })
+    ensureSeedTestOfficials().catch(error => {
+      console.error('Failed to ensure seeded officials:', error)
+    })
+  }, [])
+
+  // refillInUse: false (App's start) leaves a seed team that a match plays
+  // with as it is when it has no players: the test match's roster emptied by
+  // the scorer came back as the test roster on the next start. A new test
+  // match (createTestMatchData) refills it.
+  async function ensureSeedTestTeams({ refillInUse = true } = {}) {
+    const seededTeams = []
+
+    await db.transaction('rw', db.teams, db.players, db.matches, db.sync_queue, async () => {
+      for (const definition of TEST_TEAM_SEED_DATA) {
+        let team = await db.teams.filter(t => t.seedKey === definition.seedKey).first()
+        const isTestSeed = definition.seedKey?.startsWith('test-')
+
+        if (!team) {
+          const timestamp = new Date().toISOString()
+          const teamId = await db.teams.add({
+            name: definition.name,
+            shortName: definition.shortName,
+            color: definition.color,
+            seedKey: definition.seedKey,
+            test: true,
+            createdAt: timestamp
+          })
+
+          // Don't sync test seed data to Supabase - it comes from the seed script
+
+          const playersToCreate = definition.players.map(player => ({
+            teamId,
+            number: player.number,
+            name: `${player.lastName} ${player.firstName}`,
+            lastName: player.lastName,
+            firstName: player.firstName,
+            dob: player.dob,
+            libero: player.libero || '',
+            isCaptain: player.isCaptain,
+            isLfp: player.isLfp || false,
+            role: null,
+            test: true,
+            createdAt: timestamp
+          }))
+
+          await db.players.bulkAdd(playersToCreate, undefined, { allKeys: true })
+          // Don't sync test seed players to Supabase - they come from the seed script
+
+          team = {
+            id: teamId,
+            name: definition.name,
+            shortName: definition.shortName,
+            color: definition.color,
+            seedKey: definition.seedKey,
+            test: true,
+            createdAt: timestamp
+          }
+        } else {
+          // The seed definition's name and short name win (a device seeded
+          // with the teams of before takes the made-up ones, 2026-11-20); the
+          // colour stays as the scorer may have set it
+          const patch = seedTeamPatch(team, definition)
+          if (patch) {
+            await db.teams.update(team.id, patch)
+            team = { ...team, ...patch }
+          }
+          const playerCount = await db.players.where('teamId').equals(team.id).count()
+          const inUse = !refillInUse && playerCount === 0 &&
+            (await db.matches.where('homeTeamId').equals(team.id).count()) + (await db.matches.where('awayTeamId').equals(team.id).count()) > 0
+          if (playerCount === 0 && !inUse) {
+            const timestamp = new Date().toISOString()
+            const playersToCreate = definition.players.map(player => ({
+              teamId: team.id,
+              number: player.number,
+              name: `${player.lastName} ${player.firstName}`,
+              lastName: player.lastName,
+              firstName: player.firstName,
+              dob: player.dob,
+              libero: player.libero || '',
+              isCaptain: player.isCaptain,
+              isLfp: player.isLfp || false,
+              role: null,
+              test: true,
+              createdAt: timestamp
+            }))
+
+            await db.players.bulkAdd(playersToCreate)
+          }
+        }
+
+        seededTeams.push(team)
+      }
+    })
+
+    return seededTeams
+  }
+
+  async function ensureSeedTestOfficials() {
+    const seededReferees = []
+    const seededScorers = []
+
+    // Local Dexie records only - no Supabase sync (officials stored as JSONB in match)
+    await db.transaction('rw', db.referees, db.scorers, async () => {
+      for (const definition of TEST_REFEREE_SEED_DATA) {
+        let referee = await db.referees.filter(r => r.seedKey === definition.seedKey).first()
+
+        if (!referee) {
+          const timestamp = new Date().toISOString()
+          const baseRecord = {
+            seedKey: definition.seedKey,
+            firstName: definition.firstName,
+            lastName: definition.lastName,
+            country: definition.country,
+            dob: definition.dob,
+            test: true,
+            createdAt: timestamp
+          }
+          const refereeId = await db.referees.add(baseRecord)
+          referee = { id: refereeId, ...baseRecord }
+        } else {
+          const definitionChanged =
+            referee.firstName !== definition.firstName ||
+            referee.lastName !== definition.lastName ||
+            referee.country !== definition.country ||
+            referee.dob !== definition.dob
+
+          if (definitionChanged) {
+            await db.referees.update(referee.id, {
+              firstName: definition.firstName,
+              lastName: definition.lastName,
+              country: definition.country,
+              dob: definition.dob
+            })
+            referee = {
+              ...referee,
+              firstName: definition.firstName,
+              lastName: definition.lastName,
+              country: definition.country,
+              dob: definition.dob
+            }
+          }
+        }
+
+        seededReferees.push(referee)
+      }
+
+      for (const definition of TEST_SCORER_SEED_DATA) {
+        let scorer = await db.scorers.filter(s => s.seedKey === definition.seedKey).first()
+
+        if (!scorer) {
+          const timestamp = new Date().toISOString()
+          const baseRecord = {
+            seedKey: definition.seedKey,
+            firstName: definition.firstName,
+            lastName: definition.lastName,
+            country: definition.country || 'CHE',
+            dob: definition.dob,
+            test: true,
+            createdAt: timestamp
+          }
+          const scorerId = await db.scorers.add(baseRecord)
+          scorer = { id: scorerId, ...baseRecord }
+        } else {
+          const definitionChanged =
+            scorer.firstName !== definition.firstName ||
+            scorer.lastName !== definition.lastName ||
+            (scorer.country || 'CHE') !== (definition.country || 'CHE') ||
+            scorer.dob !== definition.dob
+
+          if (definitionChanged) {
+            await db.scorers.update(scorer.id, {
+              firstName: definition.firstName,
+              lastName: definition.lastName,
+              country: definition.country || 'CHE',
+              dob: definition.dob
+            })
+            scorer = {
+              ...scorer,
+              firstName: definition.firstName,
+              lastName: definition.lastName,
+              country: definition.country || 'CHE',
+              dob: definition.dob
+            }
+          }
+        }
+
+        seededScorers.push(scorer)
+      }
+    })
+
+    return { referees: seededReferees, scorers: seededScorers }
+  }
+
+  async function createTestMatchData() {
+    // Clear any stray draft data from previous sessions
+    await db.match_setup.clear()
+
+    const seededTeams = await ensureSeedTestTeams()
+    const { referees, scorers } = await ensureSeedTestOfficials()
+    if (seededTeams.length < 2) {
+      console.error('Not enough seeded test teams available.')
+      return
+    }
+
+    const [homeTeam, awayTeam] = seededTeams
+    const scheduledAt = getNextTestMatchStartTime()
+    const timestamp = new Date().toISOString()
+
+    const findSeededRecord = (collection, seed) => {
+      if (!seed) return null
+      if (!collection?.length) return seed
+      const seeded = collection.find(item => item.seedKey === seed.seedKey)
+      return seeded || collection[0] || seed
+    }
+
+    const firstRef = findSeededRecord(referees, TEST_REFEREE_SEED_DATA[0])
+    const secondRef = findSeededRecord(referees, TEST_REFEREE_SEED_DATA[1] || TEST_REFEREE_SEED_DATA[0])
+    const primaryScorer = findSeededRecord(scorers, TEST_SCORER_SEED_DATA[0])
+    const assistantScorer = findSeededRecord(scorers, TEST_SCORER_SEED_DATA[1] || TEST_SCORER_SEED_DATA[0])
+
+    const officials = [
+      {
+        role: '1st referee',
+        firstName: firstRef?.firstName || 'Claudia',
+        lastName: firstRef?.lastName || 'Moser',
+        country: firstRef?.country || 'CHE',
+        dob: firstRef?.dob ? formatISODateToDisplay(firstRef.dob) : '101247'
+      },
+      {
+        role: '2nd referee',
+        firstName: secondRef?.firstName || 'Martin',
+        lastName: secondRef?.lastName || 'Kunz',
+        country: secondRef?.country || 'CHE',
+        dob: secondRef?.dob ? formatISODateToDisplay(secondRef.dob) : '101284'
+      },
+      {
+        role: 'scorer',
+        firstName: primaryScorer?.firstName || 'Petra',
+        lastName: primaryScorer?.lastName || 'Schneider',
+        country: primaryScorer?.country || 'CHE',
+        dob: primaryScorer?.dob ? formatISODateToDisplay(primaryScorer.dob) : '101321'
+      },
+      {
+        role: 'assistant scorer',
+        firstName: assistantScorer?.firstName || 'Lukas',
+        lastName: assistantScorer?.lastName || 'Baumann',
+        country: assistantScorer?.country || 'CHE',
+        dob: assistantScorer?.dob ? formatISODateToDisplay(assistantScorer.dob) : '101358'
+      },
+      { role: 'line judge 1', name: 'Andrea Müller' },
+      { role: 'line judge 2', name: 'Thomas Fischer' }
+    ]
+
+    let createdMatchId = null
+
+    await db.transaction('rw', db.matches, db.sets, db.events, db.sync_queue, async () => {
+      // (never a Global or guest match: it keeps its own row, clearLocalTestData)
+      let existingMatch =
+        (await db.matches.filter(m => isTestMatchSeedKey(m.seedKey) && !usesKeyStore(m)).first()) ||
+        (await db.matches.filter(m => m.test === true && !m.seedKey).first())
+
+      // This device's own relay room (testMatchSeedKeyFor), kept across restarts
+      const testSeedKey = testMatchSeedKeyFor(existingMatch?.seedKey)
+      if (existingMatch && existingMatch.seedKey !== testSeedKey) {
+        await db.matches.update(existingMatch.id, { seedKey: testSeedKey })
+        existingMatch = await db.matches.get(existingMatch.id)
+      }
+
+      const baseMatchData = {
+        status: 'scheduled',
+        homeTeamId: homeTeam.id,
+        awayTeamId: awayTeam.id,
+        homeShortName: homeTeam.shortName,
+        awayShortName: awayTeam.shortName,
+        hall: TEST_MATCH_DEFAULTS.hall,
+        city: TEST_MATCH_DEFAULTS.city,
+        league: TEST_MATCH_DEFAULTS.league,
+        gameNumber: TEST_MATCH_DEFAULTS.gameNumber,
+        scheduledAt,
+        refereePin: generateSecurePin(),
+        bench_home: TEST_HOME_BENCH,
+        bench_away: TEST_AWAY_BENCH,
+        officials,
+        homeCoachSignature: null,
+        homeCaptainSignature: null,
+        awayCoachSignature: null,
+        awayCaptainSignature: null,
+        coinTossConfirmed: false,
+        test: true,
+        seedKey: testSeedKey,
+        externalId: TEST_MATCH_EXTERNAL_ID,
+        matchInfoConfirmedAt: timestamp // Test matches are pre-configured
+      }
+
+      if (existingMatch) {
+        await wipeMatchEvents(db, existingMatch.id)
+        await db.sets.where('matchId').equals(existingMatch.id).delete()
+
+        await db.matches.update(existingMatch.id, {
+          ...baseMatchData,
+          // Preserve existing refereePin if it exists
+          refereePin: existingMatch.refereePin || baseMatchData.refereePin,
+          createdAt: existingMatch.createdAt || timestamp,
+          updatedAt: timestamp
+        })
+
+        createdMatchId = existingMatch.id
+        // Don't sync test match metadata to Supabase - it comes from the seed script
+      } else {
+        const newMatchId = await db.matches.add({
+          ...baseMatchData,
+          createdAt: timestamp,
+          updatedAt: timestamp
+        })
+
+        createdMatchId = newMatchId
+        // Don't sync test match metadata to Supabase - it comes from the seed script
+      }
+    })
+
+    if (createdMatchId) {
+      // Match Setup opens filled: the home screen stays until it has read
+      // the test match (utils/preload), never 'Not set' first (OV-18)
+      await preloadMatchSetup(createdMatchId)
+      setMatchId(createdMatchId)
+      setShowMatchSetup(true)
+      setShowCoinToss(false)
+    }
+  }
+
+  /**
+   * A Global or guest match of this device that is not final (domain/
+   * matchKind usesKeyStore): a real match, kept on this device only, in the
+   * test-match slot. No new match of that slot (Test match, Easy match, a
+   * Global "Match", the signed-out "New match") replaces it: the scorer is
+   * told to continue it, or to delete it with Delete match, which asks for
+   * its game PIN and names what it loses (audit LOG-01). true when the
+   * scorer was told.
+   */
+  async function keyStoreMatchBlocks() {
+    const open = await db.matches.filter(m => usesKeyStore(m) && m.status !== 'final').first()
+    if (!open) return false
+    setAlertModal(open.global === true
+      ? t('home.modals.globalMatchStillOpen', 'A Global match is still open on this device. Continue it, or delete it with "Delete match" (with its game PIN), before starting another match.')
+      : t('home.modals.guestMatchStillOpen', 'A match without an account is still open on this device. Continue it, or delete it with "Delete match" (with its game PIN), before starting another match.'))
+    return true
+  }
+
+  async function createNewTestMatch() {
+    if (testMatchLoading) return
+    if (await keyStoreMatchBlocks()) return
+
+    // (a copy another device scores is not recorded here)
+    const officialMatchRecording = matchStatus?.status === 'Match recording' && currentOfficialMatch && !isScorerMoved(matchStatus.match)
+    if (officialMatchRecording) {
+      setConfirmModal({
+        message: t('home.modals.testMatchOverwriteWarning'),
+        onConfirm: async () => {
+          setConfirmModal(null)
+          setTestMatchLoading(true)
+          setHomeWhilePreparing({ official: shownOfficialMatch, test: shownTestMatch, matchStatus: shownMatchStatus, matchInfoData: shownMatchInfoData })
+          try {
+            await clearLocalTestData()
+            await openFromHome(createTestMatchData)
+          } catch (error) {
+            console.error('Failed to prepare test match:', error)
+            setAlertModal(t('home.modals.unableToPrepareTestMatch', { error: error.message || error }))
+          } finally {
+            setTestMatchLoading(false)
+            setHomeWhilePreparing(null)
+          }
+        },
+        onCancel: () => {
+          setConfirmModal(null)
+        }
+      })
+      return
+    }
+
+    setTestMatchLoading(true)
+    setHomeWhilePreparing({ official: shownOfficialMatch, test: shownTestMatch, matchStatus: shownMatchStatus, matchInfoData: shownMatchInfoData })
+
+    try {
+      // Clear previous test match locally
+      await clearLocalTestData()
+
+      // Create test match locally only - no Supabase interaction
+      await createTestMatchData()
+    } catch (error) {
+      console.error('Failed to prepare test match:', error)
+      setAlertModal(t('home.modals.unableToPrepareTestMatch', { error: error.message || error }))
+    } finally {
+      setTestMatchLoading(false)
+      setHomeWhilePreparing(null)
+    }
+  }
+
+  /**
+   * Global tool's "Match": a full match (rosters, officials, signatures, game
+   * PIN) kept on this device. A real match, not practice (test: false: the
+   * referee and bench tablets, livescore and TV list it as one), and local
+   * only (domain/matchKind isLocalOnly): the sync queue drops every job of it
+   * and nothing reaches the clubs/games/players tables. It takes the device's
+   * test-match slot (Home's Continue/Delete). No sign-in, no Einsatzliste.
+   */
+  async function createGlobalMatch() {
+    return createKeyStoreMatch('global')
+  }
+
+  /**
+   * Home's "New match" signed out (owner 2026-11-18): a guest match, the
+   * Swiss format without an account (domain/matchKind isGuestMatch). Built
+   * like the Global match: local only, the device's test-match slot, its
+   * backup and final sheet in the keyed store by its own key.
+   */
+  async function createGuestMatch() {
+    return createKeyStoreMatch('guest')
+  }
+
+  async function createKeyStoreMatch(kind) {
+    if (easyMatchLoading || testMatchLoading) return
+    const recording = matchStatus?.status === 'Match recording' && currentOfficialMatch && !isScorerMoved(matchStatus.match)
+    if (recording) {
+      setAlertModal(t('home.modals.officialMatchStillRecording', 'An official match is still recording on this device. Continue it, or delete it with "Delete match", before creating a new official match.'))
+      return
+    }
+    if (await keyStoreMatchBlocks()) return
+    try {
+      // (the slot's relay room of a test or easy match; a final Global or
+      // guest match left on the device keeps its own)
+      const previous = (await db.matches.filter(m => isTestMatchSeedKey(m.seedKey) && !usesKeyStore(m)).first()) || null
+      const seedKey = testMatchSeedKeyFor(previous?.seedKey)
+      const refereePin = previous?.refereePin || generateSecurePin()
+      await clearLocalTestData()
+      await db.match_setup.clear()
+      const timestamp = new Date().toISOString()
+      const newMatchId = await db.matches.add({
+        status: 'scheduled',
+        refereePin,
+        coinTossConfirmed: false,
+        test: false,
+        ...(kind === 'guest' ? { guest: true } : { global: true }),
+        globalKey: newGlobalKey(),
+        seedKey,
+        externalId: TEST_MATCH_EXTERNAL_ID,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      })
+      markGlobalMatch(newMatchId)
+      setMatchId(newMatchId)
+      setShowMatchSetup(true)
+      setShowCoinToss(false)
+    } catch (error) {
+      console.error(`Failed to create the ${kind} match:`, error)
+      setAlertModal(t('home.modals.unableToPrepareGlobalMatch', { error: error.message || error, defaultValue: 'Unable to start the match: {{error}}' }))
+    }
+  }
+
+  async function continueTestMatch() {
+    if (testMatchLoading) return
+
+    // Use toArray and filter to avoid index requirement
+    const matches = await db.matches.orderBy('createdAt').reverse().toArray()
+    const existing = matches.find(m => isLocalOnly(m) && m.status !== 'final')
+    if (existing) {
+      // Check if coin toss is confirmed
+      const isCoinTossConfirmed = existing.coinTossTeamA !== null &&
+        existing.coinTossTeamA !== undefined &&
+        existing.coinTossTeamB !== null &&
+        existing.coinTossTeamB !== undefined &&
+        existing.coinTossServeA !== null &&
+        existing.coinTossServeA !== undefined &&
+        existing.coinTossServeB !== null &&
+        existing.coinTossServeB !== undefined
+
+      // PIN check removed - no longer required
+
+      // Check match state to determine where to continue. A player without a
+      // shirt number (saved so) keeps the match in Match setup: the coin toss
+      // waits for the numbers (owner 23.11.2026)
+      const [storedHome, storedAway] = await Promise.all([
+        existing.homeTeamId ? db.players.where('teamId').equals(existing.homeTeamId).toArray() : [],
+        existing.awayTeamId ? db.players.where('teamId').equals(existing.awayTeamId).toArray() : []
+      ])
+      const isMatchSetupComplete = existing.homeCoachSignature &&
+        existing.homeCaptainSignature &&
+        existing.awayCoachSignature &&
+        existing.awayCaptainSignature &&
+        rosterNumberIssues({ homeRoster: storedHome, awayRoster: storedAway }).length === 0
+
+      // An easy match has no Match Setup: the coin toss until it is confirmed,
+      // then the scoreboard or Match End as any test match
+      if (existing.easy === true && !['live', 'ended', 'final'].includes(existing.status)) {
+        setMatchId(existing.id)
+        setShowMatchSetup(false)
+        setShowCoinToss(!isCoinTossConfirmed)
+        return
+      }
+
+      // Match Setup opens filled (OV-18): read before the home screen goes
+      if (!['live', 'ended', 'final'].includes(existing.status) && !isMatchSetupComplete) {
+        await preloadMatchSetup(existing.id)
+      }
+      setMatchId(existing.id)
+
+      // Determine where to continue based on status
+      // Note: status flow is live -> ended -> final (after approval)
+      if (existing.status === 'live' || existing.status === 'ended' || existing.status === 'final') {
+        // Check if match is finished (one team has won 3 sets) - go to MatchEnd
+        const sets = await db.sets.where('matchId').equals(existing.id).toArray()
+        const finishedSets = sets.filter(s => s.finished)
+        const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
+        const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
+        const isMatchFinished = isMatchFinishedUtil(homeSetsWon, awaySetsWon, existing?.bestOf)
+
+        setShowMatchSetup(false)
+        setShowCoinToss(false)
+
+        // 'ended' without the sets won = forfeit or stopped match: also Match End
+        if (((existing.status === 'live' && isMatchFinished) || existing.status === 'ended') && !existing.approved) {
+          // Match finished but not yet approved - go to MatchEnd
+          setShowMatchEnd(true)
+        } else {
+          // Match in progress - go to scoreboard
+          setShowMatchEnd(false)
+        }
+      } else if (isMatchSetupComplete && isCoinTossConfirmed) {
+        // Match setup and coin toss complete - go to scoreboard
+        setShowMatchSetup(false)
+        setShowCoinToss(false)
+      } else if (isMatchSetupComplete) {
+        // Match setup complete but coin toss not done - go to coin toss
+        setShowMatchSetup(false)
+        setShowCoinToss(true)
+      } else {
+        // Match setup not complete - go to match setup
+        setShowMatchSetup(true)
+        setShowCoinToss(false)
+      }
+    } else {
+      setAlertModal(t('home.modals.noTestMatchFound'))
+    }
+  }
+
+  async function restartTestMatch() {
+    if (testMatchLoading) return
+
+    // Set loading state immediately to disable buttons
+    setTestMatchLoading(true)
+
+    setConfirmModal({
+      message: currentTestMatch?.easy === true
+        ? t('home.modals.deleteEasyMatchConfirm', 'This will delete the easy match and all its data. Continue?')
+        : t('home.modals.deleteTestMatchConfirm'),
+      onConfirm: async () => {
+        setConfirmModal(null)
+        try {
+          // Find the test match - use toArray and filter to avoid index requirement
+          const matches = await db.matches.orderBy('createdAt').reverse().toArray()
+          const testMatch = matches.find(m => isLocalOnly(m) && m.status !== 'final')
+          if (!testMatch) {
+            setAlertModal(t('home.modals.noTestMatchFound'))
+            setTestMatchLoading(false)
+            return
+          }
+
+          // Delete all test match data
+          await clearLocalTestData()
+
+          // Clear matchId to return to home view
+          setMatchId(null)
+          setShowMatchSetup(false)
+          setShowCoinToss(false)
+          setShowManualAdjustments(false)
+
+          setAlertModal(testMatch.easy === true
+            ? t('home.modals.easyMatchDeleted', 'Easy match deleted.')
+            : t('home.modals.testMatchDeleted'))
+        } catch (error) {
+          console.error('Failed to delete test match:', error)
+          setAlertModal(t('home.modals.unableToDeleteTestMatch', { error: error.message || error }))
+        } finally {
+          setTestMatchLoading(false)
+        }
+      },
+      onCancel: () => {
+        setConfirmModal(null)
+        setTestMatchLoading(false)
+      }
+    })
+  }
+
+  // The form opened from a page address must not open again on a reload
+  useEffect(() => {
+    if (!easyMatchForm?.prefill || typeof window === 'undefined') return
+    try {
+      const url = new URL(window.location.href)
+      ;['easy', 'home', 'away', 'homeShort', 'awayShort', 'homeColor', 'awayColor', 'bestOf', 'league', 'game', 'hall'].forEach(k => url.searchParams.delete(k))
+      window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash)
+    } catch { /* the address stays as it is */ }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** "Easy match" in the New match menu: the form (the warnings come when it is started) */
+  async function openEasyMatch(prefill = null) {
+    if (testMatchLoading || easyMatchLoading) return
+    // (an open Global or guest match first: no form typed in for nothing)
+    if (await keyStoreMatchBlocks()) return
+    setEasyMatchForm({ prefill })
+  }
+
+  /**
+   * The form's Start: the same warnings as a test match (an official match
+   * still recording, or the test / easy match it replaces), for the menu and
+   * for a page address alike. Cancel brings the form back as it was.
+   */
+  async function startEasyMatch(form) {
+    if (easyMatchLoading) return
+    // A Global or guest match is never replaced (keyStoreMatchBlocks): the
+    // form goes (a page address opened it), Home shows that match
+    if (await keyStoreMatchBlocks()) {
+      setEasyMatchForm(null)
+      return
+    }
+    const previous = (await db.matches.filter(m => isLocalOnly(m) && m.status !== 'final').first()) || null
+    const officialMatchRecording = matchStatus?.status === 'Match recording' && currentOfficialMatch && !isScorerMoved(matchStatus.match)
+    const replacing = previous && ['live', 'ended'].includes(previous.status)
+    if (!officialMatchRecording && !replacing) {
+      await createEasyMatch(form)
+      return
+    }
+    const message = officialMatchRecording
+      ? t('home.modals.easyMatchOverwriteWarning', 'An official match is still recording. An easy match replaces the test or easy match on this device. Continue?')
+      : previous.easy === true
+        ? t('home.modals.easyMatchReplaceEasy', 'The easy match on this device is replaced by the new one and its data deleted. Continue?')
+        : t('home.modals.easyMatchReplaceTest', 'The test match on this device is replaced by the easy match and its data deleted. Continue?')
+    setEasyMatchForm(null)
+    setConfirmModal({
+      message,
+      onConfirm: () => { setConfirmModal(null); createEasyMatch(form) },
+      onCancel: () => { setConfirmModal(null); setEasyMatchForm({ prefill: form }) }
+    })
+  }
+
+  /**
+   * An easy match (domain/easyMatch.js): two teams without players, straight
+   * to the coin toss. It takes the device's test-match slot and keeps its
+   * relay room, so a LedBox following that room follows this match.
+   */
+  async function createEasyMatch(form) {
+    if (easyMatchLoading) return
+    if (await keyStoreMatchBlocks()) {
+      setEasyMatchForm(null)
+      return
+    }
+    setEasyMatchLoading(true)
+    try {
+      const previous = (await db.matches.filter(m => isTestMatchSeedKey(m.seedKey) && !usesKeyStore(m)).first()) || null
+      const seedKey = testMatchSeedKeyFor(previous?.seedKey)
+      const refereePin = previous?.refereePin || generateSecurePin()
+      await clearLocalTestData()
+      await db.match_setup.clear()
+
+      const timestamp = new Date().toISOString()
+      let createdMatchId = null
+      await db.transaction('rw', db.matches, db.teams, async () => {
+        const team = (side) => db.teams.add({
+          name: form[`${side}Name`],
+          shortName: form[`${side}Short`],
+          color: form[`${side}Color`],
+          seedKey: EASY_TEAM_SEED_KEYS[side],
+          test: true,
+          easy: true,
+          createdAt: timestamp
+        })
+        const homeTeamId = await team('home')
+        const awayTeamId = await team('away')
+        createdMatchId = await db.matches.add({
+          status: 'scheduled',
+          homeTeamId,
+          awayTeamId,
+          homeShortName: form.homeShort,
+          awayShortName: form.awayShort,
+          hall: form.hall || '',
+          city: '',
+          league: form.league || '',
+          gameNumber: form.gameNumber || '',
+          bestOf: form.bestOf === 3 ? 3 : 5,
+          scheduledAt: timestamp,
+          refereePin,
+          bench_home: [],
+          bench_away: [],
+          officials: [],
+          homeCoachSignature: null,
+          homeCaptainSignature: null,
+          awayCoachSignature: null,
+          awayCaptainSignature: null,
+          coinTossConfirmed: false,
+          test: true,
+          easy: true,
+          seedKey,
+          externalId: TEST_MATCH_EXTERNAL_ID,
+          matchInfoConfirmedAt: timestamp,
+          createdAt: timestamp,
+          updatedAt: timestamp
+        })
+      })
+      setEasyMatchForm(null)
+      if (createdMatchId) {
+        setMatchId(createdMatchId)
+        setShowMatchSetup(false)
+        setShowCoinToss(true)
+      }
+    } catch (error) {
+      console.error('Failed to create the easy match:', error)
+      setAlertModal(t('home.modals.unableToPrepareEasyMatch', { error: error.message || error, defaultValue: 'Unable to start the easy match: {{error}}' }))
+    } finally {
+      setEasyMatchLoading(false)
+    }
+  }
+
+  // checkServer: opened from the home screen (Continue, the device's match
+  // list)
+  async function continueMatch(matchIdParam, { checkServer = false } = {}) {
+    const targetMatchId = matchIdParam || currentOfficialMatch?.id
+    if (!targetMatchId) return
+
+    try {
+      // Get the match to check its status
+      let match = await db.matches.get(targetMatchId)
+      if (!match) return
+
+      // From the home screen, the server is asked first, as at start-up
+      // (utils/deviceSelfCheck): a copy it has closed meanwhile opens
+      // read-only in its dialog below instead of the scoring screen, and one
+      // another device scores now under its ScorerMovedModal. A few seconds
+      // at most; never offline or signed out, where the match opens at once.
+      // A later answer still marks the copy and its state on the home screen.
+      const server = checkServer && isOpenOfficialCopy(match) ? selfCheckServer() : null
+      if (server) {
+        const only = [match.id]
+        const asked = checkCopiesOnServer(db, server, { onlyIds: only })
+        asked.then((r) => noteServerAnswers(r, { only })).catch(() => {})
+        await withinTimeout(asked, SERVER_CHECK_TIMEOUT_MS)
+        match = await db.matches.get(targetMatchId)
+        if (!match) return
+      }
+
+      // A copy the server has closed: no session lock, no scoring screen;
+      // the dialog offers the official version or removing it (2026-10-23)
+      if (isStaleClosedCopy(match)) {
+        setClosedCopyId(match.id)
+        return
+      }
+
+      // Check session lock (only for non-test matches)
+      if (!match.test) {
+        const sessionCheck = await checkMatchSession(targetMatchId)
+
+        if (sessionCheck.locked && !sessionCheck.isCurrentSession) {
+          // Match is locked by another session - just take over (no PIN required)
+          await lockMatchSession(targetMatchId)
+        } else if (!sessionCheck.locked) {
+          // Match is not locked - lock it for this session
+          await lockMatchSession(targetMatchId)
+        }
+        // If isCurrentSession is true, we already own it - no need to lock again
+      }
+
+      // PIN check removed - no longer required
+
+      // Check if coin toss is confirmed (for navigation logic)
+      const isCoinTossConfirmed = match.coinTossTeamA !== null &&
+        match.coinTossTeamA !== undefined &&
+        match.coinTossTeamB !== null &&
+        match.coinTossTeamB !== undefined &&
+        match.coinTossServeA !== null &&
+        match.coinTossServeA !== undefined &&
+        match.coinTossServeB !== null &&
+        match.coinTossServeB !== undefined
+
+      // If coin toss is confirmed and match is live, allow test matches to go to scoreboard
+      // (This handles the case when coin toss is just confirmed)
+      if (match.test === true && match.status === 'live' && isCoinTossConfirmed) {
+        // Go directly to scoreboard for test matches after coin toss confirmation
+        setMatchId(targetMatchId)
+        setShowMatchSetup(false)
+        setShowCoinToss(false)
+        return
+      }
+
+      // Reject test matches for other cases
+      if (match.test === true) {
+        setAlertModal(t('home.modals.isTestMatchWarning'))
+        return
+      }
+
+      // Determine where to continue based on status
+      // Note: status flow is live -> ended -> final (after approval)
+      if (match.status === 'live' || match.status === 'ended' || match.status === 'approved' || match.status === 'final') {
+        // Check if match is finished - go to MatchEnd
+        const match = await db.matches.get(targetMatchId)
+        const sets = await db.sets.where('matchId').equals(targetMatchId).toArray()
+        const finishedSets = sets.filter(s => s.finished)
+        const homeSetsWon = finishedSets.filter(s => s.homePoints > s.awayPoints).length
+        const awaySetsWon = finishedSets.filter(s => s.awayPoints > s.homePoints).length
+        const isMatchFinished = isMatchFinishedUtil(homeSetsWon, awaySetsWon, match?.bestOf)
+
+        setMatchId(targetMatchId)
+        setShowMatchSetup(false)
+        setShowCoinToss(false)
+
+        // 'ended' without the sets won = forfeit or stopped match: also Match End.
+        // An approved or final match is closed: its Match End too, not the
+        // scoring screen (which only bounced it back there)
+        const closed = match.approved === true || match.status === 'approved' || match.status === 'final'
+        if ((match.status === 'live' && isMatchFinished) || match.status === 'ended' || closed) {
+          setShowMatchEnd(true)
+        } else {
+          // Match in progress - go to scoreboard
+          setShowMatchEnd(false)
+        }
+      } else {
+        // Go to match setup (filled at once: OV-18)
+        await preloadMatchSetup(targetMatchId)
+        setMatchId(targetMatchId)
+        setShowMatchSetup(true)
+      }
+    } catch (error) {
+      console.error('Error continuing match:', error)
+      setAlertModal(t('home.modals.errorOpeningMatch'))
+    }
+  }
+
+  // The scoring screen in its phone layout (the display mode as the
+  // Scoreboard reads it: its options write localStorage), and the match end
+  // it leads to (signatures, approval): both get past the size gate on a phone
+  // It is kept on a phone turned sideways: the scoring screen stays mounted
+  // under its "hold the phone upright" notice, with its dialogs and countdowns
+  const phoneLayoutOn = phoneLayoutKept(readStoredDisplayMode(), viewportSize)
+  // A copy closed on the server shows its dialog in place of the scoring
+  // screen (closedCopyOpen): no phone scoring layout, no size gate over it
+  const phoneScoringShown = phoneLayoutOn && !!matchId && !showCoinToss && !showMatchSetup && !showMatchEnd && !showManualAdjustments && !closedCopyOpen
+  const phoneMatchEndShown = phoneLayoutOn && !!matchId && showMatchEnd && !showManualAdjustments
+  // the screens a phone cannot show (the size gate below). The corrections fit
+  // a phone since 2.4.10; the gate had trapped a phone in them (no way back
+  // but closing the app, emulator audit 2026-10-14).
+  const smallScreenBlocked = !!matchId && !showMatchSetup && !showCoinToss && !showManualAdjustments && !phoneScoringShown && !phoneMatchEndShown && !closedCopyOpen
+  // On a phone the gate only shows for the scoring screen with Screen mode
+  // Tablet or Desktop: its button switches to the phone layout (Options,
+  // which the hint used to point to, is not reachable from the gate)
+  const storedDisplayMode = readStoredDisplayMode()
+  const gateOffersPhoneLayout = isPhoneScreen() && storedDisplayMode !== 'auto' && storedDisplayMode !== 'phone'
+  // The Android app on a tablet hides the status and navigation bars on these
+  // screens: an 8" tablet held sideways only gets past the gate without them
+  // (nativeSystemBars; a no-op in a browser). The gate waits while they go.
+  const systemBarsGoing = useSystemBarsHidden((smallScreenBlocked && !isPhoneScreen()) || nativeBarsFullscreen)
+  // The Scoreboard covers Home only: a match opened meanwhile (a link) closes it
+  const simpleBoardShown = simpleBoardOpen && !matchId
+  useEffect(() => {
+    if (matchId && simpleBoardOpen) setSimpleBoardOpen(false)
+  }, [matchId, simpleBoardOpen, setSimpleBoardOpen])
+  // The size gate, over the screen it blocks (which stays mounted under it).
+  // Not on a Point Hub board: its screen is known, and the on-screen keyboard
+  // only makes the window short while a field is in use (the gate's blur below
+  // would close the keyboard again).
+  const sizeGateShown = !onPointHubBoard() && !isFullscreen && !systemBarsGoing && smallScreenBlocked && isViewportTooSmall(viewportSize.width, viewportSize.height)
+  // and no button under it keeps the focus: Enter or Space would press it
+  useEffect(() => {
+    if (sizeGateShown) document.activeElement?.blur?.()
+  }, [sizeGateShown])
+
+  // The self-check's notice, for what is still on the device: a closed copy
+  // while it is one (loaded or removed, its line goes), two copies while both
+  // are here
+  const shownSelfCheck = selfCheck && localMatchState ? {
+    closed: selfCheck.closed.filter(c => localMatchState.get(c.id) === true),
+    flagged: selfCheck.flagged.filter(c => localMatchState.has(c.id) && localMatchState.has(c.keptId)),
+    removed: selfCheck.removed
+  } : null
+
+  const notClosed = (m) => (m && closedMatchId != null && m.id === closedMatchId ? null : m)
+  const shownCurrentMatch = notClosed(currentMatch)
+  const shownOfficialMatch = notClosed(currentOfficialMatch)
+  const shownTestMatch = notClosed(currentTestMatch)
+  const homeOfficialMatch = homeWhilePreparing ? homeWhilePreparing.official : shownOfficialMatch
+  const homeTestMatch = homeWhilePreparing ? homeWhilePreparing.test : shownTestMatch
+  const shownMatchStatus = notClosed(matchStatus?.match) === null ? null : matchStatus
+  const shownMatchInfoData = notClosed(matchInfoData?.match) === null ? null : matchInfoData
+  // The header's match chip is held with the home screen: it went away for
+  // two frames when an older test match was replaced (verification 2026-10-08)
+  const headerMatchStatus = homeWhilePreparing ? homeWhilePreparing.matchStatus : shownMatchStatus
+  const headerMatchInfoData = homeWhilePreparing ? homeWhilePreparing.matchInfoData : shownMatchInfoData
+
+  // Home's Continue card (HomePage): the match Continue resumes, where it
+  // stands (teams, set, score), when it was last saved, and its state on the
+  // server (deviceSelfCheck copyState). Read on the home screen only: its
+  // sets and events change at every rally.
+  const continueTarget = homeOfficialMatch || homeTestMatch
+  const continueTargetId = continueTarget?.id ?? null
+  const continueRead = useLiveQuery(async () => {
+    if (!onHome || continueTargetId == null) return null
+    try {
+      const m = await db.matches.get(continueTargetId)
+      if (!m) return null
+      const [home, away, sets, newest] = await Promise.all([
+        m.homeTeamId != null ? db.teams.get(m.homeTeamId) : null,
+        m.awayTeamId != null ? db.teams.get(m.awayTeamId) : null,
+        db.sets.where('matchId').equals(m.id).toArray(),
+        newestEventOf(db, m.id)
+      ])
+      const here = new Set(serverHereKey ? serverHereKey.split(',').map(Number) : [])
+      return {
+        id: m.id,
+        seedKey: m.seed_key || null,
+        home: home?.name || null,
+        away: away?.name || null,
+        score: setScore(sets),
+        stage: resumeStage(m),
+        lastSaved: lastActivityAt(m, newest),
+        state: copyState(m, { checkedHere: here.has(m.id) })
+      }
+    } catch {
+      return null
+    }
+  }, [onHome, continueTargetId, serverHereKey])
+  const continueInfo = continueRead && continueRead.id === continueTargetId
+    ? { ...continueRead, unsent: unsentByKey?.get(continueRead.seedKey)?.changes || 0 }
+    : null
+  // The home screen appears whole (owner 2026-11-11: "loads something, stops,
+  // loads it again"): until the start-up reopen is decided and the device's
+  // matches and the Continue card's details are read, the branded spinner; the buttons and the card then
+  // come together instead of "New match" first and Continue a moment later.
+  // Local reads: a moment, at most HOME_READS_WAIT_MS. Again each time the
+  // home screen is entered (the card is read again then).
+  const homeReadsDone = startupDecided && currentOfficialMatch !== undefined && currentTestMatch !== undefined && deviceMatches !== undefined &&
+    (continueTargetId == null || continueRead?.id === continueTargetId)
+  const [homeShown, setHomeShown] = useState(false)
+  useEffect(() => {
+    if (!onHome) { setHomeShown(false); return undefined }
+    if (homeReadsDone) { setHomeShown(true); return undefined }
+    const timer = setTimeout(() => setHomeShown(true), HOME_READS_WAIT_MS)
+    return () => clearTimeout(timer)
+  }, [onHome, homeReadsDone])
+  const homeVisible = homeShown || homeReadsDone
+
+  // The device check (utils/deviceCheck, owner 22.11.2026): once per device,
+  // on Home once it shows, never while a match is open (scored, set up, at its
+  // end, being opened) or under a first-start dialog ("How do you use...",
+  // "Connecting..."); it stops at its next step when that changes. Its
+  // recommendation is the card on Home (DeviceCheckCard), under the same rule.
+  const firstStartDialog = (showStartupConnectivity && !offlineMode) || (toolMode === null && matchesLoaded && !matchId && !homeOptionsModal)
+
+  // Restore match by the match's backup code (no account, no game PIN): a
+  // Global or guest match, whose backup is kept under its code
+  // (utils/globalCloud). First in the Global tool and in the Swiss tool
+  // signed out, after the search by game PIN in the Swiss tool signed in
+  // (audit LOG-07: a guest match's backup could not be restored at all)
+  function restoreByCodeSection() {
+    return (
+      <div className="mb-6 flex shrink-0 flex-col" data-testid="restore-global">
+        <h3 className="text-sm font-semibold text-stone-800">{globalTool ? t('restoreGlobal.title', 'Restore from the online backup') : t('restoreGlobal.titleCode', 'Restore with the backup code')}</h3>
+        <p className="mt-1 mb-3 text-xs text-stone-500">{globalTool
+          ? t('restoreGlobal.desc', 'Enter the backup code of the match (Match Setup, Backups). The app then asks for its referee PIN.')
+          : t('restoreGlobal.descGuest', 'A match without an account (New match while signed out): enter its backup code (Match Setup, Backups). The app then asks for its referee PIN.')}</p>
+        <input
+          type="text"
+          value={globalRestoreCode}
+          onChange={(e) => { setGlobalRestoreCode(e.target.value.trim()); setGlobalRestoreError('') }}
+          placeholder="AbCdEfGhIjKlMnOpQrStUv"
+          aria-label={t('restoreGlobal.code', 'Backup code')}
+          data-testid="restore-global-code"
+          autoCapitalize="off" autoCorrect="off" spellCheck={false}
+          className="mb-3 w-full h-11 px-3 rounded-xl border border-stone-200 bg-white text-center font-mono text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-red-700/20 focus:border-red-700/40"
+        />
+        <button
+          type="button"
+          data-testid="restore-global-button"
+          disabled={globalRestoreBusy || !isGlobalKey(globalRestoreCode)}
+          onClick={async () => {
+            setGlobalRestoreBusy(true)
+            setGlobalRestoreError('')
+            try {
+              const text = await loadGlobal(globalRestoreCode, 'backup')
+              if (!text) { setGlobalRestoreError(t('restoreGlobal.notFound', 'No backup found for this code.')); return }
+              // a backup file like any other (utils/backupFile): an
+              // encrypted one asks for the match's referee PIN first
+              const unlocked = await unlockBackup(matchBackupFromFile(parseBackupText(text)))
+              if (!unlocked) return // cancelled
+              // only a Global or guest match, kept as the kind it is and
+              // local only: never an official match into this device
+              // (utils/globalCloud)
+              const data = globalRestoreData(unlocked)
+              if (!data) { setGlobalRestoreError(t('restoreGlobal.notGlobal', 'This code holds no Global match and no match without an account.')); return }
+              setRestorePreviewData({ data, source: 'cloud', backupName: 'global' })
+            } catch (err) {
+              setGlobalRestoreError(restoreErrorText(err, t))
+            } finally {
+              setGlobalRestoreBusy(false)
+            }
+          }}
+          className="inline-flex w-full h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-stone-400"
+        >
+          {globalRestoreBusy ? t('common.loading') : t('restoreGlobal.button', 'Find backup')}
+        </button>
+        {globalRestoreError && <FormError className="mt-2">{globalRestoreError}</FormError>}
+      </div>
+    )
+  }
+
+  // Home's own match set-up while no match id is set yet: the Easy match
+  // form, today's games, the new-match / replace and other confirms, the
+  // restore and delete dialogs, a test or easy match being prepared
+  const homeSetupDialog = !!easyMatchForm || todayGamesOpen || !!newMatchModal || !!confirmModal || !!restoreMatchModal || !!restorePreviewData ||
+    !!deleteMatchModal || testMatchLoading || easyMatchLoading || !!homeWhilePreparing
+  const homeQuiet = homeQuietForCheck({ matchId, homeVisible, firstStartDialog, openingMatch: !!openingMatch, covered: simpleBoardShown || !!manageTab || sizeGateShown || homeSetupDialog })
+  useAutoDeviceCheck(homeQuiet && !homeOptionsModal, { matchOpen: matchOpenNoted, onResult: logDeviceCheck })
+  // The home screen's list, each row with what the server does not have yet
+  const homeDeviceMatches = deviceMatches?.filter(r => r.id !== closedMatchId)
+    .map(r => ({ ...r, unsent: unsentByKey?.get(r.seedKey)?.changes || 0 }))
+
+  // A copy another device scores, open: its screens stay mounted under
+  // ScorerMovedModal (Take back lands on them) but inert, so no tap, key or
+  // focus reaches a scoring control (read-only, the owner 2026-10-27)
+  const movedCopyOpen = matchId != null && isScorerMoved({ cloudBlock: openMatchBlock })
+
+  return (
+    <div className="app-root" onClick={(e) => {
+      // Close connection menu and debug menu when clicking outside
+      if (showConnectionMenu && !e.target.closest('[data-connection-menu]')) {
+        setShowConnectionMenu(false)
+      }
+      if (showDebugMenu && !e.target.closest('[data-debug-menu]')) {
+        setShowDebugMenu(null)
+      }
+      // Close match info menu when clicking outside
+      if (matchInfoMenuOpen && !e.target.closest('[data-match-info-menu]')) {
+        setMatchInfoMenuOpen(false)
+      }
+    }}>
+      {/* The app's screens. The size gate below goes OVER them: the scoring
+          screen stays mounted under it, as under the phone's "hold it
+          upright" notice, so a running time-out countdown and an open dialog
+          survive a laptop zoomed in (Ctrl +) or a window made too small for a
+          moment; in its place, it had come back without them (stress test
+          2026-10-25: "Start rally" offered in the middle of a time-out). */}
+        <>
+          {/* Global Header (none over the Scoreboard, which has its own bar) */}
+          {!simpleBoardShown && (
+          <MainHeader
+            connectionStatuses={connectionStatuses}
+            connectionDebugInfo={connectionDebugInfo}
+            showMatchSetup={showMatchSetup}
+            matchId={matchId}
+            currentMatch={shownCurrentMatch}
+            tabletMatch={notClosed(relayMatch)}
+            matchInfoMenuOpen={matchInfoMenuOpen}
+            setMatchInfoMenuOpen={setMatchInfoMenuOpen}
+            matchInfoData={headerMatchInfoData}
+            matchStatus={headerMatchStatus}
+            currentOfficialMatch={homeOfficialMatch}
+            currentTestMatch={homeTestMatch}
+            isFullscreen={isFullscreen}
+            toggleFullscreen={toggleFullscreen}
+            offlineMode={offlineMode}
+            hideAccount={globalTool}
+            setOfflineMode={(val) => {
+              setOfflineMode(val)
+              localStorage.setItem('offlineMode', val.toString())
+            }}
+            onOpenSetup={openMatchSetup}
+            queueStats={queueStats}
+            onRetryErrors={retryErrors}
+            dashboardServer={isElectron && dashboardServerEnabled ? {
+              enabled: dashboardServerEnabled,
+              dashboardCount: dashboardServerData.dashboardCount,
+              refereePin: currentMatch?.refereePin,
+              onOpenOptions: () => setHomeOptionsModal(true),
+              serverIP: dashboardServerData.serverIP,
+              serverPort: dashboardServerData.serverPort,
+              wsPort: dashboardServerData.wsPort,
+              connectionUrl: dashboardServerData.connectionUrl,
+              wsConnectionUrl: dashboardServerData.wsConnectionUrl,
+              serverRunning: dashboardServerData.serverRunning,
+              refereeCount: dashboardServerData.refereeCount,
+              benchCount: dashboardServerData.benchCount
+            } : null}
+            collapsible={!!(matchId && !showCoinToss && !showMatchSetup && !showMatchEnd)}
+            startCollapsed={phoneScoringShown}
+            onTriggerAlarm={async () => {
+              if (!matchId || !currentMatch) return
+
+              // Identify the UUID for Supabase
+              let supabaseMatchId = null
+              const externalId = currentMatch.externalId
+              // Check if externalId is already a UUID
+              if (externalId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(externalId)) {
+                supabaseMatchId = externalId
+              } else {
+                // Fallback: look up standard ID from matches table using the match seed key
+                const seedKey = currentMatch.seed_key || String(matchId)
+                const { data: matchData } = await apiFrom('matches')
+                  .select('id')
+                  .eq('external_id', seedKey)
+                  .maybeSingle()
+                if (matchData) supabaseMatchId = matchData.id
+              }
+
+              if (!supabaseMatchId) {
+                console.warn('[Alarm] Could not resolve Supabase UUID for match', matchId)
+                return
+              }
+
+              const trigger = new Date().toISOString()
+              setScorerAttentionTrigger(trigger)
+              try {
+                // updated_at too: the realtime hub orders match_live_state by
+                // updated_at and drops a row older than the last relayed one.
+                // (on the match's live-state clock: liveClockOffset)
+                const { error } = await apiFrom('match_live_state')
+                  .update({ scorer_attention_trigger: trigger, updated_at: new Date(liveStateNow(currentMatch)).toISOString() })
+                  .eq('match_id', supabaseMatchId)
+                if (error) throw error
+                if (typeof navigator !== 'undefined' && navigator.vibrate) {
+                  navigator.vibrate(100)
+                }
+              } catch (err) {
+                console.error('Failed to trigger alarm:', err)
+              }
+            }}
+            alarmEnabled={currentMatch?.refereeConnectionEnabled === true}
+            currentPage={currentPage}
+            onToggleHelp={() => { setHelpDialogScreen(null); setHelpPanelOpen(prev => !prev) }}
+            helpPanelOpen={helpPanelOpen}
+          />
+          )}
+          <div className="container" style={{
+            minHeight: 0,
+            flex: '1 1 auto',
+            width: (showMatchSetup || (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd)) ? '100%' : 'auto',
+            height: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            position: 'relative',
+            alignItems: (showMatchSetup || (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd)) ? 'stretch' : 'center',
+            margin: '0 auto',
+            padding: (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd) ? '0' : '5px',
+            overflowX: 'hidden',
+            overflowY: (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd) ? 'hidden' : 'auto'
+          }}>
+            <div className={(!matchId || showCoinToss || showMatchEnd) ? 'panel panel--centred' : 'panel'} inert={movedCopyOpen || undefined} aria-hidden={movedCopyOpen || undefined} style={{
+              flex: '1 1 auto',
+              minHeight: 0,
+              height: 'auto',
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              width: (showMatchSetup || (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd)) ? '100%' : 'auto',
+              maxWidth: '100%',
+              padding: (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd) ? '10px' : '10px',
+              // Vertical centering for CoinToss, MatchEnd, and HomePage screens (not MatchSetup - it fills the space).
+              // The centring comes from .panel--centred (styles.css): auto
+              // margins, which start a screen taller than the window at its top
+              ...(!matchId || showCoinToss || showMatchEnd ? {
+                display: 'flex',
+                justifyContent: 'center'
+              } : {}),
+              // MatchSetup fills available space (the base's flex: 1 1 auto
+              // grows it; no flexGrow next to that shorthand: React warned
+              // each time the branch went away)
+              ...(showMatchSetup ? {
+                display: 'flex',
+                flexDirection: 'column',
+                padding: '10px',
+                overflowY: 'hidden',
+                height: '0px'
+              } : {}),
+              // Scoreboard active: flex column so match-record height: 100% resolves correctly
+              ...(matchId && !showCoinToss && !showMatchSetup && !showMatchEnd ? {
+                display: 'flex',
+                flexDirection: 'column',
+                overflowY: 'hidden',
+                padding: '0'
+              } : {})
+            }}>
+              {showCoinToss && matchId ? (
+                <CoinToss
+                  matchId={matchId}
+                  onConfirm={async () => {
+                    // The scoreboard opens with the match on it: the coin
+                    // toss stays until it has read it (OB-3 in OpenVolley)
+                    await preloadScoreboard(matchId)
+                    setShowCoinToss(false)
+                    // Match status is set to 'live' by CoinToss component
+                  }}
+                  onBack={async () => {
+                    // An easy match has no Match Setup: back to the home screen
+                    const backFrom = await db.matches.get(matchId)
+                    if (backFrom?.easy === true) {
+                      setShowCoinToss(false)
+                      setMatchId(null)
+                      return
+                    }
+                    await preloadMatchSetup(matchId) // filled at once (OV-18)
+                    setShowCoinToss(false)
+                    setShowMatchSetup(true)
+                  }}
+                  lfpTrackingEnabled={lfpTrackingEnabled && !globalTool}
+                />
+              ) : showMatchSetup && matchId ? (
+                <MatchSetup
+                  matchId={matchId}
+                  onStart={continueMatch}
+                  onReturn={returnToMatch}
+                  // Back: where the header menu's Home goes (openMatchSetup)
+                  onHome={openMatchSetup}
+                  onOpenOptions={() => setHomeOptionsModal(true)}
+                  onOpenCoinToss={() => {
+                    setShowMatchSetup(false)
+                    setShowCoinToss(true)
+                  }}
+                  offlineMode={offlineMode}
+                  backup={backup}
+                  lfpTrackingEnabled={lfpTrackingEnabled && !globalTool}
+                  initialOfficialGame={pendingOfficialGame}
+                  onInitialOfficialGameUsed={() => setPendingOfficialGame(null)}
+                  onReady={() => setOpeningMatch(null)}
+                />
+              ) : showManualAdjustments && matchId ? (
+                <ManualAdjustments
+                  matchId={matchId}
+                  // from the scoreboard during the match: the match info alone
+                  {...(manualAdjustmentsFrom === 'scoreboard' ? { initialTab: 'info', tabIds: ['info'] } : {})}
+                  onClose={leaveManualAdjustments}
+                  onSave={leaveManualAdjustments}
+                />
+              ) : showMatchEnd && matchId ? (
+                <MatchEnd
+                  matchId={matchId}
+                  onGoHome={({ closed = false } = {}) => {
+                    if (closed) setClosedMatchId(matchId)
+                    setMatchId(null)
+                    setShowMatchEnd(false)
+                    setShowManualAdjustments(false)
+                  }}
+                  onReopenLastSet={() => {
+                    // Just hide MatchEnd - Scoreboard will show for the same matchId
+                    setShowMatchEnd(false)
+                    setShowManualAdjustments(false)
+                  }}
+                  onManualAdjustments={() => {
+                    setShowMatchEnd(false)
+                    setShowManualAdjustments(true)
+                  }}
+                />
+              ) : simpleBoardShown ? (
+                <SimpleScoreboard
+                  onExit={() => setSimpleBoardOpen(false)}
+                  isFullscreen={isFullscreen}
+                  toggleFullscreen={toggleFullscreen}
+                />
+              ) : !matchId ? (
+                <>
+                  {/* the Android app's update notice (utils/androidUpdate.js): home screen only */}
+                  <AndroidUpdateNotice />
+                  <UpdateBanner showClearDataOption={true} />
+                  {/* the desktop app's own update (updater.rs): home screen only */}
+                  <DesktopUpdateNotice />
+                  {!homeVisible ? <ScreenLoading overlay={false} label={t('common.loading')} testId="home-loading" /> : (
+                  <HomePage
+                    signedIn={!!signedInUser}
+                    signInAvailable={signInAvailable}
+                    onOfficialGame={openOfficialGame}
+                    createNewTestMatch={() => openFromHome(createNewTestMatch)}
+                    testMatchLoading={testMatchLoading}
+                    createEasyMatch={() => openEasyMatch()}
+                    onGlobalMatch={createGlobalMatch}
+                    onGuestMatch={createGuestMatch}
+                    easyMatchLoading={easyMatchLoading}
+                    onOpenScoreboard={() => setSimpleBoardOpen(true)}
+                    currentOfficialMatch={homeOfficialMatch}
+                    currentTestMatch={homeTestMatch}
+                    deviceMatches={homeDeviceMatches}
+                    continueMatch={(id) => openFromHome(() => continueMatch(id, { checkServer: true }))}
+                    continueTestMatch={() => openFromHome(continueTestMatch)}
+                    continueInfo={continueInfo}
+                    deviceCheckCard={homeQuiet ? <DeviceCheckCard /> : null}
+                    selfCheckNotice={
+                      <SelfCheckNotice
+                        report={shownSelfCheck}
+                        onShow={(id) => setClosedCopyId(id)}
+                        onRemove={(id) => showDeleteMatchModal(id)}
+                        onCleanUp={confirmCleanUp}
+                        onDismiss={() => setSelfCheck(null)}
+                        className="mb-4"
+                      />
+                    }
+                    showDeleteMatchModal={showDeleteMatchModal}
+                    restartTestMatch={restartTestMatch}
+                    onOpenSettings={() => setHomeOptionsModal(true)}
+                    onRestoreMatch={() => setRestoreMatchModal(true)}
+                  />
+                  )}
+                </>
+              ) : closedCopyOpen ? (
+                // Scored here when the server closed it: the scoring screen
+                // goes at once (its shortcuts, live state and relay with it),
+                // ClosedOnServerModal below takes its place
+                null
+              ) : (
+                <Scoreboard
+                  matchId={matchId}
+                  scorerAttentionTrigger={scorerAttentionTrigger}
+                  onFinishSet={scoreboardFinishSet}
+                  onOpenSetup={scoreboardOpenSetup}
+                  onOpenMatchSetup={scoreboardOpenMatchSetup}
+                  onOpenMatchInfo={scoreboardOpenMatchInfo}
+                  onOpenCoinToss={scoreboardOpenCoinToss}
+                  onTriggerEventBackup={backup.triggerEventBackup}
+                />
+              )}
+              {/* The match screens: the update banner only while this build
+                  cannot do its work (the server refuses its writes, its files
+                  are gone: "Update needed", utils/appUpdate) */}
+              {matchId && <UpdateBanner whenUpdateNeeded />}
+            </div>
+
+            {/* Another device scores this match now (db/019): this one stops
+                here until the scorer takes it back or goes home */}
+            {matchId && isScorerMoved({ cloudBlock: openMatchBlock }) && (
+              <ScorerMovedModal
+                scorer={openMatchBlock?.scorer || null}
+                closed={openMatchBlock?.closed === true}
+                // The other device's score from the cloud first, then the claim
+                onTakeBack={() => loadOfficialVersion(matchId)}
+                // ... or this device's own score, its unsent points included
+                onKeepLocal={() => loadOfficialVersion(matchId, { keepLocal: true })}
+                // the server's score to compare, before the take-back
+                onPreview={() => previewTakeBack(matchId)}
+                onScoresheet={() => openCopyScoresheet(matchId)}
+                onClose={goHome}
+              />
+            )}
+
+            {/* A copy the server has closed (2026-10-23): no scoring screen,
+                only the official version or removing the copy. Never over a
+                Match End (a copy approved here is no stale copy anyway), the
+                corrections or the dialogs it opens itself. */}
+            {closedCopy && !showMatchEnd && !showManualAdjustments && !deleteMatchModal && !restoreMatchModal && !restorePreviewData && (
+              <ClosedOnServerModal
+                onLoadOfficial={() => loadOfficialVersion(closedCopy.id)}
+                onRemove={() => showDeleteMatchModal(closedCopy.id)}
+                onUsePin={() => openRestore({ gameN: closedCopy.gameN })}
+                onScoresheet={() => openCopyScoresheet(closedCopy.id)}
+                onClose={() => {
+                  setClosedCopyId(null)
+                  goHome()
+                }}
+              />
+            )}
+
+            {/* Official game, signed in: pick one of today's home games, or type it in */}
+            {todayGamesOpen && (
+              <TodayGamesModal
+                open={true}
+                userId={signedInUser?.id ?? null}
+                onClose={() => setTodayGamesOpen(false)}
+                onPick={(game) => {
+                  setTodayGamesOpen(false)
+                  setPendingOfficialGame(game)
+                  openFromHome(createNewOfficialMatch)
+                }}
+                onManual={() => {
+                  setTodayGamesOpen(false)
+                  setPendingOfficialGame(null)
+                  createNewOfficialMatch()
+                }}
+              />
+            )}
+
+            {/* Easy match: the teams and the format, then the coin toss */}
+            {easyMatchForm && (
+              <EasyMatchModal
+                open={true}
+                prefill={easyMatchForm.prefill}
+                busy={easyMatchLoading}
+                onCancel={() => setEasyMatchForm(null)}
+                onStart={startEasyMatch}
+              />
+            )}
+
+            {/* Delete Match Modal */}
+            {deleteMatchModal && (
+              <Modal
+                title="Delete match"
+                open={true}
+                onClose={cancelDeleteMatch}
+                width={420}
+              >
+                <div className="ov-kit p-2 sm:p-4">
+                  <p className="text-base text-stone-800">
+                    Are you sure you want to delete all data for: <strong className="font-semibold text-stone-900">{deleteMatchModal.matchName}</strong>?
+                  </p>
+                  <p className="mt-2 text-sm text-stone-600">
+                    {deleteMatchModal.otherCopy
+                      ? t('home.deviceMatches.removeCopyOnly')
+                      : deleteMatchModal.closedOnServer
+                        ? t('cloudBlock.removeLocalOnly')
+                        : deleteMatchModal.moved
+                          ? t('cloudBlock.removeMovedLocalOnly')
+                          : deleteMatchModal.deviceOnly
+                            ? t('deleteMatch.deviceOnlyBody', 'This deletes all sets, events, players and team data of this match on this device.')
+                            : 'This will delete all sets, events, players, and team data for this match from local storage and from the cloud database.'}
+                  </p>
+
+                  {/* What would be lost: the changes the server does not have */}
+                  {deleteMatchModal.unsent?.changes > 0 && (
+                    <div role="alert" data-testid="delete-loss-warning" className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                      <p className="m-0 font-semibold">{t('deleteMatch.lossTitle')}</p>
+                      <ul className="my-1 list-disc pl-5">
+                        <li>{t('deleteMatch.lossChanges', { count: deleteMatchModal.unsent.changes })}</li>
+                        {deleteMatchModal.unsent.events > 0 && <li>{t('deleteMatch.lossEvents', { count: deleteMatchModal.unsent.events })}</li>}
+                      </ul>
+                      <p className="m-0">{t('deleteMatch.lossEnd')}</p>
+                    </div>
+                  )}
+
+                  {/* PIN confirmation for matches with gamePin */}
+                  {deleteMatchModal.gamePin && (
+                    <div className="mt-5">
+                      <label htmlFor="delete-match-pin" className="mb-1.5 block text-sm font-medium text-stone-700">
+                        Enter game PIN to confirm deletion:
+                      </label>
+                      <Input
+                        id="delete-match-pin"
+                        size="lg"
+                        type="text"
+                        value={deletePinInput}
+                        onChange={(e) => {
+                          setDeletePinInput(e.target.value)
+                          setDeletePinError('')
+                        }}
+                        placeholder="Game PIN"
+                        aria-label="Game PIN"
+                        invalid={!!deletePinError}
+                        className="max-w-[200px] text-center font-mono text-lg font-semibold tracking-[0.3em]"
+                      />
+                      {deletePinError && (
+                        <p role="alert" className="mt-1.5 text-xs font-medium text-red-600">
+                          {deletePinError}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="mt-6 flex justify-end gap-2">
+                    <Button variant="secondary" size="xl" onClick={cancelDeleteMatch} className="rounded-lg font-medium">
+                      {t('deleteMatch.cancel')}
+                    </Button>
+                    <Button variant="danger" size="xl" onClick={confirmDeleteMatch} className="rounded-lg">
+                      {t('deleteMatch.delete')}
+                    </Button>
+                  </div>
+                </div>
+              </Modal>
+            )}
+
+            {/* Restore Match Modal */}
+            {restoreMatchModal && (
+              <Modal
+                title={t('settings.backup.restoreMatch')}
+                open={true}
+                helpScreen="restore"
+                onClose={() => {
+                  setRestoreMatchModal(false)
+                  setRestoreMatchIdInput('')
+                  setRestorePin('')
+                  setRestoreError('')
+                  setGlobalRestoreError('')
+                  setCloudBackups([])
+                  setCloudBackupPin('')
+                  setCloudBackupGameN('')
+                  setCloudBackupError('')
+                }}
+                width={500}
+                // A flex column: the backups list is the one part that gives
+                // way (scrolls, down to its min height) when the dialog meets
+                // the window's height; every other part keeps its size
+                // (shrink-0) and below that the panel scrolls. No min-h-0 on the
+                // columns: with it the cloud part shrank under its content and
+                // the list ran under the backup-code part (signed in, 800 px
+                // high tablets, 24.11.2026)
+                panelStyle={{ display: 'flex', flexDirection: 'column' }}
+              >
+                <div className="ov-kit flex flex-1 flex-col">
+                  {/* Restore by the match's backup code: the Global tool, and the Swiss tool's guest matches */}
+                  {!offlineMode && (globalTool || !signedInUser) && restoreByCodeSection()}
+                  {/* Restore from Cloud Backup */}
+                  {!offlineMode && !globalTool && (
+                    <div className="mb-6 flex flex-col">
+                      <h3 className="shrink-0 text-sm font-semibold text-stone-800">
+                        {t('settings.backup.restoreFromCloudBackup')}
+                      </h3>
+                      <p className="mt-1 mb-3 shrink-0 text-xs text-stone-500">
+                        {t('settings.backup.restoreFromCloudDesc')}
+                      </p>
+                      <div className="mb-3 flex shrink-0 gap-3">
+                        <div className="flex-1 min-w-0">
+                          <label htmlFor="restore-cloud-gamen" className="mb-1.5 block text-sm font-medium text-stone-700">
+                            {t('settings.backup.gameN')}:
+                          </label>
+                          <input
+                            id="restore-cloud-gamen"
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            value={cloudBackupGameN}
+                            onChange={(e) => {
+                              const value = e.target.value.replace(/\D/g, '')
+                              setCloudBackupGameN(value)
+                            }}
+                            placeholder="123456"
+                            aria-label={t('settings.backup.gameN')}
+                            className="w-full h-11 px-3 rounded-xl border border-stone-200 bg-white text-center font-mono text-lg font-bold tabular-nums text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-red-700/20 focus:border-red-700/40"
+                          />
+                        </div>
+                        <div className="flex-[1.5] min-w-0">
+                          <label htmlFor="restore-cloud-pin" className="mb-1.5 block text-sm font-medium text-stone-700">
+                            {t('settings.backup.gamePin')}:
+                          </label>
+                          <input
+                            id="restore-cloud-pin"
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            value={cloudBackupPin}
+                            onChange={(e) => {
+                              const value = e.target.value.replace(/\D/g, '')
+                              if (value.length <= 6) {
+                                setCloudBackupPin(value)
+                              }
+                            }}
+                            placeholder="000000"
+                            maxLength={6}
+                            aria-label={t('settings.backup.gamePin')}
+                            className="w-full h-11 px-3 rounded-xl border border-stone-200 bg-white text-center font-mono text-lg font-bold tracking-[0.3em] tabular-nums text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-red-700/20 focus:border-red-700/40"
+                          />
+                        </div>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          if (cloudBackupPin.length !== 6) {
+                            setCloudBackupError('Please enter a 6-digit PIN')
+                            return
+                          }
+                          setCloudBackupLoading(true)
+                          setCloudBackupError('')
+                          try {
+                            const gameN = parseInt(cloudBackupGameN) || 1
+                            // Fetch the cloud backups and the cloud match itself in parallel.
+                            // Backups are per account: a replacement tablet signed in with another
+                            // account lists none, but game number + game PIN still find the match
+                            // (restore-by-pin; signed in, it also makes this account an editor).
+                            const [cloudResults, dbMatch] = await Promise.all([
+                              listCloudBackups(cloudBackupPin, gameN).catch(() => []),
+                              fetchMatchByPin(cloudBackupPin, gameN).catch(() => null)
+                            ])
+                            // Tag cloud results with source
+                            const taggedCloud = cloudResults.map(b => ({ ...b, source: b.source || 'cloud' }))
+                            // Set + score of the latest set, so the row is not N/A
+                            const dbSets = [...(dbMatch?.sets || [])].sort((a, b) => (a.index || 0) - (b.index || 0))
+                            const dbLastSet = dbSets[dbSets.length - 1]
+                            const dbEntries = dbMatch?.match ? [{
+                              name: `database_g${gameN}`,
+                              source: 'database',
+                              gameN,
+                              setIndex: dbLastSet?.index || dbSets.length || undefined,
+                              leftScore: dbLastSet ? (dbLastSet.homePoints ?? dbLastSet.home_points ?? 0) : undefined,
+                              rightScore: dbLastSet ? (dbLastSet.awayPoints ?? dbLastSet.away_points ?? 0) : undefined,
+                              status: dbMatch.match.status,
+                              updated_at: dbMatch.match.updated_at || dbMatch.match.created_at,
+                              cloudData: dbMatch
+                            }] : []
+                            // Merge and sort by most recent first
+                            const merged = [...dbEntries, ...taggedCloud].sort((a, b) => {
+                              const dateA = a.created || a.updated_at || ''
+                              const dateB = b.created || b.updated_at || ''
+                              return dateB.localeCompare(dateA)
+                            })
+                            setCloudBackups(merged)
+                            if (merged.length === 0) {
+                              setCloudBackupError('No backups found for this game number')
+                            }
+                          } catch (err) {
+                            setCloudBackupError(err.message || 'Failed to list backups')
+                          } finally {
+                            setCloudBackupLoading(false)
+                          }
+                        }}
+                        disabled={cloudBackupLoading || cloudBackupPin.length !== 6}
+                        aria-busy={cloudBackupLoading || undefined}
+                        className="inline-flex w-full h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-stone-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
+                      >
+                        {cloudBackupLoading ? t('common.loading') : t('settings.backup.searchCloudBackups')}
+                      </button>
+                      {cloudBackupError && (
+                        <FormError className="mt-2 shrink-0">{cloudBackupError}</FormError>
+                      )}
+                      {cloudBackups.length > 0 && (
+                        <div className="mt-2 min-h-[7.5rem] overflow-y-auto rounded-lg border border-stone-200" data-testid="restore-backup-list">
+                          <BackupTable
+                            backups={cloudBackups}
+                            unlockPins={[cloudBackupPin]}
+                            onBackupSelect={async (backup) => {
+                              setRestoreLoading(true)
+                              setRestoreError('')
+                              try {
+                                if (backup.source === 'database') {
+                                  setRestorePreviewData({ data: backup.cloudData, source: 'database' })
+                                  return
+                                }
+                                // An encrypted cloud copy opens with the game PIN typed above,
+                                // else the PIN dialog asks (cancelled: back to the list)
+                                const fetched = await fetchCloudBackup(backup.path, { pins: [cloudBackupPin] })
+                                if (!fetched) {
+                                  setRestoreError(t('options.alerts.failedToLoadBackupData'))
+                                  setRestoreLoading(false)
+                                  return
+                                }
+                                const cloudData = await unlockBackup(fetched)
+                                if (!cloudData) return
+                                setRestorePreviewData({ data: cloudData, source: backup.source || 'cloud', backupName: backup.name })
+                              } catch (err) {
+                                setRestoreError(restoreErrorText(err, t))
+                              } finally {
+                                setRestoreLoading(false)
+                              }
+                            }}
+                            loading={restoreLoading}
+                            mode="button"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Signed in, the Swiss tool's restore by game PIN first; a guest match's backup code after it */}
+                  {!offlineMode && !globalTool && !!signedInUser && restoreByCodeSection()}
+
+                  {/* Divider before local backup (only after the cloud part) */}
+                  {!offlineMode && (
+                    <div className="mb-6 flex shrink-0 items-center gap-4">
+                      <div className="h-px flex-1 bg-stone-200" />
+                      <span className="text-xs text-stone-500">{t('settings.backup.or')}</span>
+                      <div className="h-px flex-1 bg-stone-200" />
+                    </div>
+                  )}
+
+                  {/* Saved on this device, a USB stick or the browser's backup folder */}
+                  <div className="mb-6 shrink-0">
+                    <h3 className="mb-3 text-sm font-semibold text-stone-800">{t('savedBackups.title')}</h3>
+                    <SavedBackupsList
+                      disabled={restoreLoading}
+                      onPick={async (file) => {
+                        const data = await unlockBackup(matchBackupFromFile(file))
+                        if (data) setRestorePreviewData({ data, source: 'local' })
+                      }}
+                    />
+                  </div>
+
+                  {/* Offline/File restore */}
+                  <div className="shrink-0">
+                    <h3 className="mb-3 text-sm font-semibold text-stone-800">
+                      {t('settings.backup.restoreFromLocal')}
+                    </h3>
+                    <button
+                      onClick={async () => {
+                        setRestoreLoading(true)
+                        setRestoreError('')
+                        try {
+                          const jsonData = await pickBackupFile()
+                          if (!jsonData) {
+                            setRestoreLoading(false)
+                            return // User cancelled
+                          }
+                          // Show preview instead of immediately restoring
+                          setRestorePreviewData({ data: jsonData, source: 'local' })
+                        } catch (err) {
+                          setRestoreError(restoreErrorText(err, t))
+                        } finally {
+                          setRestoreLoading(false)
+                        }
+                      }}
+                      disabled={restoreLoading}
+                      aria-busy={restoreLoading || undefined}
+                      className="inline-flex w-full h-11 items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white px-4 text-sm font-semibold text-stone-700 transition-colors hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
+                    >
+                      {restoreLoading ? t('common.loading') : t('settings.backup.selectBackupFile')}
+                    </button>
+                  </div>
+                  {/* A backup that could not be loaded or restored: the
+                      dialog says why (it was never shown, 2026-10-25) */}
+                  {restoreError && !restorePreviewData && (
+                    <FormError className="mt-3">{restoreError}</FormError>
+                  )}
+                </div>
+              </Modal>
+            )}
+
+            {/* Restore Preview Modal */}
+            {restorePreviewData && (
+              <Modal
+                title={t('settings.backup.restorePreview')}
+                open={true}
+                helpScreen="restore"
+                onClose={() => { setRestorePreviewData(null); setRestoreError('') }}
+                width={700}
+                // The window's height, not 85vh: on a laptop the whole preview fits
+                panelStyle={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', maxHeight: 'calc(var(--ov-vh100, 100vh) - 2rem)' }}
+              >
+                {/* Scrolling body; the footer stays below it, in view on a phone */}
+                <div className="ov-kit -mx-5 min-h-0 flex-1 overflow-y-auto px-5 pb-4">
+                  <RestorePreview
+                    data={restorePreviewData.data}
+                    source={restorePreviewData.source}
+                    backupName={restorePreviewData.backupName}
+                  />
+                </div>
+                {restoreError && (
+                  <FormError className="mb-3">{restoreError}</FormError>
+                )}
+                {/* Phone: Cancel | Select another, then Confirm restore full width.
+                    From sm one row: Cancel left, the two choices right. */}
+                <div className="ov-kit -mx-5 -mb-5 grid shrink-0 grid-cols-2 gap-2 border-t border-stone-100 px-5 py-3 sm:flex sm:items-center sm:justify-end">
+                  <button
+                    onClick={() => {
+                      setRestorePreviewData(null)
+                      setRestoreMatchModal(false)
+                      setRestoreMatchIdInput('')
+                      setRestorePin('')
+                      setRestoreError('')
+                      setCloudBackups([])
+                      setCloudBackupPin('')
+                      setCloudBackupGameN('')
+                      setCloudBackupError('')
+                    }}
+                    disabled={restoreLoading}
+                    className="inline-flex h-11 items-center justify-center rounded-xl border border-stone-200 px-3 text-sm font-medium text-stone-600 transition-colors hover:bg-stone-100 hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-50 sm:mr-auto sm:border-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
+                  >
+                    {t('common.cancel')}
+                  </button>
+                  <button
+                    onClick={() => { setRestorePreviewData(null); setRestoreError('') }}
+                    disabled={restoreLoading}
+                    className="inline-flex h-11 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
+                  >
+                    {t('settings.backup.preview.selectAnother')}
+                  </button>
+                  <button
+                    onClick={() => runHomeRestore()}
+                    disabled={restoreLoading}
+                    aria-busy={restoreLoading || undefined}
+                    className="col-span-2 inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
+                  >
+                    {restoreLoading ? t('settings.backup.preview.restoring') : t('settings.backup.preview.confirmRestore')}
+                  </button>
+                </div>
+              </Modal>
+            )}
+
+            {/* New Match Modal */}
+            {newMatchModal && (
+              <Modal
+                title="Create new match"
+                open={true}
+                onClose={cancelNewMatch}
+                width={400}
+              >
+                <div className="ov-kit p-2 sm:p-4">
+                  <p className="text-base text-stone-700">
+                    {newMatchModal.message}
+                  </p>
+                  <div className="mt-6 flex justify-end gap-2">
+                    <Button variant="secondary" size="xl" onClick={cancelNewMatch} className="rounded-lg font-medium">
+                      Cancel
+                    </Button>
+                    <Button variant="dark" size="xl" onClick={confirmNewMatch} className="rounded-lg">
+                      Yes
+                    </Button>
+                  </div>
+                </div>
+              </Modal>
+            )}
+
+            {/* Alert Modal */}
+            {alertModal && (
+              <Modal
+                title={t('alert.info', 'Alert')}
+                open={true}
+                onClose={() => setAlertModal(null)}
+                width={400}
+                hideCloseButton={true}
+              >
+                <div className="ov-kit p-2 sm:p-4">
+                  <p className="text-base text-stone-700">
+                    {alertModal}
+                  </p>
+                  <div className="mt-6 flex justify-end gap-2">
+                    <Button variant="dark" size="xl" onClick={() => setAlertModal(null)} className="min-w-24 rounded-lg">
+                      {t('common.ok', 'OK')}
+                    </Button>
+                  </div>
+                </div>
+              </Modal>
+            )}
+
+            {/* Confirm Modal */}
+            {confirmModal && (
+              <Modal
+                title={t('common.confirm', 'Confirm')}
+                open={true}
+                onClose={confirmModal.onCancel}
+                width={400}
+                hideCloseButton={true}
+              >
+                <div className="ov-kit p-2 sm:p-4">
+                  <p className="text-base text-stone-700">
+                    {confirmModal.message}
+                  </p>
+                  <div className="mt-6 flex justify-end gap-2">
+                    <Button variant="secondary" size="xl" onClick={confirmModal.onCancel} className="rounded-lg font-medium">
+                      {t('common.cancel', 'Cancel')}
+                    </Button>
+                    <Button variant="dark" size="xl" onClick={confirmModal.onConfirm} className="rounded-lg">
+                      {t('common.yes', 'Yes')}
+                    </Button>
+                  </div>
+                </div>
+              </Modal>
+            )}
+
+            {/* Home Options Modal */}
+            <ToolModeChooser open={toolMode === null && matchesLoaded && !matchId && !homeOptionsModal} />
+            <HomeOptionsModal
+              toolMode={{ mode: toolMode, locked: toolLocked, onChange: setToolMode }}
+              canCheckDevice={!matchId && !openingMatch}
+              open={homeOptionsModal}
+              onClose={() => setHomeOptionsModal(false)}
+              onOpenConnectionSetup={() => setConnectionSetupModal(true)}
+              matchOptions={{
+                rallyMode,
+                setRallyMode,
+                checkAccidentalRallyStart,
+                setCheckAccidentalRallyStart,
+                accidentalRallyStartDuration,
+                setAccidentalRallyStartDuration,
+                checkAccidentalPointAward,
+                setCheckAccidentalPointAward,
+                accidentalPointAwardDuration,
+                setAccidentalPointAwardDuration,
+                manageCaptainOnCourt,
+                setManageCaptainOnCourt,
+                liberoExitConfirmation,
+                setLiberoExitConfirmation,
+                liberoEntrySuggestion,
+                setLiberoEntrySuggestion,
+                setIntervalDuration,
+                setSetIntervalDuration,
+                keybindingsEnabled,
+                setKeybindingsEnabled,
+                lfpTrackingEnabled,
+                setLfpTrackingEnabled,
+                lfpMinimumOnCourt,
+                setLfpMinimumOnCourt
+              }}
+              displayOptions={{
+                displayMode,
+                setDisplayMode,
+                detectedDisplayMode,
+                activeDisplayMode,
+                enterDisplayMode,
+                exitDisplayMode
+              }}
+              wakeLock={{
+                wakeLockActive,
+                toggleWakeLock
+              }}
+              backup={backup}
+              backupMatchId={matchId || currentMatch?.id || null}
+              onRestoreFromFile={restoreFromBackupFile}
+              dashboardServer={isElectron ? {
+                enabled: dashboardServerEnabled,
+                onToggle: () => {
+                  const newValue = !dashboardServerEnabled
+                  setDashboardServerEnabled(newValue)
+                  localStorage.setItem('dashboardServerEnabled', String(newValue))
+                },
+                serverRunning: dashboardServerData.serverRunning,
+                connectionUrl: dashboardServerData.connectionUrl,
+                refereePin: currentMatch?.refereePin,
+                dashboardCount: dashboardServerData.dashboardCount,
+                refereeCount: dashboardServerData.refereeCount,
+                benchCount: dashboardServerData.benchCount,
+                connectedDashboards: dashboardServerData.connectedDashboards
+              } : null}
+            />
+
+            {/* The PIN of an encrypted backup file (pickBackupFile), over the
+                Restore dialog and the options */}
+            {backupUnlockDialog}
+
+            {/* Contextual Help Panel: the page's sections, or a dialog's
+                (helpDialogScreen); Show me only for the page, a dialog covers
+                its targets (the Corrections page asks for its own: page) */}
+            <ContextualHelpPanel
+              open={helpPanelOpen}
+              onClose={() => { setHelpPanelOpen(false); setHelpDialogScreen(null) }}
+              screen={helpDialogScreen || currentPage}
+              onShowMe={helpDialogScreen && helpDialogScreen !== currentPage ? undefined : (helpId, tooltipKey) => {
+                setHelpPanelOpen(false)
+                setSpotlightTarget({ helpId, tooltipKey })
+              }}
+            />
+            {spotlightTarget && (
+              <SpotlightOverlay
+                targetHelpId={spotlightTarget.helpId}
+                tooltipKey={spotlightTarget.tooltipKey}
+                onDismiss={() => setSpotlightTarget(null)}
+              />
+            )}
+
+            {/* Connect tablets (Options > Connections) */}
+            {connectionSetupModal && (
+              <ConnectTabletsModal
+                open
+                onClose={() => setConnectionSetupModal(false)}
+                match={relayMatch}
+              />
+            )}
+
+            {/* opening a match from the home screen: one wait, then the screen whole */}
+            {openingMatch && <ScreenLoading label={t('home.openingMatch')} testId="opening-match" />}
+
+            <StartupConnectivityModal
+              open={showStartupConnectivity && !offlineMode}
+              connectionStatuses={connectionStatuses}
+              onDismiss={handleStartupDismiss}
+              onGoOffline={handleStartupGoOffline}
+            />
+
+            {/* Not signed in while the cloud needs an account: non-blocking */}
+            {!offlineMode && !globalTool && <SyncSignInBanner syncStatus={syncStatus} compact={currentPage === 'scoreboard'} />}
+
+            {/* The browser may clear this device's data, unsent writes included */}
+            {onHome && unsentAtRisk && (
+              <div role="alert" data-testid="storage-warning" className="mx-auto mt-3 max-w-xl rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                {t('home.storageWarning')}
+              </div>
+            )}
+
+          </div>
+        </>
+
+      {/* Minimum screen size warning. Home, match setup, coin toss and their
+          dialogs fit a phone (2026-10-13); the scoring screen and its match
+          end only with the phone layout (PhoneScoreboard, Screen mode Auto or
+          Phone), and the manual adjustments not yet. Allowed when one side
+          reaches 800 px and both 600 px (a tablet in either orientation;
+          utils/formLayout isViewportTooSmall) and in fullscreen. A dialog
+          (aria-modal): no scoring key acts under it. Its card scrolls when
+          the window is lower than the card (150 % zoom). */}
+      {sizeGateShown && (
+        <div role="dialog" aria-modal="true" data-testid="size-gate" className="ov-kit fixed inset-0 overflow-y-auto bg-gradient-to-br from-stone-100 via-stone-50 to-stone-100" style={{ zIndex: 99999 }}>
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="relative w-full max-w-sm overflow-hidden rounded-3xl border border-stone-200/70 bg-white p-8 text-center shadow-card-lg">
+              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-600 to-red-500" />
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-stone-100 text-stone-500">
+                <PhoneIcon size={28} />
+              </div>
+              <p className="text-lg font-bold leading-snug text-stone-900">
+                {gateOffersPhoneLayout
+                  ? t('sizeGate.phoneTitle', 'The tablet layout needs a larger screen (minimum 800×600).')
+                  : t('sizeGate.title', 'To use this application, please use a tablet or larger screen (minimum 800×600).')}
+              </p>
+              <p className="mt-2 text-sm tabular-nums text-stone-500">
+                {t('sizeGate.current', { width: viewportSize.width, height: viewportSize.height, defaultValue: 'Current: {{width}} × {{height}} px' })}
+              </p>
+              <p className="mt-3 text-sm text-stone-600">
+                {gateOffersPhoneLayout
+                  ? t('sizeGate.phoneHint', 'On a phone, the scoring screen has a layout of its own.')
+                  : t('sizeGate.hint', 'Try rotating your device or entering fullscreen mode.')}
+              </p>
+              {gateOffersPhoneLayout && (
+                <Button variant="dark" size="xl" block icon={PhoneIcon} onClick={() => { setDisplayMode('auto'); try { localStorage.setItem('displayMode', 'auto') } catch { /* private mode: the state still switches */ } }} className="mt-6">
+                  {t('sizeGate.usePhone', 'Use the phone layout')}
+                </Button>
+              )}
+              <Button variant={gateOffersPhoneLayout ? 'secondary' : 'dark'} size="xl" block icon={Maximize} onClick={toggleFullscreen} className={gateOffersPhoneLayout ? 'mt-3' : 'mt-6'}>
+                {t('sizeGate.fullscreen', 'Enter fullscreen')}
+              </Button>
+              <p className="mt-3 text-xs text-stone-500">
+                {t('sizeGate.fullscreenNote', 'Fullscreen removes browser headers to maximize screen space.')}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manage console (admins and competition managers), full screen */}
+      {manageTab && !matchId && (
+        <ManageConsole tab={manageTab} onTab={setManageTab} onClose={() => setManageTab(null)} headerActions={<ManagerSiteLink />} />
+      )}
+    </div>
+  )
+}

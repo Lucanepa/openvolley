@@ -1,0 +1,309 @@
+import { Fragment, useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
+import { useAuth } from '../../contexts/AuthContext'
+import { apiFrom } from '../../lib/apiClient'
+import { selectAll, DB_MAX_ROWS } from '../../lib/selectAll'
+import { ClipboardIcon } from '../icons'
+import { ChevronRight, Loader2, X } from 'lucide-react'
+import { Button, cn, IconButton } from '../../ui'
+import { finalScoresheetUrl } from '../../../scoresheet_pdf/utils/scoresheetStorage'
+import { openAppWindow } from '../../utils/openAppWindow'
+import { backdropDismiss } from '../../ui/backdropDismiss.js'
+
+/**
+ * Status pill of a My matches row. The database says 'live', 'final',
+ * 'ended', 'approved' or 'setup' ('finished' in older rows). A closed match
+ * (approved, final: its scoresheet opens) is the done state (emerald), a
+ * running one the brand red; setup and an ended match still awaiting
+ * approval are neutral. Amber (warning) is not used: 'Final' used to fall
+ * through to it.
+ * @returns {{ key: string, fallback: string, className: string }}
+ */
+export function matchStatusPill(status) {
+  switch (status) {
+    case 'live':
+    case 'in_progress':
+      return { key: 'matchHistory.status.live', fallback: 'Live', className: 'border-red-200 bg-red-50 text-red-700' }
+    case 'final':
+    case 'finished':
+      return { key: 'matchHistory.status.final', fallback: 'Final', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' }
+    case 'approved':
+      return { key: 'matchHistory.status.approved', fallback: 'Approved', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' }
+    // Played but not approved yet: no scoresheet to open, so neither the
+    // green of a closed match nor its label
+    case 'ended':
+      return { key: 'matchHistory.status.ended', fallback: 'Awaiting approval', className: 'border-stone-200 bg-stone-50 text-stone-600' }
+    case 'setup':
+      return { key: 'matchHistory.status.setup', fallback: 'Setup', className: 'border-stone-200 bg-stone-50 text-stone-600' }
+    default:
+      return { key: '', fallback: String(status || ''), className: 'border-stone-200 bg-stone-50 text-stone-600' }
+  }
+}
+
+/**
+ * Role chip of a My matches row. The user_matches role is 'scorer' or an
+ * official's own role string (utils/syncIds userMatchRoles: '1st referee',
+ * 'assistant scorer', 'line judge 1', ...): each to its locale key, as the
+ * raw string fell through untranslated.
+ * @returns {{ key: string, fallback: string }}
+ */
+export function matchRoleLabel(role) {
+  const r = String(role || 'scorer').trim().toLowerCase().replace(/_/g, ' ')
+  const lineJudge = /^line judge ([1-4])$/.exec(r)
+  if (lineJudge) return { key: `matchSetup.lineJudge${lineJudge[1]}`, fallback: `Line judge ${lineJudge[1]}` }
+  switch (r) {
+    case '1st referee': return { key: 'matchEnd.referee1', fallback: '1st referee' }
+    case '2nd referee': return { key: 'matchEnd.referee2', fallback: '2nd referee' }
+    case 'assistant scorer': return { key: 'matchEnd.assistantScorer', fallback: 'Assistant scorer' }
+    default: return { key: `access.roles.${r}`, fallback: r }
+  }
+}
+
+/** '3-0' / '2:3' -> { home: 3, away: 0 }; null for anything else. */
+export function parseSetsWon(finalScore) {
+  const m = /^\s*(\d+)\s*[-:–]\s*(\d+)\s*$/.exec(String(finalScore ?? ''))
+  return m ? { home: Number(m[1]), away: Number(m[2]) } : null
+}
+
+export default function MatchHistory({ open, onClose, onSelectMatch }) {
+  const { t, i18n } = useTranslation()
+  const { user } = useAuth()
+
+  const [matches, setMatches] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  // Fetch user's matches when modal opens
+  useEffect(() => {
+    if (open) {
+      if (user) {
+        fetchMatches()
+      } else {
+        // No user - show empty state
+        setMatches([])
+        setLoading(false)
+      }
+    }
+  }, [open, user])
+
+  const fetchMatches = async () => {
+    setLoading(true)
+    setError('')
+
+    try {
+      // Get user's match associations
+      // All of them, paged past the server's row cap, newest first
+      const { data: userMatches, error: userMatchesError } = await selectAll(() => apiFrom('user_matches')
+        .select('id, match_external_id, role, created_at')
+        .eq('user_id', user.id)
+        .eq('sport_type', 'indoor'), { order: [{ column: 'created_at', ascending: false }] })
+
+      if (userMatchesError) {
+        throw userMatchesError
+      }
+
+      if (!userMatches || userMatches.length === 0) {
+        setMatches([])
+        setLoading(false)
+        return
+      }
+
+      // Get match details for each match_external_id (which references matches.external_id)
+      // external_id is unique, so a chunk of ids never returns more rows than
+      // the server's row cap
+      const matchIds = [...new Set(userMatches.map(m => m.match_external_id))]
+      const byExternalId = new Map()
+      for (let i = 0; i < matchIds.length; i += DB_MAX_ROWS) {
+        const { data: matchDetails, error: matchError } = await apiFrom('matches')
+          // matches has no team_a/team_b/start_time columns (the backend refuses
+          // unknown ones): the teams are home_team/away_team, the date scheduled_at
+          .select('external_id, game_n, home_team, away_team, final_score, winner, status, scheduled_at, created_at')
+          .in('external_id', matchIds.slice(i, i + DB_MAX_ROWS))
+          .eq('sport_type', 'indoor')
+
+        if (matchError) {
+          throw matchError
+        }
+        for (const m of matchDetails || []) byExternalId.set(m.external_id, m)
+      }
+
+      // Combine data
+      const combined = userMatches.map(({ id: _linkId, ...um }) => {
+        const match = byExternalId.get(um.match_external_id) || {}
+        return {
+          ...um,
+          ...match,
+          userRole: um.role
+        }
+      })
+
+      setMatches(combined)
+    } catch (err) {
+      console.error('Failed to fetch match history:', err)
+      setError(err.message)
+    }
+
+    setLoading(false)
+  }
+
+  if (!open) return null
+
+  // A finalized match opens its approved scoresheet, readable only by the
+  // account that uploaded it: opened on this origin, where the session is.
+  const openMatch = (match) => {
+    if (onSelectMatch) return onSelectMatch(match)
+    const url = finalScoresheetUrl(match)
+    if (url) openAppWindow(url, { features: 'noopener' })
+  }
+  const canOpen = (match) => !!onSelectMatch || !!finalScoresheetUrl(match)
+
+  const formatDate = (dateStr) => {
+    if (!dateStr) return ''
+    const date = new Date(dateStr)
+    // in the app's language, not the browser's
+    return date.toLocaleDateString(i18n?.language || undefined, {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    })
+  }
+
+  const getTeamName = (team) => {
+    if (!team) return t('matchHistory.unknown', 'Unknown')
+    if (typeof team === 'string') return team
+    return team.name || team.teamName || t('matchHistory.unknown', 'Unknown')
+  }
+
+
+  return (
+    <div className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm" style={{ zIndex: 2000 }} {...backdropDismiss(onClose)}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="match-history-title"
+        className="flex max-h-[80vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between gap-3 border-b border-stone-200/70 px-5 py-2 sm:px-6">
+          <h2 id="match-history-title" className="text-lg font-bold text-stone-900">
+            {t('matchHistory.title', 'My matches')}
+          </h2>
+          <IconButton variant="close" icon={X} label={t('common.close', 'Close')} onClick={onClose} className="-mr-2" />
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-3 py-3 sm:px-4">
+          {error && (
+            <p role="alert" className="mb-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {error}
+            </p>
+          )}
+
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-10 text-sm text-stone-500">
+              <Loader2 size={16} className="animate-spin text-stone-400" aria-hidden="true" />
+              {t('common.loading', 'Loading...')}
+            </div>
+          ) : matches.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-3 px-4 py-14 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-stone-100 text-stone-400"><ClipboardIcon size={26} /></div>
+              <p className="text-sm font-medium text-stone-500">{t('matchHistory.noMatches', 'No matches yet')}</p>
+              <p className="text-xs text-stone-400">
+                {t('matchHistory.noMatchesHint', 'Matches you score will appear here')}
+              </p>
+            </div>
+          ) : (
+            <div className="divide-y divide-stone-100">
+              {matches.map((match, index) => {
+                const openable = canOpen(match)
+                const pill = match.status ? matchStatusPill(match.status) : null
+                const roleLabel = matchRoleLabel(match.userRole)
+                const sets = parseSetsWon(match.final_score)
+                const winner = sets ? (sets.home > sets.away ? 'home' : sets.away > sets.home ? 'away' : null) : null
+                return (
+                <div
+                  key={`${match.match_external_id || index}:${match.userRole || ''}`}
+                  // An openable row is a keyboard-reachable button (Enter / Space)
+                  {...(openable ? {
+                    role: 'button',
+                    tabIndex: 0,
+                    'aria-label': `${getTeamName(match.home_team)} – ${getTeamName(match.away_team)}${match.final_score ? ` ${match.final_score}` : ''}: ${t('matchHistory.openScoresheet', 'Open scoresheet')}`,
+                    onClick: () => openMatch(match),
+                    onKeyDown: (e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        openMatch(match)
+                      }
+                    }
+                  } : {})}
+                  className={cn(
+                    'flex items-center gap-3 rounded-lg px-2 py-3 transition-colors',
+                    openable && 'cursor-pointer hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60'
+                  )}
+                >
+                  <div className="min-w-0 flex-1">
+                    {/* Teams with their sets won beside them, scoreboard style:
+                        one grid, so both numbers stand in one column whatever
+                        the names' length (a long name wraps) */}
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 gap-y-1">
+                      {['home', 'away'].map(side => (
+                        <Fragment key={side}>
+                          <span className={cn(
+                            'break-words text-sm leading-snug',
+                            sets && winner && winner !== side ? 'font-medium text-stone-600' : 'font-semibold text-stone-900'
+                          )}>
+                            {getTeamName(side === 'home' ? match.home_team : match.away_team)}
+                          </span>
+                          {sets ? (
+                            <span className={cn(
+                              'min-w-[1.25rem] text-right text-lg font-bold leading-none tabular-nums',
+                              winner && winner !== side ? 'text-stone-400' : 'text-stone-900'
+                            )}>
+                              {sets[side]}
+                            </span>
+                          ) : match.final_score ? (
+                            // A score that is not "sets-sets": shown whole, across both lines
+                            side === 'home' && <span className="row-span-2 self-center whitespace-nowrap text-lg font-bold tabular-nums text-stone-900">{match.final_score}</span>
+                          ) : <span aria-hidden="true" />}
+                        </Fragment>
+                      ))}
+                    </div>
+
+                    {/* Date, role, status */}
+                    <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="mr-auto text-xs tabular-nums text-stone-500">
+                        {formatDate(match.scheduled_at || match.created_at)}
+                      </span>
+                      <span className="inline-flex items-center whitespace-nowrap rounded border border-stone-200 bg-stone-50 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-stone-600" data-testid="match-history-role">
+                        {t(roleLabel.key, roleLabel.fallback)}
+                      </span>
+                      {pill && (
+                        <span className={cn('inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium leading-none', pill.className)}>
+                          {pill.key ? t(pill.key, pill.fallback) : pill.fallback}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* The chevron's column is kept on every row, so the scores line up */}
+                  <span className="flex w-4 shrink-0 justify-center self-center">
+                    {openable && <ChevronRight size={16} aria-hidden="true" className="text-stone-400" />}
+                  </span>
+                </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-end border-t border-stone-100 px-5 py-3 sm:px-6">
+          <Button variant="secondary" size="xl" onClick={onClose} className="rounded-lg font-medium">
+            {t('common.close', 'Close')}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}

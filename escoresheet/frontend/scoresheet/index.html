@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light" />
+  <meta name="theme-color" content="#ffffff" />
+  <link rel="icon" href="/favicon.ico" sizes="32x32" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <title>OpenVolley eScoresheet</title>
+  <!-- Tailwind is compiled into scoresheet_pdf/scoresheet.css (no CDN: must work offline) -->
+  <style>
+    /* Global Font Setting */
+    body {
+      font-family: 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    /* Custom print styles to ensure background graphics/colors print */
+    @media print {
+
+      html,
+      body {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        margin: 0 !important;
+        padding: 0 !important;
+        height: 100% !important;
+        overflow: hidden !important;
+      }
+
+      @page {
+        size: A4 landscape;
+        margin: 0;
+      }
+
+      #root {
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+        height: 100vh !important;
+        max-height: 100vh !important;
+      }
+    }
+
+    /* Hide scrollbar for cleaner look in inputs */
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+
+    .vertical-text {
+      writing-mode: vertical-lr;
+      transform: rotate(180deg);
+    }
+
+    /* Dense table utils */
+    .input-dense {
+      text-align: center;
+      background-color: transparent;
+      width: 100%;
+      height: 100%;
+      outline: none;
+    }
+
+    .input-dense:focus {
+      background-color: rgba(59, 130, 246, 0.1);
+    }
+  </style>
+</head>
+
+<body class="bg-gray-100 text-gray-900 antialiased print:bg-white text-[10px] overflow-auto">
+  <div id="root"></div>
+  <script type="module" src="/scoresheet_pdf/index_scoresheet.tsx"></script>
+</body>
+
+</html>

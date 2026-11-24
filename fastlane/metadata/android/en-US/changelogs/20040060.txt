@@ -1,0 +1,4 @@
+OpenVolley 2.4.6
+- Scoresheet: after a set the points columns stop at each team's score; set 5 marks the points before the change of courts with the reverse T.
+- Scoresheet: line-up and substitute numbers share one size, with a larger circle round a substitute who came back.
+- Scoresheet: no circle round a bench player in the sanctions; the approval box is centred.

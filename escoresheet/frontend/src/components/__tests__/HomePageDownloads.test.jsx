@@ -1,0 +1,108 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen } from '@testing-library/react'
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key, fallback) => fallback || key })
+}))
+vi.mock('../SupportFeedbackModal', () => ({ default: () => null }))
+vi.mock('../auth/UserButton', () => ({ default: () => null }))
+
+const backend = vi.hoisted(() => ({ local: false }))
+vi.mock('../../utils/backendConfig', () => ({
+  isServedFromLocalServer: () => backend.local
+}))
+
+import HomePage from '../pages/HomePage'
+
+const LINUX_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36'
+const PHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
+
+// Owner 2026-11-09: "just link the downloads page" (it had a desktop app
+// link with its version, a .deb link and a "Download server" link)
+describe('HomePage: the downloads link', () => {
+  let uaSpy
+  beforeEach(() => {
+    backend.local = false
+    uaSpy = vi.spyOn(window.navigator, 'userAgent', 'get').mockReturnValue(LINUX_UA)
+    global.fetch = vi.fn(() => Promise.reject(new Error('no network in tests')))
+  })
+  afterEach(() => {
+    uaSpy.mockRestore()
+  })
+
+  it('a desktop browser on the public site gets one link to the downloads page', () => {
+    render(<HomePage />)
+    const link = screen.getByTestId('home-downloads')
+    expect(link).toHaveAttribute('href', 'https://get.openvolley.app/')
+    expect(link).toHaveTextContent('Download OpenVolley')
+    expect(screen.queryByText(/Download server|\.deb package|offline scoretable/)).not.toBeInTheDocument()
+  })
+
+  it('asks nobody for release lists (no GitHub call on Home)', () => {
+    render(<HomePage />)
+    expect(global.fetch).not.toHaveBeenCalled()
+  })
+
+  it('an iPad (a Mac user agent with a touch screen, Safari and the iOS app) shows no downloads', () => {
+    uaSpy.mockReturnValue('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)')
+    Object.defineProperty(window.navigator, 'maxTouchPoints', { value: 5, configurable: true })
+    try {
+      render(<HomePage />)
+      expect(screen.queryByText(/Download the desktop app/)).not.toBeInTheDocument()
+      expect(global.fetch).not.toHaveBeenCalled()
+    } finally {
+      delete window.navigator.maxTouchPoints
+    }
+  })
+
+  it('a page served by the local relay (desktop app window, venue LAN) shows no downloads', () => {
+    backend.local = true
+    render(<HomePage />)
+    expect(screen.queryByTestId('home-downloads')).not.toBeInTheDocument()
+  })
+
+  it('a phone browser shows no downloads link (desktop browsers only, as before)', () => {
+    uaSpy.mockReturnValue(PHONE_UA)
+    render(<HomePage />)
+    expect(screen.queryByTestId('home-downloads')).not.toBeInTheDocument()
+  })
+})
+
+// Owner 2026-11-10: "Made by Swiss referees" under the logo
+describe('HomePage: who makes it', () => {
+  it('says "Made by Swiss referees" right under the lockup', () => {
+    render(<HomePage />)
+    const line = screen.getByTestId('made-by')
+    expect(line).toHaveTextContent('brand.madeBy')
+    expect(line.previousElementSibling.querySelector('img')).toHaveAttribute('alt', 'OpenVolley')
+  })
+})
+
+// The device check's card (App, DeviceCheckCard) comes 3-5 s after Home shows:
+// out of the flow, so the buttons a scorer is about to tap never move, and
+// pinned to the foot of the screen, so a short tablet screen still shows it
+describe('HomePage: the device check card', () => {
+  it('is pinned to the foot of the screen, out of the flow, under the dialogs', () => {
+    render(<HomePage deviceCheckCard={<div data-testid="card-stub">card</div>} />)
+    const slot = screen.getByTestId('device-check-slot')
+    expect(slot.className).toMatch(/(^|\s)fixed(\s|$)/)
+    expect(slot.className).toMatch(/(^|\s)bottom-0(\s|$)/)
+    expect(slot.className).toMatch(/(^|\s)inset-x-0(\s|$)/)
+    // below the dialogs (z-50), and the empty strip around the card lets taps through
+    expect(slot.className).toMatch(/(^|\s)z-30(\s|$)/)
+    expect(slot.className).toMatch(/(^|\s)pointer-events-none(\s|$)/)
+    // wide screens: bottom right
+    expect(slot.className).toMatch(/home-wide:justify-end/)
+    const holder = screen.getByTestId('card-stub').parentElement
+    expect(holder.parentElement).toBe(slot)
+    expect(holder.className).toMatch(/(^|\s)pointer-events-auto(\s|$)/)
+    // after the actions in the page: nothing before them changes
+    const restore = document.querySelector('[data-help-id="home-restore-button"]')
+    expect(restore.compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('no card: no slot', () => {
+    render(<HomePage />)
+    expect(screen.queryByTestId('device-check-slot')).toBe(null)
+  })
+})

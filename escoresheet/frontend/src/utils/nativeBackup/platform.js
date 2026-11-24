@@ -1,0 +1,256 @@
+/**
+ * Native auto-backup: platform abstraction.
+ *
+ * - tauri:     the desktop app. Writes go through the app's own backup_* Rust
+ *              commands (src-tauri/src/backup.rs), which only ever touch
+ *              <data dir>/OpenVolley/backups.
+ * - capacitor: the Android (and iOS) app, via @capacitor/filesystem. Android
+ *              writes to the app's own folder (Directory.Data:
+ *              files/OpenVolley/backups): no other app, file manager or USB
+ *              cable reaches it, and it goes with the app when it is
+ *              uninstalled. Copies go out on request (Options: Export to
+ *              Documents, androidFiles.js). iOS, the same rule (owner
+ *              decision 9, SEC-51/52): Library/NoCloud
+ *              (Directory.LibraryNoCloud), not Documents, which the Files
+ *              app and a USB cable showed; the app excludes its folders from
+ *              iCloud and computer backups (ios/App/App/AppDelegate.swift).
+ *              PDFs go out through Share.
+ * - web:       a browser, including the LAN tablets served by the desktop
+ *              app. No native store: useAutoBackup keeps the browser
+ *              behaviour (File System Access folder / downloads).
+ *
+ * Every store has the same shape:
+ *   info()                               -> { folder: string }
+ *   write(dir, name, text, { latest })   writes <dir>/<name> (+ <dir>/latest.json)
+ *                                        -> { warning? } (latest.json not updated: not an error)
+ *   list()                               -> [{ dir, files: [{ name, size, modifiedMs? }] }]
+ *   read(dir, name)                      -> the file's text
+ *   remove(dir, names)
+ *   openFolder()                         -> true when a file manager was opened
+ *   pickFile()                           -> parsed JSON | null (cancelled) | undefined (not supported)
+ *   canOpenFolder / canPickFile          booleans for the UI
+ */
+
+import { LATEST_FILE } from './rotation'
+
+export const BACKUP_SUBDIR = 'OpenVolley/backups'
+
+/** The Capacitor app's OS: 'android', 'ios', or null when it cannot tell (a browser, a test). */
+export function capacitorOs(win = typeof window !== 'undefined' ? window : undefined) {
+  try {
+    return win?.Capacitor?.getPlatform?.() || null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The app's own folders, in the order they are tried. Android: internal
+ * storage (Directory.Data, files/), else the app's external files folder;
+ * both go with the app when it is uninstalled. iOS: Library/NoCloud
+ * (Directory.LibraryNoCloud; Data and External are Documents there, which
+ * the Files app and Finder show and back up), excluded from iCloud and
+ * computer backups (AppDelegate.swift).
+ * @param {object} Directory @capacitor/filesystem's Directory
+ * @param {'android'|'ios'|null} [os] capacitorOs()
+ */
+export const appFilesDirectories = (Directory, os = capacitorOs()) =>
+  os === 'ios'
+    ? [Directory.LibraryNoCloud].filter(Boolean)
+    : [Directory.Data, Directory.External].filter(Boolean)
+
+/** Is there a Documents folder the user sees, for "Export to Documents"? Android only: on iOS the app's Documents are not shown (owner decision 9), Share is the way out. */
+export const canExportToDocuments = (os = capacitorOs()) => os !== 'ios'
+
+/** 'tauri' | 'capacitor' | 'web' */
+export function detectBackupPlatform(win = typeof window !== 'undefined' ? window : undefined) {
+  if (!win) return 'web'
+  try {
+    if (typeof win.__TAURI_INTERNALS__?.invoke === 'function') return 'tauri'
+    if (win.Capacitor?.isNativePlatform?.()) return 'capacitor'
+  } catch {
+    // a half-initialised bridge is treated as a browser
+  }
+  return 'web'
+}
+
+export const isNativeBackupPlatform = (platform) => platform === 'tauri' || platform === 'capacitor'
+
+/** Desktop store backed by the backup_* Tauri commands. */
+export function createTauriStore(invoke) {
+  let folder = null
+  return {
+    platform: 'tauri',
+    canOpenFolder: true,
+    canPickFile: true,
+    async info() {
+      if (!folder) folder = (await invoke('backup_info'))?.dir || null
+      return { folder }
+    },
+    async write(dir, name, text, { latest = true } = {}) {
+      // Ok(Some(warning)) when only latest.json could not be replaced (Windows:
+      // a virus scan or the Explorer preview holds it); the event file is saved.
+      const warning = await invoke('backup_write', { matchDir: dir, fileName: name, contents: text, latest })
+      return warning ? { warning } : {}
+    },
+    async list() {
+      const dirs = await invoke('backup_list')
+      return (dirs || []).map(d => ({ dir: d.dir, files: (d.files || []).map(f => ({ name: f.name, size: f.size || 0, modifiedMs: f.modifiedMs || 0 })) }))
+    },
+    async remove(dir, names) {
+      if (!names?.length) return
+      await invoke('backup_remove', { matchDir: dir, fileNames: names })
+    },
+    /** One backup file's text (the restore list). */
+    async read(dir, name) {
+      return invoke('backup_read', { matchDir: dir, fileName: name })
+    },
+    async openFolder() {
+      await invoke('backup_open_dir')
+      return true
+    },
+    async pickFile() {
+      const text = await invoke('backup_pick_file')
+      if (text == null) return null
+      return JSON.parse(text)
+    }
+  }
+}
+
+const fileUriToPath = (uri) => {
+  try {
+    return decodeURIComponent(String(uri).replace(/^file:\/\//, ''))
+  } catch {
+    return String(uri)
+  }
+}
+
+/**
+ * Android/iOS store backed by @capacitor/filesystem, in the app's own folder
+ * (APP_FILES_DIRECTORIES: Directory.Data, else the app's external files
+ * folder). It was the public Documents folder: there every file (rosters with
+ * birth dates, signatures) was open to whoever held the tablet, to a USB
+ * cable, to other apps on Android 10 and older, and stayed after an
+ * uninstall (owner decision 2026-11). The files left there are moved in at
+ * the first start (androidFiles.moveLegacyFiles). iOS: Library/NoCloud, the
+ * same rule (owner decision 9).
+ * @param {{ Filesystem, Directory, Encoding }} fs the plugin module
+ */
+export function createCapacitorStore({ Filesystem, Directory, Encoding }, { log = console, os = capacitorOs() } = {}) {
+  const candidates = appFilesDirectories(Directory, os)
+  let dirIndex = 0
+  let ready = null // Promise of the working directory
+  let folder = null
+
+  const base = () => candidates[dirIndex]
+
+  async function probe() {
+    for (; dirIndex < candidates.length; dirIndex++) {
+      try {
+        try {
+          await Filesystem.mkdir({ path: BACKUP_SUBDIR, directory: base(), recursive: true })
+        } catch (e) {
+          // "already exists" is fine; anything else surfaces on the stat below
+          if (!/exist/i.test(String(e?.message || e))) throw e
+        }
+        await Filesystem.stat({ path: BACKUP_SUBDIR, directory: base() })
+        try {
+          const { uri } = await Filesystem.getUri({ path: BACKUP_SUBDIR, directory: base() })
+          folder = fileUriToPath(uri)
+        } catch {
+          folder = `${base()}/${BACKUP_SUBDIR}`
+        }
+        return base()
+      } catch (e) {
+        log.warn?.(`[NativeBackup] ${base()} is not writable, trying the next folder:`, e?.message || e)
+      }
+    }
+    throw new Error('No writable folder for backups on this device')
+  }
+
+  const directory = () => {
+    if (!ready) ready = probe().catch((e) => { ready = null; dirIndex = 0; throw e })
+    return ready
+  }
+
+  const writeOne = (dirName, path, text) => Filesystem.writeFile({
+    path, data: text, directory: dirName, encoding: Encoding.UTF8, recursive: true
+  })
+
+  return {
+    platform: 'capacitor',
+    canOpenFolder: false,
+    canPickFile: false,
+    async info() {
+      await directory()
+      return { folder }
+    },
+    async write(dir, name, text, { latest = true } = {}) {
+      const d = await directory()
+      const path = `${BACKUP_SUBDIR}/${dir}/${name}`
+      await writeOne(d, path, text)
+      if (!latest) return {}
+      const latestPath = `${BACKUP_SUBDIR}/${dir}/${LATEST_FILE}`
+      try {
+        // A native copy: the match JSON crosses the WebView bridge once, not twice
+        if (typeof Filesystem.copy === 'function') {
+          await Filesystem.copy({ from: path, to: latestPath, directory: d, toDirectory: d })
+        } else {
+          await writeOne(d, latestPath, text)
+        }
+        return {}
+      } catch (e) {
+        // The event file is saved; latest.json could not be replaced: not an error.
+        return { warning: `cannot update ${dir}/${LATEST_FILE}: ${e?.message || e}` }
+      }
+    },
+    async list() {
+      const d = await directory()
+      const { files: entries } = await Filesystem.readdir({ path: BACKUP_SUBDIR, directory: d })
+      const dirs = []
+      for (const entry of entries || []) {
+        if (entry.type !== 'directory') continue
+        try {
+          const { files } = await Filesystem.readdir({ path: `${BACKUP_SUBDIR}/${entry.name}`, directory: d })
+          dirs.push({ dir: entry.name, files: (files || []).filter(f => f.type !== 'directory').map(f => ({ name: f.name, size: f.size || 0, modifiedMs: f.mtime || 0 })) })
+        } catch (e) {
+          log.warn?.('[NativeBackup] cannot list', entry.name, e?.message || e)
+        }
+      }
+      return dirs
+    },
+    async read(dir, name) {
+      const d = await directory()
+      const { data } = await Filesystem.readFile({ path: `${BACKUP_SUBDIR}/${dir}/${name}`, directory: d, encoding: Encoding.UTF8 })
+      return typeof data === 'string' ? data : await data.text()
+    },
+    async remove(dir, names) {
+      const d = await directory()
+      for (const name of names || []) {
+        try {
+          await Filesystem.deleteFile({ path: `${BACKUP_SUBDIR}/${dir}/${name}`, directory: d })
+        } catch (e) {
+          log.warn?.('[NativeBackup] cannot delete', `${dir}/${name}`, e?.message || e)
+        }
+      }
+    },
+    async openFolder() {
+      return false
+    },
+    async pickFile() {
+      return undefined
+    }
+  }
+}
+
+/** The store for this platform, or null in a browser. */
+export async function createPlatformStore(platform = detectBackupPlatform(), win = typeof window !== 'undefined' ? window : undefined) {
+  if (platform === 'tauri') {
+    return createTauriStore((cmd, args) => win.__TAURI_INTERNALS__.invoke(cmd, args))
+  }
+  if (platform === 'capacitor') {
+    const mod = await import('@capacitor/filesystem')
+    return createCapacitorStore(mod)
+  }
+  return null
+}

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-backup-pick-file"
+description = "Enables the backup_pick_file command without any pre-configured scope."
+commands.allow = ["backup_pick_file"]
+
+[[permission]]
+identifier = "deny-backup-pick-file"
+description = "Denies the backup_pick_file command without any pre-configured scope."
+commands.deny = ["backup_pick_file"]

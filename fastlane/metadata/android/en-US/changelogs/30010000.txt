@@ -1,0 +1,5 @@
+OpenVolley 3.1.0
+- Manager, Accounts: admins can change an account's first name, last name and email.
+- My teams: an Einsatzliste import keeps the team's shirt numbers, captain and liberos; officials take the list's roles with their licence.
+- Einsatzliste in German, French and Italian; names with letters like ń, ř, ș are read.
+- Home: Delete match under Continue; referee and bench dashboards in the menu.

@@ -1,0 +1,661 @@
+/**
+ * useRealtimeConnection Hook
+ * Manages connection to match data using WebSocket as primary
+ * with Supabase Realtime fallback
+ *
+ * AUTO mode subscribes to BOTH: the relay room (instant scorer pushes, the only
+ * path in an offline venue) and, alongside it, the backend's db-change stream
+ * (`?purpose=live`, relayRealtime shim) which refetches on every events / sets /
+ * match_live_state change. The relay socket opening says nothing about whether
+ * the scorer publishes to that room (a scorer on another relay, an old build),
+ * so the db-change path is not only a fallback for a failed socket. On a LAN
+ * relay the shim reports 'unsupported' once and the relay path carries on.
+ */
+
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { supabase } from '../lib/supabaseClient'
+import { apiFrom } from '../lib/apiClient'
+import { subscribeToMatchData, getMatchData, fetchRelayConnections, summarizeRelayTablets, createLiveStateTracker, matchAccessFor } from '../utils/serverDataSync'
+import { setDiagnosticsInfo } from '../utils/diagnosticsInfo'
+
+// Connection types
+export const CONNECTION_TYPES = {
+  AUTO: 'auto',           // Try WebSocket first, fall back to Supabase
+  SUPABASE: 'supabase',   // Force Supabase Realtime only
+  WEBSOCKET: 'websocket'  // Force WebSocket only
+}
+
+// Connection status
+export const CONNECTION_STATUS = {
+  DISCONNECTED: 'disconnected',
+  CONNECTING: 'connecting',
+  CONNECTED: 'connected',
+  ERROR: 'error',
+  FALLBACK: 'fallback',    // Using fallback connection
+  OFFLINE: 'offline'       // Both WebSocket and Supabase failed, using offline mode
+}
+
+// Looking up a match that is not in the database yet (test match, LAN relay,
+// never synced): 5 s, 10 s, 30 s, then every 60 s for as long as the tablet is
+// open — not an /api/db request every 5 s.
+const DB_WATCH_RETRY_DELAYS_MS = [5000, 10000, 30000]
+export const DB_WATCH_RETRY_MAX_MS = 60000
+export function dbWatchRetryDelay(attempt) {
+  return DB_WATCH_RETRY_DELAYS_MS[attempt] ?? DB_WATCH_RETRY_MAX_MS
+}
+
+// AUTO mode: a db change is not read again (GET /api/match/:id) while the relay
+// room pushed a new whole bundle within this time. getMatchData answers from
+// that same relay copy, and the relay pushes every new copy to this socket, so
+// the read could only bring what was or is about to be pushed: the bench
+// downloaded its whole match 2-3 times per rally for nothing (load test
+// 2026-10-26: 1.15 GB in 6 minutes for 30 benches late in their matches). Once
+// the room has been quiet this long (no new bundle: socket down, only the
+// public summary or live states on it, the relay lost the match) a change is
+// read as before; a re-subscribe of the db stream always is.
+export const RELAY_BUNDLE_COVERS_MS = 10000
+
+/**
+ * Hook for managing realtime connection with WebSocket primary + Supabase Realtime fallback
+ * @param {Object} options
+ * @param {string|number} options.matchId - Match ID to subscribe to
+ * @param {string} options.preferredConnection - Preferred connection type (auto|supabase|websocket)
+ * @param {function} options.onData - Callback when data is received
+ * @param {function} options.onAction - Callback when action is received (timeout, substitution, etc.):
+ *   (action, actionData, { sentAt }) - sentAt: the scorer's clock when it sent it
+ * @param {function} options.onDeleted - Callback when match is deleted from server
+ * @param {function} [options.onAccessLost] - Callback when the relay refuses the PIN this tablet proved
+ * @param {boolean} options.enabled - Whether to enable the connection
+ */
+export function useRealtimeConnection({
+  matchId,
+  preferredConnection = CONNECTION_TYPES.AUTO,
+  onData,
+  onAction,
+  onDeleted,
+  onAccessLost,
+  enabled = true,
+  // AUTO mode: also follow db changes next to the relay room. The referee
+  // passes false: it runs its own match_live_state channel.
+  watchDbChanges = true
+}) {
+  const [connectionType, setConnectionType] = useState(preferredConnection)
+  const [activeConnection, setActiveConnection] = useState(null) // 'supabase' | 'websocket' | null
+  const [status, setStatus] = useState(CONNECTION_STATUS.DISCONNECTED)
+  const [error, setError] = useState(null)
+  const [lastUpdate, setLastUpdate] = useState(null)
+  // The relay's word on the scorer device: true / false, null while unknown
+  // (no relay socket, or a relay that does not send scorer-presence)
+  const [scorerPresent, setScorerPresent] = useState(null)
+
+  const supabaseChannelRef = useRef(null)
+  const wsUnsubscribeRef = useRef(null)
+  const isMountedRef = useRef(true)
+  const isConnectingRef = useRef(false)
+
+  // Store callbacks in refs to avoid dependency changes
+  const onDataRef = useRef(onData)
+  const onActionRef = useRef(onAction)
+  const onDeletedRef = useRef(onDeleted)
+  const onAccessLostRef = useRef(onAccessLost)
+  onAccessLostRef.current = onAccessLost
+
+  // Update refs when callbacks change (without triggering re-renders)
+  useEffect(() => {
+    onDataRef.current = onData
+  }, [onData])
+
+  useEffect(() => {
+    onActionRef.current = onAction
+  }, [onAction])
+
+  useEffect(() => {
+    onDeletedRef.current = onDeleted
+  }, [onDeleted])
+
+  // UUID retry timer ref
+  const uuidRetryRef = useRef(null)
+  const secondaryChannelRef = useRef(null)
+  const fetchSeqRef = useRef(0)
+  const refetchTimerRef = useRef(null)
+  const lastPushAtRef = useRef(0) // last relay bundle delivered
+  // Last NEW whole bundle from the relay (RELAY_BUNDLE_COVERS_MS): a live
+  // state re-delivers the last bundle with the same events array
+  const lastBundleAtRef = useRef(0)
+  const lastBundleEventsRef = useRef(null)
+  const refetchForcedRef = useRef(false) // a refetch in the burst is not covered by the relay
+  // Newest live state from any source (relay push, relay copy, database row):
+  // a newer one wins over an older relay copy's score, and a refetch answer
+  // never rolls back a newer push (createLiveStateTracker)
+  const liveTrackerRef = useRef(null)
+  if (liveTrackerRef.current === null) liveTrackerRef.current = createLiveStateTracker()
+  useEffect(() => {
+    liveTrackerRef.current.reset()
+    lastBundleAtRef.current = 0
+    lastBundleEventsRef.current = null
+  }, [matchId])
+  const deliverData = useCallback((result) => {
+    if (onDataRef.current) onDataRef.current(liveTrackerRef.current.bundle(result))
+  }, [])
+  // A match_live_state row (database): shown over the last relay copy when newer
+  const deliverLiveStateRow = useCallback((row) => {
+    const tracker = liveTrackerRef.current
+    if (tracker.liveState(row) && tracker.lastBundle) deliverData(tracker.lastBundle)
+  }, [deliverData])
+
+  // Helper: fetch data and deliver to callback. Only the newest request
+  // delivers: overlapping fetches can resolve out of order, and an older answer
+  // would roll the view back.
+  const fetchAndDeliver = useCallback((reason) => {
+    const seq = ++fetchSeqRef.current
+    const startedAt = Date.now()
+    getMatchData(matchId).then(result => {
+      if (seq !== fetchSeqRef.current || !isMountedRef.current) return
+      // A relay push landed while this fetch was in flight: it is newer
+      if (lastPushAtRef.current > startedAt) return
+      if (result.success) deliverData(result)
+    }).catch(err => {
+      console.error(`[RealtimeConnection] Error fetching data after ${reason}:`, err)
+    })
+  }, [matchId, deliverData])
+
+  // Coalesce bursts (one point = live_state + event + set rows) into one refetch.
+  // relayCovers: skipped while the relay room pushes new bundles
+  // (RELAY_BUNDLE_COVERS_MS), unless another call in the burst was not.
+  const scheduleRefetch = useCallback((reason, { relayCovers = false } = {}) => {
+    if (!relayCovers) refetchForcedRef.current = true
+    if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current)
+    refetchTimerRef.current = setTimeout(() => {
+      refetchTimerRef.current = null
+      const forced = refetchForcedRef.current
+      refetchForcedRef.current = false
+      if (!isMountedRef.current) return
+      if (!forced && Date.now() - lastBundleAtRef.current < RELAY_BUNDLE_COVERS_MS) return
+      fetchAndDeliver(reason)
+    }, 250)
+  }, [fetchAndDeliver])
+
+  // Helper: build a Supabase channel with all subscriptions
+  const buildChannel = useCallback((supabaseMatchUuid) => {
+    const channelId = `match-${matchId}-${Date.now()}`
+    // the match token of the PIN check: the live state whole (line-ups, sanctions)
+    const channel = supabase.channel(channelId, { token: () => matchAccessFor(matchId)?.token || null })
+
+    // Subscribe to events, sets, and match_live_state using UUID
+    if (supabaseMatchUuid) {
+      channel
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'events', filter: `match_id=eq.${supabaseMatchUuid}` },
+          () => { if (!isMountedRef.current) return; setLastUpdate(Date.now()); fetchAndDeliver('event') })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'sets', filter: `match_id=eq.${supabaseMatchUuid}` },
+          () => { if (!isMountedRef.current) return; setLastUpdate(Date.now()); fetchAndDeliver('set update') })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'match_live_state', filter: `match_id=eq.${supabaseMatchUuid}` },
+          (payload) => {
+            if (!isMountedRef.current) return
+            setLastUpdate(Date.now())
+            deliverLiveStateRow(payload?.new)
+            fetchAndDeliver('live state update')
+          })
+    }
+
+    // Always subscribe to matches table (uses external_id, no UUID needed)
+    channel
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches', filter: `external_id=eq.${matchId}` },
+        (payload) => {
+          if (!isMountedRef.current) return
+          setLastUpdate(Date.now())
+          if (payload.eventType === 'DELETE') {
+            if (onDeletedRef.current) onDeletedRef.current()
+            return
+          }
+          fetchAndDeliver('match update')
+        })
+
+    return channel
+  }, [matchId, fetchAndDeliver, deliverLiveStateRow])
+
+  // Cleanup function
+  const cleanup = useCallback(() => {
+    // Clear UUID retry timer
+    if (uuidRetryRef.current) {
+      clearTimeout(uuidRetryRef.current)
+      uuidRetryRef.current = null
+    }
+    if (refetchTimerRef.current) {
+      clearTimeout(refetchTimerRef.current)
+      refetchTimerRef.current = null
+    }
+    refetchForcedRef.current = false
+    if (secondaryChannelRef.current) {
+      try { supabase?.removeChannel(secondaryChannelRef.current) } catch { /* ignore */ }
+      secondaryChannelRef.current = null
+    }
+
+    // Cleanup Supabase subscription
+    if (supabaseChannelRef.current) {
+      try {
+        supabase?.removeChannel(supabaseChannelRef.current)
+      } catch (e) {
+        console.warn('[RealtimeConnection] Error removing Supabase channel:', e)
+      }
+      supabaseChannelRef.current = null
+    }
+
+    // Cleanup WebSocket subscription
+    if (wsUnsubscribeRef.current) {
+      try {
+        wsUnsubscribeRef.current()
+      } catch (e) {
+        console.warn('[RealtimeConnection] Error unsubscribing WebSocket:', e)
+      }
+      wsUnsubscribeRef.current = null
+      // no relay socket: its word on the scorer no longer holds
+      if (isMountedRef.current) setScorerPresent(null)
+    }
+
+    setActiveConnection(null)
+  }, [])
+
+  // Connect to Supabase Realtime
+  const connectSupabase = useCallback(async () => {
+    if (!supabase || !matchId) {
+      return false
+    }
+
+    // Clear any pending UUID retry
+    if (uuidRetryRef.current) {
+      clearTimeout(uuidRetryRef.current)
+      uuidRetryRef.current = null
+    }
+
+    try {
+      setStatus(CONNECTION_STATUS.CONNECTING)
+
+      // Look up the Supabase UUID from external_id (seed_key)
+      let supabaseMatchUuid = null
+      const { data: matchData } = await apiFrom('matches')
+        .select('id')
+        .eq('external_id', matchId)
+        .maybeSingle()
+
+      if (matchData?.id) {
+        supabaseMatchUuid = matchData.id
+      }
+
+      // Build and subscribe to channel
+      const channel = buildChannel(supabaseMatchUuid)
+
+      channel.subscribe((status) => {
+        if (!isMountedRef.current) return
+
+        if (status === 'SUBSCRIBED') {
+          setStatus(CONNECTION_STATUS.CONNECTED)
+          setActiveConnection('supabase')
+          setError(null)
+          // The relay realtime shim repeats SUBSCRIBED after every reconnect:
+          // refetch so changes missed while the socket was down show up now,
+          // not only after the next write.
+          fetchAndDeliver('subscribed')
+
+          // If we connected WITHOUT the UUID, retry the lookup periodically
+          // so we can upgrade to full subscriptions once the match is synced
+          if (!supabaseMatchUuid) {
+            console.warn('[RealtimeConnection] Connected without UUID — will retry lookup')
+            const retryLookup = async () => {
+              if (!isMountedRef.current) return
+              const { data } = await apiFrom('matches')
+                .select('id')
+                .eq('external_id', matchId)
+                .maybeSingle()
+
+              if (data?.id) {
+                // UUID now available — rebuild channel with full subscriptions
+                console.log('[RealtimeConnection] UUID found on retry, upgrading subscriptions')
+                try { supabase?.removeChannel(channel) } catch {}
+                const fullChannel = buildChannel(data.id)
+                fullChannel.subscribe((s) => {
+                  if (!isMountedRef.current) return
+                  if (s === 'SUBSCRIBED') {
+                    setStatus(CONNECTION_STATUS.CONNECTED)
+                    setActiveConnection('supabase')
+                    fetchAndDeliver('uuid retry')
+                  }
+                })
+                supabaseChannelRef.current = fullChannel
+              } else if (isMountedRef.current) {
+                // Still no UUID, retry again in 3 seconds
+                uuidRetryRef.current = setTimeout(retryLookup, 3000)
+              }
+            }
+            uuidRetryRef.current = setTimeout(retryLookup, 3000)
+          }
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn('[RealtimeConnection] Supabase channel error/timeout, status:', status)
+        }
+      })
+
+      supabaseChannelRef.current = channel
+      return true
+    } catch (err) {
+      console.error('[RealtimeConnection] Supabase connection error:', err)
+      setError(err.message)
+      return false
+    }
+  }, [matchId, buildChannel, fetchAndDeliver]) // Removed onData from deps - using ref instead
+
+  // AUTO mode: follow db changes next to the relay room. Never changes
+  // status/activeConnection (the relay stays the reported connection); only
+  // refetches. Re-subscribes (after a reconnect) refetch too, so a tablet that
+  // was offline catches up without waiting for the next rally.
+  // `attempt` counts the uuid lookups that found nothing (see dbWatchRetryDelay).
+  const watchDbChangesAlongside = useCallback(async (attempt = 0) => {
+    if (!supabase || !matchId) return
+    let uuid = null
+    try {
+      const { data } = await apiFrom('matches').select('id').eq('external_id', matchId).maybeSingle()
+      uuid = data?.id || null
+    } catch { /* LAN relay without /api/db: the relay path carries on */ }
+    if (!isMountedRef.current) return
+    const onChange = (payload) => {
+      if (!isMountedRef.current) return
+      setLastUpdate(Date.now())
+      if (payload?.table === 'matches' && payload?.eventType === 'DELETE') {
+        if (onDeletedRef.current) onDeletedRef.current()
+        return
+      }
+      if (payload?.table === 'match_live_state') deliverLiveStateRow(payload?.new)
+      scheduleRefetch('db change', { relayCovers: true })
+    }
+    const channel = supabase.channel(`match-db-${matchId}-${Date.now()}`)
+    if (uuid) {
+      for (const table of ['events', 'sets', 'match_live_state']) {
+        channel.on('postgres_changes', { event: '*', schema: 'public', table, filter: `match_id=eq.${uuid}` }, onChange)
+      }
+    }
+    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'matches', filter: `external_id=eq.${matchId}` }, onChange)
+    let unsupported = false
+    channel.subscribe((s, err) => {
+      if (!isMountedRef.current) return
+      if (s === 'SUBSCRIBED') scheduleRefetch('db subscribed')
+      // This server has no live db stream (a LAN relay): stop looking
+      if (s === 'CHANNEL_ERROR' && err?.code === 'unsupported') {
+        unsupported = true
+        if (uuidRetryRef.current && secondaryChannelRef.current === channel) {
+          clearTimeout(uuidRetryRef.current)
+          uuidRetryRef.current = null
+        }
+      }
+    })
+    if (secondaryChannelRef.current) {
+      try { supabase.removeChannel(secondaryChannelRef.current) } catch { /* ignore */ }
+    }
+    secondaryChannelRef.current = channel
+    // The match may reach the database only after the tablet connected: look
+    // again, backing off (and at the slowest pace while the relay room delivers)
+    if (!uuid && !unsupported) {
+      const relayLive = Date.now() - lastPushAtRef.current < DB_WATCH_RETRY_MAX_MS
+      if (uuidRetryRef.current) clearTimeout(uuidRetryRef.current)
+      uuidRetryRef.current = setTimeout(() => {
+        uuidRetryRef.current = null
+        if (isMountedRef.current && secondaryChannelRef.current === channel && !unsupported) watchDbChangesAlongside(attempt + 1)
+      }, relayLive ? DB_WATCH_RETRY_MAX_MS : dbWatchRetryDelay(attempt))
+    }
+  }, [matchId, scheduleRefetch, deliverLiveStateRow])
+
+  // Connect to WebSocket
+  const connectWebSocket = useCallback(() => {
+    if (!matchId) return false
+
+    try {
+      setStatus(CONNECTION_STATUS.CONNECTING)
+      console.log('[RealtimeConnection] Connecting to WebSocket for match:', matchId)
+
+      setScorerPresent(null)
+      const unsubscribe = subscribeToMatchData(matchId, (data) => {
+        if (!isMountedRef.current) return
+        if (data && typeof data._scorerPresence === 'boolean') {
+          setScorerPresent(data._scorerPresence)
+          return
+        }
+        setLastUpdate(Date.now())
+
+        // Check if this is an action
+        if (data && data._action) {
+          if (onActionRef.current) {
+            // with the scorer's clock when it sent the action: a countdown
+            // it starts runs on the receiver's own clock (utils/countdownClock)
+            onActionRef.current(data._action, data._actionData, { sentAt: data._scoreboardTimestamp })
+          }
+        } else if (data && data._accessDenied) {
+          if (onAccessLostRef.current) onAccessLostRef.current(data._accessDenied)
+        } else if (data && data.match) {
+          lastPushAtRef.current = Date.now()
+          if (data.events !== lastBundleEventsRef.current) {
+            lastBundleEventsRef.current = data.events
+            lastBundleAtRef.current = lastPushAtRef.current
+          }
+          deliverData({ success: true, ...data })
+        }
+      })
+
+      wsUnsubscribeRef.current = unsubscribe
+      setStatus(CONNECTION_STATUS.CONNECTED)
+      setActiveConnection('websocket')
+      setError(null)
+      console.log('[RealtimeConnection] Connected to WebSocket')
+      return true
+    } catch (err) {
+      console.error('[RealtimeConnection] WebSocket connection error:', err)
+      setError(err.message)
+      return false
+    }
+  }, [matchId, deliverData]) // Removed onData, onAction from deps - using refs instead
+
+  // Switch connection type
+  const switchConnection = useCallback((newType) => {
+    console.log('[RealtimeConnection] Switching connection to:', newType)
+    setConnectionType(newType)
+    // Save preference to localStorage
+    try {
+      localStorage.setItem('preferredConnection', newType)
+    } catch (e) {}
+  }, [])
+
+  // Force reconnect - will trigger effect by changing a state
+  const reconnect = useCallback(() => {
+    console.log('[RealtimeConnection] Force reconnecting...')
+    // Reset connecting flag and trigger reconnection
+    isConnectingRef.current = false
+    cleanup()
+    // Small delay then trigger by toggling enabled state would be complex
+    // Instead, just call the connect functions directly
+    if (!matchId) return
+
+    const doReconnect = async () => {
+      isConnectingRef.current = true
+      try {
+        if (connectionType === CONNECTION_TYPES.SUPABASE) {
+          const success = await connectSupabase()
+          if (!success) setStatus(CONNECTION_STATUS.ERROR)
+        } else if (connectionType === CONNECTION_TYPES.WEBSOCKET) {
+          const success = connectWebSocket()
+          if (!success) setStatus(CONNECTION_STATUS.ERROR)
+        } else {
+          // AUTO mode: WebSocket first, Supabase fallback
+          const wsSuccess = connectWebSocket()
+          if (!wsSuccess) {
+            const supabaseSuccess = await connectSupabase()
+            if (supabaseSuccess) {
+              setStatus(CONNECTION_STATUS.FALLBACK)
+            } else {
+              setStatus(CONNECTION_STATUS.ERROR)
+            }
+          } else if (watchDbChanges) {
+            watchDbChangesAlongside()
+          }
+        }
+      } finally {
+        isConnectingRef.current = false
+      }
+    }
+    doReconnect()
+  }, [matchId, connectionType, cleanup, connectSupabase, connectWebSocket, watchDbChanges, watchDbChangesAlongside])
+
+  // Load saved preference on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('preferredConnection')
+      if (saved && Object.values(CONNECTION_TYPES).includes(saved)) {
+        setConnectionType(saved)
+      }
+    } catch (e) {}
+  }, [])
+
+  // Connect when key dependencies change (not callback refs)
+  useEffect(() => {
+    // Prevent multiple simultaneous connections
+    if (isConnectingRef.current) return
+
+    isMountedRef.current = true
+
+    const doConnect = async () => {
+      if (!enabled || !matchId) return
+
+      isConnectingRef.current = true
+      cleanup()
+
+      const type = connectionType
+
+      try {
+        if (type === CONNECTION_TYPES.SUPABASE) {
+          const success = await connectSupabase()
+          if (!success) {
+            setStatus(CONNECTION_STATUS.ERROR)
+          }
+        } else if (type === CONNECTION_TYPES.WEBSOCKET) {
+          const success = connectWebSocket()
+          if (!success) {
+            setStatus(CONNECTION_STATUS.ERROR)
+          }
+        } else {
+          // Auto mode: WebSocket first, Supabase fallback
+          // 1. Try WebSocket first (primary — fastest, sub-100ms)
+          // 2. If WebSocket fails, fall back to Supabase Realtime
+          // 3. If both fail, go offline
+          const wsSuccess = connectWebSocket()
+          if (wsSuccess && watchDbChanges) watchDbChangesAlongside()
+          if (!wsSuccess) {
+            console.log('[RealtimeConnection] WebSocket failed, trying Supabase fallback')
+            const supabaseSuccess = await connectSupabase()
+            if (supabaseSuccess) {
+              setStatus(CONNECTION_STATUS.FALLBACK)
+            } else {
+              console.warn('[RealtimeConnection] Both WebSocket and Supabase failed, going offline')
+              setStatus(CONNECTION_STATUS.OFFLINE)
+              setActiveConnection(null)
+            }
+          }
+        }
+      } finally {
+        isConnectingRef.current = false
+      }
+    }
+
+    doConnect()
+
+    return () => {
+      isMountedRef.current = false
+      isConnectingRef.current = false
+      cleanup()
+    }
+  }, [matchId, enabled, connectionType, watchDbChanges]) // Only core dependencies, not callbacks
+
+  // The support diagnostics (utils/diagnosticsInfo): this tablet's connection
+  useEffect(() => {
+    setDiagnosticsInfo('realtime', {
+      status,
+      connectionType,
+      activeConnection,
+      enabled,
+      matchId: matchId == null ? null : String(matchId),
+      error: error ? String(error?.message || error).slice(0, 200) : null,
+      lastUpdate: lastUpdate instanceof Date ? lastUpdate.getTime() : lastUpdate
+    })
+  }, [status, connectionType, activeConnection, enabled, matchId, error, lastUpdate])
+  useEffect(() => () => setDiagnosticsInfo('realtime', null), [])
+
+  return {
+    // State
+    connectionType,
+    activeConnection,
+    status,
+    error,
+    lastUpdate,
+    scorerPresent,
+
+    // Computed
+    isConnected: status === CONNECTION_STATUS.CONNECTED || status === CONNECTION_STATUS.FALLBACK,
+    isSupabase: activeConnection === 'supabase',
+    isWebSocket: activeConnection === 'websocket',
+    isFallback: status === CONNECTION_STATUS.FALLBACK,
+    isOffline: status === CONNECTION_STATUS.OFFLINE,
+
+    // Actions
+    switchConnection,
+    reconnect,
+    setConnectionType: switchConnection
+  }
+}
+
+/**
+ * Which tablets the relay sees watching a match (scorer side): polls
+ * /api/server/connections on the app's backend. The old status read heartbeat
+ * fields nothing on the scorer device writes, so it always said "disconnected".
+ * A poll with the same tablets as the last one sets no state (each answer is
+ * a new object, and its holder rendered again every 10 s for nothing).
+ * `paused` (the Android in-app view covers the screen) only stops the poll:
+ * what was seen stays, and the relay is asked again at once on resume.
+ * @param {string|null} matchKey - relay room key (seed_key)
+ * @param {object|null} match - scorer's match (connection flags)
+ * @returns {{ connections: object|null, referee: number, benchHome: number, benchAway: number, watchers: number, reachable: boolean }}
+ */
+export function useRelayTablets(matchKey, match, { enabled = true, intervalMs = 10000, paused = false } = {}) {
+  const [connections, setConnections] = useState(null)
+  // What the callers read of `connections`: whether there is an answer, and
+  // its clients (summarizeRelayTablets, the Connect dialog's roleStatus)
+  const shownRef = useRef(null)
+  const show = useCallback((result) => {
+    const seen = result ? JSON.stringify(result.clients ?? null) : null
+    if (seen === shownRef.current) return
+    shownRef.current = seen
+    setConnections(result)
+  }, [])
+
+  useEffect(() => {
+    if (!enabled || !matchKey) {
+      show(null)
+      return
+    }
+    if (paused) return
+    let cancelled = false
+    const load = async () => {
+      const result = await fetchRelayConnections(matchKey)
+      if (!cancelled) show(result)
+    }
+    load()
+    const timer = setInterval(load, intervalMs)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [matchKey, enabled, intervalMs, paused, show])
+
+  const homeEnabled = match?.homeTeamConnectionEnabled === true
+  const awayEnabled = match?.awayTeamConnectionEnabled === true
+  return useMemo(() => ({
+    connections,
+    reachable: !!connections,
+    ...summarizeRelayTablets(connections, matchKey, { homeTeamConnectionEnabled: homeEnabled, awayTeamConnectionEnabled: awayEnabled })
+  }), [connections, matchKey, homeEnabled, awayEnabled])
+}
+
+export default useRealtimeConnection

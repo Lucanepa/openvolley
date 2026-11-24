@@ -1,0 +1,6 @@
+OpenVolley 2.4.16
+- A match continued on another device moves scoring there; the first device is told and stops.
+- Phone scoring: libero, captain and substitute marks, serve number, times in the log, clearer counters.
+- Phone: dialogs centred, keyboard no longer pushes the screen up, line-up fits.
+- Easier rosters, coin toss and schedule; restore preview; My matches opens the scoresheet.
+- Scoresheet: unused and forfeited sets left blank.

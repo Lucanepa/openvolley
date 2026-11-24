@@ -1,0 +1,1577 @@
+/**
+ * pgQuery — the Postgres replacement for the Supabase/PostgREST calls behind
+ * POST /api/db.
+ *
+ * It accepts exactly what `frontend/src/lib/apiClient.js` sends today
+ *   { table, action: select|insert|update|upsert|delete,
+ *     params: { columns, filters:[{type,column,value}], order:[{column,ascending,nullsFirst}],
+ *               limit, single, maybeSingle, count, head, onConflict, data, returning } }
+ * and answers with the same shape as before: { data, error, count }.
+ *
+ * Safety model (see the migration plan, section 4 Phase 2):
+ * - Every value is a bind parameter. Identifiers are never taken from the
+ *   request as text: each one must be a plain identifier that exists in the
+ *   catalog, which is loaded lazily from information_schema (and retried with
+ *   backoff while the database is down).
+ * - Tables must be on the allowlist. Per-table secret columns can never be
+ *   selected, returned, filtered, ordered on or used as an upsert target, also
+ *   not through aliases, JSON paths or casts. A select naming a secret column
+ *   silently leaves it out (that is what the redacting proxy returned before).
+ * - Output is built with json_agg, which is how PostgREST serialises rows.
+ * - `update` on the configured JSON columns of `matches` merges objects on the
+ *   server, atomically: col = col || $value.
+ * - sets/events: every external_id must name its own match (childMatchKey:
+ *   `<match external_id>:...`, never a match whose external_id is only a
+ *   prefix of it), and update/delete must be scoped to one match. An upsert
+ *   never overwrites or moves a conflicting row of another match. db/032
+ *   keeps the external_id of a match with children fixed (SQLSTATE OVI01 ->
+ *   409 OV_MATCH_ID_LOCKED), so their ids keep naming it.
+ * - Writes need X-OV-Proto >= 2 (426 otherwise).
+ * - opts.matchOwner.testOnly (accounts that are not approved scorers): only
+ *   test matches and their children may be written (403 OV_SCORER_REQUIRED).
+ *   opts.matchOwner.testOnlySports narrows that to the sports the account
+ *   cannot score in (db/012): the sport is the ROW's (matches.sport_type of
+ *   the payload for inserts, of the stored match for updates, and of the
+ *   parent match for sets / events / live state). db/012 keeps a match's
+ *   sport fixed (SQLSTATE OVS01 -> 409 OV_SPORT_LOCKED).
+ * - opts.actorId: the acting account, handed to the db/007 triggers as the
+ *   ov.user_id setting of the write's transaction (closed_by).
+ * - db/007's closed-match lock (SQLSTATE OVC01) and official-game index come
+ *   back as 409 OV_MATCH_CLOSED / OV_GAME_TAKEN (cfg.errorMap).
+ * - `internal: true` (trusted server code only) skips redaction, the secret
+ *   bans and the protocol gate.
+ * - cfg.nullColumns (server.js: the dates of birth, db/048 / db/049): columns
+ *   that read as NULL (named or with '*') and are never written, filtered,
+ *   ordered on or used as an upsert target, whether the table still has them
+ *   or not. The real column is never read, so dropping it (db/049) changes
+ *   nothing for a caller, also while this process's catalog still lists it;
+ *   the installed apps that still select them keep working.
+ *
+ * Usage (server.js loads this lazily, only when DATABASE_URL is set):
+ *   const { createPgQuery } = await import('./lib/pgQuery.js')
+ *   const db = createPgQuery({ connectionString: process.env.DATABASE_URL, secretColumns: SECRET_COLUMNS })
+ *   const r = await db.runQuery({ table, action, params }, { proto: req.headers['x-ov-proto'] })
+ *   res.writeHead(r.status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(r.body))
+ */
+
+import pg from 'pg'
+import { connectClient } from './pgClient.js'
+
+// ---------------------------------------------------------------------------
+// Defaults (mirror server.js / frontend matchRepository.js as of 2026-10)
+// ---------------------------------------------------------------------------
+
+export const DEFAULT_CONFIG = Object.freeze({
+  schema: 'public',
+  allowedTables: ['matches', 'sets', 'events', 'match_live_state', 'profiles', 'referee_database',
+    'user_matches', 'svrz_games', 'beach_competition_matches'],
+  // Never returned, filtered, ordered or used as conflict target (unless internal).
+  // Names that do not exist in the catalog are simply ignored.
+  secretColumns: {
+    matches: ['game_pin', 'connection_pins'],
+    events: ['game_pin'],
+    match_live_state: ['game_pin', 'connection_pins']
+  },
+  // Read as NULL, never written, filtered, ordered on or used as conflict
+  // target, whether the table has them or not (internal callers too).
+  nullColumns: {},
+  // `update` of these columns merges a JSON object into the stored object.
+  // Server copy of JSONB_COLUMNS (frontend/src/db/matchRepository.js:24).
+  mergeJsonColumns: {
+    matches: ['connections', 'connection_pins', 'team_a', 'team_b', 'officials', 'coin_toss', 'set_results', 'sanctions']
+  },
+  // Child tables whose external_id must name the parent's external_id (childMatchKey).
+  scopedChildren: {
+    sets: { fk: 'match_id', ext: 'external_id' },
+    events: { fk: 'match_id', ext: 'external_id' }
+  },
+  scopeParent: { table: 'matches', key: 'id', ext: 'external_id' },
+  // The only embedded selects that are understood. Matched after removing whitespace.
+  embeds: {
+    match_live_state: [{
+      select: '*, matches!match_live_state_match_id_fkey_cascade(set_results)',
+      as: 'matches',
+      table: 'matches',
+      localColumn: 'match_id',
+      foreignColumn: 'id',
+      columns: ['set_results']
+    }]
+  },
+  // Match ownership (opts.matchOwner): who may write a match and its children.
+  // Owned = parent.ownerColumn is the caller, or an editors row names the
+  // caller. Applied only when the caller passes opts.matchOwner (server.js
+  // does for every non-admin session); never for other tables.
+  ownership: {
+    parent: 'matches',
+    key: 'id',
+    ownerColumn: 'created_by',
+    editors: { table: 'match_editors', matchColumn: 'match_id', userColumn: 'user_id' },
+    children: { sets: 'match_id', events: 'match_id', match_live_state: 'match_id' }
+  },
+  // Tables whose writes produce `changes` (for the realtime write-through).
+  changeTables: ['matches', 'sets', 'events', 'match_live_state'],
+  // Columns the server keeps current: a client value is dropped (a device
+  // clock can be hours off), every update / upsert-update sets now(), an
+  // insert keeps the column default. db/006_matches_updated_at.sql adds the
+  // same as a trigger. Not match_live_state: its client-set updated_at orders
+  // the realtime feed (lib/realtimeHub.js).
+  serverTimestamps: { matches: 'updated_at', sets: 'updated_at' },
+  // Postgres errors with a meaning for the client (db/007). Checked before the
+  // generic SQLSTATE answer; never with details (a 23505 DETAIL quotes values).
+  errorMap: {
+    sqlstate: {
+      OVC01: { status: 409, code: 'OV_MATCH_CLOSED', message: 'This match is closed. Only an admin can reopen it.' },
+      // db/039: a match that was closed once is an official record, also after a
+      // reopen. Not OV_MATCH_CLOSED: the app keeps syncing the match's other writes.
+      OVC02: { status: 409, code: 'OV_MATCH_RECORD', message: 'This match was closed once. Only an admin can delete it, make it a test match or move it to another game.' },
+      // db/011: match_approvals rows are append-only (only a bug reaches it)
+      OVA01: { status: 409, code: 'OV_APPROVAL_IMMUTABLE', message: 'An approval cannot be changed.' },
+      // db/012: matches.sport_type is fixed after insert
+      OVS01: { status: 409, code: 'OV_SPORT_LOCKED', message: 'The sport of a match cannot be changed.' },
+      // db/032: matches.external_id is fixed once the match has sets, events or revisions
+      OVI01: { status: 409, code: 'OV_MATCH_ID_LOCKED', message: 'The id of a match with sets or events cannot be changed.' },
+      // db/018: a scorer scores the home games of its own club(s) (lib/clubs.js)
+      OVL01: { status: 403, code: 'OV_CLUB_REQUIRED', message: 'Your account has no club yet. An admin adds it before you can score official games.' },
+      OVL02: { status: 403, code: 'OV_NOT_YOUR_CLUB', message: 'You can score the home games of your club only.' },
+      OVL03: { status: 403, code: 'OV_GAME_NOT_IN_SCHEDULE', message: 'This game is not in the VolleyManager schedule, so its home team is unknown.' }
+    },
+    constraint: {
+      matches_official_game_uidx: { status: 409, code: 'OV_GAME_TAKEN', message: 'This official game is already scored by another account.' },
+      // db/039: one set row per set number. Before it a second local id of a
+      // set stored a duplicate row; now it is refused, and logged by its code.
+      sets_match_index_uidx: { status: 409, code: 'OV_SET_NUMBER_TAKEN', message: 'This match already has a set with this number.' }
+    }
+  },
+  // The column that marks a test match (opts.matchOwner.testOnly).
+  testColumn: 'test',
+  // The sport of a match (opts.matchOwner.testOnlySports): 'beach', else indoor.
+  sportColumn: 'sport_type',
+  maxRows: 1000,
+  minWriteProto: 2,
+  statementTimeoutMs: 10000,
+  poolMax: 5,
+  catalogRetryInitialMs: 1000,
+  catalogRetryMaxMs: 30000,
+  catalogRefreshMinMs: 60000
+})
+
+const ACTIONS = ['select', 'insert', 'update', 'upsert', 'delete']
+const FILTER_TYPES = ['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'like', 'ilike', 'in', 'contains', 'is']
+const COMPARE_OPS = { eq: '=', neq: '<>', gt: '>', gte: '>=', lt: '<', lte: '<=' }
+const IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]{0,62}$/
+const COLUMN_REF_RE = /^([A-Za-z_][A-Za-z0-9_]{0,62})(?:->>([a-z0-9_]{1,63}))?$/
+const GENERIC_MESSAGE = 'Database operation failed'
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const SCORER_REQUIRED_MESSAGE = 'Your account is not approved for official matches yet'
+const DB_ERROR_INVALIDATES_CATALOG = new Set(['42P01', '42703'])
+const SPORTS = ['indoor', 'beach']
+const sportOfValue = (v) => (v === 'beach' ? 'beach' : 'indoor')
+// The backup form of older apps' set / event ids (no ':' in them)
+const LEGACY_CHILD_ID_RE = /^(.+)_(?:set|event)_[^_]+$/s
+
+/**
+ * The match external_id a set / event id names, or null. The text before its
+ * first ':' (`${seed}:s:${n}` / `${seed}:e:${n}` from syncIds.js; a seed key
+ * never holds ':'), and for an id without ':' the backup form of older apps,
+ * `${externalId}_set_${n}` / `${externalId}_event_${n}` (OpenBeach's
+ * backupManager still sends it). Every id names one match at most: a match
+ * whose external_id is merely a prefix of another's ids ('match',
+ * 'match_<ms>', '<id>:e') owns none of them, and a match whose external_id
+ * holds ':' owns no set or event.
+ * db/032_match_id_scoping.sql has the same rule in SQL.
+ */
+export function childMatchKey (ext) {
+  if (typeof ext !== 'string' || ext === '') return null
+  const i = ext.indexOf(':')
+  if (i >= 0) return i > 0 && i < ext.length - 1 ? ext.slice(0, i) : null
+  const m = LEGACY_CHILD_ID_RE.exec(ext)
+  return m ? m[1] : null
+}
+
+/**
+ * The sports in which opts.matchOwner may write test matches only:
+ * testOnlySports when given (the sports the account cannot score in), else
+ * every sport for testOnly: true. An admin is never limited.
+ */
+function testOnlySportsOf (mo) {
+  if (!mo || mo.admin === true) return []
+  if (Array.isArray(mo.testOnlySports)) return SPORTS.filter(s => mo.testOnlySports.includes(s))
+  return mo.testOnly === true ? [...SPORTS] : []
+}
+
+// ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
+
+export class PgQueryError extends Error {
+  constructor (status, code, details, message = GENERIC_MESSAGE) {
+    super(message)
+    this.status = status
+    this.code = code
+    this.details = details
+  }
+}
+
+function fail (code, details, status = 400) {
+  throw new PgQueryError(status, code, details)
+}
+
+function safeText (v) {
+  return String(v).replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, 120)
+}
+
+// ---------------------------------------------------------------------------
+// Pure helpers (exported for unit tests)
+// ---------------------------------------------------------------------------
+
+/** Double-quote an identifier that already passed IDENT_RE and the catalog. */
+export function quoteIdent (name) {
+  return '"' + String(name).replace(/"/g, '""') + '"'
+}
+
+/** Lower-cased identifier-like tokens of a raw reference ("x:game_pin::text" -> x, game_pin, text). */
+function tokensOf (raw) {
+  return String(raw).toLowerCase().split(/[^a-z0-9_]+/).filter(Boolean)
+}
+
+/** True when any token of `raw` names a secret column (catches aliases, casts, JSON paths, quoting). */
+export function mentionsSecret (raw, secretSet) {
+  if (!secretSet || secretSet.size === 0) return false
+  return tokensOf(raw).some(t => secretSet.has(t))
+}
+
+/** Parse `col` or `col->>key`. Returns null when the shape is not allowed. */
+export function parseColumnRef (raw) {
+  if (typeof raw !== 'string') return null
+  const m = COLUMN_REF_RE.exec(raw.trim())
+  if (!m) return null
+  return { column: m[1], jsonKey: m[2] || null }
+}
+
+/** Split a PostgREST-style column list. Returns ['*'] for empty input. Throws on bad shapes. */
+export function parseColumnList (raw, { what = 'select' } = {}) {
+  if (raw == null || raw === true) return ['*']
+  if (typeof raw !== 'string' || raw.length > 4000) fail('OV_INVALID_SELECT', `${what} must be a string`)
+  const parts = raw.split(',').map(s => s.trim())
+  if (parts.length === 1 && parts[0] === '') return ['*']
+  for (const p of parts) {
+    if (p !== '*' && !IDENT_RE.test(p)) fail('OV_INVALID_SELECT', `unsupported ${what} item "${safeText(p)}"`)
+  }
+  return parts
+}
+
+// Transient SQLSTATEs: the same request can succeed when retried, so they are
+// 5xx (the sync queue keeps 5xx jobs queued and drops 4xx ones).
+const RETRYABLE_SQLSTATES = new Set([
+  '40001', // serialization_failure
+  '40P01', // deadlock_detected
+  '55P03', // lock_not_available
+  '57P01', // admin_shutdown
+  '57P02', // crash_shutdown
+  '57P03', // cannot_connect_now
+  '53300' // too_many_connections
+])
+
+/** HTTP status for a Postgres SQLSTATE: 504 timeout, 503 transient, 400 otherwise. */
+export function sqlstateStatus (code) {
+  if (code === '57014') return 504
+  if (RETRYABLE_SQLSTATES.has(code) || String(code).startsWith('08')) return 503
+  return 400
+}
+
+function isScalar (v) {
+  return typeof v === 'string' || typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v))
+}
+
+function isPlainObject (v) {
+  return v !== null && typeof v === 'object' && !Array.isArray(v)
+}
+
+// ---------------------------------------------------------------------------
+// Factory
+// ---------------------------------------------------------------------------
+
+/**
+ * @param {object} options
+ * @param {string} [options.connectionString]  DATABASE_URL
+ * @param {pg.Pool} [options.pool]             existing pool (tests); must set TimeZone=UTC itself
+ * @param {object} [options.logger]            console-like ({log, warn, error})
+ * plus any DEFAULT_CONFIG key to override.
+ */
+export function createPgQuery (options = {}) {
+  const cfg = { ...DEFAULT_CONFIG, ...options }
+  const log = options.logger || console
+  for (const t of cfg.allowedTables) {
+    if (!IDENT_RE.test(t)) throw new Error(`pgQuery: invalid table name in allowedTables: ${t}`)
+  }
+  if (!IDENT_RE.test(cfg.schema)) throw new Error('pgQuery: invalid schema name')
+
+  const pool = options.pool || new pg.Pool({
+    connectionString: cfg.connectionString,
+    max: cfg.poolMax,
+    // Every connection serialises timestamps as UTC (like Supabase) and has a statement timeout.
+    options: `-c TimeZone=UTC -c statement_timeout=${Number(cfg.statementTimeoutMs) | 0}`,
+    connectionTimeoutMillis: 5000,
+    idleTimeoutMillis: 30000
+  })
+  const ownsPool = !options.pool
+  // An idle client losing its connection must not crash the process.
+  pool.on('error', (err) => log.error('[pgQuery] idle client error:', err.message))
+
+  const secretSets = new Map()
+  for (const [table, cols] of Object.entries(cfg.secretColumns || {})) {
+    secretSets.set(table, new Set(cols.map(c => String(c).toLowerCase())))
+  }
+  const NO_SECRETS = new Set()
+  const secretsFor = (table, internal) => (internal ? NO_SECRETS : (secretSets.get(table) || NO_SECRETS))
+  const nullSets = new Map()
+  for (const [table, cols] of Object.entries(cfg.nullColumns || {})) {
+    const set = new Set()
+    for (const c of cols) {
+      if (!IDENT_RE.test(c)) throw new Error(`pgQuery: invalid column name in nullColumns.${table}: ${c}`)
+      set.add(c)
+    }
+    nullSets.set(table, set)
+  }
+  const NO_NULLS = new Set()
+  const nullsFor = (table) => nullSets.get(table) || NO_NULLS
+
+  // ------------------------------------------------------------------ catalog
+  let catalog = null
+  let catalogPromise = null
+  let catalogError = null
+  let catalogLoadedAt = null
+  let retryDelay = cfg.catalogRetryInitialMs
+  let nextAttemptAt = 0
+
+  async function loadCatalogNow () {
+    const cols = await pool.query(
+      `SELECT isc.table_name, isc.column_name, isc.data_type, isc.udt_name,
+              format_type(a.atttypid, a.atttypmod) AS type_sql
+         FROM information_schema.columns isc
+         JOIN pg_catalog.pg_namespace n ON n.nspname = isc.table_schema
+         JOIN pg_catalog.pg_class c ON c.relnamespace = n.oid AND c.relname = isc.table_name
+         JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid AND a.attname = isc.column_name
+        WHERE isc.table_schema = $1
+        ORDER BY isc.table_name, isc.ordinal_position`, [cfg.schema])
+    const pks = await pool.query(
+      `SELECT c.relname AS table_name, a.attname AS column_name
+         FROM pg_catalog.pg_index i
+         JOIN pg_catalog.pg_class c ON c.oid = i.indrelid
+         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+         JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid AND a.attnum = ANY(i.indkey)
+        WHERE n.nspname = $1 AND i.indisprimary
+        ORDER BY c.relname, array_position(i.indkey::int2[], a.attnum)`, [cfg.schema])
+    const tables = new Map()
+    for (const r of cols.rows) {
+      if (!IDENT_RE.test(r.table_name) || !IDENT_RE.test(r.column_name)) continue
+      let t = tables.get(r.table_name)
+      if (!t) { t = { name: r.table_name, columns: new Map(), order: [], pk: [] }; tables.set(r.table_name, t) }
+      t.columns.set(r.column_name, {
+        name: r.column_name,
+        dataType: r.data_type,
+        udtName: r.udt_name,
+        typeSql: r.type_sql,
+        isJson: r.data_type === 'json' || r.data_type === 'jsonb',
+        isArray: r.data_type === 'ARRAY'
+      })
+      t.order.push(r.column_name)
+    }
+    for (const r of pks.rows) tables.get(r.table_name)?.pk.push(r.column_name)
+    return { tables, allowed: cfg.allowedTables.filter(t => tables.has(t)) }
+  }
+
+  /** Load the catalog on first use; on failure retry with backoff (1, 2, 4 ... 30 s). */
+  async function ensureCatalog () {
+    if (catalog) return catalog
+    if (catalogPromise) return catalogPromise
+    if (Date.now() < nextAttemptAt) {
+      throw new PgQueryError(503, 'OV_DB_UNAVAILABLE', 'catalog not loaded yet', 'Database unavailable')
+    }
+    catalogPromise = (async () => {
+      try {
+        const c = await loadCatalogNow()
+        if (c.allowed.length === 0) throw new Error(`no allowlisted tables in schema ${cfg.schema}`)
+        catalog = c
+        catalogError = null
+        catalogLoadedAt = new Date().toISOString()
+        lastRefreshAt = Date.now()
+        retryDelay = cfg.catalogRetryInitialMs
+        log.log?.(`[pgQuery] catalog loaded: ${c.tables.size} tables, ${c.allowed.length} allowed`)
+        return c
+      } catch (err) {
+        catalogError = err.message
+        nextAttemptAt = Date.now() + retryDelay
+        log.warn?.(`[pgQuery] catalog load failed (retry in ${retryDelay} ms):`, err.message)
+        retryDelay = Math.min(retryDelay * 2, cfg.catalogRetryMaxMs)
+        throw new PgQueryError(503, 'OV_DB_UNAVAILABLE', 'catalog not loaded yet', 'Database unavailable')
+      } finally {
+        catalogPromise = null
+      }
+    })()
+    return catalogPromise
+  }
+
+  /** Drop the catalog; the next request reloads it (503 while the database is down). */
+  function invalidateCatalog () {
+    catalog = null
+    nextAttemptAt = 0
+  }
+
+  // Background refresh after an unknown table/column (e.g. a column added after
+  // startup). The old catalog keeps serving until the new one is loaded, and a
+  // refresh runs at most once per catalogRefreshMinMs, so clients cannot force reloads.
+  let lastRefreshAt = 0
+  let refreshPromise = null
+  function scheduleCatalogRefresh () {
+    if (!catalog || refreshPromise || Date.now() - lastRefreshAt < cfg.catalogRefreshMinMs) return
+    lastRefreshAt = Date.now()
+    refreshPromise = loadCatalogNow()
+      .then((c) => {
+        if (c.allowed.length === 0) return
+        catalog = c
+        catalogLoadedAt = new Date().toISOString()
+      })
+      .catch((err) => log.warn?.('[pgQuery] catalog refresh failed:', err.message))
+      .finally(() => { refreshPromise = null })
+  }
+
+  function catalogStatus () {
+    return {
+      ok: !!catalog,
+      tables: catalog ? catalog.allowed.length : 0,
+      loadedAt: catalogLoadedAt,
+      error: catalog ? null : catalogError
+    }
+  }
+
+  /**
+   * The table as the catalog has it after a refresh (scheduleCatalogRefresh:
+   * at most once per catalogRefreshMinMs), for a write that names a column
+   * the loaded catalog lacks: a migration applied while the backend runs.
+   * Never throws; the table as it was when no newer catalog is there.
+   */
+  async function freshTableDef (t) {
+    scheduleCatalogRefresh()
+    if (refreshPromise) await refreshPromise
+    return catalog?.tables.get(t.name) || t
+  }
+
+  // ---------------------------------------------------- dropped write columns
+  // A write naming a column this database does not have (an app newer than
+  // the schema: its migration not applied yet, the web app deployed first)
+  // is written without that column. Refusing the row (PGRST204) held a match
+  // insert back, and with it every later write of the match, until the
+  // migration ran. Counted per table.column (droppedColumns(), for /health)
+  // and logged at most once a minute per column. Filters, selects, order,
+  // returning and onConflict still refuse an unknown column, and so does a
+  // row with no column of the table left.
+  const DROPPED_LOG_MS = 60000
+  const DROPPED_KEYS_MAX = 50
+  let droppedTotal = 0
+  const droppedByColumn = new Map() // 'table.column' -> { count, loggedAt }
+  const droppedOverflow = { count: 0, loggedAt: 0 } // the columns past DROPPED_KEYS_MAX
+  function noteDroppedColumns (table, names) {
+    const now = Date.now()
+    for (const name of names) {
+      droppedTotal += 1
+      const key = `${table}.${name}`
+      let entry = droppedByColumn.get(key)
+      if (!entry && droppedByColumn.size < DROPPED_KEYS_MAX) {
+        entry = { count: 0, loggedAt: 0 }
+        droppedByColumn.set(key, entry)
+      }
+      entry ??= droppedOverflow
+      entry.count += 1
+      if (now - entry.loggedAt >= DROPPED_LOG_MS || now < entry.loggedAt) {
+        entry.loggedAt = now
+        log.warn?.(`[pgQuery] unknown column dropped from a write on ${table}: ${safeText(name)} (${entry.count} so far; a migration not applied?)`)
+      }
+    }
+  }
+
+  /** Columns dropped from writes since start: { total, columns: { 'table.column': n } }. */
+  function droppedColumns () {
+    const columns = {}
+    for (const [key, entry] of droppedByColumn) columns[key] = entry.count
+    if (droppedOverflow.count) columns['(other)'] = droppedOverflow.count
+    return { total: droppedTotal, columns }
+  }
+
+  // ------------------------------------------------------------ SQL helpers
+  const qTable = (name) => `${quoteIdent(cfg.schema)}.${quoteIdent(name)}`
+
+  function tableDef (cat, table) {
+    if (typeof table !== 'string' || !cfg.allowedTables.includes(table)) fail('OV_TABLE_NOT_ALLOWED', 'table not allowed')
+    const t = cat.tables.get(table)
+    if (!t) {
+      scheduleCatalogRefresh()
+      fail('42P01', `relation "${table}" does not exist`)
+    }
+    return t
+  }
+
+  function requireColumn (t, name, what = 'column') {
+    if (typeof name !== 'string' || !IDENT_RE.test(name) || !t.columns.has(name)) {
+      log.warn?.(`[pgQuery] unknown ${what} on ${t.name}: ${safeText(name)}`)
+      if (typeof name === 'string' && IDENT_RE.test(name)) scheduleCatalogRefresh()
+      fail('PGRST204', `unknown ${what} "${safeText(name)}" on ${t.name}`)
+    }
+    return t.columns.get(name)
+  }
+
+  /** Resolve `col` / `col->>key` for filters and order. Secret references are refused. */
+  function resolveRef (t, raw, secrets, ctx) {
+    if (typeof raw !== 'string' || raw.length > 200) fail('OV_INVALID_FILTER', 'column must be a string')
+    if (mentionsSecret(raw, secrets)) fail('OV_SECRET_FILTER', 'secret column')
+    const ref = parseColumnRef(raw)
+    if (!ref) fail('OV_INVALID_FILTER', `unsupported column reference "${safeText(raw)}"`)
+    if (nullsFor(t.name).has(ref.column)) fail('OV_DOB_FILTER', `"${ref.column}" reads as NULL: no filter or order on it`)
+    const col = requireColumn(t, ref.column)
+    if (!ref.jsonKey) return { col, sql: `t.${quoteIdent(col.name)}`, isText: false }
+    if (!col.isJson) fail('OV_INVALID_FILTER', `"${col.name}" is not a JSON column`)
+    return { col, sql: `(t.${quoteIdent(col.name)} ->> ${ctx.p(ref.jsonKey)}::text)`, isText: true }
+  }
+
+  function buildFilter (t, f, secrets, ctx) {
+    if (!isPlainObject(f) || !FILTER_TYPES.includes(f.type)) fail('OV_INVALID_FILTER', 'unknown filter type')
+    const ref = resolveRef(t, f.column, secrets, ctx)
+    const v = f.value
+    if (COMPARE_OPS[f.type]) {
+      if (!isScalar(v)) fail('OV_INVALID_FILTER', `${f.type} needs a scalar value`)
+      return `${ref.sql} ${COMPARE_OPS[f.type]} ${ctx.p(v)}${ref.isText ? '::text' : ''}`
+    }
+    if (f.type === 'like' || f.type === 'ilike') {
+      if (typeof v !== 'string') fail('OV_INVALID_FILTER', `${f.type} needs a string`)
+      return `${ref.sql} ${f.type === 'like' ? 'LIKE' : 'ILIKE'} ${ctx.p(v.replace(/\*/g, '%'))}::text`
+    }
+    if (f.type === 'in') {
+      if (!Array.isArray(v) || v.length > 10000 || !v.every(isScalar)) fail('OV_INVALID_FILTER', 'in needs an array of scalars')
+      return `${ref.sql} = ANY(${ctx.p(v.map(x => (typeof x === 'string' ? x : String(x))))}${ref.isText ? '::text[]' : ''})`
+    }
+    if (f.type === 'is') {
+      const s = v === null ? 'null' : String(v).toLowerCase()
+      if (s === 'null') return `${ref.sql} IS NULL`
+      if (s === 'true') return `${ref.sql} IS TRUE`
+      if (s === 'false') return `${ref.sql} IS FALSE`
+      if (s === 'unknown') return `${ref.sql} IS UNKNOWN`
+      fail('OV_INVALID_FILTER', 'is needs null, true or false')
+    }
+    // contains
+    if (ref.isText) fail('OV_INVALID_FILTER', 'contains is not supported on a JSON path')
+    if (ref.col.isJson) {
+      let json
+      if (typeof v === 'string') {
+        try { JSON.parse(v) } catch { fail('OV_INVALID_FILTER', 'contains needs valid JSON') }
+        json = v
+      } else {
+        json = JSON.stringify(v)
+      }
+      if (json === undefined) fail('OV_INVALID_FILTER', 'contains needs a value')
+      return `${ref.sql}::jsonb @> ${ctx.p(json)}::jsonb`
+    }
+    if (ref.col.isArray) {
+      const arr = typeof v === 'string' ? safeJsonArray(v) : v
+      if (!Array.isArray(arr) || !arr.every(isScalar)) fail('OV_INVALID_FILTER', 'contains on an array column needs an array')
+      return `${ref.sql} @> ${ctx.p(arr.map(String))}`
+    }
+    fail('OV_INVALID_FILTER', 'contains needs a JSON or array column')
+  }
+
+  function safeJsonArray (s) {
+    try { return JSON.parse(s) } catch { return null }
+  }
+
+  /** WHERE clause plus the effective (client + forced) filter list. */
+  function buildWhere (t, params, secrets, ctx, scope) {
+    let clientFilters = params.filters ?? []
+    if (!Array.isArray(clientFilters) || clientFilters.length > 50) fail('OV_INVALID_FILTER', 'filters must be an array')
+    // Owner scoping: client filters on the scope column are ignored, the forced one wins.
+    if (scope) clientFilters = clientFilters.filter(f => !(isPlainObject(f) && f.column === scope.column))
+    const parts = clientFilters.map(f => buildFilter(t, f, secrets, ctx))
+    const filters = [...clientFilters]
+    if (scope) {
+      const forced = { type: 'eq', column: scope.column, value: scope.value }
+      parts.push(buildFilter(t, forced, NO_SECRETS, ctx))
+      filters.push(forced)
+    }
+    return { sql: parts.length ? ` WHERE ${parts.join(' AND ')}` : '', filters }
+  }
+
+  function buildOrder (t, params, secrets, ctx) {
+    if (params.order == null) return ''
+    const list = Array.isArray(params.order) ? params.order : [params.order]
+    if (list.length > 10) fail('OV_INVALID_ORDER', 'too many order terms')
+    const parts = list.map(o => {
+      if (!isPlainObject(o)) fail('OV_INVALID_ORDER', 'order must be {column, ascending}')
+      const ref = resolveRef(t, o.column, secrets, ctx)
+      let s = `${ref.sql} ${o.ascending === false ? 'DESC' : 'ASC'}`
+      if (o.nullsFirst === true) s += ' NULLS FIRST'
+      else if (o.nullsFirst === false) s += ' NULLS LAST'
+      return s
+    })
+    return parts.length ? ` ORDER BY ${parts.join(', ')}` : ''
+  }
+
+  // opts.maxRows comes from server code only (the request body cannot reach opts).
+  function effectiveLimit (params, opts) {
+    const cap = Number.isInteger(opts.maxRows) && opts.maxRows > 0 ? opts.maxRows : cfg.maxRows
+    if (params.limit == null) return cap
+    const n = Number(params.limit)
+    if (!Number.isInteger(n) || n < 0) fail('OV_INVALID_LIMIT', 'limit must be a non-negative integer')
+    return Math.min(n, cap)
+  }
+
+  /** Visible (selectable) column names of a table, catalog order. */
+  function visibleColumns (t, secrets) {
+    return t.order.filter(c => !secrets.has(c.toLowerCase()))
+  }
+
+  /**
+   * Columns for select/returning: '*' expands, secrets are dropped, unknown
+   * names fail. A null column (cfg.nullColumns) is one whether the table has
+   * it or not ('*' too: in its place while the table has it, else after the
+   * others); columnSql reads it as NULL.
+   */
+  function projection (t, raw, secrets, what) {
+    const items = parseColumnList(raw, { what })
+    const nulls = nullsFor(t.name)
+    const out = []
+    for (const item of items) {
+      const names = item === '*' ? [...visibleColumns(t, secrets), ...[...nulls].filter(c => !t.columns.has(c))] : [item]
+      for (const n of names) {
+        if (secrets.has(n.toLowerCase())) continue
+        if (!nulls.has(n)) requireColumn(t, n)
+        if (!out.includes(n)) out.push(n)
+      }
+    }
+    return out
+  }
+
+  /** The select list entry of column `c` of `t`: NULL for a null column (its value is never read). */
+  function columnSql (t, c) {
+    return nullsFor(t.name).has(c) ? `NULL AS ${quoteIdent(c)}` : `t.${quoteIdent(c)}`
+  }
+
+  function findEmbed (table, raw) {
+    if (typeof raw !== 'string' || !/[!(]/.test(raw)) return null
+    const norm = raw.replace(/\s+/g, '')
+    const spec = (cfg.embeds[table] || []).find(e => e.select.replace(/\s+/g, '') === norm)
+    if (!spec) fail('OV_INVALID_SELECT', 'embedded selects are not supported')
+    return spec
+  }
+
+  // ------------------------------------------------------------------ select
+  async function runSelect (cat, t, params, opts, ctx) {
+    const secrets = secretsFor(t.name, opts.internal)
+    const embed = findEmbed(t.name, params.columns)
+    const cols = projection(t, embed ? '*' : params.columns, secrets, 'select')
+    const selectParts = cols.map(c => columnSql(t, c))
+    let from = `${qTable(t.name)} AS t`
+    if (embed) {
+      const et = tableDef(cat, embed.table)
+      const esecrets = secretsFor(embed.table, opts.internal)
+      const fcol = requireColumn(et, embed.foreignColumn)
+      const lcol = requireColumn(t, embed.localColumn)
+      if (!IDENT_RE.test(embed.as)) throw new Error('pgQuery: invalid embed alias')
+      const pairs = embed.columns.map(c => {
+        if (esecrets.has(c.toLowerCase())) fail('OV_SECRET_FILTER', 'secret column in embed')
+        requireColumn(et, c)
+        return `${ctx.p(c)}::text, e.${quoteIdent(c)}`
+      })
+      from += ` LEFT JOIN ${qTable(et.name)} AS e ON e.${quoteIdent(fcol.name)} = t.${quoteIdent(lcol.name)}`
+      selectParts.push(`CASE WHEN e.${quoteIdent(fcol.name)} IS NULL THEN NULL ELSE json_build_object(${pairs.join(', ')}) END AS ${quoteIdent(embed.as)}`)
+    }
+    const where = buildWhere(t, params, secrets, ctx, opts.scope)
+    // Voided events (db/015: undone / deleted on the scoring device) are not
+    // part of the match. params.include_voided shows them: to an admin
+    // (opts.includeVoided 'all') and to the owner / editors of their match
+    // ('owned', with opts.readOwner); never anonymously.
+    if (t.name === 'events' && t.columns.has('voided_at')) {
+      const wantVoided = params.include_voided === true
+      let cond = 't."voided_at" IS NULL'
+      if (wantVoided && opts.includeVoided === 'all') cond = null
+      else if (wantVoided && opts.includeVoided === 'owned' && opts.readOwner) {
+        const ownedRow = readOwnedSql(cat, t, opts.readOwner, ctx)
+        if (ownedRow) cond = `(t."voided_at" IS NULL OR ${ownedRow})`
+      }
+      if (cond) where.sql += `${where.sql ? ' AND' : ' WHERE'} ${cond}`
+    }
+    // Read ownership (opts.readOwner): every row says whether the user owns
+    // its match (__owned), and with restrict only owned rows match at all.
+    const owned = readOwnedSql(cat, t, opts.readOwner, ctx)
+    if (owned) {
+      selectParts.push(`${owned} AS "__owned"`)
+      if (opts.readOwner.restrict) where.sql += `${where.sql ? ' AND' : ' WHERE'} ${owned}`
+    }
+    const order = buildOrder(t, params, secrets, ctx)
+    // A validated integer, inlined: an unused bind parameter (head:true) could not be typed.
+    const limit = String(effectiveLimit(params, opts))
+    const inner = `SELECT ${selectParts.join(', ')} FROM ${from}${where.sql}${order} LIMIT ${limit}`
+    const wantData = !params.head
+    const wantCount = !!params.count
+    // head: no rows, but the select list's bind parameters (__owned's user,
+    // an embed's keys) are still sent and must appear in the statement, else
+    // Postgres refuses it (08P01, or an untyped parameter). LIMIT 0 never
+    // runs the inner query; it only types its parameters.
+    const dataSql = wantData
+      ? `(SELECT coalesce(json_agg(q), '[]'::json) FROM (${inner}) q)`
+      : `(SELECT NULL::json FROM (${inner}) q LIMIT 0)`
+    // opts.countCap (server code only): at most that many rows are counted,
+    // so a caller without a session cannot make one request scan a whole
+    // table (count is then the smaller of the true count and the cap)
+    const countCap = Number.isInteger(opts.countCap) && opts.countCap > 0 ? opts.countCap : null
+    const countSql = !wantCount
+      ? 'NULL::bigint'
+      : countCap
+        ? `(SELECT count(*) FROM (SELECT 1 FROM ${qTable(t.name)} AS t${where.sql} LIMIT ${countCap}) AS c)`
+        : `(SELECT count(*) FROM ${qTable(t.name)} AS t${where.sql})`
+    const sql = `SELECT ${dataSql} AS data, ${countSql} AS count`
+    // opts.statementTimeoutMs (server code only): a shorter timeout for this
+    // select, in a transaction of its own (SET LOCAL)
+    const res = opts.statementTimeoutMs && !opts.client
+      ? await withTransaction((client) => client.query(sql, ctx.values), { statementTimeoutMs: opts.statementTimeoutMs })
+      : await (opts.client || pool).query(sql, ctx.values)
+    const rows = res.rows[0].data
+    const count = wantCount ? Number(res.rows[0].count) : undefined
+    let data = wantData ? rows : null
+    if (wantData && (params.single || params.maybeSingle)) data = singleOf(rows, !!params.single)
+    return { status: 200, body: { data, error: null, count } }
+  }
+
+  function singleOf (rows, strict) {
+    if (rows.length === 1) return rows[0]
+    if (rows.length === 0 && !strict) return null
+    throw new PgQueryError(406, 'PGRST116', `${rows.length} rows`, 'JSON object requested, multiple (or no) rows returned')
+  }
+
+  // ------------------------------------------------------------------ writes
+  /** Does the write data name a column the table (as loaded) does not have? */
+  function namesUnknownColumn (t, data) {
+    const rows = Array.isArray(data) ? data : [data]
+    return rows.some(r => isPlainObject(r) && Object.keys(r).some(k => !t.columns.has(k)))
+  }
+
+  /**
+   * The rows to write and their columns. A column the table does not have is
+   * left out of every row (noteDroppedColumns); a key that cannot be a column
+   * name, or a row none of whose keys is a column, is refused (PGRST204).
+   */
+  function writeRows (t, params, scope) {
+    const data = params.data
+    const rows = Array.isArray(data) ? data : [data]
+    if (rows.length === 0) fail('OV_INVALID_DATA', 'no rows')
+    if (!rows.every(isPlainObject)) fail('OV_INVALID_DATA', 'rows must be objects')
+    const unknown = []
+    for (const r of rows) {
+      const keys = Object.keys(r)
+      for (const k of keys) {
+        if (t.columns.has(k)) continue
+        if (!IDENT_RE.test(k)) requireColumn(t, k)
+        if (!unknown.includes(k)) unknown.push(k)
+      }
+      // nothing of the row would be written (the scope column is the server's)
+      if (keys.length && !keys.some(k => t.columns.has(k))) requireColumn(t, keys[0])
+    }
+    if (unknown.length) noteDroppedColumns(t.name, unknown)
+    const known = (r) => (unknown.length ? Object.fromEntries(Object.entries(r).filter(([k]) => t.columns.has(k))) : r)
+    const out = rows.map(r => (scope ? { ...known(r), [scope.column]: scope.value } : known(r)))
+    const cols = []
+    for (const r of out) {
+      for (const k of Object.keys(r)) {
+        if (!cols.includes(k)) { requireColumn(t, k); cols.push(k) }
+      }
+    }
+    return { rows: out, cols }
+  }
+
+  /** Reject child ids that do not name their own match (childMatchKey). */
+  async function assertChildrenScoped (client, cat, table, pairs) {
+    const spec = cfg.scopedChildren[table]
+    if (!spec || pairs.length === 0) return
+    const parent = tableDef(cat, cfg.scopeParent.table)
+    const pkey = requireColumn(parent, cfg.scopeParent.key)
+    const pext = requireColumn(parent, cfg.scopeParent.ext)
+    for (const { ext, mid } of pairs) {
+      if (typeof ext !== 'string' || ext === '' || mid == null || mid === '') {
+        fail('OV_UNSCOPED_EXTERNAL_ID', `${table} rows need ${spec.ext} and ${spec.fk}`)
+      }
+    }
+    // The match the id names must BE the row's match (equal, not a prefix)
+    const sql = `SELECT count(*)::int AS bad
+      FROM unnest($1::text[], $2::text[]) AS r(key, mid)
+      LEFT JOIN ${qTable(parent.name)} AS m ON m.${quoteIdent(pkey.name)} = r.mid::${pkey.typeSql}
+     WHERE m.${quoteIdent(pkey.name)} IS NULL
+        OR r.key IS NULL
+        OR m.${quoteIdent(pext.name)} IS DISTINCT FROM r.key`
+    const res = await client.query(sql, [pairs.map(p => childMatchKey(p.ext)), pairs.map(p => String(p.mid))])
+    if (res.rows[0].bad > 0) fail('OV_UNSCOPED_EXTERNAL_ID', `${res.rows[0].bad} ${table} row(s) not scoped to their match`)
+  }
+
+  /** update/delete on a child table must target one match. */
+  function assertChildFilterScoped (table, filters) {
+    const spec = cfg.scopedChildren[table]
+    if (!spec) return
+    const ok = filters.some(f => isPlainObject(f) && f.type === 'eq' && (
+      (f.column === spec.fk && f.value != null && f.value !== '') ||
+      (f.column === spec.ext && typeof f.value === 'string' && f.value !== '' && !/^\d+$/.test(f.value))
+    ))
+    if (!ok) fail('OV_UNSCOPED_WRITE', `${table} update/delete needs eq on ${spec.fk} or a scoped ${spec.ext}`)
+  }
+
+  /** The server-kept timestamp column of this table (cfg.serverTimestamps), when it exists. */
+  function serverStampColumn (t) {
+    const c = cfg.serverTimestamps?.[t.name]
+    return c && t.columns.has(c) ? c : null
+  }
+
+  /** The write data without `col` (one row object or an array of them). */
+  function dropColumn (data, col) {
+    const strip = (r) => {
+      if (!isPlainObject(r) || !Object.prototype.hasOwnProperty.call(r, col)) return r
+      const { [col]: _dropped, ...rest } = r
+      return rest
+    }
+    return Array.isArray(data) ? data.map(strip) : strip(data)
+  }
+
+  function mergeExpr (t, col, ref) {
+    const c = quoteIdent(col.name)
+    return `CASE WHEN jsonb_typeof(${ref}.${c}::jsonb) = 'object' AND jsonb_typeof(t.${c}::jsonb) = 'object' ` +
+      `THEN (t.${c}::jsonb || ${ref}.${c}::jsonb)::${col.typeSql} ELSE ${ref}.${c} END`
+  }
+
+  // ------------------------------------------------------------ ownership
+  /**
+   * The ownership guard for this write, or null. opts.matchOwner = { userId }
+   * applies to the parent (matches) and its child tables only.
+   */
+  function ownershipGuard (cat, t, opts) {
+    const own = cfg.ownership
+    const mo = opts.matchOwner
+    if (!mo || !own) return null
+    const isParent = t.name === own.parent
+    const fk = own.children?.[t.name] || null
+    if (!isParent && !fk) return null
+    if (typeof mo.userId !== 'string' || !UUID_RE.test(mo.userId)) fail('OV_NOT_MATCH_OWNER', 'no user', 403)
+    const parent = cat.tables.get(own.parent)
+    const editors = cat.tables.get(own.editors.table)
+    if (!parent || !parent.columns.has(own.ownerColumn) || !parent.columns.has(own.key) || !editors ||
+        !editors.columns.has(own.editors.matchColumn) || !editors.columns.has(own.editors.userColumn)) {
+      // db/005_match_ownership.sql has not run: refuse (retryable), never write unguarded.
+      scheduleCatalogRefresh()
+      fail('OV_OWNERSHIP_UNAVAILABLE', 'match ownership columns missing (run db/005_match_ownership.sql)', 503)
+    }
+    if (fk) requireColumn(t, fk, 'match column')
+    // admin: the creator is still recorded on insert, but nothing is checked.
+    // testOnly: an account that is not an approved scorer writes test matches
+    // only, in the sports of testSports (every sport: allSports).
+    const testSports = testOnlySportsOf(mo)
+    return {
+      userId: mo.userId,
+      isParent,
+      fk,
+      parent,
+      admin: mo.admin === true,
+      testOnly: testSports.length > 0,
+      testSports,
+      allSports: testSports.length === SPORTS.length
+    }
+  }
+
+  /**
+   * opts.readOwner = { userId, restrict? } on a select of the parent (matches)
+   * or a child table: the SQL boolean "the user owns this row's match", or
+   * null when the option does not apply. Without the ownership tables
+   * (005 not run) or a valid user id nothing is owned ('false'): a read never
+   * fails over it, it only sees less.
+   */
+  function readOwnedSql (cat, t, ro, ctx) {
+    const own = cfg.ownership
+    if (!ro || !own) return null
+    const isParent = t.name === own.parent
+    const fk = own.children?.[t.name] || null
+    if (!isParent && !fk) return null
+    const parent = cat.tables.get(own.parent)
+    const editors = cat.tables.get(own.editors.table)
+    const ready = parent && parent.columns.has(own.ownerColumn) && parent.columns.has(own.key) && editors &&
+      editors.columns.has(own.editors.matchColumn) && editors.columns.has(own.editors.userColumn) &&
+      (isParent || t.columns.has(fk))
+    if (!ready || typeof ro.userId !== 'string' || !UUID_RE.test(ro.userId)) return 'false'
+    return isParent ? ownedSql('t', ctx, ro.userId, { read: true }) : childOwnedSql('t', fk, ctx, ro.userId, { read: true })
+  }
+
+  /**
+   * SQL: the match row `alias` is owned by the user (creator or editor). For
+   * reads (`read`), an editor added by game PIN (granted_via other than
+   * 'admin') counts until the match closes, unless that editor closed it: the
+   * PIN is retired at the close. Writes keep every editor (a closed match
+   * refuses them anyway, with OV_MATCH_CLOSED, which the apps expect).
+   */
+  function ownedSql (alias, ctx, userId, { read = false } = {}) {
+    const own = cfg.ownership
+    const u = ctx.p(userId)
+    const parentCols = catalog?.tables.get(own.parent)?.columns
+    const editorCols = catalog?.tables.get(own.editors.table)?.columns
+    const pinEnds = read && parentCols?.has('closed_at') && parentCols.has('closed_by') && editorCols?.has('granted_via')
+      ? ` AND (oe.granted_via = 'admin' OR ${alias}.closed_at IS NULL OR ${alias}.closed_by = oe.${quoteIdent(own.editors.userColumn)})`
+      : ''
+    // coalesce: a row without an owner (NULL) is owned by nobody, also under NOT
+    return `(coalesce(${alias}.${quoteIdent(own.ownerColumn)} = ${u}::uuid, false) OR EXISTS (SELECT 1 FROM ${qTable(own.editors.table)} AS oe ` +
+      `WHERE oe.${quoteIdent(own.editors.matchColumn)} = ${alias}.${quoteIdent(own.key)} AND oe.${quoteIdent(own.editors.userColumn)} = ${u}::uuid${pinEnds}))`
+  }
+
+  /** SQL: the child row `alias` belongs to a match the user owns. */
+  function childOwnedSql (alias, fk, ctx, userId, opts) {
+    const own = cfg.ownership
+    return `EXISTS (SELECT 1 FROM ${qTable(own.parent)} AS om WHERE om.${quoteIdent(own.key)} = ${alias}.${quoteIdent(fk)} AND ${ownedSql('om', ctx, userId, opts)})`
+  }
+
+  /** SQL: the row `alias` of the guarded table is (of) a match the user owns. */
+  function rowOwnedSql (guard, alias, ctx) {
+    return guard.isParent ? ownedSql(alias, ctx, guard.userId) : childOwnedSql(alias, guard.fk, ctx, guard.userId)
+  }
+
+  const notOwner = (details) => fail('OV_NOT_MATCH_OWNER', details, 403)
+  const freshCtx = () => {
+    const values = []
+    return { values, p: (v) => { values.push(v); return '$' + values.length } }
+  }
+
+  /** Every match id in `ids` exists and is owned (null/unknown ids are not). */
+  async function assertMatchIdsOwned (client, guard, ids) {
+    const own = cfg.ownership
+    const c = freshCtx()
+    const pkey = requireColumn(guard.parent, own.key)
+    const arr = c.p([...new Set(ids.map(v => (v == null ? null : String(v))))])
+    const sql = `SELECT count(*)::int AS bad FROM unnest(${arr}::text[]) AS r(mid)
+      LEFT JOIN ${qTable(own.parent)} AS m ON m.${quoteIdent(own.key)} = r.mid::${pkey.typeSql}
+     WHERE m.${quoteIdent(own.key)} IS NULL OR NOT ${ownedSql('m', c, guard.userId)}`
+    const res = await client.query(sql, c.values)
+    if (res.rows[0].bad > 0) notOwner(`${res.rows[0].bad} match(es) not owned`)
+  }
+
+  /** No row matched by `params` (update/delete) belongs to a match the user does not own. */
+  async function assertFilteredRowsOwned (client, t, params, secrets, guard) {
+    const c = freshCtx()
+    const where = buildWhere(t, params, secrets, c, null)
+    const owned = rowOwnedSql(guard, 't', c)
+    const sql = `SELECT count(*)::int AS bad FROM ${qTable(t.name)} AS t${where.sql ? where.sql + ' AND' : ' WHERE'} NOT ${owned}`
+    const res = await client.query(sql, c.values)
+    if (res.rows[0].bad > 0) notOwner(`${res.rows[0].bad} ${t.name} row(s) of a match you do not own`)
+  }
+
+  // ------------------------------------------------------------ test-only writers
+  const scorerRequired = (details) => {
+    throw new PgQueryError(403, 'OV_SCORER_REQUIRED', details, SCORER_REQUIRED_MESSAGE)
+  }
+
+  /** SQL: the match row `alias` is not a test match (every match is, without the column). */
+  function nonTestSql (guard, alias) {
+    const col = cfg.testColumn
+    const nonTest = col && guard.parent.columns.has(col) ? `${alias}.${quoteIdent(col)} IS NOT TRUE` : 'true'
+    if (guard.allSports) return nonTest
+    // One sport only: and the match is of that sport (no sport column: indoor)
+    return `(${nonTest} AND ${sportIsSql(guard, alias, guard.testSports[0])})`
+  }
+
+  /** SQL: the match row `alias` is of `sport` ('beach', else indoor; NULL is indoor). */
+  function sportIsSql (guard, alias, sport) {
+    const col = cfg.sportColumn
+    if (!col || !guard.parent.columns.has(col)) return sport === 'beach' ? 'false' : 'true'
+    return `${alias}.${quoteIdent(col)} IS ${sport === 'beach' ? 'NOT ' : ''}DISTINCT FROM 'beach'`
+  }
+
+  /** The payload rows of a matches insert/upsert that are non-test matches of a test-only sport. */
+  function nonTestRowsOf (guard, rows) {
+    const sc = cfg.sportColumn
+    return rows.filter(r => r[cfg.testColumn] !== true && guard.testSports.includes(sportOfValue(sc ? r[sc] : null)))
+  }
+
+  /** None of the matches an update matches is of a test-only sport (the update makes them non-test). */
+  async function assertFilteredRowsTestSport (client, t, params, secrets, guard) {
+    const c = freshCtx()
+    const where = buildWhere(t, params, secrets, c, null)
+    const sql = `SELECT count(*)::int AS bad FROM ${qTable(t.name)} AS t${where.sql ? where.sql + ' AND' : ' WHERE'} ${sportIsSql(guard, 't', guard.testSports[0])}`
+    const res = await client.query(sql, c.values)
+    if (res.rows[0].bad > 0) scorerRequired('a match cannot stop being a test match')
+  }
+
+  /** None of the match ids in `ids` is a non-test match (unknown ids are left to the ownership check). */
+  async function assertTestMatchIds (client, guard, ids) {
+    const own = cfg.ownership
+    const list = [...new Set(ids.filter(v => v != null && v !== '').map(String))]
+    if (list.length === 0) return
+    const c = freshCtx()
+    const pkey = requireColumn(guard.parent, own.key)
+    // Compared as the key's type, like the ownership check and the statement:
+    // every spelling of an id that Postgres reads (upper case, braces, no
+    // hyphens) is that match. A malformed id fails the cast here, as it would there.
+    const sql = `SELECT count(*)::int AS bad FROM ${qTable(own.parent)} AS m
+      WHERE m.${quoteIdent(own.key)} = ANY(${c.p(list)}::${pkey.typeSql}[]) AND ${nonTestSql(guard, 'm')}`
+    const res = await client.query(sql, c.values)
+    if (res.rows[0].bad > 0) scorerRequired(`${res.rows[0].bad} match(es) are not test matches`)
+  }
+
+  /** SQL: the row `alias` of the guarded table is, or belongs to, a non-test match. */
+  function rowNonTestSql (guard, alias) {
+    const own = cfg.ownership
+    return guard.isParent
+      ? nonTestSql(guard, alias)
+      : `EXISTS (SELECT 1 FROM ${qTable(own.parent)} AS tm WHERE tm.${quoteIdent(own.key)} = ${alias}.${quoteIdent(guard.fk)} AND ${nonTestSql(guard, 'tm')})`
+  }
+
+  /** No row matched by `params` (update/delete) is, or belongs to, a non-test match. */
+  async function assertFilteredRowsTest (client, t, params, secrets, guard) {
+    const c = freshCtx()
+    const where = buildWhere(t, params, secrets, c, null)
+    const cond = rowNonTestSql(guard, 't')
+    const sql = `SELECT count(*)::int AS bad FROM ${qTable(t.name)} AS t${where.sql ? where.sql + ' AND' : ' WHERE'} ${cond}`
+    const res = await client.query(sql, c.values)
+    if (res.rows[0].bad > 0) scorerRequired(`${res.rows[0].bad} ${t.name} row(s) of a non-test match`)
+  }
+
+  /**
+   * An upsert of matches (conflict target `target`, payload columns `cols`)
+   * would not update an existing non-test match of a test-only sport.
+   * One sport only (testOnlySports): nor write a non-test match of that
+   * sport, judged on the MERGED row, payload over the stored one: the
+   * payload's sport and test value when it sets the column, else the stored
+   * match's (a new row: missing is indoor, non-test). A payload judged alone
+   * would read a missing sport_type as indoor, so {external_id, test: false}
+   * would un-test a stored beach test match of an indoor-only scorer; and a
+   * beach scorer's {external_id, status} onto its own beach match would be
+   * refused. A row that changes the sport is left to db/012's lock.
+   * Every sport (testOnly): the payload is checked before (every row
+   * test: true), here only the stored matches.
+   */
+  async function assertUpsertTargetsTest (client, t, rows, cols, target, guard) {
+    const c = freshCtx()
+    const on = target.map(col => `t.${quoteIdent(col)} = r.${quoteIdent(col)}`).join(' AND ')
+    let cond = `(t.ctid IS NOT NULL AND ${nonTestSql(guard, 't')})`
+    if (!guard.allSports) cond += ` OR ${mergedNonTestSql(guard, cols, 'r')}`
+    const sql = `SELECT count(*)::int AS bad
+      FROM json_populate_recordset(NULL::${qTable(t.name)}, ${c.p(JSON.stringify(rows))}::json) AS r
+      LEFT JOIN ${qTable(t.name)} AS t ON ${on}
+     WHERE ${cond}`
+    const res = await client.query(sql, c.values)
+    if (res.rows[0].bad > 0) scorerRequired(`${res.rows[0].bad} match row(s) are not test matches`)
+  }
+
+  /**
+   * SQL, one sport only: the merged row of a matches upsert is a non-test
+   * match of that sport. `payload` (its alias) for the columns the payload
+   * sets (cols), else the stored match t.
+   */
+  function mergedNonTestSql (guard, cols, payload) {
+    const tc = cfg.testColumn
+    const sc = cfg.sportColumn
+    const notTest = tc && guard.parent.columns.has(tc) ? `${cols.includes(tc) ? payload : 't'}.${quoteIdent(tc)} IS NOT TRUE` : 'true'
+    const sport = sportIsSql(guard, sc && cols.includes(sc) ? payload : 't', guard.testSports[0])
+    return `(${notTest} AND ${sport})`
+  }
+
+  /**
+   * SQL for the DO UPDATE of a matches upsert: the conflicting match t, or
+   * the row it would become (EXCLUDED, what the SET writes), breaks the rule
+   * of assertUpsertTargetsTest.
+   */
+  function upsertNonTestSql (guard, cols) {
+    return guard.allSports
+      ? nonTestSql(guard, 't')
+      : `(${nonTestSql(guard, 't')} OR ${mergedNonTestSql(guard, cols, 'EXCLUDED')})`
+  }
+
+  async function runWrite (cat, t, action, params, opts, ctx) {
+    // A null column (cfg.nullColumns) is never written: left out of every row
+    for (const c of nullsFor(t.name)) {
+      if (params.data != null) params = { ...params, data: dropColumn(params.data, c) }
+    }
+    // A column the loaded catalog lacks may have come with a migration since:
+    // the catalog is read again first; what it still lacks is dropped (writeRows)
+    if (action !== 'delete' && namesUnknownColumn(t, params.data)) t = await freshTableDef(t)
+    const internal = !!opts.internal
+    const secrets = secretsFor(t.name, internal)
+    const scope = opts.scope || null
+    if (scope) requireColumn(t, scope.column, 'scope column')
+    const childSpec = cfg.scopedChildren[t.name]
+    const guard = ownershipGuard(cat, t, opts)
+    // The checks (an admin's guard records the creator only)
+    const enforce = guard && !guard.admin ? guard : null
+    const ownerCol = cfg.ownership?.ownerColumn
+    let ownPre = null
+    // testOnly (an account that is not an approved scorer): checked first, in the write's transaction
+    const testOnly = guard && guard.testOnly ? guard : null
+    let testPre = null
+    const actorId = typeof opts.actorId === 'string' && UUID_RE.test(opts.actorId) ? opts.actorId : null
+    const wantReturning = params.returning != null && params.returning !== false
+    const returningCols = wantReturning ? projection(t, params.returning === true ? '*' : params.returning, secrets, 'returning') : []
+    const collectChanges = opts.collectChanges ?? cfg.changeTables.includes(t.name)
+    const qt = qTable(t.name)
+    // updated_at of matches/sets: the server's clock, never the client's
+    const stampCol = serverStampColumn(t)
+    if (stampCol && !internal && action !== 'delete' && params.data != null) {
+      params = { ...params, data: dropColumn(params.data, stampCol) }
+    }
+
+    let dml
+    let postCheck = false
+    // update / delete: the checks run before the statement, and Postgres is
+    // READ COMMITTED, so the statement also sees rows committed after them
+    // (an event synced in between, a match created in between). Their rules
+    // are therefore part of the UPDATE / DELETE too: a row that breaks one is
+    // never written, and the rows the filter matches that break one are
+    // counted in the same statement (its snapshot), which is then refused
+    // as a whole, with the code the check gives. In the checks' order.
+    const rowRules = []
+    let rowRulesWhere = ''
+    const rowRulesSql = (where, untests) => {
+      // bad: the row breaks the rule; ok: it does not
+      const rule = (bad, refuse, ok = `NOT (${bad})`) => rowRules.push({ bad, ok, refuse })
+      if (testOnly) {
+        if (untests) rule(sportIsSql(testOnly, 't', testOnly.testSports[0]), () => scorerRequired('a match cannot stop being a test match'))
+        rule(rowNonTestSql(testOnly, 't'), (n) => scorerRequired(`${n} ${t.name} row(s) of a non-test match`))
+      }
+      if (enforce) {
+        const owned = rowOwnedSql(enforce, 't', ctx)
+        rule(`NOT ${owned}`, (n) => notOwner(`${n} ${t.name} row(s) of a match you do not own`), owned)
+      }
+      rowRulesWhere = where.sql
+      return rowRules.map(r => ` AND ${r.ok}`).join('')
+    }
+    if (action === 'insert' || action === 'upsert') {
+      if (guard?.isParent) {
+        // The creator is the caller, whatever the client sent.
+        const list = Array.isArray(params.data) ? params.data : [params.data]
+        if (list.length && list.every(isPlainObject)) {
+          const forced = list.map(r => ({ ...r, [ownerCol]: guard.userId }))
+          params = { ...params, data: Array.isArray(params.data) ? forced : forced[0] }
+        }
+      }
+      const { rows, cols } = writeRows(t, params, scope)
+      if (enforce && !enforce.isParent) {
+        const ids = rows.map(r => r[enforce.fk])
+        ownPre = (client) => assertMatchIdsOwned(client, enforce, ids)
+      }
+      // one sport only, an upsert: judged on the merged rows (assertUpsertTargetsTest)
+      if (testOnly && testOnly.isParent && (action === 'insert' || testOnly.allSports)) {
+        const notTest = nonTestRowsOf(testOnly, rows).length
+        if (notTest > 0) scorerRequired(`${notTest} match row(s) are not test matches`)
+      } else if (testOnly && !testOnly.isParent) {
+        const ids = rows.map(r => r[testOnly.fk])
+        testPre = (client) => assertTestMatchIds(client, testOnly, ids)
+      }
+      const rowsParam = `${ctx.p(JSON.stringify(rows))}::json`
+      const colSql = cols.map(quoteIdent).join(', ')
+      dml = cols.length
+        ? `INSERT INTO ${qt} AS t (${colSql}) SELECT ${colSql} FROM json_populate_recordset(NULL::${qt}, ${rowsParam})`
+        : `INSERT INTO ${qt} AS t SELECT FROM json_populate_recordset(NULL::${qt}, ${rowsParam})`
+      if (action === 'upsert') {
+        let target
+        if (params.onConflict != null) {
+          if (typeof params.onConflict !== 'string' || params.onConflict.length > 500) fail('OV_INVALID_CONFLICT', 'onConflict must be a string')
+          target = params.onConflict.split(',').map(s => s.trim())
+          for (const c of target) {
+            if (mentionsSecret(c, secrets)) fail('OV_SECRET_FILTER', 'secret column')
+            if (!IDENT_RE.test(c)) fail('OV_INVALID_CONFLICT', `unsupported onConflict item "${safeText(c)}"`)
+            if (nullsFor(t.name).has(c)) fail('OV_DOB_FILTER', `"${c}" reads as NULL: no conflict target`)
+            requireColumn(t, c, 'onConflict column')
+          }
+        } else {
+          target = t.pk
+          if (!target.length) fail('OV_INVALID_CONFLICT', 'table has no primary key; onConflict is required')
+        }
+        if (testOnly && testOnly.isParent) {
+          const conflictTarget = target
+          testPre = (client) => assertUpsertTargetsTest(client, t, rows, cols, conflictTarget, testOnly)
+        }
+        // The creator of an existing match never changes through an upsert.
+        const updatable = cols.filter(c => !target.includes(c) && !(guard?.isParent && c === ownerCol))
+        // Server code may ask for JSON objects to be merged into the stored ones
+        // (matchRestore: connection_pins), like `update` does for mergeJsonColumns.
+        const mergeOnUpsert = new Set(Array.isArray(opts.mergeOnUpsert) ? opts.mergeOnUpsert : [])
+        const sets = (updatable.length ? updatable : [target[0]]).map(c => {
+          const col = t.columns.get(c)
+          return mergeOnUpsert.has(c) && col.isJson
+            ? `${quoteIdent(c)} = ${mergeExpr(t, col, 'EXCLUDED')}`
+            : `${quoteIdent(c)} = EXCLUDED.${quoteIdent(c)}`
+        })
+        if (stampCol && !cols.includes(stampCol) && !target.includes(stampCol)) sets.push(`${quoteIdent(stampCol)} = now()`)
+        dml += ` ON CONFLICT (${target.map(quoteIdent).join(', ')}) DO UPDATE SET ${sets.join(', ')}`
+        const guards = []
+        // A conflicting row owned by someone else is neither changed nor returned.
+        if (scope) guards.push(`t.${quoteIdent(scope.column)} = ${ctx.p(scope.value)}`)
+        // A conflicting set/event of another match is never overwritten or moved
+        // (an upsert on id, or on an external_id that collided historically).
+        // The same for every match-owned child under a guard (match_live_state
+        // too): an upsert never moves a conflicting row to another match. The
+        // new rows' match is the one checked (owned, test-only), so a row of
+        // another match must not be taken over through its id.
+        const moveGuard = !childSpec && guard && !guard.isParent && guard.fk
+        if (childSpec) guards.push(`t.${quoteIdent(childSpec.fk)} IS NOT DISTINCT FROM EXCLUDED.${quoteIdent(childSpec.fk)}`)
+        else if (moveGuard) guards.push(`t.${quoteIdent(guard.fk)} IS NOT DISTINCT FROM EXCLUDED.${quoteIdent(guard.fk)}`)
+        // A conflicting row of a match the caller does not own is never changed.
+        if (enforce) guards.push(enforce.isParent ? ownedSql('t', ctx, enforce.userId) : childOwnedSql('t', enforce.fk, ctx, enforce.userId))
+        // Nor a conflicting match the test-only rule refuses: testPre judges
+        // the matches committed before it, this also one committed after it
+        // (ON CONFLICT meets rows the statement's snapshot does not see).
+        // A match deleted after it leaves an INSERT instead: judgeWritten.
+        const testGuard = testOnly && testOnly.isParent
+        if (testGuard) guards.push(`NOT (${upsertNonTestSql(testOnly, cols)})`)
+        if (guards.length) dml += ` WHERE ${guards.join(' AND ')}`
+        if (childSpec || enforce || moveGuard) {
+          ctx.expectRows = rows.length
+          // children: the new rows' match is owned (checked first), so a
+          // skipped row is one of another match; otherwise it is not owned.
+          ctx.expectRowsCode = (childSpec || (moveGuard && !enforce)) ? 'OV_UNSCOPED_WRITE' : 'OV_NOT_MATCH_OWNER'
+          // A match skipped by the test-only rule: testPre once more, which
+          // now sees it, answers first (OV_SCORER_REQUIRED, as before the statement)
+          if (testGuard) ctx.expectRowsRecheck = testPre
+        }
+      }
+      if (childSpec) ctx.preCheck = rows.map(r => ({ ext: r[childSpec.ext], mid: r[childSpec.fk] }))
+    } else if (action === 'update') {
+      if (!isPlainObject(params.data)) fail('OV_INVALID_DATA', 'update data must be an object')
+      const { rows: [row], cols } = writeRows(t, { data: params.data }, scope)
+      const where = buildWhere(t, params, secrets, ctx, scope)
+      if (where.filters.length === 0) fail('OV_UNFILTERED_WRITE', 'update needs a filter')
+      if (guard?.isParent && cols.includes(ownerCol)) fail('OV_INVALID_DATA', `${ownerCol} is set by the server`)
+      // Making matches non-test: refused at once in every sport, else for
+      // the matched rows of the test-only sport (checked in the transaction)
+      const untests = !!testOnly && testOnly.isParent && cols.includes(cfg.testColumn) && row[cfg.testColumn] !== true
+      if (testOnly) {
+        if (untests && testOnly.allSports) scorerRequired('a match cannot stop being a test match')
+        const movedTo = !testOnly.isParent && cols.includes(testOnly.fk) ? [row[testOnly.fk]] : null
+        const p1 = params
+        testPre = async (client) => {
+          if (untests) await assertFilteredRowsTestSport(client, t, p1, secrets, testOnly)
+          await assertFilteredRowsTest(client, t, p1, secrets, testOnly)
+          if (movedTo) await assertTestMatchIds(client, testOnly, movedTo)
+        }
+      }
+      if (enforce) {
+        const moved = !enforce.isParent && cols.includes(enforce.fk) ? [row[enforce.fk]] : null
+        const p0 = params
+        ownPre = async (client) => {
+          await assertFilteredRowsOwned(client, t, p0, secrets, enforce)
+          if (moved) await assertMatchIdsOwned(client, enforce, moved)
+        }
+      }
+      if (childSpec) {
+        assertChildFilterScoped(t.name, where.filters)
+        postCheck = cols.includes(childSpec.ext) || cols.includes(childSpec.fk)
+      }
+      if (cols.length === 0) {
+        // Nothing to set: nothing is written, but the rows the filters match
+        // are checked like those of any update (an empty update of another
+        // account's match is refused, not answered 200), and none is changed.
+        const checkOnly = opts.client || pool
+        if (testPre) await testPre(checkOnly)
+        if (ownPre) await ownPre(checkOnly)
+        const out = { status: 200, body: { data: wantReturning ? (params.single ? singleOf([], true) : []) : null, error: null, count: params.count ? 0 : undefined } }
+        return collectChanges ? { ...out, changes: [] } : out
+      }
+      const merge = new Set(cfg.mergeJsonColumns[t.name] || [])
+      const sets = cols.map(c => {
+        const col = t.columns.get(c)
+        return merge.has(c) && col.isJson ? `${quoteIdent(c)} = ${mergeExpr(t, col, 'r')}` : `${quoteIdent(c)} = r.${quoteIdent(c)}`
+      })
+      if (stampCol && !cols.includes(stampCol)) sets.push(`${quoteIdent(stampCol)} = now()`)
+      dml = `UPDATE ${qt} AS t SET ${sets.join(', ')} FROM json_populate_record(NULL::${qt}, ${ctx.p(JSON.stringify(row))}::json) AS r${where.sql}${rowRulesSql(where, untests)}`
+    } else {
+      const where = buildWhere(t, params, secrets, ctx, scope)
+      if (where.filters.length === 0) fail('OV_UNFILTERED_WRITE', 'delete needs a filter')
+      if (childSpec) assertChildFilterScoped(t.name, where.filters)
+      if (testOnly) {
+        const p1 = params
+        testPre = (client) => assertFilteredRowsTest(client, t, p1, secrets, testOnly)
+      }
+      if (enforce) {
+        const p0 = params
+        ownPre = (client) => assertFilteredRowsOwned(client, t, p0, secrets, enforce)
+      }
+      dml = `DELETE FROM ${qt} AS t${where.sql}${rowRulesSql(where, false)}`
+    }
+
+    // RETURNING: all visible columns when anything needs rows, else just a count.
+    const needRows = wantReturning || collectChanges || postCheck
+    // (never a null column: its value is never read; returningCols answers it as null)
+    let retCols = needRows ? visibleColumns(t, secrets).filter(c => !nullsFor(t.name).has(c)) : []
+    // Server code may narrow the change rows (e.g. a restore deleting thousands of events).
+    if (needRows && !wantReturning && !postCheck && Array.isArray(opts.changeColumns)) {
+      const narrowed = retCols.filter(c => opts.changeColumns.includes(c))
+      if (narrowed.length) retCols = narrowed
+    }
+    if (postCheck) {
+      for (const c of [childSpec.ext, childSpec.fk]) if (!retCols.includes(c)) retCols.push(c)
+    }
+    let returning = needRows ? retCols.map(c => `t.${quoteIdent(c)}`).join(', ') : '1 AS one'
+    if (needRows && action === 'upsert') returning += (returning ? ', ' : '') + '(t.xmax = 0) AS "__inserted"'
+    if (needRows && !returning) returning = '1 AS one'
+    // A test-only account: the rows it wrote are judged by the rule too
+    // (RETURNING sees the final row; no trigger rewrites test, sport_type or
+    // match_id). An upsert of matches: testPre judges the payload merged with
+    // the match stored when it ran; if that match is deleted before the
+    // statement, the statement inserts the payload with the column defaults
+    // (test false, indoor), a row nothing else judges. A child insert, upsert
+    // or update: the match the row points to as stored (the typed match_id),
+    // in the statement's snapshot, so also a match that stopped being a test
+    // match after testPre.
+    const judgeWritten = !!testOnly && (testOnly.isParent ? action === 'upsert' : action !== 'delete')
+    if (judgeWritten) returning += `, (${rowNonTestSql(testOnly, 't')}) AS "__nontest"`
+    const nonTestCount = judgeWritten ? ', count(*) FILTER (WHERE w."__nontest")::int AS nontest' : ''
+    // The matched rows that break each rule (rowRules), in the statement's snapshot
+    const badSql = rowRules.map((r, i) => `, (SELECT count(*) FROM ${qt} AS t${rowRulesWhere} AND ${r.bad})::int AS bad${i}`).join('')
+    const sql = needRows
+      ? `WITH w AS (${dml} RETURNING ${returning}) SELECT coalesce(json_agg(w), '[]'::json) AS rows, count(*) AS n${nonTestCount}${badSql} FROM w`
+      : `WITH w AS (${dml} RETURNING ${returning}) SELECT NULL::json AS rows, count(*) AS n${nonTestCount}${badSql} FROM w`
+
+    const run = async (client) => {
+      // The acting account, for db/007's triggers (closed_by of a closing write)
+      if (actorId) await client.query("SELECT set_config('ov.user_id', $1, true)", [actorId])
+      // An admin session, for db/039's guard: only an admin deletes a match
+      // that was closed, makes it a test match or moves its game
+      if (opts.matchOwner?.admin === true && (t.name === cfg.ownership?.parent)) await client.query("SELECT set_config('ov.admin', 'on', true)")
+      if (testPre) await testPre(client)
+      if (ctx.preCheck) await assertChildrenScoped(client, cat, t.name, ctx.preCheck)
+      if (ownPre) await ownPre(client)
+      const res = await client.query(sql, ctx.values)
+      // A row committed after the checks that breaks a rule: the write is refused (rolled back)
+      rowRules.forEach((rule, i) => {
+        const bad = Number(res.rows[0][`bad${i}`])
+        if (bad > 0) rule.refuse(bad)
+      })
+      // A written row the test-only rule refuses: the write is refused (rolled back)
+      if (judgeWritten && res.rows[0].nontest > 0) {
+        const bad = res.rows[0].nontest
+        scorerRequired(testOnly.isParent ? `${bad} match row(s) are not test matches` : `${bad} ${t.name} row(s) of a non-test match`)
+      }
+      const rows = res.rows[0].rows || []
+      const n = Number(res.rows[0].n)
+      // Upsert rows skipped by a guard: the conflicting row belongs to another
+      // match, or to a match the caller does not own, or is a match the
+      // test-only rule refuses (the recheck answers that one).
+      if (ctx.expectRows != null && n < ctx.expectRows) {
+        if (ctx.expectRowsRecheck) await ctx.expectRowsRecheck(client)
+        if (ctx.expectRowsCode === 'OV_NOT_MATCH_OWNER') notOwner(`${ctx.expectRows - n} ${t.name} row(s) of a match you do not own`)
+        fail('OV_UNSCOPED_WRITE', `${ctx.expectRows - n} ${t.name} row(s) conflict with a row of another match`)
+      }
+      if (postCheck) await assertChildrenScoped(client, cat, t.name, rows.map(r => ({ ext: r[childSpec.ext], mid: r[childSpec.fk] })))
+      let data = null
+      if (wantReturning && !params.head) {
+        const nulls = nullsFor(t.name)
+        const projected = rows.map(r => Object.fromEntries(returningCols.map(c => [c, nulls.has(c) ? null : r[c]])))
+        data = (params.single || params.maybeSingle) ? singleOf(projected, !!params.single) : projected
+      }
+      return { rows, n, data }
+    }
+
+    const out = opts.client ? await run(opts.client) : await withTransaction(run)
+    const result = { status: 200, body: { data: out.data, error: null, count: params.count ? out.n : undefined } }
+    if (collectChanges) {
+      const secretAll = secretSets.get(t.name) || NO_SECRETS
+      result.changes = out.rows.map(r => {
+        const row = {}
+        for (const [k, v] of Object.entries(r)) {
+          if (k !== '__inserted' && k !== '__nontest' && !secretAll.has(k.toLowerCase())) row[k] = v
+        }
+        const eventType = action === 'delete' ? 'DELETE'
+          : action === 'update' ? 'UPDATE'
+            : action === 'insert' ? 'INSERT'
+              : (r.__inserted ? 'INSERT' : 'UPDATE')
+        return { table: t.name, eventType, row }
+      })
+    }
+    return result
+  }
+
+  // ------------------------------------------------------------ match write check (server routes)
+  /**
+   * May matchOwner write the match `externalId` and its children? The same
+   * rule as an /api/db write of its events: the creator or an editor (admin:
+   * anyone); an account that is not an approved scorer in the match's sport
+   * writes test matches only. Locks the match row (FOR SHARE) for the rest of
+   * the caller's transaction.
+   * Throws PgQueryError 404 OV_MATCH_NOT_FOUND, 403 OV_NOT_MATCH_OWNER or
+   * 403 OV_SCORER_REQUIRED.
+   * @returns {Promise<{id:string, external_id:string, closed:boolean, test:boolean, sport:string}>}
+   */
+  async function assertMatchWritable (client, externalId, matchOwner) {
+    if (typeof externalId !== 'string' || !externalId || externalId.length > 200) fail('OV_INVALID_REQUEST', 'match external_id')
+    const cat = await ensureCatalog()
+    const own = cfg.ownership
+    const parent = cat.tables.get(own.parent)
+    if (!parent) fail('OV_OWNERSHIP_UNAVAILABLE', 'no matches table', 503)
+    const has = (c) => parent.columns.has(c)
+    const c = freshCtx()
+    const ext = c.p(externalId)
+    const cols = [
+      `m.${quoteIdent(own.key)}::text AS id`,
+      'm.external_id',
+      has('closed_at') ? 'm.closed_at IS NOT NULL AS closed' : 'false AS closed',
+      has(cfg.testColumn) ? `coalesce(m.${quoteIdent(cfg.testColumn)}, false) AS test` : 'false AS test',
+      has(cfg.sportColumn) ? `coalesce(m.${quoteIdent(cfg.sportColumn)}::text, 'indoor') AS sport` : "'indoor' AS sport"
+    ]
+    const mo = matchOwner
+    const checkOwner = mo && mo.admin !== true
+    if (checkOwner) {
+      if (typeof mo.userId !== 'string' || !UUID_RE.test(mo.userId)) notOwner('no user')
+      const editors = cat.tables.get(own.editors.table)
+      if (!has(own.ownerColumn) || !editors) {
+        scheduleCatalogRefresh()
+        fail('OV_OWNERSHIP_UNAVAILABLE', 'match ownership columns missing (run db/005_match_ownership.sql)', 503)
+      }
+      cols.push(`${ownedSql('m', c, mo.userId)} AS owned`)
+    }
+    const sql = `SELECT ${cols.join(', ')} FROM ${qTable(own.parent)} AS m WHERE m.external_id = ${ext} LIMIT 1 FOR SHARE OF m`
+    const { rows } = await client.query(sql, c.values)
+    const m = rows[0]
+    if (!m) throw new PgQueryError(404, 'OV_MATCH_NOT_FOUND', 'no such match', 'Match not found')
+    if (checkOwner) {
+      const testSports = testOnlySportsOf(mo)
+      if (!m.test && testSports.includes(sportOfValue(m.sport))) scorerRequired('not a test match')
+      if (!m.owned) notOwner('match not owned')
+    }
+    return { id: m.id, external_id: m.external_id, closed: m.closed === true, test: m.test === true, sport: sportOfValue(m.sport) }
+  }
+
+  // ------------------------------------------------------------ public API
+  async function withTransaction (fn, { statementTimeoutMs } = {}) {
+    const client = await connectClient(pool, log)
+    try {
+      await client.query('BEGIN')
+      if (statementTimeoutMs) await client.query(`SET LOCAL statement_timeout = ${Number(statementTimeoutMs) | 0}`)
+      const out = await fn(client)
+      await client.query('COMMIT')
+      return out
+    } catch (err) {
+      try { await client.query('ROLLBACK') } catch { /* connection already broken */ }
+      throw err
+    } finally {
+      client.release()
+    }
+  }
+
+  /** Throws PgQueryError / pg errors. Prefer runQuery() in request handlers. */
+  async function execute (request, opts = {}) {
+    if (!isPlainObject(request)) fail('OV_INVALID_REQUEST', 'request must be an object')
+    const { table, action } = request
+    const params = request.params ?? {}
+    if (!isPlainObject(params)) fail('OV_INVALID_REQUEST', 'params must be an object')
+    if (typeof table !== 'string' || !cfg.allowedTables.includes(table)) fail('OV_TABLE_NOT_ALLOWED', 'table not allowed')
+    if (!ACTIONS.includes(action)) fail('OV_INVALID_ACTION', 'unknown action')
+    const isWrite = action !== 'select'
+    if (isWrite && !opts.internal && cfg.minWriteProto != null) {
+      const v = Number(opts.proto)
+      if (!(v >= cfg.minWriteProto)) {
+        throw new PgQueryError(426, 'OV_CLIENT_TOO_OLD', `X-OV-Proto >= ${cfg.minWriteProto} required`, 'This app version is too old to write. Please reload the app.')
+      }
+    }
+    const cat = await ensureCatalog()
+    const t = tableDef(cat, table)
+    const values = []
+    const ctx = { values, p: (v) => { values.push(v); return '$' + values.length } }
+    return isWrite ? runWrite(cat, t, action, params, opts, ctx) : runSelect(cat, t, params, opts, ctx)
+  }
+
+  /**
+   * Run one /api/db request. Never throws.
+   * @param {{table:string, action:string, params?:object}} request  body of POST /api/db
+   * @param {object} [opts]
+   * @param {number|string} [opts.proto]   X-OV-Proto header value (writes need >= minWriteProto)
+   * @param {boolean} [opts.internal]      trusted server code: no redaction, no secret bans, no proto gate
+   * @param {{column:string, value:any}} [opts.scope]  owner scoping: forced eq filter + forced value on writes
+   * @param {{userId:string, admin?:boolean}} [opts.matchOwner] match ownership guard (matches + children):
+   *        inserts record the caller as creator; writes to rows of a match the caller neither created
+   *        nor edits get 403 OV_NOT_MATCH_OWNER. admin: true records the creator but checks nothing.
+   *        testOnly: true (not an approved scorer): only test matches and their children may be
+   *        written, else 403 OV_SCORER_REQUIRED (checked before ownership). Omit for trusted server code.
+   *        testOnlySports: ['indoor'|'beach'] (wins over testOnly): only in these sports, by the
+   *        sport of the row (children: of their match).
+   * @param {string} [opts.actorId]        writes: the acting account (ov.user_id for db/007's triggers)
+   * @param {boolean} [opts.collectChanges] return `changes` for realtime (default: changeTables)
+   * @param {{userId:string, restrict?:boolean}} [opts.readOwner] selects of matches and its children:
+   *        each row gets `__owned` (the user created or edits its match); restrict: only owned rows match
+   * @param {number} [opts.maxRows]        raise/lower the select row cap (server code only)
+   * @param {number} [opts.countCap]       selects: count at most this many rows (server code only)
+   * @param {number} [opts.statementTimeoutMs] selects: a statement timeout of their own (server code only)
+   * @param {string[]} [opts.mergeOnUpsert] JSON columns an upsert merges into the stored object (server code only)
+   * @param {string[]} [opts.changeColumns] narrow the `changes` rows to these columns (server code only)
+   * @param {pg.PoolClient} [opts.client]  run inside the caller's transaction. A non-200 result
+   *        may come after the statement ran (a refused write): the caller must then roll back.
+   * @returns {Promise<{status:number, body:{data:any, error:null|{message,code,details?}, count?:number}, changes?:Array}>}
+   */
+  async function runQuery (request, opts = {}) {
+    try {
+      return await execute(request, opts)
+    } catch (err) {
+      return errorResult(err, request)
+    }
+  }
+
+  /** cfg.errorMap entry of a Postgres error, or null. */
+  function mappedDbError (err) {
+    const map = cfg.errorMap
+    if (!map || !(err instanceof pg.DatabaseError)) return null
+    if (map.sqlstate && Object.prototype.hasOwnProperty.call(map.sqlstate, err.code)) return map.sqlstate[err.code]
+    if (err.code === '23505' && map.constraint && typeof err.constraint === 'string' &&
+        Object.prototype.hasOwnProperty.call(map.constraint, err.constraint)) return map.constraint[err.constraint]
+    return null
+  }
+
+  function errorResult (err, request) {
+    const where = `${safeText(request?.action)} ${safeText(request?.table)}`
+    if (err instanceof PgQueryError) {
+      if (err.status >= 500) log.warn?.(`[pgQuery] ${where}: ${err.code}`)
+      const error = { message: err.message, code: err.code }
+      if (err.details && err.status < 500) error.details = err.details
+      if (err.status >= 500) error.retryable = true
+      return { status: err.status, body: { data: null, error } }
+    }
+    const mapped = mappedDbError(err)
+    if (mapped) {
+      log.warn?.(`[pgQuery] ${where}: ${mapped.code}`)
+      return { status: mapped.status, body: { data: null, error: { message: mapped.message, code: mapped.code } } }
+    }
+    if (err instanceof pg.DatabaseError && /^[0-9A-Z]{5}$/.test(err.code || '')) {
+      // A Postgres error: report the SQLSTATE, keep the server-side text in the log only.
+      log.error?.(`[pgQuery] ${where} error ${err.code}: ${safeText(err.message)}`)
+      if (DB_ERROR_INVALIDATES_CATALOG.has(err.code)) scheduleCatalogRefresh()
+      const status = sqlstateStatus(err.code)
+      const error = { message: GENERIC_MESSAGE, code: err.code }
+      if (status >= 500) error.retryable = true
+      return { status, body: { data: null, error } }
+    }
+    log.error?.(`[pgQuery] ${where} failed: ${safeText(err?.message)}`)
+    const unavailable = /ECONNREFUSED|ENOTFOUND|ETIMEDOUT|timeout|terminated|Connection/i.test(String(err?.message))
+    const error = { message: GENERIC_MESSAGE, code: unavailable ? 'OV_DB_UNAVAILABLE' : 'OV_INTERNAL' }
+    if (unavailable) error.retryable = true
+    return { status: unavailable ? 503 : 500, body: { data: null, error } }
+  }
+
+  async function ping () {
+    const r = await pool.query('SELECT 1 AS ok')
+    return r.rows[0].ok === 1
+  }
+
+  async function close () {
+    if (ownsPool) await pool.end()
+  }
+
+  return {
+    runQuery,
+    execute,
+    assertMatchWritable,
+    toErrorResult: errorResult,
+    withTransaction,
+    ensureCatalog,
+    invalidateCatalog,
+    catalogStatus,
+    droppedColumns,
+    ping,
+    close,
+    pool,
+    config: cfg,
+    secretColumnsOf: (table) => [...(secretSets.get(table) || [])]
+  }
+}

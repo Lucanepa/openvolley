@@ -1,0 +1,27 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "openvolley-escoresheet",
+  "mainBinaryName": "openvolley-escoresheet",
+  "bundle": {
+    "linux": {
+      "deb": {
+        "provides": ["openvolley-e-scoresheet", "openvolley"],
+        "conflicts": ["openvolley-e-scoresheet", "openvolley"],
+        "replaces": ["openvolley-e-scoresheet", "openvolley"],
+        "depends": ["libayatana-appindicator3-1 | libappindicator3-1"],
+        "recommends": ["pkexec | policykit-1"],
+        "desktopTemplate": "openvolley-escoresheet.desktop",
+        "files": {
+          "/usr/libexec/openvolley-escoresheet/apt-upgrade": "linux/apt-upgrade",
+          "/usr/share/polkit-1/actions/com.openvolley.escoresheet.update.policy": "linux/com.openvolley.escoresheet.update.policy",
+          "/usr/lib/firewalld/zones/openvolley-tablets.xml": "linux/openvolley-tablets.xml"
+        }
+      },
+      "appimage": {
+        "files": {
+          "/usr/lib/firewalld/zones/openvolley-tablets.xml": "linux/openvolley-tablets.xml"
+        }
+      }
+    }
+  }
+}

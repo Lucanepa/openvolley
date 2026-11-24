@@ -1,0 +1,8 @@
+OpenVolley 3.2.6
+- Sponsors on clothing (Options): (+) or (-) after each team on the scoresheet.
+- The scoresheet PDF is kept when its window closes fast (Linux, macOS).
+- Earlier matches folded away in Load match from schedule.
+- Team rosters only for games not yet started.
+- Test matches propose the scheduled start time.
+- Referee: a libero switch flashes once.
+- "Import Einsatzliste PDF".

@@ -1,0 +1,1535 @@
+/**
+ * realtimeHub — the server half of the Supabase Realtime replacement.
+ *
+ * Browsers open a WebSocket to the relay with `?purpose=live` and subscribe to
+ * row changes of a few tables. server.js publishes a change after every
+ * successful /api/db (or /api/match/restore) write, and for every accepted
+ * relay `live-state-update` message (see createLiveStateRelay below). The
+ * frontend counterpart is escoresheet/frontend/src/lib/relayRealtime.js, which
+ * exposes the supabase-js `channel().on('postgres_changes').subscribe()` API.
+ *
+ * The hub never touches the database and knows no column names except the
+ * ones it is configured with (tables, filter columns, ordering and cascade
+ * rules are options).
+ *
+ * ── Upgrade routing ─────────────────────────────────────────────────────────
+ *
+ * Live sockets must NOT go through the role-socket WebSocketServer (10 MB
+ * frames, permessage-deflate). The hub owns its own
+ * `WebSocketServer({ noServer: true, maxPayload: maxMessageBytes,
+ * perMessageDeflate: false })`, so `ws` refuses an oversized frame while
+ * parsing it (close 1009) instead of buffering up to 10 MB per socket, and no
+ * compression is negotiated (no inflate bombs, no per-recipient deflate cost on
+ * fan-out). server.js routes upgrades itself:
+ *
+ *   server.on('upgrade', (req, socket, head) => {
+ *     if (isLiveRequest(req)) return hub.handleUpgrade(req, socket, head, { ip: getClientIp(req) })
+ *     wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req))
+ *   })
+ *
+ * with the role wss created as `new WebSocketServer({ noServer: true, ... })`.
+ * handleConnection(ws, req) is still exported for callers that already hold a
+ * socket, but then the inbound size limit is only enforced after buffering.
+ *
+ * ── Wire protocol (version 1, JSON text frames) ─────────────────────────────
+ *
+ * Server -> client, right after the upgrade:
+ *   { type: 'connected', mode: 'live', protocol: 1, timestamp }
+ *   Clients must treat any other first message (a LAN relay without live
+ *   support answers { type: 'connected', mode: 'local' }) as "not supported".
+ *
+ * Client -> server (anything else closes the socket with 1008; binary frames
+ * close it with 1003, frames above maxMessageBytes with 1009):
+ *   { type: 'subscribe-db', id, subs: [{ table, event, column?, value? }] }
+ *       id     channel id chosen by the client (string, 1-128 chars, unique per
+ *              socket). Re-sending the same id replaces that channel.
+ *       table  one of the configured tables (default matches, sets, events,
+ *              match_live_state); `schema` may be sent and must be 'public'.
+ *       event  '*' | 'INSERT' | 'UPDATE' | 'DELETE'
+ *       column/value  optional equality filter (`<column>=eq.<value>` in
+ *              supabase-js syntax). column must be an allowed filter column
+ *              (default match_id, external_id, sport_type). value is compared
+ *              as a string. Unfiltered subs are refused unless
+ *              `allowUnfiltered` is set.
+ *       token  optional: what the channel proves (grantChannel; server.js: the
+ *              match token of a PIN check). A row privateRows.grants for the
+ *              channel goes out in privateRows' projection (a live state's
+ *              private columns). Older servers ignore it.
+ *     -> { type: 'subscribe-db-ack', id }
+ *     -> { type: 'subscribe-db-error', id, code, message }   (socket stays open)
+ *   { type: 'unsubscribe-db', id }   -> { type: 'unsubscribe-db-ack', id }
+ *   { type: 'ping' }                 -> { type: 'pong', timestamp }
+ *
+ * Server -> client, for every published row that matches a channel:
+ *   { type: 'db-change', id, ids?, schema: 'public', table, eventType, new, old,
+ *     commit_timestamp, coalesced? }
+ *       id         the (first) matching channel
+ *       ids        present when several channels of the same socket match the
+ *                  row: every matching channel id (id is ids[0]). Each row is
+ *                  sent ONCE per socket, whatever the number of channels.
+ *       eventType  'INSERT' | 'UPDATE' | 'DELETE'
+ *       new        the row for INSERT/UPDATE, {} for DELETE
+ *       old        the row for DELETE (filters are applied to it), otherwise
+ *                  the previous row when the publisher supplied one, else {}
+ *       coalesced  present when one publish matched more than
+ *                  `maxRowsPerPublish` rows for a channel: only the last row is
+ *                  sent and `coalesced` holds the number of rows.
+ *   The client re-checks its own bindings.
+ *
+ * Ordering: for tables in `ordering` (default match_live_state keyed by
+ * match_id, ordered by updated_at) the hub remembers the newest updated_at it
+ * published per key and drops INSERT/UPDATE rows that are strictly older. Each
+ * point reaches the hub twice (HTTP write-through and relay live-state-update)
+ * in no guaranteed order; this keeps a late, older copy from rolling the score
+ * back. Equal timestamps pass (an update that does not bump updated_at, e.g.
+ * the scorer-attention alarm, still goes out). Values more than
+ * `maxFutureSkewMs` (5 s) in the future are clamped to now + 5 s.
+ *
+ * Cascades: Postgres cascades a matches DELETE to match_live_state, sets and
+ * events without RETURNING those rows, so a write-through never sees them. For
+ * every matches DELETE the hub also publishes a match_live_state DELETE with
+ * old = { match_id, sport_type } (option `cascadeDeletes`), which is what
+ * Livescore needs to drop the game. sets/events subscribers are the same
+ * clients that watch the matches row, so they get the matches DELETE.
+ *
+ * Liveness: the hub pings every live socket every `pingIntervalMs` (30 s;
+ * Cloudflare closes idle WebSockets after 100 s) and terminates sockets that
+ * did not answer the previous ping. Role sockets can share the same heartbeat
+ * via `hub.heartbeat.track(ws)`.
+ *
+ * Backpressure: a socket whose send buffer is above `maxBufferedBytes`
+ * (256 KB) when a change is published is terminated; with maxTotal 3000 that
+ * bounds buffered fan-out at ~750 MB worst case. Lower maxTotal on the Pi.
+ *
+ * Duplicates: the two copies of one scoreboard state (relay push and HTTP
+ * write-through) carry the same updated_at. For ordered tables a row whose
+ * ordering value equals the newest one published for its key, and whose
+ * columns all equal that row's (timestamps compared as instants, JSON
+ * objects whatever their key order), is not sent again. Only one frame per
+ * scorer state reaches the viewers; a same-timestamp row that changes any
+ * value they see (the scorer-attention alarm) still goes out. The rows
+ * compared are kept redacted and projected, for the maxDuplicateRows most
+ * recently published keys only.
+ *
+ * Secrets: every row is deep-cloned and passed through `redact(table, row)`
+ * once per publish, before filters are evaluated, so a filter on a redacted
+ * column can never match (no PIN oracle) and redacted columns never leave
+ * the process. Use lib/secrets.js redactSecrets, the same function /api/db uses.
+ *
+ * Projection: live sockets are anonymous, so after redact every row also goes
+ * through `project(table, row)` (server.js: lib/publicColumns.js
+ * projectLiveRow, a per-table column allowlist), also before filters. Filter
+ * columns must survive the projection (they do: id/external_id/match_id/
+ * sport_type are on every list).
+ */
+import { WebSocketServer } from 'ws'
+
+const DEFAULT_TABLES = ['matches', 'sets', 'events', 'match_live_state']
+const DEFAULT_FILTER_COLUMNS = ['match_id', 'external_id', 'sport_type']
+const EVENTS = new Set(['*', 'INSERT', 'UPDATE', 'DELETE'])
+
+export const LIVE_PROTOCOL_VERSION = 1
+
+/**
+ * True when an upgrade request asks for a live (realtime) socket.
+ * @param {import('node:http').IncomingMessage} req
+ */
+export function isLiveRequest(req) {
+  try {
+    const url = new URL(req?.url || '/', 'http://relay.invalid')
+    return url.searchParams.get('purpose') === 'live'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * True when a live socket opens as a livescore viewer
+ * (`?purpose=live&client=viewer`): it counts against maxViewers. Older
+ * livescore pages do not say so and count as any other live socket.
+ */
+function isViewerRequest(req) {
+  try {
+    return new URL(req?.url || '/', 'http://relay.invalid').searchParams.get('client') === 'viewer'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Role-socket frames nested deeper are refused (server.js, jsonTooDeep), the
+ * depth the venue relays refuse too; real bundles nest about ten.
+ */
+export const MAX_JSON_DEPTH = 128
+
+/**
+ * Is this parsed JSON value nested deeper than MAX_JSON_DEPTH? Iterative, so
+ * the check itself cannot overflow the stack. JSON.parse takes any depth, but
+ * JSON.stringify throws RangeError at a few thousand levels (about 10 KB of
+ * brackets): a relayed bundle like that throws wherever it is sent on or read
+ * back, request handlers included, where the throw ends the process.
+ */
+export function jsonTooDeep(value) {
+  if (!value || typeof value !== 'object') return false
+  // Two plain stacks instead of [value, depth] pairs: no allocation per
+  // object, so a whole bundle (thousands of events) costs well under a ms
+  const values = [value]
+  const depths = [1]
+  while (values.length > 0) {
+    const v = values.pop()
+    const depth = depths.pop()
+    if (depth > MAX_JSON_DEPTH) return true
+    if (Array.isArray(v)) {
+      for (let i = 0; i < v.length; i++) {
+        const child = v[i]
+        if (child !== null && typeof child === 'object') { values.push(child); depths.push(depth + 1) }
+      }
+    } else {
+      for (const k in v) {
+        const child = v[k]
+        if (child !== null && typeof child === 'object') { values.push(child); depths.push(depth + 1) }
+      }
+    }
+  }
+  return false
+}
+
+/**
+ * Map a /api/db action to the eventType argument of broadcastDbChange.
+ * @param {'insert'|'update'|'upsert'|'delete'|string} action
+ * @returns {'INSERT'|'UPDATE'|'UPSERT'|'DELETE'|null}
+ */
+export function eventTypeForAction(action) {
+  switch (action) {
+    case 'insert': return 'INSERT'
+    case 'update': return 'UPDATE'
+    case 'upsert': return 'UPSERT'
+    case 'delete': return 'DELETE'
+    default: return null
+  }
+}
+
+/**
+ * Ping/pong heartbeat for any set of ws sockets.
+ * @param {{ intervalMs?: number, onTerminate?: (ws) => void }} [opts]
+ */
+export function createHeartbeat({ intervalMs = 30000, onTerminate } = {}) {
+  const alive = new Map() // ws -> boolean (pong seen since last ping)
+  let timer = null
+
+  function tick() {
+    for (const [ws, seen] of alive) {
+      if (ws.readyState !== 1) { // not OPEN
+        if (ws.readyState === 3) alive.delete(ws)
+        continue
+      }
+      if (!seen) {
+        alive.delete(ws)
+        try { onTerminate?.(ws) } catch { /* ignore */ }
+        ws.terminate()
+        continue
+      }
+      alive.set(ws, false)
+      try { ws.ping() } catch { /* socket went away between checks */ }
+    }
+  }
+
+  function ensureTimer() {
+    if (timer || intervalMs <= 0) return
+    timer = setInterval(tick, intervalMs)
+    timer.unref?.()
+  }
+
+  return {
+    /** Start watching a socket. Removed automatically on close. */
+    track(ws) {
+      alive.set(ws, true)
+      ws.on('pong', () => { if (alive.has(ws)) alive.set(ws, true) })
+      ws.on('close', () => { alive.delete(ws) })
+      ensureTimer()
+    },
+    untrack(ws) { alive.delete(ws) },
+    get size() { return alive.size },
+    /** Run one heartbeat round now (tests). */
+    tick,
+    stop() {
+      if (timer) clearInterval(timer)
+      timer = null
+      alive.clear()
+    }
+  }
+}
+
+function cloneRow(row) {
+  if (row == null || typeof row !== 'object') return null
+  try { return structuredClone(row) } catch { return JSON.parse(JSON.stringify(row)) }
+}
+
+function stripInternal(row) {
+  for (const k of Object.keys(row)) {
+    if (k.startsWith('__')) delete row[k]
+  }
+  return row
+}
+
+// ISO timestamps as the scoreboard writes them ('...T12:00:01.500Z') and as
+// Postgres returns them ('...T12:00:01.5+00:00') are the same instant.
+const ISO_TS_RE = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}(:?\d{2})?)$/
+
+/** Deep equality for row values: key order ignored, timestamps compared as instants. */
+function valuesEqual(a, b, depth = 0) {
+  if (a === b) return true
+  if (a == null || b == null) return a == null && b == null
+  if (depth > 20) return false
+  if (a instanceof Date || b instanceof Date) {
+    const ms = (v) => (v instanceof Date ? v.getTime() : (typeof v === 'string' && ISO_TS_RE.test(v) ? Date.parse(v) : NaN))
+    const ta = ms(a)
+    return Number.isFinite(ta) && ta === ms(b)
+  }
+  if (typeof a === 'string' && typeof b === 'string') {
+    if (!ISO_TS_RE.test(a) || !ISO_TS_RE.test(b)) return false
+    const ta = Date.parse(a)
+    return Number.isFinite(ta) && ta === Date.parse(b)
+  }
+  if (typeof a !== 'object' || typeof b !== 'object') return false
+  if (Array.isArray(a) !== Array.isArray(b)) return false
+  if (Array.isArray(a)) {
+    if (a.length !== b.length) return false
+    for (let i = 0; i < a.length; i++) if (!valuesEqual(a[i], b[i], depth + 1)) return false
+    return true
+  }
+  const ka = Object.keys(a).filter(k => a[k] !== undefined)
+  const kb = Object.keys(b).filter(k => b[k] !== undefined)
+  if (ka.length !== kb.length) return false
+  for (const k of ka) {
+    if (!Object.prototype.hasOwnProperty.call(b, k) || !valuesEqual(a[k], b[k], depth + 1)) return false
+  }
+  return true
+}
+
+const isEmptyValue = (v) => v == null || v === 0 || v === false || v === '' ||
+  (Array.isArray(v) && v.length === 0) ||
+  (typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date) && Object.keys(v).length === 0)
+
+/**
+ * Does `row` say nothing that `known` (the columns already published for the
+ * same state) does not? Shared columns must be equal. A column `known` lacks
+ * is no news only when it is the row id or empty (null, 0, false, '', [], {}):
+ * the database copy of a relay push carries the id and the defaults of
+ * columns the scoreboard never writes. Anything else counts as a change.
+ */
+function sameColumns(known, row) {
+  for (const [k, v] of Object.entries(row)) {
+    if (k.startsWith('__')) continue
+    if (!Object.prototype.hasOwnProperty.call(known, k)) {
+      if (k === 'id' || isEmptyValue(v)) continue
+      return false
+    }
+    if (!valuesEqual(known[k], v)) return false
+  }
+  return true
+}
+
+/**
+ * @typedef {Object} HubOptions
+ * @property {(table: string, row: object) => object} redact  REQUIRED. Strips secret
+ *           columns; may mutate and must return the row (server.js redactSecrets fits).
+ * @property {(table: string, row: object) => object} [project]  Applied after redact:
+ *           returns the row live subscribers may see (lib/publicColumns.js projectLiveRow).
+ *           Default: the redacted row.
+ * @property {{ project: (table: string, row: object) => object, grants: (channel: object, table: string, row: object, socketChannels: Map<string, object>, socket: { ip: string, bucket: string, viewer: boolean }) => boolean }} [privateRows]
+ *           A channel may get more of a row than `project` gives: `grants(channel, table,
+ *           row, socketChannels, socket)` (row: as `project` gave it; socketChannels: every
+ *           channel of the channel's socket; socket: its address, bucket and whether it
+ *           opened as a viewer) is asked on every publish, and a granted row
+ *           goes to that channel's socket in `project` of privateRows (applied after redact
+ *           too). server.js: a live state's private columns to the channel of its match's
+ *           token (audit 2611 PERM-03). Default: none.
+ * @property {(msg: object, socket: { ip: string, bucket: string, viewer: boolean }) => object|null} [grantChannel]
+ *           Called with a subscribe-db message and its socket: what the channel carries for
+ *           privateRows.grants (`channel.grant`), e.g. a verified match token. Default: none.
+ * @property {(socket: { ip: string, bucket: string, viewer: boolean, channels: Map<string, object> }) => string|null} [socketProof]
+ *           What a socket proved, as a key (server.js: the match of a match token on one of
+ *           its channels, or an address bucket that proved a match recently), else null.
+ *           Asked when it connects and on each subscribe-db until it proved something. A
+ *           socket that proved something (at most maxProvedPerKey per key) may use the slots
+ *           kept for match devices (maxTotal - maxUnproved) and is never pushed out to make
+ *           room (audit 2611 SEC-08). Default: none (no socket proves anything, and every
+ *           socket may use every slot).
+ * @property {number} [maxProvedPerKey=16]  Sockets one proof key (socketProof) keeps slots for:
+ *           a match token copied to every socket of a network proves 16 of them, not all.
+ * @property {string[]} [tables]            Subscribable tables.
+ * @property {string[] | ((table: string, column: string) => boolean)} [filterColumns]
+ *           Allowed filter columns, or a predicate (e.g. backed by the pgQuery catalog
+ *           minus secret columns).
+ * @property {boolean} [allowUnfiltered=false]  Allow subs without a filter.
+ * @property {number} [maxPerIp=100]       Live sockets per client address bucket (bucketOf):
+ *           a venue's NAT needs tens, not hundreds.
+ * @property {(ip: string) => string} [bucketOf]  The bucket of an address (server.js:
+ *           ipBucketKey, an IPv6 /64 is one subscriber). Default: the address.
+ * @property {(ip: string) => Array<[string, string]>} [netsOf]  The wider networks of an address
+ *           that maxPerNet counts, as [kind, key] (server.js: the IPv6 /56 and /48, the
+ *           IPv4 /24). Default: none.
+ * @property {Object<string, number>} [maxPerNet]  Live sockets per network of each kind of
+ *           netsOf: one IPv6 customer holds a /56 or a /48, and per /64 alone 30 of
+ *           them filled maxTotal (audit 2611 SEC-08).
+ * @property {Object<string, number>} [maxUnprovedPerNet]  Of those, sockets that proved nothing
+ *           and do not open as a viewer, per network of each kind. Default half of maxPerNet
+ *           (only with socketProof): a match device proves its match, a livescore page is a
+ *           viewer, the rest is nobody's.
+ * @property {number} [maxTotal=3000]      Live sockets in total.
+ * @property {number} [maxViewers]         Of those, sockets that open as a livescore viewer
+ *           (`?purpose=live&client=viewer`). Default 80 % of maxTotal: the rest stays
+ *           for the referee and bench tablets, however many people watch.
+ * @property {number} [maxUnproved]        Of all, sockets that proved nothing (socketProof),
+ *           viewers included. Default maxViewers with socketProof, else maxTotal: the rest is
+ *           kept for the sockets that proved a match. At any of these caps a socket that
+ *           proved nothing makes room: one that held no channel for idleEvictMs first, else
+ *           the newest of the network (netsOf: the widest; else the bucket) holding the
+ *           most such sockets. A newcomer of that network itself is refused (1013): a
+ *           network's flood never pushes out another network's sockets, and a lone socket
+ *           of a hall never pays for it.
+ * @property {number} [idleEvictMs]        A socket without a channel for this long makes room
+ *           first (default min(2000, channelGraceMs / 5)): it would be closed soon anyway; a
+ *           newer one may still be subscribing.
+ * @property {number} [channelGraceMs=10000]  A socket that holds no channel for this long
+ *           (from its connection, or since its last channel went) is closed (1008); 0 never.
+ *           relayRealtime subscribes at once and closes its socket 5 s after its last
+ *           channel goes.
+ * @property {number} [summaryIntervalMs=1000]  A `summary: true` channel (the livescore
+ *           list) gets one frame of the newest rows per interval (`db-changes`), in the
+ *           columns of summaryProject.
+ * @property {(table: string, row: object) => object} [summaryProject]  Applied after
+ *           redact for summary channels. Default: project.
+ * @property {number} [reorderWindowMs=60000]  An ordering value older than the newest by
+ *           more than this is a clock that stepped back, not a late copy: it passes.
+ * @property {number} [maxChannelsPerSocket=10]
+ * @property {number} [maxSubsPerChannel=10]
+ * @property {number} [maxRowsPerPublish=5] Per channel and publish; above this only
+ *           the last row is sent with `coalesced`.
+ * @property {number} [maxMessageBytes=16384]  Inbound frame limit (close 1009). Also the
+ *           maxPayload of the hub's own WebSocketServer used by handleUpgrade.
+ * @property {number} [rateLimitCount=60]  Inbound messages allowed per window...
+ * @property {number} [rateLimitWindowMs=10000]  ...per socket (close 1008).
+ * @property {number} [maxBufferedBytes=262144] Slow consumers above this are terminated.
+ * @property {Object<string, {key: string, column: string}>} [ordering]
+ *           Per table: drop INSERT/UPDATE rows whose `column` is older than the newest
+ *           already published for the same `key` (by at most reorderWindowMs). Two rows of
+ *           one scorer session (_session/_seq) or both stamped by this relay
+ *           (_relayEpoch/_relaySeq) compare by those counters, not by the device clock. Default
+ *           { match_live_state: { key: 'match_id', column: 'updated_at' } }; {} disables.
+ * @property {number} [maxOrderingEntries=10000]  Keys remembered for ordering (oldest evicted).
+ * @property {number} [maxDuplicateRows=256]  Newest rows kept for the duplicate check
+ *           (most recently published keys; older keys keep their ordering value only).
+ *           Kept redacted and projected, as subscribers would see them.
+ * @property {number} [maxFutureSkewMs=5000]  Ordering values further in the future are clamped to now + this.
+ * @property {() => number} [now=Date.now]  Clock for the clamp (tests).
+ * @property {Object<string, Array<{table: string, key: string, from?: string, carry?: string[]}>>} [cascadeDeletes]
+ *           On a DELETE of the outer table, also publish a DELETE on each `table` with
+ *           old = { [key]: row[from || 'id'], ...carry columns }. Default
+ *           { matches: [{ table: 'match_live_state', key: 'match_id', from: 'id', carry: ['sport_type'] }] }.
+ * @property {number} [pingIntervalMs=30000]
+ * @property {(req) => string} [getClientIp]  Used when handleConnection gets no ip.
+ * @property {{log:Function, warn:Function}} [logger]
+ */
+
+/**
+ * @param {HubOptions} options
+ */
+export function createRealtimeHub(options = {}) {
+  const {
+    redact,
+    project = null,
+    privateRows = null,
+    grantChannel = null,
+    socketProof = null,
+    maxProvedPerKey = 16,
+    tables = DEFAULT_TABLES,
+    filterColumns = DEFAULT_FILTER_COLUMNS,
+    allowUnfiltered = false,
+    maxPerIp = 100,
+    bucketOf = (ip) => ip,
+    netsOf = null,
+    maxPerNet = {},
+    maxUnprovedPerNet = null,
+    maxTotal = 3000,
+    maxViewers = Math.floor(maxTotal * 0.8),
+    maxUnproved = socketProof ? maxViewers : maxTotal,
+    channelGraceMs = 10000,
+    idleEvictMs = Math.min(2000, Math.max(0, Math.floor((channelGraceMs > 0 ? channelGraceMs : 10000) / 5))),
+    summaryIntervalMs = 1000,
+    summaryProject = null,
+    reorderWindowMs = 60000,
+    maxChannelsPerSocket = 10,
+    maxSubsPerChannel = 10,
+    maxRowsPerPublish = 5,
+    maxMessageBytes = 16 * 1024,
+    rateLimitCount = 60,
+    rateLimitWindowMs = 10000,
+    maxBufferedBytes = 256 * 1024,
+    ordering = { match_live_state: { key: 'match_id', column: 'updated_at' } },
+    maxOrderingEntries = 10000,
+    maxDuplicateRows = 256,
+    maxFutureSkewMs = 5000,
+    now: clock = Date.now,
+    cascadeDeletes = { matches: [{ table: 'match_live_state', key: 'match_id', from: 'id', carry: ['sport_type'] }] },
+    pingIntervalMs = 30000,
+    getClientIp = (req) => (req?.socket?.remoteAddress || 'unknown').replace('::ffff:', ''),
+    logger = console
+  } = options
+
+  if (typeof redact !== 'function') {
+    throw new TypeError('createRealtimeHub: options.redact(table, row) is required')
+  }
+  if (project != null && typeof project !== 'function') {
+    throw new TypeError('createRealtimeHub: options.project must be a function (table, row) => row')
+  }
+  // redact, then project: what a live subscriber may see of a row
+  const publicRow = (table, row) => {
+    const redacted = redact(table, row) || row
+    return project ? (project(table, redacted) || {}) : redacted
+  }
+  // what a granted channel sees of a redacted row (privateRows), else the public row
+  const grantedRow = (table, redacted) => (privateRows ? (privateRows.project(table, redacted) || {}) : (project ? (project(table, redacted) || {}) : redacted))
+  const summaryRow = (table, row) => {
+    if (!summaryProject) return publicRow(table, row)
+    return summaryProject(table, redact(table, row) || row) || {}
+  }
+
+  const tableSet = new Set(tables)
+  const isFilterColumn = typeof filterColumns === 'function'
+    ? filterColumns
+    : ((cols) => (_table, column) => cols.has(column))(new Set(filterColumns))
+
+  /** @type {Map<import('ws').WebSocket, {ip:string, channels:Map<string,object>, window:number, count:number}>} */
+  const sockets = new Map()
+  const ipCounts = new Map()
+  /** `${kind}\0${key}` (netsOf) -> live sockets */
+  const netCounts = new Map()
+  /** `${kind}\0${key}` -> live sockets that proved nothing and are no viewer (maxUnprovedPerNet) */
+  const netUnprovedTablets = new Map()
+  // unproved tablets per network: half a network's share, with socketProof
+  const unprovedNetCap = maxUnprovedPerNet || (socketProof
+    ? Object.fromEntries(Object.entries(maxPerNet || {}).map(([kind, n]) => [kind, Math.max(1, Math.floor(n / 2))]))
+    : {})
+  /** proof key (socketProof) -> sockets it proved */
+  const provedByKey = new Map()
+  let viewerCount = 0
+  let unprovedCount = 0
+  let graceTimer = null
+  /**
+   * Channels by the filter of a sub: `${table}\0${column}\0${value}` (and
+   * `${table}\0` for an unfiltered sub) -> channels. A publish looks up the
+   * row's values instead of walking every channel of the table.
+   * @type {Map<string, Set<object>>}
+   */
+  const byFilter = new Map()
+  /** table -> (filter column, null for unfiltered -> number of index entries) */
+  const filterColumnsOf = new Map()
+  /** table -> channels with at least one sub on it (stats) */
+  const tableChannels = new Map()
+  /** The summary channels' groups: the same index key -> { channels, pending } */
+  const summaryGroups = new Map()
+  const summaryColumnsOf = new Map()
+  let summaryTimer = null
+  const counters = { published: 0, delivered: 0, rejected: 0, terminatedSlow: 0, staleDropped: 0, duplicateDropped: 0, summaryFrames: 0, evicted: 0, closedNoChannel: 0, refusedAtCap: 0 }
+  /** `${table}\0${key}` -> newest published order ({ ts, session, seq, epoch, rseq }) */
+  const newest = new Map()
+  /**
+   * `${table}\0${key}` -> that newest row as subscribers see it (redacted,
+   * projected), for the duplicate check. Only the maxDuplicateRows most
+   * recently published keys: the two copies of a state arrive within seconds,
+   * and a whole match_live_state row per key ever seen would grow to tens of
+   * MB on a long-running relay (the Pi).
+   */
+  const recentRows = new Map()
+
+  const heartbeat = createHeartbeat({ intervalMs: pingIntervalMs })
+
+  // Own server for live sockets: small maxPayload enforced while parsing, no deflate.
+  let liveWss = null
+  function getLiveWss() {
+    if (!liveWss) {
+      liveWss = new WebSocketServer({
+        noServer: true,
+        maxPayload: maxMessageBytes,
+        perMessageDeflate: false,
+        clientTracking: false
+      })
+    }
+    return liveWss
+  }
+
+  /**
+   * Complete a `?purpose=live` HTTP upgrade on the hub's own WebSocketServer
+   * and take the socket over. Call from server.on('upgrade').
+   * @param {import('node:http').IncomingMessage} req
+   * @param {import('node:stream').Duplex} socket
+   * @param {Buffer} head
+   * @param {{ ip?: string }} [info]
+   */
+  function handleUpgrade(req, socket, head, info = {}) {
+    getLiveWss().handleUpgrade(req, socket, head, (ws) => { handleConnection(ws, req, info) })
+  }
+
+  function send(ws, obj) {
+    if (ws.readyState !== 1) return false
+    ws.send(typeof obj === 'string' ? obj : JSON.stringify(obj))
+    return true
+  }
+
+  const filterKey = (table, column, value) => (column == null ? `${table}\0` : `${table}\0${column}\0${value}`)
+
+  function countColumn(columnsOf, table, column, delta) {
+    let cols = columnsOf.get(table)
+    if (!cols) columnsOf.set(table, (cols = new Map()))
+    const n = (cols.get(column) || 0) + delta
+    if (n > 0) cols.set(column, n)
+    else cols.delete(column)
+    if (cols.size === 0) columnsOf.delete(table)
+  }
+
+  function indexChannel(channel) {
+    channel.keys = [...new Set(channel.subs.map((s) => filterKey(s.table, s.column, s.value)))]
+    for (const t of channel.tables) {
+      let set = tableChannels.get(t)
+      if (!set) tableChannels.set(t, (set = new Set()))
+      set.add(channel)
+    }
+    for (const key of channel.keys) {
+      const sub = channel.subs.find((s) => filterKey(s.table, s.column, s.value) === key)
+      if (channel.summary) {
+        let group = summaryGroups.get(key)
+        if (!group) {
+          summaryGroups.set(key, (group = { table: sub.table, channels: new Set(), pending: new Map() }))
+          countColumn(summaryColumnsOf, sub.table, sub.column, 1)
+        }
+        group.channels.add(channel)
+        continue
+      }
+      let set = byFilter.get(key)
+      if (!set) {
+        byFilter.set(key, (set = new Set()))
+        countColumn(filterColumnsOf, sub.table, sub.column, 1)
+      }
+      set.add(channel)
+    }
+    if (channel.summary && !summaryTimer) {
+      summaryTimer = setInterval(flushSummaries, summaryIntervalMs)
+      summaryTimer.unref?.()
+    }
+  }
+
+  function unindexChannel(channel) {
+    for (const t of channel.tables) {
+      const set = tableChannels.get(t)
+      if (!set) continue
+      set.delete(channel)
+      if (set.size === 0) tableChannels.delete(t)
+    }
+    for (const key of channel.keys || []) {
+      const table = key.slice(0, key.indexOf('\0'))
+      const rest = key.slice(table.length + 1)
+      const column = rest === '' ? null : rest.slice(0, rest.indexOf('\0'))
+      if (channel.summary) {
+        const group = summaryGroups.get(key)
+        if (!group) continue
+        group.channels.delete(channel)
+        if (group.channels.size === 0) {
+          summaryGroups.delete(key)
+          countColumn(summaryColumnsOf, table, column, -1)
+        }
+        continue
+      }
+      const set = byFilter.get(key)
+      if (!set) continue
+      set.delete(channel)
+      if (set.size === 0) {
+        byFilter.delete(key)
+        countColumn(filterColumnsOf, table, column, -1)
+      }
+    }
+    if (summaryGroups.size === 0 && summaryTimer) {
+      clearInterval(summaryTimer)
+      summaryTimer = null
+    }
+  }
+
+  /** The index keys a row of `table` reaches (columnsOf: filterColumnsOf / summaryColumnsOf). */
+  function keysOfRow(columnsOf, table, row) {
+    const cols = columnsOf.get(table)
+    if (!cols) return []
+    const keys = []
+    for (const column of cols.keys()) {
+      if (column == null) keys.push(filterKey(table, null))
+      else if (row && row[column] != null) keys.push(filterKey(table, column, String(row[column])))
+    }
+    return keys
+  }
+
+  function overBuffer(ws) {
+    if (ws.bufferedAmount <= maxBufferedBytes) return false
+    counters.terminatedSlow++
+    logger?.warn?.('[realtimeHub] terminating slow live socket', sockets.get(ws)?.ip)
+    ws.terminate()
+    return true
+  }
+
+  /**
+   * Send each summary group's pending rows (the newest per key since the last
+   * flush) as one `db-changes` frame per channel; one serialisation per group.
+   */
+  function flushSummaries() {
+    for (const group of summaryGroups.values()) {
+      if (group.pending.size === 0) continue
+      const body = JSON.stringify([...group.pending.values()])
+      group.pending.clear()
+      for (const channel of group.channels) {
+        const ws = channel.ws
+        if (ws.readyState !== 1 || overBuffer(ws)) continue
+        ws.send(`{"type":"db-changes","id":${JSON.stringify(channel.id)},"changes":${body}}`, { compress: false })
+        counters.summaryFrames++
+      }
+    }
+  }
+
+  function dropSocket(ws) {
+    const state = sockets.get(ws)
+    if (!state) return
+    for (const ch of state.channels.values()) unindexChannel(ch)
+    state.channels.clear()
+    sockets.delete(ws)
+    if (state.viewer) viewerCount--
+    if (state.proved) countDown(provedByKey, state.proofKey)
+    else {
+      unprovedCount--
+      if (!state.viewer) for (const net of state.nets) countDown(netUnprovedTablets, net)
+    }
+    const n = (ipCounts.get(state.bucket) || 1) - 1
+    if (n <= 0) ipCounts.delete(state.bucket)
+    else ipCounts.set(state.bucket, n)
+    for (const net of state.nets) {
+      const m = (netCounts.get(net) || 1) - 1
+      if (m <= 0) netCounts.delete(net)
+      else netCounts.set(net, m)
+    }
+    if (sockets.size === 0 && graceTimer) {
+      clearInterval(graceTimer)
+      graceTimer = null
+    }
+  }
+
+  function countDown(map, key) {
+    const m = (map.get(key) || 1) - 1
+    if (m <= 0) map.delete(key)
+    else map.set(key, m)
+  }
+
+  /** What the socket a state describes shows of itself to socketProof / privateRows / grantChannel. */
+  const socketView = (state) => ({ ip: state.ip, bucket: state.bucket, viewer: state.viewer, channels: state.channels })
+
+  /**
+   * Ask socketProof what the socket proved; mark it proved when its key has
+   * room (maxProvedPerKey). A socket that proved something stays so.
+   */
+  function proveSocket(state) {
+    if (!socketProof || state.proved) return
+    let key = null
+    try { key = socketProof(socketView(state)) } catch { key = null }
+    if (typeof key !== 'string' || !key || (provedByKey.get(key) || 0) >= maxProvedPerKey) return
+    state.proved = true
+    state.proofKey = key
+    provedByKey.set(key, (provedByKey.get(key) || 0) + 1)
+    if (sockets.has(state.ws)) {
+      unprovedCount--
+      if (!state.viewer) for (const net of state.nets) countDown(netUnprovedTablets, net)
+    }
+  }
+
+  /**
+   * Make room for `newcomer` (a state not admitted yet) among the sockets
+   * that proved nothing and `inPool` takes: the oldest that held no channel
+   * for idleEvictMs, else the newest of the network holding the most such
+   * sockets. False (the newcomer is refused) when there is none, or when the
+   * newcomer's own network would then hold the most (a network's flood never
+   * pushes out another network's sockets).
+   */
+  function makeRoom(newcomer, inPool) {
+    const now = Date.now()
+    const groups = new Map() // network -> { n, newest }
+    let idle = null
+    for (const [ws, state] of sockets) {
+      if (state.proved || !inPool(state)) continue
+      if (!idle && state.channels.size === 0 && state.noChannelSince != null && now - state.noChannelSince >= idleEvictMs) idle = ws
+      let g = groups.get(state.group)
+      if (!g) groups.set(state.group, (g = { n: 0, newest: null }))
+      g.n++
+      g.newest = ws // sockets keeps arrival order
+    }
+    let victim = idle
+    if (!victim) {
+      let most = null
+      for (const g of groups.values()) if (!most || g.n > most.n) most = g
+      if (!most) return false
+      const own = newcomer.proved ? 0 : (groups.get(newcomer.group)?.n || 0) + 1
+      if (own >= most.n) return false
+      victim = most.newest
+    }
+    counters.evicted++
+    try { victim.close(1013, 'Live connection limit reached') } catch { /* gone */ }
+    dropSocket(victim)
+    return true
+  }
+
+  /** Close the sockets that held no channel for channelGraceMs. */
+  function closeChannelless() {
+    const now = Date.now()
+    for (const [ws, state] of [...sockets]) {
+      if (state.channels.size > 0 || now - state.noChannelSince < channelGraceMs) continue
+      counters.closedNoChannel++
+      try { ws.close(1008, 'No subscription') } catch { /* gone */ }
+      dropSocket(ws)
+    }
+  }
+
+  function ensureGraceTimer() {
+    if (graceTimer || !(channelGraceMs > 0)) return
+    graceTimer = setInterval(closeChannelless, Math.max(250, Math.floor(channelGraceMs / 2)))
+    graceTimer.unref?.()
+  }
+
+  /** Validate one sub; returns a normalised sub or an error string. */
+  function parseSub(raw) {
+    if (!raw || typeof raw !== 'object') return 'sub must be an object'
+    const { table, schema } = raw
+    const event = raw.event ?? '*'
+    if (schema != null && schema !== 'public') return `unsupported schema: ${String(schema).slice(0, 40)}`
+    if (typeof table !== 'string' || !tableSet.has(table)) return `table not subscribable: ${String(table).slice(0, 40)}`
+    if (!EVENTS.has(event)) return `unsupported event: ${String(event).slice(0, 20)}`
+    const hasColumn = raw.column != null && raw.column !== ''
+    if (!hasColumn) {
+      if (!allowUnfiltered) return 'a filter is required'
+      return { table, event, column: null, value: null }
+    }
+    const { column } = raw
+    if (typeof column !== 'string' || !isFilterColumn(table, column)) {
+      return `filter column not allowed: ${String(column).slice(0, 40)}`
+    }
+    if (raw.op != null && raw.op !== 'eq') return `unsupported filter operator: ${String(raw.op).slice(0, 10)}`
+    const value = raw.value
+    if (value == null || (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean')) {
+      return 'filter value must be a string, number or boolean'
+    }
+    const str = String(value)
+    if (str.length === 0 || str.length > 200) return 'filter value length must be 1-200'
+    return { table, event, column, value: str }
+  }
+
+  function handleSubscribe(ws, state, msg) {
+    const id = msg.id
+    if (typeof id !== 'string' || id.length === 0 || id.length > 128) {
+      counters.rejected++
+      return send(ws, { type: 'subscribe-db-error', id: typeof id === 'string' ? id.slice(0, 128) : null, code: 'invalid_id', message: 'id must be a string of 1-128 chars' })
+    }
+    const fail = (code, message) => {
+      counters.rejected++
+      send(ws, { type: 'subscribe-db-error', id, code, message })
+    }
+    if (!Array.isArray(msg.subs) || msg.subs.length === 0) return fail('invalid_subs', 'subs must be a non-empty array')
+    if (msg.subs.length > maxSubsPerChannel) return fail('too_many_subs', `at most ${maxSubsPerChannel} subs per channel`)
+    if (!state.channels.has(id) && state.channels.size >= maxChannelsPerSocket) {
+      return fail('too_many_channels', `at most ${maxChannelsPerSocket} channels per socket`)
+    }
+    const subs = []
+    for (const raw of msg.subs) {
+      const sub = parseSub(raw)
+      if (typeof sub === 'string') return fail('invalid_sub', sub)
+      subs.push(sub)
+    }
+    const previous = state.channels.get(id)
+    if (previous) unindexChannel(previous)
+    // summary: the livescore list, which shows scores only and needs no frame per state
+    const channel = { id, ws, subs, tables: new Set(subs.map(s => s.table)), summary: msg.summary === true, grant: null }
+    if (grantChannel) {
+      try { channel.grant = grantChannel(msg, socketView(state)) || null } catch { channel.grant = null }
+    }
+    state.channels.set(id, channel)
+    state.noChannelSince = null
+    indexChannel(channel)
+    // a match token on the channel, or the address that proved a match since it connected
+    proveSocket(state)
+    send(ws, { type: 'subscribe-db-ack', id })
+  }
+
+  function handleUnsubscribe(ws, state, msg) {
+    const id = typeof msg.id === 'string' ? msg.id : null
+    const channel = id != null ? state.channels.get(id) : null
+    if (channel) {
+      unindexChannel(channel)
+      state.channels.delete(id)
+      if (state.channels.size === 0) state.noChannelSince = Date.now()
+    }
+    send(ws, { type: 'unsubscribe-db-ack', id })
+  }
+
+  function rateLimited(state) {
+    const now = Date.now()
+    if (now - state.window >= rateLimitWindowMs) {
+      state.window = now
+      state.count = 0
+    }
+    state.count++
+    return state.count > rateLimitCount
+  }
+
+  /**
+   * Take over a `?purpose=live` socket. Call it from wss.on('connection')
+   * before any role-socket bookkeeping, then return.
+   * @param {import('ws').WebSocket} ws
+   * @param {import('node:http').IncomingMessage} req
+   * @param {{ ip?: string }} [info]
+   * @returns {boolean} false when the socket was refused (already closed)
+   */
+  function handleConnection(ws, req, info = {}) {
+    const ip = info.ip || getClientIp(req)
+    const bucket = bucketOf(ip)
+    const viewer = isViewerRequest(req)
+    let nets = []
+    try { nets = (netsOf ? netsOf(ip) || [] : []).map(([kind, key]) => [kind, `${kind}\0${key}`]) } catch { nets = [] }
+    if ((ipCounts.get(bucket) || 0) >= maxPerIp) {
+      ws.close(1008, 'Too many live connections from this IP')
+      return false
+    }
+    for (const [kind, net] of nets) {
+      const max = maxPerNet?.[kind]
+      if (max > 0 && (netCounts.get(net) || 0) >= max) {
+        ws.close(1008, 'Too many live connections from this network')
+        return false
+      }
+    }
+    // the widest network (netsOf), else the bucket: who makes room at a cap
+    const group = nets.length > 0 ? nets[nets.length - 1][1] : `bucket\0${bucket}`
+    const state = { ws, ip, bucket, viewer, group, nets: nets.map(([, net]) => net), channels: new Map(), noChannelSince: Date.now(), window: Date.now(), count: 0, proved: false, proofKey: null }
+    proveSocket(state)
+    if (!state.proved && !viewer) {
+      for (const [kind, net] of nets) {
+        const max = unprovedNetCap?.[kind]
+        if (max > 0 && (netUnprovedTablets.get(net) || 0) >= max) {
+          ws.close(1008, 'Too many live connections from this network')
+          return false
+        }
+      }
+    }
+    // The caps that make room (makeRoom): viewers, sockets that proved
+    // nothing (the rest is kept for match devices), all sockets. Idle
+    // sockets, then one network's sockets, held every slot (audit 2611 SEC-08).
+    const caps = []
+    if (viewer) caps.push([() => viewerCount >= maxViewers, (st) => st.viewer])
+    if (!state.proved) caps.push([() => unprovedCount >= maxUnproved, () => true])
+    caps.push([() => sockets.size >= maxTotal, () => true])
+    for (const [full, inPool] of caps) {
+      if (full() && !makeRoom(state, inPool)) {
+        counters.refusedAtCap++
+        if (state.proved) countDown(provedByKey, state.proofKey) // never admitted: its key's place is free
+        ws.close(1013, 'Live connection limit reached')
+        return false
+      }
+    }
+
+    sockets.set(ws, state)
+    if (viewer) viewerCount++
+    if (!state.proved) {
+      unprovedCount++
+      if (!viewer) for (const net of state.nets) netUnprovedTablets.set(net, (netUnprovedTablets.get(net) || 0) + 1)
+    }
+    ipCounts.set(bucket, (ipCounts.get(bucket) || 0) + 1)
+    for (const net of state.nets) netCounts.set(net, (netCounts.get(net) || 0) + 1)
+    heartbeat.track(ws)
+    ensureGraceTimer()
+
+    ws.on('message', (data, isBinary) => {
+      if (!sockets.has(ws)) return
+      if (isBinary) return ws.close(1003, 'Text frames only')
+      const size = data?.length ?? 0
+      if (size > maxMessageBytes) return ws.close(1009, 'Message too large')
+      if (rateLimited(state)) return ws.close(1008, 'Rate limit exceeded')
+      let msg
+      try { msg = JSON.parse(data.toString()) } catch { return ws.close(1008, 'Invalid JSON') }
+      if (!msg || typeof msg !== 'object') return ws.close(1008, 'Invalid message')
+      // A throw here reaches no handler and ends the backend (every court's
+      // live viewers, scorers and relays with it). A value the handlers cannot
+      // take (String() of {"toString":1} throws) closes this socket only;
+      // parseSub fails before handleSubscribe changes anything.
+      try {
+        switch (msg.type) {
+          case 'subscribe-db': return handleSubscribe(ws, state, msg)
+          case 'unsubscribe-db': return handleUnsubscribe(ws, state, msg)
+          case 'ping': return send(ws, { type: 'pong', timestamp: Date.now() })
+          default: return ws.close(1008, 'Message type not allowed on live sockets')
+        }
+      } catch (err) {
+        counters.rejected++
+        logger?.warn?.('[realtimeHub] message failed:', err?.message || err)
+        return ws.close(1008, 'Invalid message')
+      }
+    })
+    ws.on('close', () => dropSocket(ws))
+    ws.on('error', (err) => {
+      // ws already closed oversized/invalid frames with 1009/1002; nothing to add.
+      if (err?.code === 'WS_ERR_UNSUPPORTED_MESSAGE_LENGTH') return
+      logger?.warn?.('[realtimeHub] socket error:', err?.message || err)
+    })
+
+    send(ws, { type: 'connected', mode: 'live', protocol: LIVE_PROTOCOL_VERSION, timestamp: new Date().toISOString() })
+    return true
+  }
+
+  function rowMatches(sub, eventType, row) {
+    if (sub.event !== '*' && sub.event !== eventType) return false
+    if (sub.column == null) return true
+    if (!row) return false
+    const v = row[sub.column]
+    return v != null && String(v) === sub.value
+  }
+
+  function toMillis(v) {
+    if (v instanceof Date) return v.getTime()
+    if (typeof v === 'number') return Number.isFinite(v) ? v : null
+    if (typeof v === 'string') {
+      const n = Date.parse(v)
+      return Number.isFinite(n) ? n : null
+    }
+    return null
+  }
+
+  /**
+   * Ordering gate. Returns false when the row is older than the newest one
+   * already published for its key (the caller drops it).
+   */
+  function admitOrdered(table, type, raw) {
+    const rule = ordering && Object.prototype.hasOwnProperty.call(ordering, table) ? ordering[table] : null
+    if (!rule) return true
+    const key = raw[rule.key]
+    if (key == null) return true
+    const id = `${table}\0${key}`
+    if (type === 'DELETE') {
+      newest.delete(id)
+      recentRows.delete(id)
+      return true
+    }
+    const rawTs = toMillis(raw[rule.column])
+    if (rawTs == null) return true
+    // The ordering value is client-supplied: clamp it to now + maxFutureSkewMs,
+    // so a fast clock or a far-future updated_at cannot freeze the key's feed
+    // (every later, honest row would otherwise look stale until eviction).
+    const ts = Math.min(rawTs, clock() + maxFutureSkewMs)
+    const order = orderOf(raw, ts)
+    const prev = newest.get(id)
+    const cmp = prev == null ? 1 : compareOrder(order, prev)
+    if (cmp < 0) {
+      counters.staleDropped++
+      return false
+    }
+    // The other copy of the newest state (relay push vs HTTP write-through):
+    // same ordering value and nothing a subscriber would see differs. Remember
+    // the union of both copies' columns, so a third copy compares against all.
+    const seen = cmp === 0 ? recentRows.get(id) : undefined
+    const visible = visibleRow(table, raw)
+    if (seen && visible && sameColumns(seen, visible)) {
+      counters.duplicateDropped++
+      recentRows.set(id, { ...seen, ...visible })
+      return false
+    }
+    newest.delete(id) // re-insert: Map order doubles as LRU order
+    newest.set(id, mergeOrder(prev, order))
+    if (newest.size > maxOrderingEntries) newest.delete(newest.keys().next().value)
+    recentRows.delete(id)
+    if (visible && maxDuplicateRows > 0) {
+      recentRows.set(id, visible)
+      if (recentRows.size > maxDuplicateRows) recentRows.delete(recentRows.keys().next().value)
+    }
+    return true
+  }
+
+  /** The order of a row: its clock value and the counters it carries. */
+  function orderOf(raw, ts) {
+    const seq = Number(raw._seq)
+    const rseq = Number(raw._relaySeq)
+    return {
+      ts,
+      session: typeof raw._session === 'string' && raw._session && Number.isFinite(seq) ? raw._session : null,
+      seq,
+      epoch: typeof raw._relayEpoch === 'string' && raw._relayEpoch && Number.isFinite(rseq) ? raw._relayEpoch : null,
+      rseq
+    }
+  }
+
+  /**
+   * -1: `order` is older than `prev` (drop), 0: the same state, 1: newer.
+   * Counters first: the relay's (both stamped by this relay), then one scorer
+   * session's. Otherwise the clock, where a row older by more than
+   * reorderWindowMs counts as newer: a clock that stepped back (NTP, a device
+   * set by hand), whose rows would otherwise all be dropped until it passed
+   * the newest value.
+   */
+  function compareOrder(order, prev) {
+    if (order.epoch && order.epoch === prev.epoch) return Math.sign(order.rseq - prev.rseq)
+    if (order.session && order.session === prev.session) return Math.sign(order.seq - prev.seq)
+    if (order.ts === prev.ts) return 0
+    if (order.ts > prev.ts) return 1
+    return prev.ts - order.ts > reorderWindowMs ? 1 : -1
+  }
+
+  /**
+   * The newest order after `order` passed: its counters (a row without them
+   * keeps the last ones seen), and the later clock value while the clock did
+   * not step back, so a late database copy of an older state stays out.
+   */
+  function mergeOrder(prev, order) {
+    if (!prev) return order
+    const stepped = prev.ts - order.ts > reorderWindowMs
+    return {
+      ts: stepped ? order.ts : Math.max(prev.ts, order.ts),
+      session: order.session || prev.session,
+      seq: order.session ? order.seq : prev.seq,
+      epoch: order.epoch || prev.epoch,
+      rseq: order.epoch ? order.rseq : prev.rseq
+    }
+  }
+
+  /**
+   * A row as a live subscriber would see it (clone, internals out, redact,
+   * project): with privateRows, as a granted channel would, so a change of a
+   * private column alone (the scorer-attention alarm) is no duplicate.
+   */
+  function visibleRow(table, raw) {
+    const row = cloneRow(raw)
+    if (!row) return null
+    stripInternal(row)
+    return privateRows ? grantedRow(table, redact(table, row) || row) : publicRow(table, row)
+  }
+
+  /**
+   * Publish changed rows to matching subscribers.
+   *
+   * @param {string} table
+   * @param {'INSERT'|'UPDATE'|'UPSERT'|'DELETE'} eventType  UPSERT resolves each row
+   *        to INSERT/UPDATE through its `__inserted` flag (missing -> UPDATE).
+   * @param {object|object[]} rows  RETURNING * rows. For DELETE these are the old rows.
+   * @param {{ oldRows?: object[], commitTimestamp?: string }} [opts]
+   *        oldRows: previous versions for UPDATE, index-aligned with rows (optional).
+   * @returns {number} messages sent (one per socket and row; cascades included)
+   */
+  function broadcastDbChange(table, eventType, rows, opts = {}) {
+    const list = Array.isArray(rows) ? rows : (rows ? [rows] : [])
+    if (list.length === 0) return 0
+    const commitTimestamp = opts.commitTimestamp || new Date().toISOString()
+    const oldRows = Array.isArray(opts.oldRows) ? opts.oldRows : null
+
+    let sent = 0
+    // Rows Postgres deletes by ON DELETE CASCADE are never RETURNed: synthesise them.
+    if (eventType === 'DELETE' && cascadeDeletes && Object.prototype.hasOwnProperty.call(cascadeDeletes, table)) {
+      for (const rule of cascadeDeletes[table] || []) {
+        const derived = []
+        for (const raw of list) {
+          if (!raw || typeof raw !== 'object') continue
+          const fk = raw[rule.from || 'id']
+          if (fk == null) continue
+          const row = { [rule.key]: fk }
+          for (const c of rule.carry || []) if (raw[c] !== undefined) row[c] = raw[c]
+          derived.push(row)
+        }
+        if (derived.length) sent += broadcastDbChange(rule.table, 'DELETE', derived, { commitTimestamp })
+      }
+    }
+
+    // Resolve types and apply ordering even without subscribers, so the
+    // ordering state is right when the first one arrives.
+    const accepted = []
+    for (let i = 0; i < list.length; i++) {
+      const raw = list[i]
+      if (!raw || typeof raw !== 'object') continue
+      let type = eventType
+      if (type === 'UPSERT') type = raw.__inserted === true ? 'INSERT' : 'UPDATE'
+      if (type !== 'INSERT' && type !== 'UPDATE' && type !== 'DELETE') continue
+      if (!admitOrdered(table, type, raw)) continue
+      accepted.push({ i, raw, type })
+    }
+
+    if (accepted.length === 0) return sent
+    if (summaryColumnsOf.has(table)) queueSummaries(table, accepted, commitTimestamp)
+    if (!filterColumnsOf.has(table)) return sent
+    counters.published++
+
+    // Prepare each row once: clone, strip internals, redact, project. The
+    // redacted rows are kept for a granted channel's projection (privateRows).
+    const prepared = []
+    const redactedOf = (r) => {
+      const c = cloneRow(r)
+      return c ? (redact(table, stripInternal(c)) || c) : null
+    }
+    const projected = (r) => (project ? (project(table, r) || {}) : r)
+    for (const { i, raw, type } of accepted) {
+      const base = redactedOf(raw)
+      if (!base) continue
+      const row = projected(base)
+      const previousBase = type === 'UPDATE' && oldRows && oldRows[i] ? redactedOf(oldRows[i]) : null
+      const previous = previousBase ? projected(previousBase) : null
+      const payload = type === 'DELETE'
+        ? { schema: 'public', table, commit_timestamp: commitTimestamp, eventType: type, new: {}, old: row }
+        : { schema: 'public', table, commit_timestamp: commitTimestamp, eventType: type, new: row, old: previous || {} }
+      prepared.push({ index: prepared.length, type, row, base, previousBase, payload, json: null, grantedJson: null })
+    }
+    if (prepared.length === 0) return sent
+
+    // Match per channel, then group per socket so a row goes out once per
+    // socket however many of its channels want it.
+    /** @type {Map<import('ws').WebSocket, Map<number, {p: object, ids: string[], coalesced: number}>>} */
+    const perSocket = new Map()
+    // The channels whose filters the rows reach (byFilter)
+    const channels = new Set()
+    for (const p of prepared) {
+      for (const key of keysOfRow(filterColumnsOf, table, p.row)) {
+        const set = byFilter.get(key)
+        if (set) for (const ch of set) channels.add(ch)
+      }
+    }
+    for (const channel of channels) {
+      const ws = channel.ws
+      if (ws.readyState !== 1) continue
+      const matched = []
+      for (const p of prepared) {
+        if (channel.subs.some(sub => sub.table === table && rowMatches(sub, p.type, p.row))) matched.push(p)
+      }
+      if (matched.length === 0) continue
+      const over = matched.length > maxRowsPerPublish
+      const toSend = over ? [matched[matched.length - 1]] : matched
+      let entries = perSocket.get(ws)
+      if (!entries) perSocket.set(ws, (entries = new Map()))
+      for (const p of toSend) {
+        let e = entries.get(p.index)
+        if (!e) entries.set(p.index, (e = { p, ids: [], coalesced: 0, granted: false }))
+        e.ids.push(channel.id)
+        if (over) e.coalesced = Math.max(e.coalesced, matched.length)
+        // the socket proved this row for one of its channels: it gets it whole, once
+        if (privateRows && !e.granted) {
+          const st = sockets.get(ws)
+          try { e.granted = !!st && privateRows.grants(channel, table, p.row, st.channels, socketView(st)) === true } catch { e.granted = false }
+        }
+      }
+    }
+
+    for (const [ws, entries] of perSocket) {
+      if (overBuffer(ws)) continue
+      const ordered = [...entries.values()].sort((a, b) => a.p.index - b.p.index)
+      for (const { p, ids, coalesced, granted } of ordered) {
+        let body
+        if (granted) {
+          if (p.grantedJson == null) {
+            const row = grantedRow(table, p.base)
+            const previous = p.previousBase ? grantedRow(table, p.previousBase) : null
+            p.grantedJson = JSON.stringify(p.type === 'DELETE'
+              ? { ...p.payload, new: {}, old: row }
+              : { ...p.payload, new: row, old: previous || {} })
+          }
+          body = p.grantedJson
+        } else {
+          if (p.json == null) p.json = JSON.stringify(p.payload)
+          body = p.json
+        }
+        // Splice the channel ids in front of the shared body: no per-socket stringify.
+        const head = `{"type":"db-change","id":${JSON.stringify(ids[0])}` +
+          (ids.length > 1 ? `,"ids":${JSON.stringify(ids)}` : '') +
+          (coalesced ? `,"coalesced":${coalesced}` : '') + ','
+        ws.send(head + body.slice(1), { compress: false })
+        sent++
+      }
+    }
+    counters.delivered += sent
+    return sent
+  }
+
+  /**
+   * Queue accepted rows for the summary groups their values reach: the newest
+   * row per key (the ordering key, else the id) waits for flushSummaries.
+   */
+  function queueSummaries(table, accepted, commitTimestamp) {
+    const rule = ordering && Object.prototype.hasOwnProperty.call(ordering, table) ? ordering[table] : null
+    for (const { raw, type } of accepted) {
+      const keys = keysOfRow(summaryColumnsOf, table, raw)
+      if (keys.length === 0) continue
+      const clone = cloneRow(raw)
+      if (!clone) continue
+      const row = summaryRow(table, stripInternal(clone))
+      const rowKey = String((rule && raw[rule.key]) ?? raw.id ?? '')
+      const payload = type === 'DELETE'
+        ? { schema: 'public', table, commit_timestamp: commitTimestamp, eventType: type, new: {}, old: row }
+        : { schema: 'public', table, commit_timestamp: commitTimestamp, eventType: type, new: row, old: {} }
+      for (const key of keys) {
+        const group = summaryGroups.get(key)
+        if (!group) continue
+        group.pending.delete(rowKey) // re-insert: the frame keeps publish order
+        group.pending.set(rowKey, payload)
+      }
+    }
+  }
+
+  /**
+   * Forget the ordering value of `key` in `table`: its next row passes
+   * whatever its ordering value. A scorer-device take-over (db/019): the
+   * value is the scoring device's own clock, and a device whose clock is
+   * behind the previous one's had every row dropped as stale until its clock
+   * passed the previous device's last value (stress test 2026-10-25). The
+   * previous device's writes are refused from then on (409 OV_SCORER_MOVED).
+   */
+  function forgetOrder(table, key) {
+    if (key == null) return
+    const id = `${table}\0${key}`
+    newest.delete(id)
+    recentRows.delete(id)
+  }
+
+  /** Numbers for /health and logs. */
+  function stats() {
+    let channels = 0
+    for (const s of sockets.values()) channels += s.channels.size
+    return {
+      sockets: sockets.size,
+      viewers: viewerCount,
+      unproved: unprovedCount,
+      proved: sockets.size - unprovedCount,
+      // the places proof keys hold (maxProvedPerKey): one per proved socket
+      provedPlaces: [...provedByKey.values()].reduce((a, b) => a + b, 0),
+      ips: ipCounts.size,
+      nets: netCounts.size,
+      channels,
+      summaryGroups: summaryGroups.size,
+      tables: Object.fromEntries([...tableChannels].map(([t, set]) => [t, set.size])),
+      orderingKeys: newest.size,
+      duplicateRows: recentRows.size,
+      ...counters
+    }
+  }
+
+  /** Close every live socket and stop the heartbeat (shutdown, tests). */
+  function close(code = 1001, reason = 'Server shutting down') {
+    heartbeat.stop()
+    if (graceTimer) {
+      clearInterval(graceTimer)
+      graceTimer = null
+    }
+    if (summaryTimer) {
+      clearInterval(summaryTimer)
+      summaryTimer = null
+    }
+    for (const ws of [...sockets.keys()]) {
+      try { ws.close(code, reason) } catch { /* ignore */ }
+      dropSocket(ws)
+    }
+    newest.clear()
+    if (liveWss) {
+      try { liveWss.close() } catch { /* ignore */ }
+      liveWss = null
+    }
+  }
+
+  return {
+    isLiveRequest,
+    handleUpgrade,
+    handleConnection,
+    broadcastDbChange,
+    publish: broadcastDbChange,
+    forgetOrder,
+    heartbeat,
+    stats,
+    close
+  }
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * Default way to find the Postgres key of a scoreboard's synced match, the
+ * same way Scoreboard.jsx resolves supabaseMatchId: a UUID `externalId` is
+ * matches.id, otherwise `seed_key` is matches.external_id. Matches without a
+ * seed key are refused: the frontend's `String(dexieId)` fallback collides
+ * across devices.
+ * @param {object|null|undefined} match  the `match` object of sync-match-data
+ * @returns {{ column: 'id'|'external_id', value: string } | null}
+ */
+export function matchKeyFromSyncedMatch(match) {
+  if (!match || typeof match !== 'object') return null
+  const ext = match.externalId
+  if (typeof ext === 'string' && UUID_RE.test(ext)) return { column: 'id', value: ext.toLowerCase() }
+  const seed = match.seed_key ?? match.seedKey
+  if (typeof seed === 'string' && seed.length > 0 && seed.length <= 200) return { column: 'external_id', value: seed }
+  return null
+}
+
+/**
+ * Turns relay `live-state-update` messages from the scoreboard into
+ * `match_live_state` UPDATE db-change events, so livescore and the referee
+ * alarm keep moving when the scorer's HTTP sync is down.
+ *
+ * The message's `matchId` is the RELAY ROOM KEY: the scoreboard's local Dexie
+ * id (e.g. 7), the same value handleSyncMatchData stores in clientInfo.matchId
+ * and activeMatches. It is never looked up in Postgres directly. The relay
+ * takes the scoreboard's last sync-match-data entry for that room
+ * (`getSyncedMatch`) and derives the Postgres key from the synced match
+ * (`matchKeyFromSyncedMatch`): UUID externalId -> matches.id, else seed_key ->
+ * matches.external_id.
+ *
+ * Owning the relay room is not enough: the synced match names the database
+ * row (externalId / seed_key, both public), so `verifyMatch(row, synced)`
+ * binds the two (server.js: the synced game PIN must be the row's). Without
+ * verifyMatch only the default isAuthorized check applies: the sender is the
+ * room's scoreboard AND the socket that last synced that match.
+ *
+ * @param {Object} opts
+ * @param {ReturnType<typeof createRealtimeHub>} opts.hub
+ * @param {(relayMatchId: string) => ({ match?: object, updatedBy?: string } | null | undefined)} opts.getSyncedMatch
+ *        server.js: (id) => activeMatches.get(String(id))
+ * @param {(key: { column: 'id'|'external_id', value: string }) => Promise<object|null>} opts.lookupMatch
+ *        Resolves the key to the match row, at least `{ id, sport_type }`. Wire to pgQuery, e.g.
+ *        runQuery({table:'matches', action:'select', columns:'id,sport_type',
+ *        filters:[{type:'eq',column:key.column,value:key.value}], maybeSingle:true}, {internal:true}).
+ * @param {(match: object) => ({column: string, value: string} | null)} [opts.matchKey=matchKeyFromSyncedMatch]
+ * @param {string} [opts.table='match_live_state']
+ * @param {string} [opts.fkColumn='match_id']  set to the resolved `id`
+ * @param {string[]} [opts.carryColumns=['sport_type']]  copied from the lookup result
+ * @param {(table: string, column: string) => boolean} [opts.allowColumn]
+ * @param {(row: object, synced: object, client: object) => boolean} [opts.verifyMatch]  may this synced
+ *        relay entry speak for the looked-up row (`client`: the sender)? false -> reason 'pin_mismatch', nothing published
+ *        Optional catalog check; keys it rejects are dropped from the row.
+ * @param {(client: object, message: object, synced: object) => boolean} [opts.isAuthorized]
+ *        Default: client is the room's scoreboard and the current owner of the synced match.
+ * @param {number} [opts.cacheTtlMs=600000]
+ * @param {number} [opts.negativeCacheTtlMs=30000]
+ * @param {number} [opts.maxCacheEntries=2000]
+ * @param {number} [opts.maxPayloadBytes=262144]
+ */
+export function createLiveStateRelay({
+  hub,
+  getSyncedMatch,
+  lookupMatch,
+  matchKey = matchKeyFromSyncedMatch,
+  table = 'match_live_state',
+  fkColumn = 'match_id',
+  carryColumns = ['sport_type'],
+  allowColumn,
+  verifyMatch = null,
+  isAuthorized = (client, message, synced) =>
+    client?.role === 'scoreboard' &&
+    client?.matchId != null &&
+    String(client.matchId) === String(message?.matchId) &&
+    client?.id != null &&
+    synced?.updatedBy === client.id,
+  cacheTtlMs = 10 * 60 * 1000,
+  negativeCacheTtlMs = 30 * 1000,
+  maxCacheEntries = 2000,
+  maxPayloadBytes = 256 * 1024
+} = {}) {
+  if (!hub || typeof hub.broadcastDbChange !== 'function') throw new TypeError('createLiveStateRelay: hub is required')
+  if (typeof getSyncedMatch !== 'function') throw new TypeError('createLiveStateRelay: getSyncedMatch is required')
+  if (typeof lookupMatch !== 'function') throw new TypeError('createLiveStateRelay: lookupMatch is required')
+
+  const cache = new Map() // `${column}:${value}` -> { value, expires }
+  const pending = new Map() // same key -> Promise
+
+  /** @param {{column: string, value: string}} key */
+  async function resolve(key) {
+    const cacheKey = `${key.column}:${key.value}`
+    const now = Date.now()
+    const hit = cache.get(cacheKey)
+    if (hit && hit.expires > now) return hit.value
+    if (pending.has(cacheKey)) return pending.get(cacheKey)
+    const p = (async () => {
+      try {
+        const row = await lookupMatch({ column: key.column, value: key.value })
+        const value = row && row.id != null ? row : null
+        if (cache.size >= maxCacheEntries) cache.delete(cache.keys().next().value)
+        cache.set(cacheKey, { value, expires: Date.now() + (value ? cacheTtlMs : negativeCacheTtlMs) })
+        return value
+      } finally {
+        pending.delete(cacheKey)
+      }
+    })()
+    pending.set(cacheKey, p)
+    return p
+  }
+
+  /**
+   * @param {object} client   server.js clientInfo ({ id, role, matchId, ... })
+   * @param {{ matchId: string|number, liveState: object }} message  matchId = relay room key (Dexie id)
+   * @returns {Promise<{ ok: boolean, reason?: string, sent?: number }>}
+   */
+  async function handle(client, message) {
+    const relayMatchId = message?.matchId
+    const liveState = message?.liveState
+    if (relayMatchId == null || (typeof relayMatchId !== 'string' && typeof relayMatchId !== 'number')) return { ok: false, reason: 'missing_match_id' }
+    if (!liveState || typeof liveState !== 'object' || Array.isArray(liveState)) return { ok: false, reason: 'invalid_live_state' }
+
+    const synced = getSyncedMatch(String(relayMatchId))
+    if (!synced) return { ok: false, reason: 'not_synced' }
+    if (!isAuthorized(client, message, synced)) return { ok: false, reason: 'forbidden' }
+
+    let size
+    try { size = JSON.stringify(liveState).length } catch { return { ok: false, reason: 'invalid_live_state' } }
+    if (size > maxPayloadBytes) return { ok: false, reason: 'too_large' }
+
+    const key = matchKey(synced.match)
+    if (!key) return { ok: false, reason: 'no_match_key' }
+
+    let match
+    try {
+      match = await resolve(key)
+    } catch (err) {
+      return { ok: false, reason: 'lookup_failed', error: err }
+    }
+    if (!match) return { ok: false, reason: 'unknown_match' }
+    if (verifyMatch && !verifyMatch(match, synced, client)) return { ok: false, reason: 'pin_mismatch' }
+    // The scoreboard computed match_id itself; a mismatch means its view of
+    // the match differs from the synced one, so publish nothing. The
+    // OpenBeach scorer sends its relay key there (the seed key, the
+    // external_id the synced match was resolved by), the indoor one
+    // matches.id: both name the same row. The row is published under
+    // matches.id either way (below).
+    const claimed = liveState[fkColumn]
+    if (claimed != null) {
+      const sameId = String(claimed).toLowerCase() === String(match.id).toLowerCase()
+      const sameSeed = key.column === 'external_id' && String(claimed) === key.value
+      if (!sameId && !sameSeed) return { ok: false, reason: 'match_mismatch' }
+    }
+
+    const row = {}
+    for (const [k, v] of Object.entries(liveState)) {
+      if (k.startsWith('__')) continue
+      if (allowColumn && !allowColumn(table, k)) continue
+      row[k] = v
+    }
+    // Never trust the client for the keys subscribers filter on.
+    row[fkColumn] = match.id
+    for (const c of carryColumns) {
+      if (match[c] !== undefined) row[c] = match[c]
+    }
+    const sent = hub.broadcastDbChange(table, 'UPDATE', [row])
+    return { ok: true, sent }
+  }
+
+  return {
+    handle,
+    resolve,
+    /**
+     * Forget cached lookups for a match: pass its id, external_id/seed key, or
+     * both (call after a matches DELETE or an external_id change).
+     */
+    invalidate(...values) {
+      const wanted = new Set(values.filter(v => v != null).map(v => String(v)))
+      for (const [k, entry] of cache) {
+        const value = k.slice(k.indexOf(':') + 1)
+        if (wanted.has(value) || (entry.value && wanted.has(String(entry.value.id)))) cache.delete(k)
+      }
+    },
+    clear() { cache.clear() }
+  }
+}

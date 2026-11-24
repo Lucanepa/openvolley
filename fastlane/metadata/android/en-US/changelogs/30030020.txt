@@ -1,0 +1,5 @@
+OpenVolley 3.3.2
+- Tablet: the scoring screen uses the whole screen (it was shrunk to 85%), no second date bar; the clock shows in the toolbar strip when the toolbar is hidden.
+- The captain's one-digit number is circled round, not an oval.
+- Coin toss on a tablet held sideways: the Confirm button no longer runs off the bottom.
+- Android: Fullscreen hides the status and navigation bars.

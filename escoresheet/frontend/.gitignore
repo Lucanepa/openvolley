@@ -1,0 +1,50 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+# every build output: dist-electron, dist-ssr and each subdomain's dist-<name>
+# (scripts/build-subdomains.js), dist-manager included
+dist-*
+dev-dist
+*.local
+_build_*.html
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Capacitor (android/ and ios/ are committed; their own .gitignore drops build
+# output, local.properties and the copied web assets — see ANDROID.md, IOS.md)
+.capacitor
+dist-capacitor
+
+# Electron
+electron/dist
+electron/out
+
+# SSL Certificates (self-signed for development)
+localhost.pem
+localhost-key.pem
+*.pem
+*.key
+*.crt
+
+# Environment variables
+.env
+.env.*
+sheet-pixels-out/
+roster-scroll-out/

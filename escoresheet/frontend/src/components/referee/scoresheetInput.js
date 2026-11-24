@@ -1,0 +1,94 @@
+/**
+ * The referee tablet's live scoresheet: the scoresheet viewer's input
+ * (scoresheet_pdf/App_Scoresheet `matchData`) built from the relay bundle the
+ * tablet already holds, instead of the scorer device's IndexedDB
+ * (ScoresheetApp MatchIdViewer) or the approved file (?date&game).
+ *
+ * The bundle is the scorer's Dexie match as the relay hands it out
+ * (backend/server.js wireBundle, electron/lanRelayCore.cjs toWireBundle):
+ * { access, match, homeTeam, awayTeam, homePlayers, awayPlayers, sets,
+ * events, liveState? }. The relays leave out, also from a 'full' bundle,
+ * every PIN, the officials, every signature, the account approval record and
+ * people's dates of birth (backend/lib/publicColumns.js): the sheet shows its
+ * boxes for them empty.
+ */
+
+import { lineupHiddenUntilBoth, startsSet } from '../../domain/lineupPrivacy'
+import { eventsBySeq, normalizeMatchData, setsByIndex } from '../../../scoresheet_pdf/utils/matchData'
+
+/** Only a 'full' bundle (the referee PIN proved) has rosters and events. */
+export function bundleHasFullAccess(bundle) {
+  return !!bundle && typeof bundle === 'object' && bundle.access === 'full' && !!bundle.match && typeof bundle.match === 'object'
+}
+
+/** Point events of one set, per team. */
+function pointsOf(events, setIndex) {
+  const pts = { home: 0, away: 0 }
+  for (const e of events) {
+    if (e.type === 'point' && Number(e.setIndex) === setIndex && (e.payload?.team === 'home' || e.payload?.team === 'away')) pts[e.payload.team]++
+  }
+  return pts
+}
+
+/**
+ * The events without the line-up of a set that has not started while only
+ * one team's is recorded (domain/lineupPrivacy.js: hidden until the other
+ * team's is in, as on the referee's court).
+ */
+export function withoutLoneLineups(events) {
+  const bySet = new Map()
+  for (const e of events) {
+    const i = Number(e.setIndex ?? 1)
+    const s = bySet.get(i) || { started: false, teams: new Set() }
+    // (a penalty point before the first serve starts nothing: domain/lineupPrivacy startsSet)
+    if (startsSet(e)) s.started = true
+    if (e.type === 'lineup' && (e.payload?.team === 'home' || e.payload?.team === 'away')) s.teams.add(e.payload.team)
+    bySet.set(i, s)
+  }
+  return events.filter((e) => {
+    if (e.type !== 'lineup') return true
+    const s = bySet.get(Number(e.setIndex ?? 1))
+    const other = e.payload?.team === 'home' ? 'away' : 'home'
+    return !lineupHiddenUntilBoth({ setStarted: s.started, ownEntered: true, otherEntered: s.teams.has(other) })
+  })
+}
+
+/**
+ * The scoresheet input for a 'full' relay bundle, or null (no bundle, a
+ * 'summary' bundle, no match).
+ *
+ * - sets by index, events by seq (the order ScoresheetApp reads them from Dexie);
+ * - the first line-up of a set not started is left out until the other is in;
+ * - a set still running takes its score from its point events: the tablet
+ *   lays a newer live-state push's score over the bundle's set
+ *   (serverDataSync.applyNewerLiveState), up to one sync ahead of the events
+ *   it holds, and the sheet would warn "the points recorded do not match the
+ *   set score" until the scorer's next sync. Finished sets stay as recorded;
+ * - teams and players are passed as they are (the sheet formats names and
+ *   sorts by shirt number itself); a team sent as a plain name becomes { name }.
+ * @param {object|null|undefined} bundle
+ * @returns {null|{ match: object, homeTeam: object|null, awayTeam: object|null, homePlayers: object[], awayPlayers: object[], sets: object[], events: object[], sanctions: [] }}
+ */
+export function scoresheetInputFromBundle(bundle) {
+  if (!bundleHasFullAccess(bundle)) return null
+  const events = withoutLoneLineups(eventsBySeq(bundle.events))
+  const sets = setsByIndex(bundle.sets)
+    .map((s) => {
+      if (s.finished) return s
+      const index = Number(s.index)
+      const pts = pointsOf(events, index)
+      if (pts.home + pts.away === 0) return s
+      if (s.homePoints === pts.home && s.awayPoints === pts.away) return s
+      return { ...s, homePoints: pts.home, awayPoints: pts.away }
+    })
+  // the one shape every renderer hands the sheet (scoresheet_pdf/utils/matchData)
+  return normalizeMatchData({
+    match: bundle.match,
+    homeTeam: bundle.homeTeam,
+    awayTeam: bundle.awayTeam,
+    homePlayers: bundle.homePlayers,
+    awayPlayers: bundle.awayPlayers,
+    sets,
+    events
+  })
+}
