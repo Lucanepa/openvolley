@@ -71,6 +71,21 @@
   </screenshots>
 
   <releases>
+    <release version="26.11.6" date="2026-11-24">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v26.11.6</url>
+      <description>
+        <ul>
+          <li>Tap the Substitution box: who comes in, who goes out, several at once</li>
+          <li>Option "Continuous play"; technical remarks on the scoresheet</li>
+          <li>After a replay: the score for each possible decision</li>
+          <li>Players without shirt numbers are kept; coin toss waits for them</li>
+          <li>Scorer licence needed to create a match; Back in Match setup</li>
+          <li>Sending the game PIN by email fixed</li>
+          <li>Online switch turns grey without connection</li>
+          <li>Security fixes; libero, injury and sanction rules per FIVB</li>
+        </ul>
+      </description>
+    </release>
     <release version="26.11.5" date="2026-11-23">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v26.11.5</url>
       <description>
