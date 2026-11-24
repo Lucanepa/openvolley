@@ -11,7 +11,6 @@ import { BENCH_ROLES, checkUploadedRoster, UPLOADED_NAME_MAX, UPLOADED_ROSTER_MA
 import Modal from './components/Modal'
 import SimpleHeader from './components/SimpleHeader'
 import UpdateBanner from './components/UpdateBanner'
-import SignaturePad from './components/SignaturePad'
 import { supabase } from './lib/supabaseClient'
 import { CalendarX2, Check, ChevronRight, FileUp, Loader2, Plus } from 'lucide-react'
 import { cn } from './ui/cn.js'
@@ -110,10 +109,9 @@ export default function UploadRosterApp() {
   // Fail-closed: upload stays blocked until the server confirms the PIN.
   const [serverPinValidated, setServerPinValidated] = useState(false)
 
-  // Signature states
-  const [coachSignature, setCoachSignature] = useState(null)
-  const [captainSignature, setCaptainSignature] = useState(null)
-  const [openSignature, setOpenSignature] = useState(null) // 'coach' | 'captain' | null
+  // No signatures here (owner 2026-11-24, tester bug: one team's signatures
+  // stayed in the form and went up with the other team's roster): the coach
+  // and the captain sign at the coin toss, once the roster has its numbers
   const [availableMatches, setAvailableMatches] = useState([])
   const [loadingMatches, setLoadingMatches] = useState(false)
   const [selectedMatch, setSelectedMatch] = useState(null)
@@ -841,9 +839,7 @@ export default function UploadRosterApp() {
   const checkedRoster = () => {
     const checked = checkUploadedRoster({
       players: parsedData.players,
-      bench: parsedData.bench,
-      coachSignature: coachSignature || null,
-      captainSignature: captainSignature || null
+      bench: parsedData.bench
     })
     if (checked.ok) return checked.roster
     const [problem] = checked.problems
@@ -889,13 +885,11 @@ export default function UploadRosterApp() {
       const rosterData = {
         players: checked.players,
         bench: checked.bench,
-        coachSignature: checked.coachSignature,
-        captainSignature: checked.captainSignature,
         timestamp: new Date().toISOString()
       }
 
       // Cloud first if connected: the backend checks the team's upload PIN of
-      // this match and stores the pending roster + signatures (no account
+      // this match and stores the pending roster (no account
       // needed; only the match's scorer may write the match itself).
       if (activeConnection === 'supabase' && selectedMatch?.external_id) {
         console.log('[Roster] Writing roster to the cloud for match:', selectedMatch.external_id)
@@ -1426,50 +1420,6 @@ export default function UploadRosterApp() {
               </Button>
             </section>
 
-            {/* Signatures Section */}
-            <section>
-              <SectionHeader as="h2" title={t('rosterSetup.signatures', 'Signatures')} />
-              <p className="mt-1.5 mb-4 text-xs text-stone-500">
-                {t('rosterSetup.signaturesDescription', 'Optional: Coach and captain can sign the roster before the coin toss.')}
-              </p>
-              <div className="grid gap-4 sm:grid-cols-2">
-                {[
-                  { key: 'captain', label: t('rosterSetup.captainSignature', 'Captain signature'), value: captainSignature, clear: () => setCaptainSignature(null), alt: 'Captain signature' },
-                  { key: 'coach', label: t('rosterSetup.coachSignature', 'Coach signature'), value: coachSignature, clear: () => setCoachSignature(null), alt: 'Coach signature' }
-                ].map((sig) => (
-                  <div key={sig.key} className="min-w-0">
-                    <p className="mb-1.5 text-sm font-medium text-stone-700">{sig.label}</p>
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => setOpenSignature(sig.key)}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpenSignature(sig.key) } }}
-                      className={cn(
-                        'flex h-[100px] w-full cursor-pointer items-center justify-center overflow-hidden rounded-xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60',
-                        sig.value ? 'border-2 border-emerald-500 bg-white' : 'border-2 border-dashed border-stone-300 bg-stone-50 text-stone-500 hover:bg-stone-100'
-                      )}
-                    >
-                      {sig.value ? (
-                        <img src={sig.value} alt={sig.alt} className="ov-ink max-h-full max-w-full" />
-                      ) : (
-                        <span className="text-sm">{t('rosterSetup.tapToSign', 'Tap to sign')}</span>
-                      )}
-                    </div>
-                    {sig.value && (
-                      <Button
-                        variant="danger-outline"
-                        size="sm"
-                        className="mt-2"
-                        onClick={(e) => { e.stopPropagation(); sig.clear() }}
-                      >
-                        {t('common.clear', 'Clear')}
-                      </Button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </section>
-
             <FormError size="md" className="text-center">{saveError}</FormError>
             <div className="flex justify-center pt-2">
               <Button size="xl" className="min-w-48" onClick={handleConfirm} data-testid="roster-confirm">
@@ -1537,22 +1487,6 @@ export default function UploadRosterApp() {
           </Modal>
         )}
 
-        {/* Signature Pad */}
-        <SignaturePad
-          open={openSignature !== null}
-          onClose={() => setOpenSignature(null)}
-          onSave={(signature) => {
-            if (openSignature === 'coach') {
-              setCoachSignature(signature)
-            } else if (openSignature === 'captain') {
-              setCaptainSignature(signature)
-            }
-            setOpenSignature(null)
-          }}
-          title={openSignature === 'coach'
-            ? t('rosterSetup.coachSignature', 'Coach signature')
-            : t('rosterSetup.captainSignature', 'Captain signature')}
-        />
         {/* Rosters carry names and dates of birth: link the privacy policy */}
         <LegalLinks docs={['privacy', 'terms', 'impressum']} className="mt-6 text-center text-[11px] text-stone-400" />
       </div>

@@ -3,10 +3,10 @@
  * Postgres (PG_TEST_URL, or OV_E2E_DOCKER=1; see tests/server.e2e.test.js).
  *
  *   1. a roster the app's rules refuse (lib/uploadedRoster.js) is never
- *      stored: shapes, numbers, captains, libero slots, bench roles, and
- *      signatures that are not the pad's PNG data URL
- *   2. an upload fills empty signatures only: the scorer's stay, and two
- *      teams uploading at once both keep theirs
+ *      stored: shapes, numbers, captains, libero slots, bench roles
+ *   2. an upload never writes signatures (24.11.2026: they are given at the
+ *      coin toss; an older page still sends them), and two teams uploading
+ *      at once both get their roster stored
  *   3. the status is tested again in the write: a coin toss that lands
  *      between the PIN check and the write refuses the upload
  *   4. a match update that leaves 'setup' drops the pending rosters, and a
@@ -37,7 +37,7 @@ const roster = (extra = {}) => ({
   ...extra
 })
 
-describe('upload-roster: checked, never over stored signatures, never after the coin toss', { skip: SKIP }, () => {
+describe('upload-roster: checked, never writes signatures, never after the coin toss', { skip: SKIP }, () => {
   let db
   let srv
   let sql
@@ -103,9 +103,7 @@ describe('upload-roster: checked, never over stored signatures, never after the 
       { roster: roster({ bench: [{ role: 'constructor', lastName: 'Muster' }] }) },
       { roster: roster({ players: [{ number: 1, isCaptain: true }, { number: 2, isCaptain: true }] }) },
       { roster: roster({ players: [{ number: 1, libero: 'libero1' }, { number: 2, libero: 'libero1' }] }) },
-      { roster: roster({ players: [{ number: 7 }, { number: '7' }] }) },
-      { coachSignature: 'https://tracker.example/s.png' },
-      { captainSignature: 'x' }
+      { roster: roster({ players: [{ number: 7 }, { number: '7' }] }) }
     ]
     for (const body of refused) {
       const r = await upload('home', body)
@@ -117,7 +115,7 @@ describe('upload-roster: checked, never over stored signatures, never after the 
     assert.deepEqual(row.signatures, {})
   })
 
-  it('stores the checked roster; the scorer\'s signatures stay, empty ones are filled', async () => {
+  it('stores the checked roster; signatures in the body are ignored, the stored ones stay', async () => {
     await reset({ home_coach: png('scorer-coach'), away_coach: png('away-coach') })
     const r = await upload('home', {
       roster: { ...roster(), extra: 'dropped' },
@@ -126,17 +124,27 @@ describe('upload-roster: checked, never over stored signatures, never after the 
     })
     assert.equal(r.status, 200, r.text)
     const row = await stored()
-    assert.deepEqual(row.signatures, { home_coach: png('scorer-coach'), home_captain: png('upload-captain'), away_coach: png('away-coach') })
+    assert.deepEqual(row.signatures, { home_coach: png('scorer-coach'), away_coach: png('away-coach') })
     const pending = row.connections.pending_home_roster
     assert.equal(pending.extra, undefined)
     assert.deepEqual(pending.players[1], { number: 9, firstName: 'Eva', lastName: 'Beispiel', dob: '', libero: 'libero1', isCaptain: false, isLfp: false })
-    // the scorer sees what the team signed (and takes it into empty slots only)
-    assert.equal(pending.coachSignature, png('upload-coach'))
-    assert.equal(pending.captainSignature, png('upload-captain'))
+    assert.equal(pending.coachSignature, null)
+    assert.equal(pending.captainSignature, null)
     assert.equal(row.connections.referee_enabled, true, 'the other connection keys stay')
   })
 
-  it('two teams uploading at once both keep their signatures', async () => {
+  it('an older page\'s signatures, even ones that are not a PNG, neither refuse nor sign anything', async () => {
+    await reset()
+    for (const body of [{ coachSignature: 'https://tracker.example/s.png' }, { captainSignature: 'x' }, { coachSignature: png('old-page') }]) {
+      const r = await upload('home', body)
+      assert.equal(r.status, 200, `${JSON.stringify(body)}: ${r.text}`)
+    }
+    const row = await stored()
+    assert.deepEqual(row.signatures, {})
+    assert.equal(row.connections.pending_home_roster.coachSignature, null)
+  })
+
+  it('two teams uploading at once both get their roster stored, and no signature', async () => {
     for (let round = 0; round < 4; round++) {
       await reset()
       const [h, a] = await Promise.all([
@@ -146,10 +154,7 @@ describe('upload-roster: checked, never over stored signatures, never after the 
       assert.equal(h.status, 200, h.text)
       assert.equal(a.status, 200, a.text)
       const row = await stored()
-      assert.deepEqual(row.signatures, {
-        home_coach: png(`home-${round}`), home_captain: png(`home-c-${round}`),
-        away_coach: png(`away-${round}`), away_captain: png(`away-c-${round}`)
-      }, `round ${round}`)
+      assert.deepEqual(row.signatures, {}, `round ${round}`)
       assert.ok(row.connections.pending_home_roster && row.connections.pending_away_roster)
     }
   })
