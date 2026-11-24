@@ -71,6 +71,18 @@
   </screenshots>
 
   <releases>
+    <release version="26.11.7" date="2026-11-24">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v26.11.7</url>
+      <description>
+        <ul>
+          <li>Restore match: the found match can be tapped again on short screens when signed in</li>
+          <li>Scoresheet: Fullscreen now shows the sheet alone on the whole screen</li>
+          <li>Help ("?"): every way to fill a roster and every button explained</li>
+          <li>New help videos for every section</li>
+          <li>The device check card stays in view on small tablets</li>
+        </ul>
+      </description>
+    </release>
     <release version="26.11.6" date="2026-11-24">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v26.11.6</url>
       <description>
