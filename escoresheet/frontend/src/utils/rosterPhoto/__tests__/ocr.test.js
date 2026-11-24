@@ -48,6 +48,17 @@ describe('readRosterPhoto (Tesseract on this device)', () => {
     await expect(readRosterPhoto(new Blob(['page']), { createWorker, dir: '/ocr/x/' })).rejects.toMatchObject({ code: 'ocr-load' })
   })
 
+  it('a page that may not run WebAssembly (its CSP) says so at once, without starting a worker', async () => {
+    const { createWorker } = fakeTesseract()
+    const Module = vi.spyOn(WebAssembly, 'Module').mockImplementation(() => { throw new Error('violates the Content Security policy') })
+    try {
+      await expect(readRosterPhoto(new Blob(['page']), { createWorker, dir: '/ocr/x/' })).rejects.toMatchObject({ code: 'ocr-load' })
+      expect(createWorker).not.toHaveBeenCalled()
+    } finally {
+      Module.mockRestore()
+    }
+  })
+
   it('it takes too long: ocr-timeout, and the worker is ended', async () => {
     const { createWorker, calls } = fakeTesseract({ recognize: () => new Promise(() => {}) })
     await expect(readRosterPhoto(new Blob(['page']), { createWorker, dir: '/ocr/x/', timeoutMs: 30 })).rejects.toMatchObject({ code: 'ocr-timeout' })

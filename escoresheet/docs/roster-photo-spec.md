@@ -125,8 +125,11 @@ in the interaction log).
   the engine ships as `.wasm.js` and the languages decompressed (`.traineddata`).
 - **iOS**: the camera text names the photo of the Einsatzliste (`NSCameraUsageDescription`).
 - **Desktop**: the field opens a file picker (a picture or a screenshot).
-- **Backend-served pages** (a self-hosted backend handing out the frontend): its CSP has no
-  `'wasm-unsafe-eval'`, so the recognition does not start there (`ocr-load`); the PDF import works.
+- **Backend-served pages** (the standalone / venue server handing out the frontend, `--local`):
+  the backend sends the app's own policy with `'wasm-unsafe-eval'` (`lib/pageCsp.js`, SEC-46,
+  openvolley#346; before it the recognition could not start there: checked with the built app
+  served from a local backend). Anywhere WebAssembly is still refused, `wasmAllowed()` says so at
+  once (`ocr-load`) instead of after the 60 s start limit; the PDF import works there.
 
 ### 3.6 Tests
 
