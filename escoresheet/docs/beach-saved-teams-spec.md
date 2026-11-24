@@ -4,6 +4,13 @@ Extends `scorer-accounts-spec.md` §4.7, §5.5 and §6.4–6.6 (OpenVolley 2.1.0
 console is the only competition manager, and it manages both indoor and beach competitions.
 OpenBeach reads beach teams and never writes them.
 
+> **No dates of birth since db/048 (owner 2026-11-19, noted 2026-11-24).** Saved players and
+> coaches keep only first name, last name, licence and (beach) country. The server accepts a `dob`
+> an older app sends and drops it (`backend/lib/savedTeams.js`), the editor has no date field,
+> and OpenBeach's cache strips it (`withoutDob` in `db_beach/savedTeams_beach.js`). The roster's
+> `dob` field now carries the licence, the value printed beside the name. The rules below are
+> updated; the `dob` values in the §2.6 fixture are from before and would be dropped today.
+
 Two agents work in parallel from this file:
 - **Agent A** (OpenVolley, `/home/lucanepa/.cache/openvolley/wt-beachteams`, branch `feat/beach-saved-teams` from `main`): §1–§4, §6, and the A rows of §7.
 - **Agent B** (OpenBeach, `/home/lucanepa/.cache/openvolley/wt-openbeach`, branch `feat/beach-saved-teams` from `feat/new-backend`): §5, and the B rows of §6 and §7.
@@ -18,7 +25,7 @@ The contract between the two agents is §2 (HTTP) together with the fixture in �
 |---|---|
 | D1 | `competitions.sport` is `'indoor'` or `'beach'`. Every existing row is indoor. Sport is fixed when the competition is created and cannot change afterwards. A team's sport is its competition's. |
 | D2 | **Backward compatibility.** Clients from 2.1.0 send no `sport`. `GET /api/saved-teams` without `sport` returns **indoor only**, and `POST …/competitions` without `sport` creates an **indoor** competition. So a 2.1.0 console or MatchSetup never sees a beach row. |
-| D3 | A beach team is a pair: 0–2 players numbered 1 and 2, unique. It is complete when it has 2 players. Player fields are first name, last name, date of birth, licence and country (optional, 3 letters such as `CHE`). There is no libero, captain or `active` flag; beach players are always active. Staff is at most one `Coach`. The captain is still chosen in MatchSetup_beach for each match. |
+| D3 | A beach team is a pair: 0–2 players numbered 1 and 2, unique. It is complete when it has 2 players. Player fields are first name, last name, licence and country (optional, 3 letters such as `CHE`); the date of birth went with db/048. There is no libero, captain or `active` flag; beach players are always active. Staff is at most one `Coach`. The captain is still chosen in MatchSetup_beach for each match. |
 | D4 | The beach season is the calendar year (`'2026'`). The indoor season stays `'2026/27'`. VolleyManager leagues (`vm_leagues`) are indoor only. |
 | D5 | Permissions are the same as indoor. GET needs `canReadTeams`, writes need `canManageTeams`. Anonymous gets 401, pending accounts get 403. Personal data is never served to anonymous requests. |
 | D6 | No new error code. Every rule violation is 400 `OV_INVALID_REQUEST` with a `details` string. |
@@ -110,7 +117,7 @@ Paths, envelope, auth, rate limits and role checks are unchanged (scorer-account
   Bundle      { version, fetched_at, **sport: 'indoor'|'beach'|'all'**, competitions: [Competition], teams: [Team] }
   Competition { id, name, season, gender, category, vm_leagues, archived, updated_at, **sport** }
   Team        { id, competition_id, name, short_name, club, color, svrz_team_name, updated_at, **sport**, players, staff }
-  Player      { id, number, first_name, last_name, dob, license_number, is_libero, is_captain, active, sort_order, **country** }
+  Player      { id, number, first_name, last_name, license_number, is_libero, is_captain, active, sort_order, **country** }   (no dob since db/048)
   Staff       unchanged
   ```
   `country` is `null` for indoor players. For beach players `is_libero` and `is_captain` are always `false` and `active` is always `true`. `ROSTER_SQL` adds `'country', p.country`. `teamOut` and `competitionOut` add `sport`. `TEAM_COLS` reads come from a join with `competitions` (`c.sport`) in `getBundle`, `teamById`, and `createTeam`. `createTeam` already selects the competition, so it selects `id, sport` there and sets `sport` on the output.
@@ -146,7 +153,7 @@ Order:
 - **Indoor:** the 2.1.0 rules, plus `players[i].country` must be absent, `null` or `''` (stored `NULL`), else `"players[i].country: only for beach"`.
 - **Beach:** checks run in this order, and the first error wins. `i` is the array index.
   - `players.length > 2` gives `"players: at most 2 in beach"`. `staff.length > 1` gives `"staff: at most 1 (the coach) in beach"`.
-  - Person fields as indoor: `first_name` up to 80, `last_name` required 1–80, `dob` as `YYYY-MM-DD` or null, `license_number` up to 40.
+  - Person fields as indoor: `first_name` up to 80, `last_name` required 1–80, `license_number` up to 40; a `dob` is accepted and dropped (db/048).
   - `number` is required and must be the integer 1 or 2, else `"players[i].number: 1 or 2"`. A duplicate gives `"players[i].number: N is used twice"`.
   - `is_libero` / `is_captain`: absent, `null` or `false` is fine. A non-boolean gives `"players[i].is_libero: true or false"` (the 2.1.0 text). `true` gives `"players[i].is_libero: not in beach"` / `"players[i].is_captain: not in beach"`.
   - `active`: absent, `null` or `true` is fine. A non-boolean gives `"…: true or false"`. `false` gives `"players[i].active: not in beach"`.
@@ -236,16 +243,16 @@ It branches on `sportOf(competition)`. Indoor is unchanged. For beach:
 - **Team fields:** name, short name, club and colour. `svrz_team_name` is hidden and not sent. `fieldsDirty` ignores it for beach.
 - **Hint:** above the players, `<p className="text-sm text-stone-500">{t('savedTeams.beachTeamHint')}</p>`.
 - **Players:** exactly two fixed slots, rendered in order 1 and 2, with the `SectionHeader` title `savedTeams.players` and no add or remove buttons.
-  - Each slot is headed by `savedTeams.beachPlayer` `{ number }`. It has first name, last name, DOB (`type=date`), licence (max 40) and country (`Input`, `maxLength={3}`, `className="font-mono uppercase"`, upper-cased on change, `hint` = `savedTeams.countryHint`), plus an `IconButton` `X` labelled `savedTeams.clearPlayer` `{ number }` that empties the slot.
+  - Each slot is headed by `savedTeams.beachPlayer` `{ number }`. It has first name, last name, licence (max 40) and country (`Input`, `maxLength={3}`, `className="font-mono uppercase"`, upper-cased on change, `hint` = `savedTeams.countryHint`), plus an `IconButton` `X` labelled `savedTeams.clearPlayer` `{ number }` that empties the slot.
   - There are no libero, captain or active controls.
   - Layout is one input per row below `sm`, and the grid `sm:grid-cols-[1fr_1fr_9.5rem_8rem_5rem_auto]` from `sm`, like the indoor rows.
   - A slot is filled from the saved player with that `number`, and keeps its `id`.
-- **Coach:** under `SectionHeader` `savedTeams.coach`, at most one row: first, last, DOB and licence. The role is fixed to `'Coach'` and no role select is shown.
+- **Coach:** under `SectionHeader` `savedTeams.coach`, at most one row: first, last and licence. The role is fixed to `'Coach'` and no role select is shown.
   - Without a coach row, a `Button variant="ghost" size="sm" icon={Plus}` reads `savedTeams.addCoach`.
   - With one, an `IconButton X` labelled `savedTeams.removeCoach`.
 - **Save:** `export function draftToBeachRosterBody(slots, coach)`:
-  - `players` = the slots whose first or last name is non-empty, each `{ id?, number: slotNumber, first_name, last_name, dob|null, license_number|null, country: upper|null }`;
-  - `staff` = `[{ id?, role: 'Coach', first_name, last_name, dob|null, license_number|null }]` when a coach row has a first or last name, else `[]`.
+  - `players` = the slots whose first or last name is non-empty, each `{ id?, number: slotNumber, first_name, last_name, license_number|null, country: upper|null }`;
+  - `staff` = `[{ id?, role: 'Coach', first_name, last_name, license_number|null }]` when a coach row has a first or last name, else `[]`.
 
   Validate with `validateSavedRoster(body, { sport: 'beach' })`, then call `putRoster` as for indoor. The server's 400 `details` show as today.
 - **Team list row** (SavedTeamsPanel competition view): for beach, `status` shows `savedTeams.pickerPlayers` `{ count: players.length }`.
@@ -327,7 +334,7 @@ Append after version 18:
 ```js
 // Version 19: offline cache of the saved beach teams (db_beach/savedTeams_beach.js).
 // New tables only, no upgrade function: nothing to migrate, so it cannot reject.
-// The rows hold personal data (DOB, licence, country); they are cleared on
+// The rows hold personal data (licence, country; no DOB since db/048); they are cleared on
 // sign-out, account switch and account deletion.
 db.version(19).stores({
   saved_teams: 'id, competitionId, nameKey, pairKey',

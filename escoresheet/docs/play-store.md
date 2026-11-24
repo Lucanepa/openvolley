@@ -73,8 +73,11 @@ older) before submitting.
   our server in Switzerland; no analytics or ads SDKs, no Firebase, no Play
   Services).
 - Personal info: name, email (accounts; no phone numbers are collected);
-  players' and officials' names and dates of birth, licence data (match
-  rosters).
+  players' and officials' names and licence numbers (match rosters). A date
+  of birth only where a scorer types one instead of the licence, or a Global
+  organiser asks for one: it is then on that match's sheet only. No date of
+  birth is kept with accounts, club lists or saved teams (db/048, privacy
+  1.21).
   Purpose: app functionality, account management. Required for the
   corresponding feature; optional for the app as a whole (a match can be
   scored without an account).
