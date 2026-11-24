@@ -3935,7 +3935,7 @@ export default function App() {
   // (audit LOG-07: a guest match's backup could not be restored at all)
   function restoreByCodeSection() {
     return (
-      <div className="mb-6 flex flex-col" data-testid="restore-global">
+      <div className="mb-6 flex shrink-0 flex-col" data-testid="restore-global">
         <h3 className="text-sm font-semibold text-stone-800">{globalTool ? t('restoreGlobal.title', 'Restore from the online backup') : t('restoreGlobal.titleCode', 'Restore with the backup code')}</h3>
         <p className="mt-1 mb-3 text-xs text-stone-500">{globalTool
           ? t('restoreGlobal.desc', 'Enter the backup code of the match (Match Setup, Backups). The app then asks for its referee PIN.')
@@ -4460,23 +4460,27 @@ export default function App() {
                 }}
                 width={500}
                 // A flex column: the backups list is the one part that gives
-                // way (scrolls) when the dialog meets the window's height; the
-                // panel keeps its own overflow only as a last resort
+                // way (scrolls, down to its min height) when the dialog meets
+                // the window's height; every other part keeps its size
+                // (shrink-0) and below that the panel scrolls. No min-h-0 on the
+                // columns: with it the cloud part shrank under its content and
+                // the list ran under the backup-code part (signed in, 800 px
+                // high tablets, 24.11.2026)
                 panelStyle={{ display: 'flex', flexDirection: 'column' }}
               >
-                <div className="ov-kit flex min-h-0 flex-1 flex-col">
+                <div className="ov-kit flex flex-1 flex-col">
                   {/* Restore by the match's backup code: the Global tool, and the Swiss tool's guest matches */}
                   {!offlineMode && (globalTool || !signedInUser) && restoreByCodeSection()}
                   {/* Restore from Cloud Backup */}
                   {!offlineMode && !globalTool && (
-                    <div className="mb-6 flex min-h-0 flex-col">
-                      <h3 className="text-sm font-semibold text-stone-800">
+                    <div className="mb-6 flex flex-col">
+                      <h3 className="shrink-0 text-sm font-semibold text-stone-800">
                         {t('settings.backup.restoreFromCloudBackup')}
                       </h3>
-                      <p className="mt-1 mb-3 text-xs text-stone-500">
+                      <p className="mt-1 mb-3 shrink-0 text-xs text-stone-500">
                         {t('settings.backup.restoreFromCloudDesc')}
                       </p>
-                      <div className="mb-3 flex gap-3">
+                      <div className="mb-3 flex shrink-0 gap-3">
                         <div className="flex-1 min-w-0">
                           <label htmlFor="restore-cloud-gamen" className="mb-1.5 block text-sm font-medium text-stone-700">
                             {t('settings.backup.gameN')}:
@@ -4571,12 +4575,12 @@ export default function App() {
                         }}
                         disabled={cloudBackupLoading || cloudBackupPin.length !== 6}
                         aria-busy={cloudBackupLoading || undefined}
-                        className="inline-flex w-full h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-stone-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
+                        className="inline-flex w-full h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-stone-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
                       >
                         {cloudBackupLoading ? t('common.loading') : t('settings.backup.searchCloudBackups')}
                       </button>
                       {cloudBackupError && (
-                        <FormError className="mt-2">{cloudBackupError}</FormError>
+                        <FormError className="mt-2 shrink-0">{cloudBackupError}</FormError>
                       )}
                       {cloudBackups.length > 0 && (
                         <div className="mt-2 min-h-[7.5rem] overflow-y-auto rounded-lg border border-stone-200" data-testid="restore-backup-list">
@@ -4621,7 +4625,7 @@ export default function App() {
 
                   {/* Divider before local backup (only after the cloud part) */}
                   {!offlineMode && (
-                    <div className="mb-6 flex items-center gap-4">
+                    <div className="mb-6 flex shrink-0 items-center gap-4">
                       <div className="h-px flex-1 bg-stone-200" />
                       <span className="text-xs text-stone-500">{t('settings.backup.or')}</span>
                       <div className="h-px flex-1 bg-stone-200" />
@@ -4629,7 +4633,7 @@ export default function App() {
                   )}
 
                   {/* Saved on this device, a USB stick or the browser's backup folder */}
-                  <div className="mb-6">
+                  <div className="mb-6 shrink-0">
                     <h3 className="mb-3 text-sm font-semibold text-stone-800">{t('savedBackups.title')}</h3>
                     <SavedBackupsList
                       disabled={restoreLoading}
@@ -4641,7 +4645,7 @@ export default function App() {
                   </div>
 
                   {/* Offline/File restore */}
-                  <div>
+                  <div className="shrink-0">
                     <h3 className="mb-3 text-sm font-semibold text-stone-800">
                       {t('settings.backup.restoreFromLocal')}
                     </h3>
