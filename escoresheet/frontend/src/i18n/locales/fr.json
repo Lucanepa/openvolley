@@ -3135,7 +3135,7 @@
       "a_restoreMatch": "Appuie sur « Restaurer le match ». Choisis « Restaurer depuis la sauvegarde cloud » (numéro et PIN du match, puis « Rechercher les sauvegardes cloud »), une sauvegarde sous « Sauvegardé sur cet appareil ou un support », ou « Restaurer depuis un fichier local » (« Sélectionner le fichier de sauvegarde »). Vérifie l'« Aperçu de la restauration », puis appuie sur « Confirmer la restauration ». Dans l'outil Global, « Restaurer depuis la sauvegarde en ligne » demande le code de sauvegarde, puis le PIN arbitre.",
       "tip_restoreMatch": "Appuie ici pour restaurer un match à partir d'une sauvegarde cloud ou locale.",
       "q_settings": "Comment changer la langue ou les paramètres ?",
-      "a_settings": "La langue se trouve dans le menu (☰) de l'en-tête. Les autres réglages sont dans les « Options » : sur l'accueil, dans la configuration du match, ou sur l'écran de saisie sous Match › Options. Sur l'accueil, « Options » › « Outil » passe de Suisse à Global et inversement.",
+      "a_settings": "La langue est dans le menu (☰) de l'en-tête. Les autres réglages sont dans « Options » : sur l'accueil, dans la préparation du match ou dans l'écran de marque sous Match › Options. Tu y trouves « Outil » (Swiss ou Global, sur l'accueil), « Thème » (« Clair », « Sombre » pour une salle sombre, « E-ink » en noir et blanc pour une lumière vive), « Afficher le doigt sur les boutons » (le petit doigt sur les boutons que tu peux toucher maintenant) et « Pause entre les sets » (la pause entre les sets 2 et 3 ; si elle est prolongée à 10 minutes, active plutôt « Pause de 10 minutes après le set 2 » dans les infos du match).",
       "q_backgroundHome": "Pourquoi l'app est-elle revenue à l'accueil ?",
       "a_backgroundHome": "Après 15 minutes ou plus en arrière-plan (une autre app, l'écran éteint), l'app affiche l'accueil. Rien n'est fermé ni supprimé : appuie sur « Continuer le match ». Le temps passé avec l'écran allumé, comme une longue pause entre les sets, ne compte pas.",
       "q_matchStates": "Que signifient les indications sur un match ?",
@@ -3147,7 +3147,21 @@
       "q_dashboards": "Ce téléphone ou cette tablette peut-il servir de tablette de l'arbitre ou du banc ?",
       "a_dashboards": "Oui. Sur un téléphone ou une tablette, le menu (☰) de l'accueil propose « Tableau de bord arbitre » et « Tableau de bord banc ». Ils ouvrent l'écran de l'arbitre ou du banc sur cet appareil ; « Retour au marqueur » dans son menu te ramène. Pas sur un ordinateur ni pendant un match.",
       "q_gamePin": "Qu'est-ce que le PIN du match sur l'accueil ?",
-      "a_gamePin": "Pour un match officiel, l'accueil affiche son « PIN du match » sous « Restaurer le match ». Garde-le : tu en as besoin pour supprimer le match, le restaurer et le continuer sur un autre appareil."
+      "a_gamePin": "Pour un match officiel, l'accueil affiche son « PIN du match » sous « Restaurer le match ». Garde-le : tu en as besoin pour supprimer le match, le restaurer et le continuer sur un autre appareil.",
+      "q_login": "Qu'est-ce que la connexion m'apporte ?",
+      "a_login": "Touche « Connexion » sur l'accueil. Avec un compte, l'app charge les matchs des ligues de Swiss Volley (« Charger match depuis le calendrier »), tes équipes enregistrées, les listes de licences de ton club (« Ajouter du club ») et l'annuaire des arbitres, et tes matchs officiels sont sauvegardés dans le cloud pendant que tu marques. Sans compte, les matchs test, easy et nouveaux marchent aussi ; ils restent sur cet appareil.",
+      "q_support": "Où trouver de l'aide ou signaler un problème ?",
+      "a_support": "Le bouton « ? » ouvre l'aide de l'écran où tu es, avec une courte vidéo et « Montrer ». « Support & feedback » sur l'accueil a les pages d'aide et un formulaire pour une question ou un problème : laisse « Joindre les diagnostics » activé, il ajoute ce qui a été fait dans l'app ces deux dernières heures et ses erreurs (jamais de mots de passe, de PIN ni de texte saisi), pour qu'on voie ce qui s'est passé.",
+      "q_scoreboardTool": "Qu'est-ce que le « Tableau de score » sur l'accueil ?",
+      "a_scoreboardTool": "Un tableau de score simple pour n'importe quel match, sans feuille de match : « Point pour … » ajoute un point, « Un point de moins pour … » en retire un, plus « Changer de côté », « Set suivant » et « Nouveau match ». Rien n'est enregistré comme match. Pour montrer un match marqué sur une TV, utilise Match › « Afficher sur un tableau » dans l'écran de marque.",
+      "q_liveScreen": "Qu'est-ce que l'écran en direct dans les options ?",
+      "a_liveScreen": "« Lancer un écran en direct » montre le score de chaque terrain de ton événement sur des TV ou un projecteur, pour tout match. Lance-le sur un appareil de marque et saisis son « Code de l’écran en direct » sur les autres (« Rejoindre »). Seul le score va en ligne (noms des équipes, points, sets). Sur une smart TV, ouvre son navigateur à l'adresse affichée.",
+      "q_effects": "L'app est lente sur ma tablette : que faire ?",
+      "a_effects": "Options › « Effets et rapidité » : « Tester cet appareil » mesure sa vitesse (environ une seconde, rien ne quitte l'appareil) et recommande des réglages plus légers. Tu peux aussi désactiver « Flou derrière les dialogues » et « Animations », « Secondes sur l'horloge » et « PDF net » pour un aperçu de la feuille plus rapide. L'accueil propose le test une fois ; refais-le quand tu veux depuis les options de l'accueil.",
+      "q_maintenance": "À quoi servent les boutons à la fin des options ?",
+      "a_maintenance": "« Télécharger maintenant » enregistre un fichier de sauvegarde des matchs de cet appareil. « Afficher le journal » liste ce que l'app a fait, et « Exporter le diagnostic (.jsonl) » l'enregistre en fichier pour le support. « Vérifier les mises à jour » cherche une nouvelle version. « Effacer le cache » supprime les fichiers en cache et recharge l'app ; tes réglages restent. « Effacer tout (y compris les réglages) » remet aussi tes réglages à zéro : seulement si le support te le demande.",
+      "q_tapHints": "C'est quoi, le petit doigt sur les boutons ?",
+      "a_tapHints": "Il marque les boutons que tu peux toucher maintenant (écran de marque, préparation du match, tirage au sort). S'il te gêne, désactive « Afficher le doigt sur les boutons » dans les options."
     },
     "matchSetup": {
       "q_matchInfo": "Comment remplir les informations du match ?",
@@ -3157,7 +3171,7 @@
       "a_teamColors": "Les noms et les noms courts des équipes se saisissent dans les informations du match. Sur la carte de chaque équipe, appuie sur le maillot à côté de « Couleur de l'équipe » pour choisir sa couleur. L'app t'avertit si les deux couleurs se ressemblent.",
       "tip_teamColors": "Appuie sur le maillot pour choisir la couleur de cette équipe.",
       "q_addPlayers": "Comment ajouter des joueurs à la composition d'une équipe ?",
-      "a_addPlayers": "Appuie sur « Modifier l'effectif » sur la carte de l'équipe. Dans la ligne « Ajouter un joueur », saisis le numéro (1-99), le nom, le prénom et la date de naissance, puis appuie sur « Ajouter ». Une équipe a besoin d'au moins 6 joueurs sans les libéros, et de 14 au plus.",
+      "a_addPlayers": "Touche « Modifier l'effectif » sur la carte de l'équipe. Dans la ligne « Ajouter un joueur », saisis le numéro (1-99), le nom, le prénom et le numéro de licence (« Licence/naiss. » : pour quelqu'un sans licence, la date de naissance), puis touche « Ajouter ». Le numéro peut attendre. Une équipe a besoin d'au moins 6 joueurs sans les libéros et d'au plus 14.",
       "tip_addPlayers": "Saisis un joueur ici et appuie sur « Ajouter ». Une équipe a besoin d'au moins 6 joueurs sans les libéros.",
       "q_importPdf": "Comment importer une composition à partir d'un PDF ?",
       "a_importPdf": "Dans « Modifier l'effectif », laisse « Local » choisi et appuie sur « Importer PDF ». Choisis le PDF de l'effectif de l'équipe ou l'Einsatzliste, puis appuie sur « Importer PDF ». Il remplace les joueurs et les officiels du banc. Avec plus de 14 joueurs, coche ceux qui jouent. Vérifie ensuite les dates de naissance, saisis les numéros de maillot manquants, et désigne le capitaine et les libéros. Une date de naissance au 1er janvier est souvent une date par défaut (01.01.1900 quand la date n'est pas connue) ou une erreur d'import : l'effectif liste ces personnes au-dessus des joueurs. Corrige les dates que tu connais. Le tirage au sort ne les demande pas.",
@@ -3172,7 +3186,7 @@
       "a_benchOfficials": "Dans « Modifier l'effectif », appuie sur « + Ajouter officiel ». Saisis l'entraîneur, les entraîneurs adjoints, le physiothérapeute et le médecin. Un entraîneur est obligatoire, et une équipe a 5 officiels du banc au plus.",
       "tip_benchOfficials": "Saisis ici l'entraîneur et les autres officiels du banc.",
       "q_proceed": "Comment passer au tirage au sort ?",
-      "a_proceed": "Quand toutes les cartes sont complètes, appuie sur « Tirage au sort » en bas. Si le bouton est grisé, l'avertissement à côté indique ce qui manque.",
+      "a_proceed": "Quand toutes les cartes sont complètes, touche « Tirage au sort » en bas. S'il est grisé, le « ! » jaune à côté montre ce qui manque, par exemple des joueurs sans numéro de maillot : touche-le (« Cliquer pour voir ce qui manque ») pour la liste.",
       "tip_proceed": "Appuie ici pour passer au tirage au sort. Tous les champs obligatoires doivent d'abord être complets.",
       "q_loadSchedule": "Puis-je charger le match depuis le calendrier ?",
       "a_loadSchedule": "Oui. Sur la carte « Information match », appuie sur « Charger match depuis le calendrier ». Choisis le genre et la ligue, puis le match. L'app remplit le numéro du match, les équipes, la date, l'heure, la salle et les arbitres. Une connexion internet est nécessaire. Règle ensuite les couleurs et les noms courts des équipes.",
@@ -3193,7 +3207,21 @@
       "q_clubPlayers": "Que signifient les écussons verts et gris ?",
       "a_clubPlayers": "Pour une équipe de ton club, chaque ligne de l'effectif et du banc montre un écusson (en mode paysage). Vert : la personne figure dans les listes de licences du club ; un point signifie que le club connaît un prénom ou une date de naissance qui manque à la ligne : appuie pour le compléter. Gris : saisi à la main : appuie pour relier la ligne à une personne des listes du club. « Ajouter du club » ajoute des joueurs depuis les listes.",
       "q_rosterSignatures": "L'entraîneur et le capitaine peuvent-ils signer dans la configuration du match ?",
-      "a_rosterSignatures": "Oui, si tu veux : « Modifier l'effectif » › « Signatures ». Si les joueurs ou le banc de cette équipe changent après la signature, ses signatures sont effacées et ils signent à nouveau."
+      "a_rosterSignatures": "Oui, si tu veux : « Modifier l'effectif » › « Signatures ». Si les joueurs ou le banc de cette équipe changent après la signature, ses signatures sont effacées et ils signent à nouveau.",
+      "q_back": "Comment revenir à l'accueil depuis la préparation du match ?",
+      "a_back": "Touche « ← Retour » en haut, à côté de « eScoresheet » et « Options ». Le match reste sur l'accueil : « Continuer le match » le rouvre.",
+      "q_gamePinNotice": "Qu'est-ce que la fenêtre du PIN du match après « Créer le match » ?",
+      "a_gamePinNotice": "Pour un nouveau match officiel, l'app montre son PIN de match. Note-le : il te faut pour restaurer le match, le continuer sur un autre appareil et le rouvrir. « Envoyer à mon e-mail » l'envoie à l'adresse confirmée de ton compte ; pour une autre adresse, saisis-la et touche « Ouvrir dans l'app e-mail » (rien ne passe alors par le serveur).",
+      "q_scorerLicence": "Pourquoi je ne peux pas créer le match ?",
+      "a_scorerLicence": "Il manque le numéro de licence du marqueur (pour quelqu'un sans licence, la date de naissance). Tant qu'il manque, « Créer le match » reste grisé et l'avertissement à côté le dit, avec tout ce qui manque encore (« Cliquer pour voir ce qui manque »).",
+      "q_showRosters": "Où voir les deux effectifs en même temps ?",
+      "a_showRosters": "« Afficher les effectifs » sous les cartes des équipes liste les deux effectifs avec numéros, licences, libéros, capitaine et officiels de banc ; « Masquer les effectifs » les ferme. Pendant le match : Match › « Afficher les effectifs » (sur un téléphone « Effectifs »).",
+      "q_rosterWays": "Comment entrer l'effectif d'une équipe ?",
+      "a_rosterWays": "Dans « Modifier l'effectif » sur la carte de l'équipe : 1. saisis les joueurs dans « Ajouter un joueur » ; 2. « Importer PDF » (Local) : le PDF de l'effectif ou l'Einsatzliste ; 3. « Distant » : le coach importe le PDF sur roster.openvolley.app avec ton PIN d'upload (ou l'équipe l'envoie depuis la page manager), et tu touches « Accepter » ; 4. « Choisir les joueurs » : coche qui joue parmi les joueurs que l'app connaît pour cette équipe ; 5. « Charger une équipe enregistrée » (connecté) : une équipe de ton compte ; 6. « Ajouter du club » (connecté, ton club) : depuis les listes de licences du club ; 7. dans un match test, « Charger effectif TEST ». En mode Global, les effectifs viennent d'Excel (« Importer les effectifs »). Un match restauré apporte ses effectifs. Une équipe enregistrée charge ses joueurs et officiels de banc en un geste : vérifie les numéros pour ce match. Les joueurs test de « Charger effectif TEST » disparaissent quand tu charges un match du calendrier ou saisis un autre nom d'équipe ; ceux que tu as ajoutés toi-même restent.",
+      "q_choosePlayers": "Qu'est-ce que « Choisir les joueurs » ?",
+      "a_choosePlayers": "Il liste tous les joueurs que l'app connaît pour cette équipe (son équipe enregistrée et les joueurs d'une Einsatzliste importée). Coche qui joue ce match (« Tous » coche tout le monde), puis touche « Utiliser n joueurs » : ils vont dans l'effectif avec leurs numéros. Ajoute ou change les numéros ensuite dans l'effectif.",
+      "q_numbers": "Puis-je enregistrer un effectif sans numéros de maillot ?",
+      "a_numbers": "Oui. Les joueurs sans numéro sont gardés : leur # vide est mis en évidence et une note dit combien en manquent encore. Ajoute les numéros quand tu les connais (une Einsatzliste n'en a jamais). Le tirage au sort attend que chaque joueur des deux équipes ait un numéro."
     },
     "coinToss": {
       "q_record": "Comment enregistrer le tirage au sort ?",
@@ -3215,7 +3243,11 @@
       "q_gameCaptain": "Et si le capitaine n'est pas sur le terrain ?",
       "a_gameCaptain": "Quand le capitaine de l'équipe n'est pas parmi les six, la fenêtre de la formation propose « Capitaine de jeu » (facultatif) : choisis le joueur qui fait office de capitaine. Si tu laisses « Aucun », l'app demande avant le début du set. Pendant le set, elle redemande seulement quand le capitaine de jeu quitte le terrain. Cela suit « Gérer le capitaine de jeu » dans les options (activé par défaut).",
       "q_mistake": "J'ai mal saisi le tirage au sort ?",
-      "a_mistake": "Avant « Confirmer le tirage au sort », change simplement à nouveau. Après, la page est verrouillée : change l'équipe A ou le premier service dans Match › « Corrections ». Avant le premier échange du set 1, une nouvelle équipe A y refait le tirage au sort (l'équipe A à gauche)."
+      "a_mistake": "Avant « Confirmer le tirage au sort », change simplement à nouveau. Après, la page est verrouillée : change l'équipe A ou le premier service dans Match › « Corrections ». Avant le premier échange du set 1, une nouvelle équipe A y refait le tirage au sort (l'équipe A à gauche).",
+      "q_rosterDialog": "Puis-je encore changer un effectif au tirage au sort ?",
+      "a_rosterDialog": "Oui : « Voir la liste de joueurs » sous chaque équipe l'ouvre. « + Ajout de joueur », supprimer un joueur, ajouter ou supprimer un officiel de banc.",
+      "q_connectionChecks": "Qu'est-ce que la « Vérification des connexions » après le tirage au sort ?",
+      "a_connectionChecks": "Avant le premier set, l'app vérifie que le serveur, les sauvegardes et les tablettes connectées répondent. Un avertissement liste ce qui ne répond pas ; « Continuer quand même » lance le match : la marque fonctionne hors ligne et les modifications partent plus tard."
     },
     "scoreboard": {
       "q_startRally": "Comment démarrer le premier échange ?",
@@ -3287,7 +3319,11 @@
       "q_finalMail": "Qui reçoit la feuille de match finale par e-mail ?",
       "a_finalMail": "Là où la ligue envoie les feuilles de match finales, le PDF est envoyé par e-mail quelques minutes après l'approbation au marqueur, aux arbitres (à leurs comptes, ou à l'e-mail saisi pour eux dans la configuration du match) et au contact de chaque équipe. Saisis le contact d'une équipe dans la configuration du match (« E-mail du contact de l'équipe (facultatif) ») ou plus tard dans Match › « Modifier les infos du match » › « Contacts des équipes ».",
       "q_remarksSignature": "Un coach d'arbitres doit aussi signer ?",
-      "a_remarksSignature": "Appuie sur « Ajouter une signature aux remarques », saisis le rôle et le nom, puis signe. La signature est imprimée dans les remarques."
+      "a_remarksSignature": "Appuie sur « Ajouter une signature aux remarques », saisis le rôle et le nom, puis signe. La signature est imprimée dans les remarques.",
+      "q_technicalRemarks": "Qu'est-ce qu'une remarque technique ?",
+      "a_technicalRemarks": "À la fin du match, « Ajouter une remarque technique » note quelque chose pour l'administration (un problème d'appareil, une correction) qui n'est pas imprimé sur la feuille : elle reste avec le match et part avec la feuille finale, les signatures restent. « Modifier les remarques » change les remarques imprimées sur la feuille.",
+      "q_downloadLogs": "Qu'est-ce que « Télécharger les logs » ?",
+      "a_downloadLogs": "Il enregistre le journal de l'app pour ce match en fichier, pour le support quand quelque chose s'est mal passé."
     },
     "manualAdjustments": {
       "q_editScores": "Comment corriger le score d'un set ?",
@@ -3358,9 +3394,13 @@
       "q_serveRotation": "Où voir qui sert et la rotation ?",
       "a_serveRotation": "La case « SERVICE » dans le coin supérieur du côté de l'équipe au service indique le numéro du serveur ; le ballon est à côté de ce joueur sur le terrain. Le terrain montre les positions I à VI de chaque équipe. L'app fait tourner une équipe quand elle reprend le service. Une rotation fausse se corrige dans Match › Corrections avec « Corriger la formation ».",
       "q_scoreDisplay": "Que montre l'affichage du score ?",
-      "a_scoreDisplay": "Les points du set, les sets gagnés et l'équipe au service. Le côté de chaque équipe montre ses temps morts (TM) et ses remplacements (RMP) dans ce set. Match › Afficher sanctions et résultats liste chaque set.",
+      "a_scoreDisplay": "Les points du set, les sets gagnés et l'équipe au service. Le côté de chaque équipe montre ses temps morts et remplacements dans ce set (« Temps mort », « Remplacement ») : touche-les pour en enregistrer un. Match › Afficher sanctions et résultats liste chaque set. Pour plus de place, « Masquer l'en-tête » (la flèche sous l'en-tête) et « Masquer la barre d'outils » les replient ; la flèche les ramène.",
       "q_phone": "Puis-je saisir sur un téléphone ?",
-      "a_phone": "Oui. Dans les options, règle le « Mode d'écran » sur « Auto » ou « Smartphone », et tiens le téléphone à la verticale. Le score, le terrain, les temps morts, les remplacements et les boutons de point tiennent sur un seul écran. Sur une tablette, la saisie se fait en mode paysage : tenue à la verticale, elle te demande de la tourner."
+      "a_phone": "Oui. Dans les options, règle le « Mode d'écran » sur « Auto » ou « Smartphone », et tiens le téléphone à la verticale. Le score, le terrain, les temps morts, les remplacements et les boutons de point tiennent sur un seul écran. Sur une tablette, la saisie se fait en mode paysage : tenue à la verticale, elle te demande de la tourner.",
+      "q_matchMenu": "Qu'y a-t-il dans le menu Match ?",
+      "a_matchMenu": "« Match » dans l'écran de marque (sur un téléphone ☰) : « Afficher les effectifs », « Afficher sanctions et résultats », « Historique » (chaque échange et action), « Aperçu du set » (le set tel qu'il s'imprime), « Ouvrir la saisie des remarques », « Configuration du match », « Corrections », « Revenir en arrière », « Options », « Coupler un téléphone (clavier) » (taper sur ton téléphone dans les champs de cet appareil), « Afficher sur un tableau » (une TV, une tablette ou un tableau LED suit le score avec un code) et « Arrêter le match » (forfait, équipe incomplète ou impossibilité, avec remarques).",
+      "q_replay": "Comment enregistrer un échange rejoué ?",
+      "a_replay": "Pendant un échange, « Rejouer l'échange » (sur un téléphone « Rejouer ») le rejoue sans point. Après un point, « Changement de décision » › « Rejouer l'échange » le reprend ; la fenêtre montre le score avant et après chaque choix."
     },
     "subsTimeouts": {
       "q_subLimit": "Combien de remplacements une équipe a-t-elle ?",
@@ -3378,7 +3418,9 @@
       "q_requestWarning": "Pourquoi un avertissement s'ouvre-t-il quand j'enregistre un temps mort ou un remplacement ?",
       "a_requestWarning": "L'app vérifie les règles des demandes : un troisième temps mort, un septième remplacement, une deuxième demande de remplacement de la même équipe dans une même interruption, un joueur qui ne peut pas entrer, ou une demande après l'avertissement pour retard de l'équipe. L'avertissement dit pourquoi et propose quoi enregistrer, comme « Enregistrer comme demande irrégulière » ou une sanction pour retard. « Continuer quand même » n'enregistre rien de plus quand l'arbitre l'a autorisé (pas proposé pour un troisième temps mort ni pour un septième remplacement).",
       "q_gameCaptain": "Le capitaine de l'équipe a quitté le terrain : qui est capitaine de jeu ?",
-      "a_gameCaptain": "L'app demande « Capitaine de jeu » : appuie sur le joueur sur le terrain qui fait office de capitaine (le dernier capitaine de jeu est proposé en premier, marqué « Dernier »). Tant qu'aucun n'est choisi, un bouton « Capitaine de jeu » s'affiche du côté de cette équipe. Le capitaine de jeu le reste jusqu'à ce qu'il quitte le terrain, que le capitaine de l'équipe revienne ou que le set se termine. Il faut pour cela « Gérer le capitaine de jeu » dans les options (activé par défaut)."
+      "a_gameCaptain": "L'app demande « Capitaine de jeu » : appuie sur le joueur sur le terrain qui fait office de capitaine (le dernier capitaine de jeu est proposé en premier, marqué « Dernier »). Tant qu'aucun n'est choisi, un bouton « Capitaine de jeu » s'affiche du côté de cette équipe. Le capitaine de jeu le reste jusqu'à ce qu'il quitte le terrain, que le capitaine de l'équipe revienne ou que le set se termine. Il faut pour cela « Gérer le capitaine de jeu » dans les options (activé par défaut).",
+      "q_subDialog": "Comment fonctionne la fenêtre de remplacement ?",
+      "a_subDialog": "Touche la case « Remplacement » de l'équipe (sur un téléphone « RMP »). Touche qui entre, puis qui sort : seuls les joueurs autorisés s'affichent (un titulaire remplacé seulement pour son remplaçant, jamais le libéro). La paire va dans la liste et la fenêtre demande la suivante ; « Confirmer » les enregistre toutes, « Annuler » aucune. « Enregistrés » liste les remplacements de ce set ; à 6 sur 6, il ne reste que « Blessure / exceptionnel ». Pendant un échange, la case montre seulement cette liste."
     },
     "sanctions": {
       "q_teamSanctions": "Comment saisir une demande irrégulière ou un retard ?",
@@ -3532,7 +3574,9 @@
       "q_refused": "Il est écrit « Non synchronisé » avec une raison ?",
       "a_refused": "Le serveur a refusé ce match, par exemple : le match est déjà tenu par un autre compte, ton compte attend son approbation, ou ce n'est pas un match à domicile de ton club. Le match reste en sécurité sur cet appareil. Le message indique quoi faire.",
       "q_testMatch": "Un match test va-t-il en ligne ?",
-      "a_testMatch": "Un match test n'est jamais enregistré dans le cloud : pas de sauvegarde cloud, pas de livescore en ligne. Son score arrive quand même aux tablettes de l'arbitre et des bancs par internet : sur la tablette, appuie sur « Passer aux matchs de test »."
+      "a_testMatch": "Un match test n'est jamais enregistré dans le cloud : pas de sauvegarde cloud, pas de livescore en ligne. Son score arrive quand même aux tablettes de l'arbitre et des bancs par internet : sur la tablette, appuie sur « Passer aux matchs de test ».",
+      "q_onlineSwitch": "Pourquoi l'interrupteur En ligne est-il gris ?",
+      "a_onlineSwitch": "« En ligne » est activé, mais rien ne répond : pas de réseau, ou le serveur est injoignable. Les modifications attendent sur cet appareil (à côté s'affiche « Hors ligne (n en attente) ») et partent dès que la connexion revient ; l'interrupteur redevient vert tout seul. Désactivé, c'est le mode hors ligne : l'app n'essaie pas du tout."
     },
     "installUpdates": {
       "q_appOrBrowser": "Navigateur ou app ?",
