@@ -67,6 +67,19 @@
   </screenshots>
 
   <releases>
+    <release version="26.11.0" date="2026-11-24">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v26.11.0</url>
+      <description>
+        <ul>
+          <li>New version numbers: year.month.release</li>
+          <li>Security fixes: deleting your account asks for your password; referee approvals only from the appointed referee's account; the referee screen asks for the game before the PIN</li>
+          <li>Android: backups stay inside the app (Options › Export to Documents)</li>
+          <li>Scoresheet PDF at true size on A4, nothing cut off; long names fit</li>
+          <li>Licence numbers on by default; officials' licences on the sheet</li>
+          <li>Manual adjustments keep the line judges</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.1.1" date="2026-11-20">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v3.1.1</url>
       <description>

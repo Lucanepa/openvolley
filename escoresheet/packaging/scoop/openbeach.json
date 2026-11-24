@@ -4,7 +4,7 @@
         "It runs the official installer silently (the same one winget and the download page use), so the app lands in Program Files with its Start menu entry and the firewall rule for the tablets.",
         "Regenerate for a new version: escoresheet/packaging/scoop/update-manifests.sh. README.md next to this file says more."
     ],
-    "version": "3.1.1",
+    "version": "26.11.0",
     "description": "Open Source Beach Volleyball eScoresheet: an offline scoretable with a built-in LAN server for the referee and livescore tablets and the court displays.",
     "homepage": "https://beach.openvolley.app",
     "license": {
@@ -17,8 +17,8 @@
     ],
     "architecture": {
         "64bit": {
-            "url": "https://github.com/Lucanepa/openvolley/releases/download/beach-desktop-v3.1.1/OpenBeach_3.1.1_x64-setup.exe#/setup.exe",
-            "hash": "11bd7ceef59d73b0a85f3869567f0c3e6a7607a57f48ca27aa952e9755be794f"
+            "url": "https://github.com/Lucanepa/openvolley/releases/download/beach-desktop-v26.11.0/OpenBeach_26.11.0_x64-setup.exe#/setup.exe",
+            "hash": "96593b39df4ae900d3b805b28cde1e5d540ec72d09f5d84b91fb4caa051db6d7"
         }
     },
     "installer": {
