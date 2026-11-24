@@ -2,8 +2,9 @@
 
 Status: **plan A built** (branch `feat/roster-photo-import`), text recognition on the device.
 **Plan B planned, not built**: our own OCR server, only "if we start having big issues" with A
-(owner, 2026-11-23). Privacy policy 1.28 names the photo import, with the Android camera file (owner OK 23.11 for the
-wording; to be copied to openvolley_home with the release).
+(owner, 2026-11-23). Privacy policy 1.29 names the photo import, with the Android camera file (owner OK 23.11 for the
+wording; 1.28 is the audit's, released with 26.11.6; 1.29 goes to openvolley_home with the release
+that ships this).
 
 ## 1. What the owner asked (2026-11-23)
 
