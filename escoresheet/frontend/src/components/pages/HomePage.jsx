@@ -353,16 +353,16 @@ export default function HomePage({
           </div>
         )}
 
-        {/* The device check's card (App, DeviceCheckCard): out of the flow,
-            so nothing on Home moves or changes width when it comes in, 3-5 s
-            after Home shows, which is when a scorer taps New match or Test
-            match. It hangs under the last row: under everything in one
-            column (where Home is centred, in its empty space below), under
-            Options and Support on a wide screen (home-wide: a slot of no
-            height at the foot of the actions' column) */}
+        {/* The device check's card (App, DeviceCheckCard): pinned to the foot
+            of the screen, out of the flow, so nothing on Home moves or changes
+            width when it comes in, 3-5 s after Home shows (when a scorer taps
+            New match or Test match), and always in view: on the hall's short
+            tablet screen (1007x545 at a large system font) a slot under the
+            last row was below the fold. Centred on a narrow Home, bottom right
+            on a wide one; under every dialog (z-30, dialogs are z-50) */}
         {deviceCheckCard && (
-          <div data-testid="device-check-slot" className="relative h-0 home-wide:col-start-2 home-wide:row-start-4 home-wide:self-end">
-            <div className="absolute inset-x-0 top-0 pt-4">{deviceCheckCard}</div>
+          <div data-testid="device-check-slot" className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center px-4 pb-[max(1rem,env(safe-area-inset-bottom))] home-wide:justify-end">
+            <div className="pointer-events-auto w-full max-w-md rounded-lg shadow-lg">{deviceCheckCard}</div>
           </div>
         )}
 

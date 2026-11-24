@@ -79,19 +79,23 @@ describe('HomePage: who makes it', () => {
 })
 
 // The device check's card (App, DeviceCheckCard) comes 3-5 s after Home shows:
-// out of the flow, so the buttons a scorer is about to tap never move
+// out of the flow, so the buttons a scorer is about to tap never move, and
+// pinned to the foot of the screen, so a short tablet screen still shows it
 describe('HomePage: the device check card', () => {
-  it('hangs in a slot of no height under the last row, never above the actions', () => {
+  it('is pinned to the foot of the screen, out of the flow, under the dialogs', () => {
     render(<HomePage deviceCheckCard={<div data-testid="card-stub">card</div>} />)
     const slot = screen.getByTestId('device-check-slot')
-    expect(slot.className).toMatch(/(^|\s)relative(\s|$)/)
-    expect(slot.className).toMatch(/(^|\s)h-0(\s|$)/)
-    // wide screens: at the foot of the actions' column
-    expect(slot.className).toMatch(/home-wide:col-start-2/)
-    expect(slot.className).toMatch(/home-wide:self-end/)
+    expect(slot.className).toMatch(/(^|\s)fixed(\s|$)/)
+    expect(slot.className).toMatch(/(^|\s)bottom-0(\s|$)/)
+    expect(slot.className).toMatch(/(^|\s)inset-x-0(\s|$)/)
+    // below the dialogs (z-50), and the empty strip around the card lets taps through
+    expect(slot.className).toMatch(/(^|\s)z-30(\s|$)/)
+    expect(slot.className).toMatch(/(^|\s)pointer-events-none(\s|$)/)
+    // wide screens: bottom right
+    expect(slot.className).toMatch(/home-wide:justify-end/)
     const holder = screen.getByTestId('card-stub').parentElement
     expect(holder.parentElement).toBe(slot)
-    expect(holder.className).toMatch(/(^|\s)absolute(\s|$)/)
+    expect(holder.className).toMatch(/(^|\s)pointer-events-auto(\s|$)/)
     // after the actions in the page: nothing before them changes
     const restore = document.querySelector('[data-help-id="home-restore-button"]')
     expect(restore.compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
