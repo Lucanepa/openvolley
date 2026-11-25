@@ -8023,13 +8023,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       return false
     }
 
+    // Undo takes back the whole rally (owner 2026-11-25, tester feedback: the
+    // rally start went first, a second Undo took the point): with a rally in
+    // play, its start goes together with the point before it, and that point
+    // with its own rally start (undoEventTx). Not a penalty's point (it goes
+    // with its penalty), nor across anything else between them.
+    let thenEvent = null
+    if (lastUndoableEvent.type === 'rally_start') {
+      const before = sortedEvents.find(e => !isSubEvent(e) && e.type !== 'coin_toss' && (e.seq || 0) < (lastUndoableEvent.seq || 0))
+      if (before?.type === 'point' && !penaltyOfPoint(currentSetEvents, before)) thenEvent = before
+    }
+    const shownEvent = thenEvent || lastUndoableEvent
     // A penalty's point is undone with its penalty: the dialog names the
     // penalty ("Penalty — #3 · +1 point to B")
-    const description = getActionDescription(penaltyOfPoint(currentSetEvents, lastUndoableEvent) || lastUndoableEvent)
+    const description = getActionDescription(penaltyOfPoint(currentSetEvents, shownEvent) || shownEvent)
     // If we can't get a description, still allow undo but show the event type
     const displayDescription = description && description !== 'Unknown action'
       ? description
-      : `${lastUndoableEvent.type} (seq: ${lastUndoableEvent.seq})`
+      : `${shownEvent.type} (seq: ${shownEvent.seq})`
 
     console.log('[UNDO] Setting undo confirm:', {
       seq: lastUndoableEvent.seq,
@@ -8048,7 +8059,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       allEventsInSet: currentSetEvents.map(e => ({ id: e.id, seq: e.seq, type: e.type }))
     })
 
-    setUndoConfirm({ event: lastUndoableEvent, description: displayDescription, ...(fromDialog ? { fromDialog } : {}) })
+    setUndoConfirm({ event: lastUndoableEvent, ...(thenEvent ? { thenEvent } : {}), description: displayDescription, ...(fromDialog ? { fromDialog } : {}) })
     return true
   }, [data?.events, data?.set, getActionDescription])
 
@@ -8608,6 +8619,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // useConfirmAction and the 'undo' key, never undoing the event twice
     deferUi(() => setUndoConfirm(null))
     await undoEventTx(lastEvent)
+    // the whole rally: the point before the rally start that was in play
+    if (undoConfirm.thenEvent) await undoEventTx(undoConfirm.thenEvent)
     // Asked from the set-end or the change-of-courts dialog (a penalty's
     // point brought it up): the score it leaves decides whether that dialog
     // is due again (24:22 after the penalty's point: no set end)
@@ -10471,6 +10484,39 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [])
 
   // Handle drag over court player position. The drop is accepted
+  // Why the rules refuse a bench player dropped on this court player, as a
+  // sentence for the scorer, or null (tester 24.11.2026: such a drop did
+  // nothing at all). The same checks as handleCourtDragOver / handleCourtDrop;
+  // a player of the other team or an empty place is no target (null).
+  const courtDropRefusal = useCallback((teamKey, position, courtPlayerNumber) => {
+    if (!draggedPlayer || draggedPlayer.type !== 'bench' || draggedPlayer.team !== teamKey || !courtPlayerNumber) return null
+    const n = draggedPlayer.playerNumber
+    const liberoOnCourt = getLiberoOnCourt(teamKey)
+    if (draggedPlayer.isLibero) {
+      if (!['I', 'V', 'VI'].includes(position)) return t('scoreboard.errors.liberoBackRowOnly')
+      if (getCurrentServe() === teamKey && position === 'I') return t('scoreboard.dropRefused.liberoServer', 'The libero does not replace the server')
+      if (isLiberoUnable(teamKey, n)) return t('scoreboard.errors.thisLiberoUnableToPlay')
+      if (liberoOnCourt) {
+        if (String(liberoOnCourt.liberoNumber) !== String(courtPlayerNumber)) return t('scoreboard.errors.liberoAlreadyOnCourt')
+        if (!hasPointSinceLastLiberoExchange(teamKey)) return t('scoreboard.playerMenu.afterFinishedRally', 'After finished rally')
+      }
+      return null
+    }
+    if (liberoOnCourt && liberoOnCourt.position === position && String(liberoOnCourt.playerNumber) === String(n)) {
+      // the replaced player back for the libero (libero out)
+      return hasPointSinceLastLiberoExchange(teamKey) ? null : t('scoreboard.playerMenu.afterFinishedRally', 'After finished rally')
+    }
+    if ((substitutionsUsed?.[teamKey] || 0) >= 6) return t('scoreboard.subDialog.noneLeft', 'No regular substitution left.')
+    const playerOut = liberoOnCourt && liberoOnCourt.position === position ? liberoOnCourt.liberoNumber : courtPlayerNumber
+    const canSub = getAvailableSubstitutes(teamKey, playerOut, false).some(p => String(p.number) === String(n))
+    if (canSub) return null
+    const players = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
+    const code = data?.set ? substitutionIllegalReason(data.events, data.set.index, teamKey, { playerOut, playerIn: n }, { players }) : null
+    return code
+      ? t('scoreboard.dropRefused.player', { number: n, why: t(`scoreboard.requestWarning.illegal.${code}`), defaultValue: '#{{number}}: {{why}}' })
+      : t('scoreboard.dropRefused.notThisPair', { in: n, out: playerOut, defaultValue: '#{{in}} may not come in for #{{out}}' })
+  }, [draggedPlayer, getLiberoOnCourt, getCurrentServe, isLiberoUnable, hasPointSinceLastLiberoExchange, substitutionsUsed, getAvailableSubstitutes, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, t])
+
   // (preventDefault) only after the checks: a cancelled dragover lets the
   // browser drop anything, also a bench player on the court libero
   const handleCourtDragOver = useCallback((e, teamKey, position) => {
@@ -10492,6 +10538,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const courtPlayerNumber = currentLineup?.[position]
 
     if (!courtPlayerNumber) return // No player at this position
+
+    // A drop the rules refuse is accepted all the same, without the
+    // highlight: handleCourtDrop then says why (it did nothing, tester 24.11.2026)
+    if (courtDropRefusal(teamKey, position, courtPlayerNumber)) {
+      e.preventDefault()
+      setDropTargetPosition(null)
+      return
+    }
 
     // If libero, only allow back row positions (I, V, VI) and not serving position I
     if (draggedPlayer.isLibero) {
@@ -10544,7 +10598,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     e.dataTransfer.dropEffect = 'move'
     // dragover fires every few ms: a new object each time rendered the whole screen
     setDropTargetPosition(prev => (prev && prev.team === teamKey && prev.position === position ? prev : { team: teamKey, position }))
-  }, [draggedPlayer, getCurrentServe, isLiberoUnable, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set?.index, substitutionsUsed, getAvailableSubstitutes])
+  }, [draggedPlayer, getCurrentServe, isLiberoUnable, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set?.index, substitutionsUsed, getAvailableSubstitutes, courtDropRefusal])
 
   const handleCourtDragLeave = useCallback(() => {
     setDropTargetPosition(null)
@@ -10561,9 +10615,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     const benchPlayerNumber = draggedPlayer.playerNumber
     const isLibero = draggedPlayer.isLibero
+    const refusal = courtDropRefusal(teamKey, position, courtPlayerNumber)
 
     setDraggedPlayer(null)
     setDropTargetPosition(null)
+
+    // A drop the rules refuse says why (it did nothing, tester 24.11.2026)
+    if (refusal) {
+      showAlert(refusal, 'warning')
+      return
+    }
 
     if (isLibero) {
       // Bench libero being dropped on court
@@ -10682,7 +10743,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         isDisqualified: false
       })
     }
-  }, [draggedPlayer, getCurrentServe, getLiberoOnCourt, hasPointSinceLastLiberoExchange, isLiberoUnable, getAvailableSubstitutes, data?.homePlayers, data?.awayPlayers, substitutionsUsed])
+  }, [draggedPlayer, getCurrentServe, getLiberoOnCourt, hasPointSinceLastLiberoExchange, isLiberoUnable, getAvailableSubstitutes, data?.homePlayers, data?.awayPlayers, substitutionsUsed, courtDropRefusal, showAlert])
 
   // Handle drag end for court players (used when dragging court player to bench)
   // If not dropped on valid target, just cancel the drag
@@ -11320,7 +11381,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const element = document.elementFromPoint(pos.x, pos.y)
         const dropInfo = getDropInfoFromElement(element)
 
-        if (dropInfo && isValidDropTarget(dropInfo)) {
+        if (dropInfo && !isValidDropTarget(dropInfo) && draggedPlayer.type === 'bench' && dropInfo.type === 'court') {
+          // A drop the rules refuse says why (it did nothing, tester 24.11.2026)
+          const refusal = courtDropRefusal(dropInfo.team, dropInfo.position, dropInfo.playerNumber)
+          if (refusal) showAlert(refusal, 'warning')
+        } else if (dropInfo && isValidDropTarget(dropInfo)) {
           // Valid drop - trigger appropriate action
           if (draggedPlayer.type === 'bench') {
             if (dropInfo.type === 'court') {
@@ -11343,7 +11408,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // Always cleanup touch state to prevent green highlighting from persisting
     // This handles edge cases on touchscreen PCs where state timing may differ
     cancelTouchDrag()
-  }, [touchDragState, draggedPlayer, cancelTouchDrag, getDropInfoFromElement, isValidDropTarget, handleCourtDrop, handleBenchDrop])
+  }, [touchDragState, draggedPlayer, cancelTouchDrag, getDropInfoFromElement, isValidDropTarget, handleCourtDrop, handleBenchDrop, courtDropRefusal, showAlert])
 
   // A finger that comes down on a draggable player belongs to the drag. The
   // Android WebView otherwise takes it as a long press after about 500 ms:
@@ -21405,6 +21470,22 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           regularSubstitutionsUsed: data?.set ? countRegularSubstitutions(data.events, team, data.set.index) : 0
         })
         const teamPlayersForMenu = team === 'home' ? data?.homePlayers : data?.awayPlayers
+        // The bench players who may not come in for him now: greyed out among
+        // the numbers, a tap says why (tester 24.11.2026: they were left out)
+        const onCourtForMenu = (getTeamLineupState(team).playersOnCourt || []).map(String)
+        const refusedSubs = playerActionMenu.canSubstitute && data?.set ? (teamPlayersForMenu || [])
+          .filter(p => !p.libero && !onCourtForMenu.includes(String(p.number)) && !availableSubs.some(sub => String(sub.number) === String(p.number)))
+          .map(p => {
+            const code = substitutionIllegalReason(data.events, data.set.index, team, { playerOut: playerNumber, playerIn: p.number }, { players: teamPlayersForMenu })
+            return {
+              number: p.number,
+              why: code
+                ? t('scoreboard.dropRefused.player', { number: p.number, why: t(`scoreboard.requestWarning.illegal.${code}`), defaultValue: '#{{number}}: {{why}}' })
+                : t('scoreboard.dropRefused.notThisPair', { in: p.number, out: playerNumber, defaultValue: '#{{in}} may not come in for #{{out}}' })
+            }
+          }) : []
+        const subChips = [...availableSubs.map(sub => ({ sub })), ...refusedSubs.map(refused => ({ refused }))]
+          .sort((a, b) => Number((a.sub || a.refused).number) - Number((b.sub || b.refused).number))
         const playerForMenu = (teamPlayersForMenu || []).find(p => String(p.number) === String(playerNumber))
         const playerNameForMenu = playerForMenu ? [playerForMenu.firstName, playerForMenu.lastName].filter(Boolean).join(' ') : ''
 
@@ -21484,7 +21565,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     <SbMenuItem
                       tone="positive"
                       onClick={() => {
-                        // If only 1 legal substitute, go directly to confirmation
+                        // If only 1 legal substitute, go directly to confirmation (its
+                        // OUT / IN says it; the greyed numbers come with the list)
                         // (an easy match always opens: a new number can come in)
                         if (availableSubs.length === 1 && !easyNewSub) {
                           handleSubFromMenu(availableSubs[0])
@@ -21500,11 +21582,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     </SbMenuItem>
                     {courtSubExpanded && (availableSubs.length > 1 || (easyNewSub && availableSubs.length > 0)) && (
                       <div className={SB_MENU_CHIPS}>
-                        {availableSubs.map(sub => (
+                        {subChips.map(({ sub, refused }) => (sub ? (
                           <SbMenuItem key={sub.number} chip tone="positive-soft" onClick={() => handleSubFromMenu(sub)}>
                             {sub.number}
                           </SbMenuItem>
-                        ))}
+                        ) : (
+                          <SbMenuItem
+                            key={refused.number}
+                            chip
+                            tone="neutral"
+                            aria-disabled="true"
+                            title={refused.why}
+                            data-refused-sub={refused.number}
+                            className="border-stone-200 bg-stone-50 text-stone-400 hover:bg-stone-50"
+                            onClick={() => showAlert(refused.why, 'warning')}
+                          >
+                            {refused.number}
+                          </SbMenuItem>
+                        )))}
                       </div>
                     )}
                     {courtSubExpanded && easyNewSub && (

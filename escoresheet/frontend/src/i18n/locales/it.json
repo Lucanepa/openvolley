@@ -1332,7 +1332,8 @@
       "titleExpelled": "Espulso — non può giocare questo set",
       "titleCannotReenter": "Non può rientrare"
     },
-    "liberoMove": {"in": "ENTRA", "out": "ESCE"}
+    "liberoMove": {"in": "ENTRA", "out": "ESCE"},
+    "dropRefused": {"player": "#{{number}}: {{why}}", "notThisPair": "#{{in}} non può entrare per #{{out}}", "liberoServer": "Il libero non sostituisce il battitore"}
   },
   "settings": {
     "title": "Impostazioni",
@@ -3277,7 +3278,7 @@
       "a_libero": "Tocca un giocatore della seconda linea (I, V o VI) e scegli «Libero», oppure trascina il libero dalla panchina su quel giocatore. Non sul giocatore che sta per servire. Tra due sostituzioni del libero deve essere giocato uno scambio. Una sostituzione fatta prima del fischio si può ancora inserire dopo «Inizia scambio»: tocca il giocatore, il menu mostra allora solo «Libero».",
       "tip_libero": "Trascina il libero dalla panchina su un giocatore della seconda linea (I, V, VI).",
       "q_undo": "Come annullo un'azione?",
-      "a_undo": "Tocca «Annulla» e conferma. Annulla l'ultima azione del set in corso: un punto, un timeout, una sostituzione o una sanzione. Tocca di nuovo per tornare più indietro.",
+      "a_undo": "Tocca «Annulla» e conferma. Annulla l'ultima azione del set in corso: un punto, un timeout, una sostituzione o una sanzione. Durante uno scambio annulla l'inizio dello scambio insieme all'ultimo punto. Tocca di nuovo per tornare più indietro.",
       "tip_undo": "Tocca «Annulla» per togliere l'ultima azione. Ripeti per tornare più indietro.",
       "q_sanction": "Come registro una sanzione?",
       "a_sanction": "Tocca il giocatore in campo e apri le sanzioni: avvertimento (giallo), penalità (rosso), espulsione (rosso e giallo insieme) o squalifica (rosso e giallo separati). Per un giocatore in panchina o un ufficiale di panchina, toccalo nell'elenco della panchina. Poi conferma.",

@@ -6,6 +6,10 @@
 //  3. the re-entry question: Confirm / Not now
 //  4. "Not now" keeps it away for that team at the next rotations
 //  6. the libero menu says why "Libero out" waits: "After finished rally"
+// 10. a drop the rules refuse says why; the player menu shows the refused
+//     numbers greyed out, a tap says why
+// 11. Undo takes back the whole rally: with a rally in play, its start and
+//     the point before it go with one Undo
 // (harness of ScoreboardLiberoMenus.test.jsx)
 // Over the app's real Dexie database (fake IndexedDB), at tablet width.
 // Network is off: no relay socket, no fetch.
@@ -227,4 +231,75 @@ describe('libero dialogs (tester feedback 24.11.2026)', () => {
     await wait(800)
     expect(document.querySelector('[data-testid="libero-reentry-title"]')).toBeNull()
   }, 60000)
+})
+
+describe('10: refused substitutions say why (tester feedback 24.11.2026)', () => {
+  it('the player the libero replaced is greyed out among the numbers; a tap says why, nothing is recorded', async () => {
+    const { matchId } = await setUp({ before: (add) => { add.liberoIn(11, 'libero1'); add.rally() } })
+    await openScreen(matchId, 11)
+    await openCourtMenu(2)
+    await tap(button('Substitution', playerMenu()))
+    await waitFor(() => expect(playerMenu().querySelector('[data-refused-sub="5"]')).toBeTruthy())
+    const chips = [...playerMenu().querySelectorAll('button')].filter(b => /^\d+$/.test(b.textContent.trim()))
+    expect(chips.map(b => b.textContent.trim())).toEqual(['5', '7', '8', '9', '10'])
+    await tap(playerMenu().querySelector('[data-refused-sub="5"]'))
+    await waitFor(() => expect(document.body.textContent).toContain('#5: the libero is on court for him, he comes back only for the libero'), { timeout: 3000 })
+    expect(await ofType('substitution')).toHaveLength(0)
+  }, 30000)
+
+  it('a libero dragged onto a front-row player: the drop says why', async () => {
+    const { matchId } = await setUp()
+    await openScreen(matchId, 2)
+    const store = {}
+    const dt = { setData: (k, v) => { store[k] = v }, getData: (k) => store[k], setDragImage: () => {}, effectAllowed: 'all', dropEffect: 'none', types: [] }
+    fireEvent.dragStart(benchLibero(11), { dataTransfer: dt })
+    await wait(200)
+    expect(fireEvent.dragOver(court(2), { dataTransfer: dt })).toBe(false) // accepted, so that it can say why
+    fireEvent.drop(court(2), { dataTransfer: dt })
+    await waitFor(() => expect(document.body.textContent).toContain('Liberos can only enter back-row positions (I, V, VI)'), { timeout: 3000 })
+    expect(await ofType('libero_entry')).toHaveLength(0)
+  }, 30000)
+})
+
+describe('11: Undo takes back the whole rally (owner 25.11.2026)', () => {
+  it('with a rally in play, one Undo takes back its start and the point before it; the dialog names the point', async () => {
+    const { matchId } = await setUp() // one rally played: 1:0 for home
+    await openScreen(matchId)
+    await tap(button('Start rally'))
+    const next = await waitFor(() => {
+      const el = button('Yes, start rally') || button('Point A')
+      if (!el) throw new Error('not in play yet')
+      return el
+    }, { timeout: 5000 })
+    if (next.textContent.trim() === 'Yes, start rally') await tap(next)
+    await waitFor(() => expect(button('Point A')).toBeTruthy(), { timeout: 5000 })
+    await tap(button('Undo'))
+    await waitFor(() => expect(button('Yes')).toBeTruthy(), { timeout: 5000 })
+    const confirm = dialog(/undo/i)
+    expect(confirm?.textContent).toMatch(/Point/)
+    expect(confirm?.textContent).not.toMatch(/Rally start/i)
+    await tap(button('Yes'))
+    await waitFor(async () => expect(await ofType('point')).toHaveLength(0), { timeout: 10000 })
+    expect(await ofType('rally_start')).toHaveLength(0)
+    await waitFor(() => expect(button('Start rally')).toBeTruthy(), { timeout: 5000 })
+  }, 30000)
+
+  it('a time-out between the point and the rally start: Undo takes the rally start only', async () => {
+    const { matchId } = await setUp({ before: (add) => { add.event('timeout', { team: 'away' }) } })
+    await openScreen(matchId)
+    await tap(button('Start rally'))
+    const next = await waitFor(() => {
+      const el = button('Yes, start rally') || button('Point A')
+      if (!el) throw new Error('not in play yet')
+      return el
+    }, { timeout: 5000 })
+    if (next.textContent.trim() === 'Yes, start rally') await tap(next)
+    await waitFor(() => expect(button('Point A')).toBeTruthy(), { timeout: 5000 })
+    await tap(button('Undo'))
+    await waitFor(() => expect(button('Yes')).toBeTruthy(), { timeout: 5000 })
+    await tap(button('Yes'))
+    await waitFor(() => expect(button('Start rally')).toBeTruthy(), { timeout: 10000 })
+    expect(await ofType('point')).toHaveLength(1)
+    expect(await ofType('timeout')).toHaveLength(1)
+  }, 30000)
 })

@@ -1333,7 +1333,8 @@
       "titleExpelled": "Expelled - cannot play this set",
       "titleCannotReenter": "Cannot re-enter"
     },
-    "liberoMove": {"in": "IN", "out": "OUT"}
+    "liberoMove": {"in": "IN", "out": "OUT"},
+    "dropRefused": {"player": "#{{number}}: {{why}}", "notThisPair": "#{{in}} may not come in for #{{out}}", "liberoServer": "The libero does not replace the server"}
   },
   "settings": {
     "title": "Settings",
@@ -3278,7 +3279,7 @@
       "a_libero": "Tap a back-row player (I, V or VI) and choose “Libero”, or drag the libero from the bench onto that player. Not the player who is about to serve. A rally must be played between two libero replacements. A replacement made before the whistle can still be entered after “Start rally”: tap the player, the menu then shows only “Libero”.",
       "tip_libero": "Drag the libero from the bench onto a back-row player (I, V, VI).",
       "q_undo": "How do I undo an action?",
-      "a_undo": "Tap “Undo” and confirm. It takes back the last action of the current set: a point, a time-out, a substitution or a sanction. Tap it again to go further back.",
+      "a_undo": "Tap “Undo” and confirm. It takes back the last action of the current set: a point, a time-out, a substitution or a sanction. During a rally it takes back the rally start together with the last point. Tap it again to go further back.",
       "tip_undo": "Tap “Undo” to take back the last action. Repeat to go further back.",
       "q_sanction": "How do I record a sanction?",
       "a_sanction": "Tap the player on court and choose “Sanction”: “Warning” (yellow), “Penalty” (red), “Expulsion” (red and yellow together) or “Disqualification” (red and yellow apart). For a bench player or a bench official, tap them in the bench list. Then confirm.",

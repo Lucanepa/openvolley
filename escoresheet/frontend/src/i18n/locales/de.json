@@ -1325,7 +1325,8 @@
       "titleExpelled": "Ausgeschlossen – darf in diesem Satz nicht spielen",
       "titleCannotReenter": "Kann nicht wieder eintreten"
     },
-    "liberoMove": {"in": "REIN", "out": "RAUS"}
+    "liberoMove": {"in": "REIN", "out": "RAUS"},
+    "dropRefused": {"player": "#{{number}}: {{why}}", "notThisPair": "#{{in}} darf nicht für #{{out}} hereinkommen", "liberoServer": "Der Libero ersetzt nicht den Aufschläger"}
   },
   "settings": {
     "title": "Einstellungen",
@@ -3001,7 +3002,7 @@
       "a_libero": "Tippe auf einen Spieler der hinteren Reihe (I, V oder VI) und wähle «Libero», oder ziehe den Libero von der Bank auf diesen Spieler. Nicht auf den Spieler, der gleich aufschlägt. Zwischen zwei Libero-Wechseln muss ein Ballwechsel gespielt werden. Ein Wechsel vor dem Pfiff lässt sich auch nach «Ballwechsel starten» noch eingeben: Tippe auf den Spieler, das Menü zeigt dann nur «Libero».",
       "tip_libero": "Ziehe den Libero von der Bank auf einen Spieler der hinteren Reihe (I, V, VI).",
       "q_undo": "Wie mache ich eine Aktion rückgängig?",
-      "a_undo": "Tippe auf «Rückgängig» und bestätige. Das nimmt die letzte Aktion des laufenden Satzes zurück: einen Punkt, ein Timeout, einen Wechsel oder eine Sanktion. Tippe nochmals, um weiter zurückzugehen.",
+      "a_undo": "Tippe auf «Rückgängig» und bestätige. Das nimmt die letzte Aktion des laufenden Satzes zurück: einen Punkt, ein Timeout, einen Wechsel oder eine Sanktion. Während eines Ballwechsels nimmt es den Start des Ballwechsels zusammen mit dem letzten Punkt zurück. Tippe nochmals, um weiter zurückzugehen.",
       "tip_undo": "Tippe auf «Rückgängig», um die letzte Aktion zurückzunehmen. Mehrmals tippen geht weiter zurück.",
       "q_sanction": "Wie zeichne ich eine Sanktion auf?",
       "a_sanction": "Tippe auf den Spieler auf dem Feld und öffne die Sanktionen: Warnung (gelb), Strafe (rot), Ausschluss (rot und gelb zusammen) oder Disqualifikation (rot und gelb getrennt). Für einen Bankspieler oder einen Bankoffiziellen tippe ihn in der Bankliste an. Dann bestätigen.",

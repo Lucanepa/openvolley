@@ -1331,7 +1331,8 @@
       "titleExpelled": "Expulsé — ne peut pas jouer ce set",
       "titleCannotReenter": "Ne peut pas revenir"
     },
-    "liberoMove": {"in": "ENTRE", "out": "SORT"}
+    "liberoMove": {"in": "ENTRE", "out": "SORT"},
+    "dropRefused": {"player": "#{{number}} : {{why}}", "notThisPair": "#{{in}} ne peut pas entrer pour #{{out}}", "liberoServer": "Le libéro ne remplace pas le serveur"}
   },
   "settings": {
     "title": "Paramètres",
@@ -3271,7 +3272,7 @@
       "a_libero": "Appuie sur un joueur de la ligne arrière (I, V ou VI) et choisis « Libéro », ou fais glisser le libéro du banc sur ce joueur. Pas sur le joueur qui va servir. Un échange doit être joué entre deux remplacements de libéro. Un remplacement fait avant le coup de sifflet peut encore être saisi après « Lancer l'échange » : appuie sur le joueur, le menu ne propose alors que « Libéro ».",
       "tip_libero": "Fais glisser le libéro du banc sur un joueur de la ligne arrière (I, V, VI).",
       "q_undo": "Comment annuler une action ?",
-      "a_undo": "Appuie sur « Annuler » et confirme. Cela annule la dernière action du set en cours : un point, un temps mort, un remplacement ou une sanction. Appuie encore pour remonter plus loin.",
+      "a_undo": "Appuie sur « Annuler » et confirme. Cela annule la dernière action du set en cours : un point, un temps mort, un remplacement ou une sanction. Pendant un échange, cela annule le début de l'échange avec le dernier point. Appuie encore pour remonter plus loin.",
       "tip_undo": "Appuie sur « Annuler » pour reprendre la dernière action. Appuie encore pour remonter plus loin.",
       "q_sanction": "Comment enregistrer une sanction ?",
       "a_sanction": "Appuie sur le joueur sur le terrain et ouvre les sanctions : avertissement (jaune), pénalité (rouge), expulsion (rouge et jaune ensemble) ou disqualification (rouge et jaune séparés). Pour un joueur du banc ou un officiel du banc, appuie sur lui dans la liste du banc. Confirme ensuite.",
