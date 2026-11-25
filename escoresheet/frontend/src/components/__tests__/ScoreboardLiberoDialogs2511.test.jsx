@@ -10,6 +10,7 @@
 //     numbers greyed out, a tap says why
 // 11. Undo takes back the whole rally: with a rally in play, its start and
 //     the point before it go with one Undo
+//  5. both teams' libero at once: one dialog, a card per team, each answered on its own
 // (harness of ScoreboardLiberoMenus.test.jsx)
 // Over the app's real Dexie database (fake IndexedDB), at tablet width.
 // Network is off: no relay socket, no fetch.
@@ -95,12 +96,12 @@ const tap = async (el) => { expect(el).toBeTruthy(); await settle(); fireEvent.c
 // Set 1 under way, home serving and winning every rally, line-ups 1-6.
 // `home`: the home team's numbers, `liberos`: their libero marks.
 // `before(add)` adds events after the first rally.
-async function setUp({ home = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], liberos = { 11: 'libero1', 12: 'libero2' }, before = () => {} } = {}) {
+async function setUp({ home = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], liberos = { 11: 'libero1', 12: 'libero2' }, awayLiberos = {}, before = () => {} } = {}) {
   const homeId = await db.teams.add({ name: 'Home VC', shortName: 'HOM' })
   const awayId = await db.teams.add({ name: 'Away VC', shortName: 'AWY' })
   const rows = []
   for (const [teamId, numbers] of [[homeId, home], [awayId, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]]]) {
-    for (const n of numbers) rows.push({ teamId, number: n, name: `P${n}`, lastName: `P${n}`, firstName: 'X', ...(teamId === homeId && liberos[n] ? { libero: liberos[n] } : {}), ...(n === 1 ? { isCaptain: true } : {}) })
+    for (const n of numbers) rows.push({ teamId, number: n, name: `P${n}`, lastName: `P${n}`, firstName: 'X', ...((teamId === homeId ? liberos : awayLiberos)[n] ? { libero: (teamId === homeId ? liberos : awayLiberos)[n] } : {}), ...(n === 1 ? { isCaptain: true } : {}) })
   }
   await db.players.bulkAdd(rows)
   const matchId = await db.matches.add({
@@ -302,4 +303,37 @@ describe('11: Undo takes back the whole rally (owner 25.11.2026)', () => {
     expect(await ofType('point')).toHaveLength(1)
     expect(await ofType('timeout')).toHaveLength(1)
   }, 30000)
+})
+
+describe('5: both teams have a libero action at once (tester feedback 24.11.2026)', () => {
+  // home: L1 #11 in for #5 at V; away: its libero #11 went out at a rotation
+  // earlier. Away wins (side-out), home wins back: home rotates (its libero to
+  // IV: out) and away, now receiving, may bring its libero back
+  const both = (add) => {
+    add.liberoIn(11, 'libero1')
+    add.rally()
+    add.event('libero_exit', { team: 'away', position: 'IV', liberoOut: 11, liberoType: 'libero1', playerIn: 4, reason: 'rotation_to_front_row' })
+  }
+
+  it('one dialog with both cards; either side first, the other stays', async () => {
+    const { matchId } = await setUp({ awayLiberos: { 11: 'libero1' }, before: both })
+    await openScreen(matchId, 11)
+    await rally('away')
+    await rally('home')
+    await waitFor(() => expect(document.querySelector('[data-testid="libero-both"]')).toBeTruthy(), { timeout: 8000 })
+    const rotation = document.querySelector('[data-testid="libero-both-rotation"]')
+    const reentry = document.querySelector('[data-testid="libero-both-reentry"]')
+    expect(rotation.textContent).toContain('Libero OUT')
+    expect(reentry.textContent).toContain('Libero IN?')
+    // court order: home (A) on the left, so its card comes first
+    const cards = [...document.querySelectorAll('[data-testid^="libero-both-"]')].map(e => e.dataset.testid)
+    expect(cards).toEqual(['libero-both-rotation', 'libero-both-reentry'])
+    // away answers first (not blocked by home's notice)
+    await tap(button('Not now', reentry))
+    await waitFor(() => expect(document.querySelector('[data-testid="libero-both"]')).toBeNull())
+    // home's notice is still there, as its own dialog
+    expect(testIdText('libero-rotation-title')).toBe('Libero OUT')
+    await tap(button('OK'))
+    await waitFor(() => expect(document.querySelector('[data-testid="libero-rotation-title"]')).toBeNull())
+  }, 60000)
 })

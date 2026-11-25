@@ -15306,6 +15306,147 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     )
   }
 
+  // The libero dialogs' contents (team, title, IN / OUT, buttons): drawn
+  // alone in their own dialog, or both in one (liberoBoth) when the two teams
+  // have a libero action at once
+  const liberoReentryCard = () => {
+    if (!liberoReentryModal) return null
+    const teamData = liberoReentryModal.team === 'home' ? data?.homeTeam : data?.awayTeam
+    const teamColor = teamData?.color || (liberoReentryModal.team === 'home' ? '#ef4444' : '#3b82f6')
+    const teamLabel = liberoReentryModal.team === teamAKey ? 'A' : 'B'
+    const teamName = teamData?.name || (liberoReentryModal.team === 'home' ? t('common.home') : t('common.away'))
+    // Get the selected libero info
+    const selectedLibero = liberoReentryModal.availableLiberos?.[liberoReentryModal.selectedLiberoIndex || 0]
+    const liberoNumber = selectedLibero?.number || liberoReentryModal.liberoNumber
+    const liberoLabel = selectedLibero?.label || (liberoReentryModal.liberoType === 'libero1' ? 'L1' : liberoReentryModal.liberoType === 'redesignated' ? 'LR' : 'L2')
+    return (
+      <>
+              {/* Header */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '12px',
+                marginBottom: '16px',
+                paddingBottom: '12px',
+                borderBottom: '2px solid #e5e7eb'
+              }}>
+                <span style={{ fontSize: '18px', fontWeight: 600, color: '#1f2937' }}>{teamName}</span>
+                <span style={{
+                  padding: '4px 12px',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  fontWeight: 700,
+                  ...teamBoxStyle(teamColor)
+                }}>{teamLabel}</span>
+              </div>
+
+              <LiberoMoveTitle testId="libero-reentry-title">{t('scoreboard.modals.liberoInQuestion', 'Libero IN?')}</LiberoMoveTitle>
+              <LiberoMoveBoxes inNumber={liberoNumber} inTag={liberoLabel} outNumber={liberoReentryModal.playerNumber} />
+
+              {/* Libero selection if multiple available */}
+              {liberoReentryModal.availableLiberos && liberoReentryModal.availableLiberos.length > 1 && (
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ fontSize: '12px', color: '#6b7280', textAlign: 'center', marginBottom: '8px' }}>
+                    {t('scoreboard.dialogs.selectLibero', 'Select libero:')}
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                    {liberoReentryModal.availableLiberos.map((libero, index) => (
+                      <button
+                        key={`${libero.type}-${libero.number}`}
+                        onClick={() => {
+                          setLiberoReentryModal({
+                            ...liberoReentryModal,
+                            selectedLiberoIndex: index
+                          })
+                        }}
+                        style={{
+                          padding: '8px 16px',
+                          background: index === (liberoReentryModal.selectedLiberoIndex || 0)
+                            ? '#22c55e'
+                            : '#f3f4f6',
+                          color: index === (liberoReentryModal.selectedLiberoIndex || 0)
+                            ? '#fff'
+                            : '#374151',
+                          border: index === (liberoReentryModal.selectedLiberoIndex || 0)
+                            ? '2px solid #16a34a'
+                            : '1px solid #d1d5db',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          fontWeight: 600,
+                          fontSize: '14px',
+                          transition: 'all 0.2s ease'
+                        }}
+                      >
+                        <div>{libero.label}</div>
+                        <div style={{ fontSize: '16px', marginTop: '2px' }}>#{libero.number}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Buttons */}
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                <SbButton variant="positive"
+                  onClick={confirmLiberoReentry}
+                >
+                  {t('common.confirm')}
+                </SbButton>
+                <SbButton variant="secondary"
+                  onClick={cancelLiberoReentry}
+                >
+                  {t('scoreboard.dialogs.notNow', 'Not now')}
+                </SbButton>
+              </div>
+      </>
+    )
+  }
+  const liberoRotationCard = () => {
+    if (!liberoRotationModal) return null
+    const teamData = liberoRotationModal.team === 'home' ? data?.homeTeam : data?.awayTeam
+    const teamColor = teamData?.color || (liberoRotationModal.team === 'home' ? '#ef4444' : '#3b82f6')
+    const teamLabel = liberoRotationModal.team === teamAKey ? 'A' : 'B'
+    const teamName = teamData?.name || (liberoRotationModal.team === 'home' ? t('common.home') : t('common.away'))
+    const liberoLabel = liberoRotationModal.liberoType === 'libero1' ? 'L1' : liberoRotationModal.liberoType === 'redesignated' ? 'LR' : 'L2'
+    return (
+      <>
+              {/* Header */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '12px',
+                marginBottom: '16px',
+                paddingBottom: '12px',
+                borderBottom: '2px solid #e5e7eb'
+              }}>
+                <span style={{ fontSize: '18px', fontWeight: 600, color: '#1f2937' }}>{teamName}</span>
+                <span style={{
+                  padding: '4px 12px',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  fontWeight: 700,
+                  ...teamBoxStyle(teamColor)
+                }}>{teamLabel}</span>
+              </div>
+
+              <LiberoMoveTitle testId="libero-rotation-title">{t('scoreboard.modals.liberoOut')}</LiberoMoveTitle>
+              <LiberoMoveBoxes inNumber={liberoRotationModal.playerNumber} outNumber={liberoRotationModal.liberoNumber} outTag={liberoLabel} />
+
+              {/* {t('common.ok')} Button */}
+              <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <SbButton variant="positive"
+                  onClick={() => setLiberoRotationModal(null)}
+                >
+                  OK
+                </SbButton>
+              </div>
+      </>
+    )
+  }
+  const liberoBoth = !!(liberoRotationModal && liberoReentryModal) && !courtSwitchModal && !setEndTimeModal
+
   return (
     <div className={['match-record', isPhoneView && 'phone-layout', centreDialogs && 'centre-dialogs'].filter(Boolean).join(' ')}>
       <BenchRequestCards
@@ -23200,17 +23341,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         )
       })()}
 
-      {liberoReentryModal && (() => {
-        const teamData = liberoReentryModal.team === 'home' ? data?.homeTeam : data?.awayTeam
-        const teamColor = teamData?.color || (liberoReentryModal.team === 'home' ? '#ef4444' : '#3b82f6')
-        const teamLabel = liberoReentryModal.team === teamAKey ? 'A' : 'B'
-        const teamName = teamData?.name || (liberoReentryModal.team === 'home' ? t('common.home') : t('common.away'))
-
-        // Get the selected libero info
-        const selectedLibero = liberoReentryModal.availableLiberos?.[liberoReentryModal.selectedLiberoIndex || 0]
-        const liberoNumber = selectedLibero?.number || liberoReentryModal.liberoNumber
-        const liberoLabel = selectedLibero?.label || (liberoReentryModal.liberoType === 'libero1' ? 'L1' : liberoReentryModal.liberoType === 'redesignated' ? 'LR' : 'L2')
-
+      {liberoReentryModal && !liberoBoth && (() => {
         // Determine if this team is on the left or right side
         const isOnLeftSide = (liberoReentryModal.team === 'home') === leftIsHome
 
@@ -23255,84 +23386,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               }}
               onClick={e => e.stopPropagation()}
             >
-              {/* Header */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '12px',
-                marginBottom: '16px',
-                paddingBottom: '12px',
-                borderBottom: '2px solid #e5e7eb'
-              }}>
-                <span style={{ fontSize: '18px', fontWeight: 600, color: '#1f2937' }}>{teamName}</span>
-                <span style={{
-                  padding: '4px 12px',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  fontWeight: 700,
-                  ...teamBoxStyle(teamColor)
-                }}>{teamLabel}</span>
-              </div>
-
-              <LiberoMoveTitle testId="libero-reentry-title">{t('scoreboard.modals.liberoInQuestion', 'Libero IN?')}</LiberoMoveTitle>
-              <LiberoMoveBoxes inNumber={liberoNumber} inTag={liberoLabel} outNumber={liberoReentryModal.playerNumber} />
-
-              {/* Libero selection if multiple available */}
-              {liberoReentryModal.availableLiberos && liberoReentryModal.availableLiberos.length > 1 && (
-                <div style={{ marginBottom: '16px' }}>
-                  <div style={{ fontSize: '12px', color: '#6b7280', textAlign: 'center', marginBottom: '8px' }}>
-                    {t('scoreboard.dialogs.selectLibero', 'Select libero:')}
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                    {liberoReentryModal.availableLiberos.map((libero, index) => (
-                      <button
-                        key={`${libero.type}-${libero.number}`}
-                        onClick={() => {
-                          setLiberoReentryModal({
-                            ...liberoReentryModal,
-                            selectedLiberoIndex: index
-                          })
-                        }}
-                        style={{
-                          padding: '8px 16px',
-                          background: index === (liberoReentryModal.selectedLiberoIndex || 0)
-                            ? '#22c55e'
-                            : '#f3f4f6',
-                          color: index === (liberoReentryModal.selectedLiberoIndex || 0)
-                            ? '#fff'
-                            : '#374151',
-                          border: index === (liberoReentryModal.selectedLiberoIndex || 0)
-                            ? '2px solid #16a34a'
-                            : '1px solid #d1d5db',
-                          borderRadius: '8px',
-                          cursor: 'pointer',
-                          fontWeight: 600,
-                          fontSize: '14px',
-                          transition: 'all 0.2s ease'
-                        }}
-                      >
-                        <div>{libero.label}</div>
-                        <div style={{ fontSize: '16px', marginTop: '2px' }}>#{libero.number}</div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Buttons */}
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                <SbButton variant="positive"
-                  onClick={confirmLiberoReentry}
-                >
-                  {t('common.confirm')}
-                </SbButton>
-                <SbButton variant="secondary"
-                  onClick={cancelLiberoReentry}
-                >
-                  {t('scoreboard.dialogs.notNow', 'Not now')}
-                </SbButton>
-              </div>
+              {liberoReentryCard()}
             </div>
           </div>
         )
@@ -24626,13 +24680,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         )
       })()}
 
-      {liberoRotationModal && !courtSwitchModal && !setEndTimeModal && (() => {
-        const teamData = liberoRotationModal.team === 'home' ? data?.homeTeam : data?.awayTeam
-        const teamColor = teamData?.color || (liberoRotationModal.team === 'home' ? '#ef4444' : '#3b82f6')
-        const teamLabel = liberoRotationModal.team === teamAKey ? 'A' : 'B'
-        const teamName = teamData?.name || (liberoRotationModal.team === 'home' ? t('common.home') : t('common.away'))
-        const liberoLabel = liberoRotationModal.liberoType === 'libero1' ? 'L1' : liberoRotationModal.liberoType === 'redesignated' ? 'LR' : 'L2'
-
+      {liberoRotationModal && !liberoBoth && !courtSwitchModal && !setEndTimeModal && (() => {
         // Determine if this team is on the left or right side
         const isOnLeftSide = (liberoRotationModal.team === 'home') === leftIsHome
 
@@ -24677,37 +24725,43 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               }}
               onClick={e => e.stopPropagation()}
             >
-              {/* Header */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '12px',
-                marginBottom: '16px',
-                paddingBottom: '12px',
-                borderBottom: '2px solid #e5e7eb'
-              }}>
-                <span style={{ fontSize: '18px', fontWeight: 600, color: '#1f2937' }}>{teamName}</span>
-                <span style={{
-                  padding: '4px 12px',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  fontWeight: 700,
-                  ...teamBoxStyle(teamColor)
-                }}>{teamLabel}</span>
-              </div>
-
-              <LiberoMoveTitle testId="libero-rotation-title">{t('scoreboard.modals.liberoOut')}</LiberoMoveTitle>
-              <LiberoMoveBoxes inNumber={liberoRotationModal.playerNumber} outNumber={liberoRotationModal.liberoNumber} outTag={liberoLabel} />
-
-              {/* {t('common.ok')} Button */}
-              <div style={{ display: 'flex', justifyContent: 'center' }}>
-                <SbButton variant="positive"
-                  onClick={() => setLiberoRotationModal(null)}
+              {liberoRotationCard()}
+            </div>
+          </div>
+        )
+      })()}
+      {liberoBoth && (() => {
+        // Both teams' libero at once (tester 24.11.2026: one side waited for
+        // the other, though one libero may come in long before the other): one
+        // dialog, a card per team in court order (stacked on a phone), each
+        // answered on its own; the other then stays as its own
+        // dialog. No backdrop dismiss: nothing is answered by a stray tap.
+        const rotationLeft = (liberoRotationModal.team === 'home') === leftIsHome
+        const reentryLeft = (liberoReentryModal.team === 'home') === leftIsHome
+        const cards = [
+          { key: 'rotation', left: rotationLeft, node: liberoRotationCard() },
+          { key: 'reentry', left: reentryLeft, node: liberoReentryCard() }
+        ].sort((a, b) => (a.left === b.left ? 0 : a.left ? -1 : 1))
+        // stacked only where two cards do not fit side by side (a phone);
+        // a small landscape tablet keeps them side by side (stacked, the second
+        // card's buttons fell below a 600 px high screen)
+        const stacked = viewportWidth < 840
+        return (
+          <div
+            data-testid="libero-both"
+            style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0, 0, 0, 0.5)', zIndex: 9999, ...CENTRED_OVERLAY, overflowY: 'auto' }}
+          >
+            <div style={{ display: 'flex', flexDirection: stacked ? 'column' : 'row', alignItems: stacked ? 'stretch' : 'flex-start', gap: stacked ? '12px' : '20px', width: stacked ? 'min(420px, 100%)' : undefined, margin: 'auto' }}>
+              {cards.map(c => (
+                <div
+                  key={c.key}
+                  data-testid={`libero-both-${c.key}`}
+                  style={{ background: '#fff', borderRadius: '16px', padding: stacked ? '16px 18px' : '24px 28px', width: stacked ? '100%' : '380px', boxSizing: 'border-box', boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)' }}
+                  onClick={e => e.stopPropagation()}
                 >
-                  OK
-                </SbButton>
-              </div>
+                  {c.node}
+                </div>
+              ))}
             </div>
           </div>
         )
