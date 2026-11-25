@@ -753,7 +753,8 @@
       "liberoOut": "Libero OUT",
       "liberoIn": "Libero IN",
       "playerReturns": "Player returns",
-      "forfait": "Forfait"
+      "forfait": "Forfait",
+      "liberoInQuestion": "Libero IN?"
     },
     "sanctions": {
       "teamSanctions": "Team sanctions",
@@ -786,7 +787,8 @@
       "sanctionFor": "Sanction for {{who}}",
       "actionsFor": "Actions for {{who}}",
       "teamHasWarning": "Team has warning",
-      "alreadySanctioned": "Already sanctioned"
+      "alreadySanctioned": "Already sanctioned",
+      "afterFinishedRally": "After finished rally"
     },
     "actions": {
       "libero": "Libero",
@@ -1330,7 +1332,8 @@
       "titleExceptional": "Exceptionally substituted - cannot play rest of match",
       "titleExpelled": "Expelled - cannot play this set",
       "titleCannotReenter": "Cannot re-enter"
-    }
+    },
+    "liberoMove": {"in": "IN", "out": "OUT"}
   },
   "settings": {
     "title": "Settings",
@@ -3415,7 +3418,7 @@
       "q_injury": "A player is injured: what do I do?",
       "a_injury": "Tap the player on court and choose “Injury”, then a substitute. If no legal substitution is possible, the app offers an exceptional substitution. After an exceptional substitution, that player cannot play again in this match.",
       "q_liberoOut": "How does the libero leave the court?",
-      "a_liberoOut": "Tap the libero on court and choose “Libero out”: the replaced player comes back. When the libero rotates to the front row, the app takes the libero out and asks you to confirm. “Exchange libero” swaps the two liberos.",
+      "a_liberoOut": "Tap the libero on court and choose “Libero out”: the replaced player comes back. A rally must be finished first (“After finished rally”). When the libero rotates to the front row, the app takes the libero out and shows “Libero OUT”: tap “OK”. Later it asks “Libero IN?” for the back-row player; “Not now” stops this question for that team until the end of the set. “Exchange libero” swaps the two liberos.",
       "q_liberoUnable": "The libero cannot play any more?",
       "a_liberoUnable": "Tap the libero and choose “Unable to play”: declared unable, or injury or illness. If the team has no other libero, the app lets you designate another player as the new libero. An injured libero may play again (tap him: “Able to play again”) as long as no new libero was re-designated in his place.",
       "q_captainRing": "Why is a number circled on the bench?",

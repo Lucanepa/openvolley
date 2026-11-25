@@ -751,7 +751,8 @@
       "liberoOut": "Libéro SORT",
       "liberoIn": "Libéro ENTRE",
       "playerReturns": "Retour du joueur",
-      "forfait": "Forfait"
+      "forfait": "Forfait",
+      "liberoInQuestion": "Libéro ENTRE ?"
     },
     "sanctions": {
       "teamSanctions": "Sanctions d'équipe",
@@ -784,7 +785,8 @@
       "sanctionFor": "Sanction pour {{who}}",
       "actionsFor": "Actions pour {{who}}",
       "teamHasWarning": "Équipe déjà avertie",
-      "alreadySanctioned": "Déjà sanctionné"
+      "alreadySanctioned": "Déjà sanctionné",
+      "afterFinishedRally": "Après un échange terminé"
     },
     "actions": {
       "libero": "Libéro",
@@ -1328,7 +1330,8 @@
       "titleExceptional": "Remplacé exceptionnellement — ne peut plus jouer de tout le match",
       "titleExpelled": "Expulsé — ne peut pas jouer ce set",
       "titleCannotReenter": "Ne peut pas revenir"
-    }
+    },
+    "liberoMove": {"in": "ENTRE", "out": "SORT"}
   },
   "settings": {
     "title": "Paramètres",
@@ -3408,7 +3411,7 @@
       "q_injury": "Un joueur est blessé : que faire ?",
       "a_injury": "Appuie sur le joueur sur le terrain, choisis la blessure puis un remplaçant. Si aucun remplacement régulier n'est possible, l'app propose un remplacement exceptionnel. Après un remplacement exceptionnel, ce joueur ne peut plus jouer dans ce match.",
       "q_liberoOut": "Comment le libéro quitte-t-il le terrain ?",
-      "a_liberoOut": "Appuie sur le libéro sur le terrain et fais-le sortir : le joueur remplacé revient. Quand le libéro tourne en ligne avant, l'app le fait sortir et te demande de confirmer. L'échange de libéros fait permuter les deux libéros.",
+      "a_liberoOut": "Appuie sur le libéro sur le terrain et fais-le sortir : le joueur remplacé revient. Un échange doit d'abord être terminé (« Après un échange terminé »). Quand le libéro tourne en ligne avant, l'app le fait sortir et affiche « Libéro SORT » : appuie sur « OK ». Plus tard, elle demande « Libéro ENTRE ? » pour le joueur de la ligne arrière ; « Pas maintenant » arrête cette question pour l'équipe jusqu'à la fin du set. L'échange de libéros fait permuter les deux libéros.",
       "q_liberoUnable": "Le libéro ne peut plus jouer ?",
       "a_liberoUnable": "Appuie sur le libéro et indique qu'il ne peut plus jouer : déclaré inapte, ou blessure ou maladie. Si l'équipe n'a pas d'autre libéro, l'app te laisse désigner un autre joueur comme nouveau libéro. Un libéro blessé peut rejouer (appuie sur lui : « De nouveau apte à jouer ») tant qu'aucun nouveau libéro n'a été désigné à sa place.",
       "q_captainRing": "Pourquoi un numéro est-il entouré sur le banc ?",

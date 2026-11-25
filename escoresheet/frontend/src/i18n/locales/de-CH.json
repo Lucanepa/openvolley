@@ -752,7 +752,8 @@
       "liberoOut": "Libero USE",
       "liberoIn": "Libero INE",
       "playerReturns": "Spieler chunnt zrugg",
-      "forfait": "Forfait"
+      "forfait": "Forfait",
+      "liberoInQuestion": "Libero INE?"
     },
     "sanctions": {
       "teamSanctions": "Teamsanktione",
@@ -785,7 +786,8 @@
       "sanctionFor": "Sanktion für {{who}}",
       "actionsFor": "Aktione für {{who}}",
       "teamHasWarning": "Team hät Warnig",
-      "alreadySanctioned": "Scho sanktioniert"
+      "alreadySanctioned": "Scho sanktioniert",
+      "afterFinishedRally": "Nach em beändete Ballwächsel"
     },
     "actions": {
       "libero": "Libero",
@@ -1329,7 +1331,8 @@
       "titleExceptional": "Usserordentlich gwächslet – darf im Rest vom Spiil nöd spiile",
       "titleExpelled": "Usgschlosse – darf i däm Satz nöd spiile",
       "titleCannotReenter": "Cha nöd wieder ine"
-    }
+    },
+    "liberoMove": {"in": "INE", "out": "USE"}
   },
   "settings": {
     "title": "Iistellige",
@@ -3409,7 +3412,7 @@
       "q_injury": "En Spieler isch verletzt: Was mach ich?",
       "a_injury": "Tipp uf de Spieler uf em Fäld, wähl «Verletzig» und dänn en Ersatz. Isch kein reguläre Wächsel möglich, büütet d App en Usnahmewächsel aa. Nach emne Usnahmewächsel darf dä Spieler i däm Spiil nüme spiile.",
       "q_liberoOut": "Wie verlaat de Libero s Fäld?",
-      "a_liberoOut": "Tipp uf de Libero uf em Fäld und wähl «Libero use»: De ersetzt Spieler chunnt zrugg. Rotiert de Libero i di vorder Reihe, nimmt ihn d App use und fröget dich zur Bestätigung. «Libero-Tuusch» tuuscht di zwei Liberos.",
+      "a_liberoOut": "Tipp uf de Libero uf em Fäld und wähl «Libero use»: De ersetzt Spieler chunnt zrugg. Zersch muess en Ballwächsel fertig sii («Nach em beändete Ballwächsel»). Rotiert de Libero i di vorder Reihe, nimmt ihn d App use und zeigt «Libero USE»: Tipp uf «OK». Spöter fröget si «Libero INE?» für de Spieler vo de hindere Reihe; «Jetzt nöd» stoppt die Frag für das Team bis zum Satzänd. «Libero-Tuusch» tuuscht di zwei Liberos.",
       "q_liberoUnable": "De Libero cha nüme spiile?",
       "a_liberoUnable": "Tipp uf de Libero und wähl «Spiilunfähig»: spiilunfähig erklärt, Verletzig oder Chrankheit. Hät s Team kein andere Libero, laat dich d App en andere Spieler zum neue Libero bestimme. En verletzte Libero cha wieder spiile (uf ihn tippe: «Wieder spiilfähig»), solang a sinere Stell kein neue Libero bezeichnet worde isch.",
       "q_captainRing": "Werum isch uf de Bank e Nummere iikreiset?",

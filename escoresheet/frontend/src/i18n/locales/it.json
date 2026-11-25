@@ -752,7 +752,8 @@
       "liberoOut": "Libero ESCE",
       "liberoIn": "Libero ENTRA",
       "playerReturns": "Ritorno giocatore",
-      "forfait": "Forfait"
+      "forfait": "Forfait",
+      "liberoInQuestion": "Libero ENTRA?"
     },
     "sanctions": {
       "teamSanctions": "Sanzioni di squadra",
@@ -785,7 +786,8 @@
       "sanctionFor": "Sanzione per {{who}}",
       "actionsFor": "Azioni per {{who}}",
       "teamHasWarning": "Squadra già avvertita",
-      "alreadySanctioned": "Già sanzionato"
+      "alreadySanctioned": "Già sanzionato",
+      "afterFinishedRally": "Dopo uno scambio concluso"
     },
     "actions": {
       "libero": "Libero",
@@ -1329,7 +1331,8 @@
       "titleExceptional": "Sostituito in modo eccezionale — non può giocare il resto della partita",
       "titleExpelled": "Espulso — non può giocare questo set",
       "titleCannotReenter": "Non può rientrare"
-    }
+    },
+    "liberoMove": {"in": "ENTRA", "out": "ESCE"}
   },
   "settings": {
     "title": "Impostazioni",
@@ -3414,7 +3417,7 @@
       "q_injury": "Un giocatore si è infortunato: cosa faccio?",
       "a_injury": "Tocca il giocatore in campo, scegli l'infortunio e poi un sostituto. Se nessuna sostituzione regolare è possibile, l'app propone una sostituzione eccezionale. Dopo una sostituzione eccezionale, quel giocatore non può più giocare in questa partita.",
       "q_liberoOut": "Come esce il libero dal campo?",
-      "a_liberoOut": "Tocca il libero in campo e fallo uscire: rientra il giocatore sostituito. Quando il libero ruota in prima linea, l'app lo fa uscire e ti chiede di confermare. Lo scambio dei libero fa cambiare posto ai due libero.",
+      "a_liberoOut": "Tocca il libero in campo e fallo uscire: rientra il giocatore sostituito. Prima deve essere concluso uno scambio («Dopo uno scambio concluso»). Quando il libero ruota in prima linea, l'app lo fa uscire e mostra «Libero ESCE»: tocca «OK». Più tardi chiede «Libero ENTRA?» per il giocatore della seconda linea; «Non ora» ferma questa domanda per la squadra fino alla fine del set. Lo scambio dei libero fa cambiare posto ai due libero.",
       "q_liberoUnable": "Il libero non può più giocare?",
       "a_liberoUnable": "Tocca il libero e indica che non può più giocare: dichiarato inabile, oppure infortunio o malattia. Se la squadra non ha un altro libero, l'app ti fa designare un altro giocatore come nuovo libero. Un libero infortunato può tornare a giocare (toccalo: «Di nuovo in grado di giocare») finché non è stato designato un nuovo libero al suo posto.",
       "q_captainRing": "Perché un numero è cerchiato in panchina?",

@@ -745,7 +745,8 @@
       "liberoOut": "Libero RAUS",
       "liberoIn": "Libero REIN",
       "playerReturns": "Spieler kehrt zurück",
-      "forfait": "Forfait"
+      "forfait": "Forfait",
+      "liberoInQuestion": "Libero REIN?"
     },
     "sanctions": {
       "teamSanctions": "Mannschaftssanktionen",
@@ -778,7 +779,8 @@
       "sanctionFor": "Sanktion für {{who}}",
       "actionsFor": "Aktionen für {{who}}",
       "teamHasWarning": "Team hat Warnung",
-      "alreadySanctioned": "Bereits sanktioniert"
+      "alreadySanctioned": "Bereits sanktioniert",
+      "afterFinishedRally": "Nach beendetem Ballwechsel"
     },
     "actions": {
       "libero": "Libero",
@@ -1322,7 +1324,8 @@
       "titleExceptional": "Ausserordentlich ausgewechselt – darf im Rest des Spiels nicht spielen",
       "titleExpelled": "Ausgeschlossen – darf in diesem Satz nicht spielen",
       "titleCannotReenter": "Kann nicht wieder eintreten"
-    }
+    },
+    "liberoMove": {"in": "REIN", "out": "RAUS"}
   },
   "settings": {
     "title": "Einstellungen",
@@ -3138,7 +3141,7 @@
       "q_injury": "Ein Spieler ist verletzt: Was tun?",
       "a_injury": "Tippe auf den Spieler auf dem Feld, wähle die Verletzung und dann einen Ersatz. Ist kein regulärer Wechsel möglich, bietet die App einen Ausnahmewechsel an. Nach einem Ausnahmewechsel darf dieser Spieler im Spiel nicht mehr spielen.",
       "q_liberoOut": "Wie verlässt der Libero das Feld?",
-      "a_liberoOut": "Tippe auf den Libero auf dem Feld und nimm ihn heraus: Der ersetzte Spieler kommt zurück. Rotiert der Libero in die vordere Reihe, nimmt ihn die App heraus und fragt dich zur Bestätigung. Mit dem Libero-Tausch wechseln die beiden Liberos.",
+      "a_liberoOut": "Tippe auf den Libero auf dem Feld und nimm ihn heraus: Der ersetzte Spieler kommt zurück. Zuerst muss ein Ballwechsel beendet sein („Nach beendetem Ballwechsel“). Rotiert der Libero in die vordere Reihe, nimmt ihn die App heraus und zeigt „Libero RAUS“: Tippe auf „OK“. Später fragt sie „Libero REIN?“ für den Spieler der hinteren Reihe; „Nicht jetzt“ stoppt diese Frage für das Team bis zum Satzende. Mit dem Libero-Tausch wechseln die beiden Liberos.",
       "q_liberoUnable": "Der Libero kann nicht mehr spielen?",
       "a_liberoUnable": "Tippe auf den Libero und wähle, dass er nicht mehr spielen kann: für spielunfähig erklärt oder Verletzung bzw. Krankheit. Hat das Team keinen anderen Libero, lässt dich die App einen anderen Spieler zum neuen Libero bestimmen. Ein verletzter Libero kann wieder spielen (auf ihn tippen: «Wieder spielfähig»), solange an seiner Stelle kein neuer Libero bezeichnet wurde.",
       "q_captainRing": "Warum ist auf der Bank eine Nummer eingekreist?",

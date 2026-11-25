@@ -149,6 +149,7 @@ import { askConfirm } from '../utils/askConfirm.js'
 import { freeStorageBytes, isStorageFullError, LOW_STORAGE_BYTES } from '../utils/storageSpace'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
 import { ArrowUpDown, ChevronDown, Cross, LayoutDashboard, Pin, Pointer, RotateCcw } from 'lucide-react'
+import { LiberoMoveBoxes, LiberoMoveTitle } from './scoreboard/LiberoMove.jsx'
 import { useDiagCommits } from '../diagnostics/commits'
 import { preload, usePreloaded } from '../utils/preload'
 
@@ -812,7 +813,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [liberoRotationModal, setLiberoRotationModal] = useState(null) // { team: 'home'|'away', position: 'IV', liberoNumber: number, playerNumber: number } | null
   const [exchangeLiberoDropdown, setExchangeLiberoDropdown] = useState(null) // { team: 'home'|'away', position: 'I'|'V'|'VI', liberoNumber: number, element: HTMLElement } | null
   const [liberoReentryModal, setLiberoReentryModal] = useState(null) // { team: 'home'|'away', position: 'I', playerNumber: number, liberoNumber: number, liberoType: string, availableLiberos: [{number, type, label}], selectedLiberoIndex: number } | null
-  const [liberoSuggestionDismissedForExit, setLiberoSuggestionDismissedForExit] = useState({ home: null, away: null }) // Track which libero_exit event (by timestamp) was dismissed to avoid repeated suggestions
+  const [liberoSuggestionDismissedForExit, setLiberoSuggestionDismissedForExit] = useState({ home: null, away: null }) // per team: when "Not now" was tapped (ISO time), or null; no suggestion for that team for the rest of the seted suggestions
   const [liberoRedesignationModal, setLiberoRedesignationModal] = useState(null) // { team: 'home'|'away', unableLiberoNumber: number, unableLiberoType: string, reason: 'declared'|'injury'|'expulsion'|'disqualification' } | null
   const [liberoUnableModal, setLiberoUnableModal] = useState(null) // { team: 'home'|'away', liberoNumber: number, liberoType: string, reason?: 'declared'|'injury' } | null
   const [liberoBenchActionMenu, setLiberoBenchActionMenu] = useState(null) // { team: 'home'|'away', liberoNumber: number, liberoType: string, element: HTMLElement, x: number, y: number } | null
@@ -6541,8 +6542,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               const willSetEnd = (homePoints >= pointsToWinLibero && homePoints - awayPoints >= 2) ||
                 (awayPoints >= pointsToWinLibero && awayPoints - homePoints >= 2)
 
-              // Check if this specific libero exit was already dismissed (don't repeat suggestion)
-              const dismissedForThisExit = liberoSuggestionDismissedForExit[otherTeamKey] === lastLiberoExit.ts
+              // "Not now" (owner 2026-11-25, tester feedback: asked again at
+              // every rotation): no more suggestions for this team for the rest
+              // of the set. It was remembered for one libero exit only, so each
+              // libero brought in by hand and rotated out asked again. The set
+              // end clears it (confirmSetEndTime); Options turns them off
+              const dismissedForThisExit = !!liberoSuggestionDismissedForExit[otherTeamKey]
 
               if (liberoEntrySuggestion && !willSetEnd && !dismissedForThisExit) {
                 deferUi(() => setLiberoReentryModal({
@@ -13720,27 +13725,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   })), [runAction, deferUi, runLiberoReentryConfirm, liberoReentryModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, isLiberoUnable])
 
+  // "Not now": no more suggestions for this team for the rest of the set, not
+  // only for this one rotation (it came back at every rotation: tester, 24.11.2026)
   const cancelLiberoReentry = useCallback(() => {
-    // Track that we dismissed the suggestion for this specific libero exit
-    // so we don't show it again until a new libero exit happens
     if (liberoReentryModal) {
       const team = liberoReentryModal.team
-      const exitEvent = data.events.filter(e =>
-        e.type === 'libero_exit' &&
-        e.payload?.team === team &&
-        e.setIndex === data.set.index &&
-        e.payload?.reason === 'rotation_to_front_row'
-      ).sort(newestFirst)[0]
-
-      if (exitEvent) {
-        setLiberoSuggestionDismissedForExit(prev => ({
-          ...prev,
-          [team]: exitEvent.ts
-        }))
-      }
+      setLiberoSuggestionDismissedForExit(prev => ({ ...prev, [team]: new Date().toISOString() }))
     }
     setLiberoReentryModal(null)
-  }, [liberoReentryModal, data?.events, data?.set?.index])
+  }, [liberoReentryModal])
 
   // Handle libero out
   // closeMenu: the court player menu it was chosen in closes with the result (deferUi)
@@ -21646,6 +21639,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           {t('scoreboard.playerMenu.exchangeLibero')}
                         </SbMenuItem>
                       )}
+                      {/* Why both wait (owner 2026-11-25: short): FIVB 19.3.2.1, a
+                          completed rally between two libero replacements */}
+                      {!hasPointSinceLibero && !playerActionMenu.liberoLocked && (
+                        <div data-testid="libero-after-rally" style={{ fontSize: '12px', color: '#78716c', padding: '2px 6px', textAlign: 'center' }}>
+                          {t('scoreboard.playerMenu.afterFinishedRally', 'After finished rally')}
+                        </div>
+                      )}
                       {/* Unable to play - expandable (not while the rally is in play).
                           Injury / illness only: a libero on court cannot be
                           declared unable (Swiss exam Q11); the coach replaces
@@ -23079,136 +23079,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 }}>{teamLabel}</span>
               </div>
 
-              {/* Libero IN/OUT and Player Replaced/Returns - side by side */}
-              <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
-                {liberoConfirm.isExit ? (
-                  <>
-                    {/* Libero OUT */}
-                    <div style={{
-                      flex: 1,
-                      padding: '14px',
-                      background: '#fef2f2',
-                      borderRadius: '12px',
-                      border: '2px solid #ef4444',
-                      textAlign: 'center'
-                    }}>
-                      <div style={{
-                        fontSize: '11px',
-                        color: '#991b1b',
-                        fontWeight: 600,
-                        marginBottom: '6px',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px'
-                      }}>
-                        {t('scoreboard.modals.liberoOut')}
-                      </div>
-                      <div style={{
-                        fontSize: '26px',
-                        fontWeight: 700,
-                        color: '#991b1b'
-                      }}>
-                        #{liberoConfirm.playerOut}
-                      </div>
-                    </div>
-
-                    {/* Player Returns */}
-                    <div style={{
-                      flex: 1,
-                      padding: '14px',
-                      background: '#dcfce7',
-                      borderRadius: '12px',
-                      border: '2px solid #22c55e',
-                      textAlign: 'center'
-                    }}>
-                      <div style={{
-                        fontSize: '11px',
-                        color: '#166534',
-                        fontWeight: 600,
-                        marginBottom: '6px',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px'
-                      }}>
-                        {t('scoreboard.dialogs.returns', 'Returns')}
-                      </div>
-                      <div style={{
-                        fontSize: '26px',
-                        fontWeight: 700,
-                        color: '#166534'
-                      }}>
-                        #{liberoConfirm.replacedPlayer}
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    {/* Libero IN */}
-                    <div style={{
-                      flex: 1,
-                      padding: '14px',
-                      background: '#dcfce7',
-                      borderRadius: '12px',
-                      border: '2px solid #22c55e',
-                      textAlign: 'center'
-                    }}>
-                      <div style={{
-                        fontSize: '11px',
-                        color: '#166534',
-                        fontWeight: 600,
-                        marginBottom: '6px',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px'
-                      }}>
-                        {t('scoreboard.modals.liberoIn')}
-                      </div>
-                      <div style={{
-                        fontSize: '26px',
-                        fontWeight: 700,
-                        color: '#166534'
-                      }}>
-                        #{liberoNumber || '?'}
-                      </div>
-                      <div style={{
-                        fontSize: '12px',
-                        padding: '2px 8px',
-                        background: '#22c55e',
-                        color: '#fff',
-                        borderRadius: '4px',
-                        display: 'inline-block',
-                        marginTop: '4px'
-                      }}>{liberoLabel}</div>
-                    </div>
-
-                    {/* Player Replaced */}
-                    <div style={{
-                      flex: 1,
-                      padding: '14px',
-                      background: '#fef2f2',
-                      borderRadius: '12px',
-                      border: '2px solid #ef4444',
-                      textAlign: 'center'
-                    }}>
-                      <div style={{
-                        fontSize: '11px',
-                        color: '#991b1b',
-                        fontWeight: 600,
-                        marginBottom: '6px',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px'
-                      }}>
-                        {t('scoreboard.dialogs.replaced', 'Replaced')}
-                      </div>
-                      <div style={{
-                        fontSize: '26px',
-                        fontWeight: 700,
-                        color: '#991b1b'
-                      }}>
-                        #{liberoConfirm.playerOut}
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-
+              <LiberoMoveTitle testId="libero-confirm-title">
+                {liberoConfirm.isExit
+                  ? t('scoreboard.modals.liberoOut')
+                  : liberoConfirm.isExchange ? t('scoreboard.playerMenu.exchangeLibero') : t('scoreboard.modals.liberoIn')}
+              </LiberoMoveTitle>
+              {liberoConfirm.isExit
+                ? <LiberoMoveBoxes inNumber={liberoConfirm.replacedPlayer} outNumber={liberoConfirm.playerOut} />
+                : <LiberoMoveBoxes inNumber={liberoNumber} inTag={liberoLabel} outNumber={liberoConfirm.playerOut} />}
               {/* Buttons */}
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
                 <SbButton variant="positive"
@@ -23302,83 +23180,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 }}>{teamLabel}</span>
               </div>
 
-              {/* Message */}
-              <div style={{
-                fontSize: '14px',
-                color: '#6b7280',
-                textAlign: 'center',
-                marginBottom: '16px'
-              }}>
-                {t('scoreboard.dialogs.liberoInPositionI', 'Sub libero in position I?')}
-              </div>
-
-              {/* Player OUT and Libero IN - side by side */}
-              <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
-                {/* Player OUT */}
-                <div style={{
-                  flex: 1,
-                  padding: '14px',
-                  background: '#fef2f2',
-                  borderRadius: '12px',
-                  border: '2px solid #ef4444',
-                  textAlign: 'center'
-                }}>
-                  <div style={{
-                    fontSize: '11px',
-                    color: '#991b1b',
-                    fontWeight: 600,
-                    marginBottom: '6px',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
-                  }}>
-                    {t('scoreboard.dialogs.playerOutCaps', 'Player OUT')}
-                  </div>
-                  <div style={{
-                    fontSize: '26px',
-                    fontWeight: 700,
-                    color: '#991b1b'
-                  }}>
-                    #{liberoReentryModal.playerNumber}
-                  </div>
-                </div>
-
-                {/* Libero IN */}
-                <div style={{
-                  flex: 1,
-                  padding: '14px',
-                  background: '#dcfce7',
-                  borderRadius: '12px',
-                  border: '2px solid #22c55e',
-                  textAlign: 'center'
-                }}>
-                  <div style={{
-                    fontSize: '11px',
-                    color: '#166534',
-                    fontWeight: 600,
-                    marginBottom: '6px',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
-                  }}>
-                    {t('scoreboard.modals.liberoIn')}
-                  </div>
-                  <div style={{
-                    fontSize: '26px',
-                    fontWeight: 700,
-                    color: '#166534'
-                  }}>
-                    #{liberoNumber}
-                  </div>
-                  <div style={{
-                    fontSize: '12px',
-                    padding: '2px 8px',
-                    background: '#22c55e',
-                    color: '#fff',
-                    borderRadius: '4px',
-                    display: 'inline-block',
-                    marginTop: '4px'
-                  }}>{liberoLabel}</div>
-                </div>
-              </div>
+              <LiberoMoveTitle testId="libero-reentry-title">{t('scoreboard.modals.liberoInQuestion', 'Libero IN?')}</LiberoMoveTitle>
+              <LiberoMoveBoxes inNumber={liberoNumber} inTag={liberoLabel} outNumber={liberoReentryModal.playerNumber} />
 
               {/* Libero selection if multiple available */}
               {liberoReentryModal.availableLiberos && liberoReentryModal.availableLiberos.length > 1 && (
@@ -23432,7 +23235,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <SbButton variant="secondary"
                   onClick={cancelLiberoReentry}
                 >
-                  {t('common.cancel')}
+                  {t('scoreboard.dialogs.notNow', 'Not now')}
                 </SbButton>
               </div>
             </div>
@@ -24799,83 +24602,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 }}>{teamLabel}</span>
               </div>
 
-              {/* Message */}
-              <div style={{
-                fontSize: '14px',
-                color: '#6b7280',
-                textAlign: 'center',
-                marginBottom: '16px'
-              }}>
-                {t('scoreboard.dialogs.liberoRotatedIV', 'Libero rotated to position IV')}
-              </div>
-
-              {/* Player IN and Libero OUT - side by side */}
-              <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
-                {/* Player IN */}
-                <div style={{
-                  flex: 1,
-                  padding: '14px',
-                  background: '#dcfce7',
-                  borderRadius: '12px',
-                  border: '2px solid #22c55e',
-                  textAlign: 'center'
-                }}>
-                  <div style={{
-                    fontSize: '11px',
-                    color: '#166534',
-                    fontWeight: 600,
-                    marginBottom: '6px',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
-                  }}>
-                    {t('scoreboard.dialogs.playerInCaps', 'Player IN')}
-                  </div>
-                  <div style={{
-                    fontSize: '26px',
-                    fontWeight: 700,
-                    color: '#166534'
-                  }}>
-                    #{liberoRotationModal.playerNumber}
-                  </div>
-                </div>
-
-                {/* Libero OUT */}
-                <div style={{
-                  flex: 1,
-                  padding: '14px',
-                  background: '#fef2f2',
-                  borderRadius: '12px',
-                  border: '2px solid #ef4444',
-                  textAlign: 'center'
-                }}>
-                  <div style={{
-                    fontSize: '11px',
-                    color: '#991b1b',
-                    fontWeight: 600,
-                    marginBottom: '6px',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
-                  }}>
-                    {t('scoreboard.modals.liberoOut')}
-                  </div>
-                  <div style={{
-                    fontSize: '26px',
-                    fontWeight: 700,
-                    color: '#991b1b'
-                  }}>
-                    #{liberoRotationModal.liberoNumber}
-                  </div>
-                  <div style={{
-                    fontSize: '12px',
-                    padding: '2px 8px',
-                    background: '#ef4444',
-                    color: '#fff',
-                    borderRadius: '4px',
-                    display: 'inline-block',
-                    marginTop: '4px'
-                  }}>{liberoLabel}</div>
-                </div>
-              </div>
+              <LiberoMoveTitle testId="libero-rotation-title">{t('scoreboard.modals.liberoOut')}</LiberoMoveTitle>
+              <LiberoMoveBoxes inNumber={liberoRotationModal.playerNumber} outNumber={liberoRotationModal.liberoNumber} outTag={liberoLabel} />
 
               {/* {t('common.ok')} Button */}
               <div style={{ display: 'flex', justifyContent: 'center' }}>
