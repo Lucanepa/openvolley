@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, memo } from 'react'
+import { LicenceInfo } from './rosters/LicenceInfo.jsx'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useTranslation } from 'react-i18next'
 import { useAlert } from '../contexts/AlertContext'
@@ -5233,7 +5234,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
             <div style={{ textAlign: 'center' }}>#</div>
             <div>{t('matchSetup.lastName')}</div>
             <div>{t('matchSetup.firstName')}</div>
-            <div className="cell-dob">{idLabel}</div>
+            <div className="cell-dob">{idLabel}{idMode === 'licence' && <LicenceInfo />}</div>
             <div style={{ textAlign: 'center' }}>{t('matchSetup.roleLibero')}</div>
             <div className="cell-captain">C</div>
             {lfpTrackingEnabled && <div style={{ textAlign: 'center' }}>LFP</div>}
@@ -5451,7 +5452,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
             <div>{t('matchSetup.role')}</div>
             <div>{t('matchSetup.lastName')}</div>
             <div>{t('matchSetup.firstName')}</div>
-            <div className="cell-dob">{idLabel}</div>
+            <div className="cell-dob">{idLabel}{idMode === 'licence' && <LicenceInfo />}</div>
             <div className="cell-plays">{t('matchSetup.playsAs', 'Plays as')}</div>
             <div></div>
           </div>
@@ -6306,7 +6307,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
             <div style={{ textAlign: 'center' }}>#</div>
             <div>{t('matchSetup.lastName')}</div>
             <div>{t('matchSetup.firstName')}</div>
-            <div className="cell-dob">{idLabel}</div>
+            <div className="cell-dob">{idLabel}{idMode === 'licence' && <LicenceInfo />}</div>
             <div style={{ textAlign: 'center' }}>{t('matchSetup.roleLibero')}</div>
             <div className="cell-captain">C</div>
             {lfpTrackingEnabled && <div style={{ textAlign: 'center' }}>LFP</div>}
@@ -6519,7 +6520,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
             <div>{t('matchSetup.role')}</div>
             <div>{t('matchSetup.lastName')}</div>
             <div>{t('matchSetup.firstName')}</div>
-            <div className="cell-dob">{idLabel}</div>
+            <div className="cell-dob">{idLabel}{idMode === 'licence' && <LicenceInfo />}</div>
             <div className="cell-plays">{t('matchSetup.playsAs', 'Plays as')}</div>
             <div></div>
           </div>

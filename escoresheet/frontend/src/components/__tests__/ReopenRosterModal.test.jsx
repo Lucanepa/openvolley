@@ -52,6 +52,21 @@ describe('ReopenRosterModal', () => {
     expect(editedBench[0].dob).toBe('01.02.1975')
   })
 
+  // Owner 2026-11-25 (tester: scorers looked for dates of birth): an (i) says
+  // what the Licence column holds
+  it('a Swiss match: the (i) beside Licence explains the column; not beside a date of birth', () => {
+    open(vi.fn(), 'licence')
+    const info = screen.getByRole('button', { name: 'What goes in the licence column' })
+    fireEvent.click(info)
+    expect(screen.getByTestId('licence-info').textContent).toMatch(/licence number identifies the player/)
+    expect(screen.getByTestId('licence-info').textContent).toMatch(/dd\.mm\.yyyy/)
+  })
+
+  it('a match with dates of birth: no licence (i)', () => {
+    open(vi.fn(), 'dob')
+    expect(screen.queryByRole('button', { name: 'What goes in the licence column' })).toBeNull()
+  })
+
   it('lists each player as one row, by number, and the officials', () => {
     open()
     const [playerList, benchList] = screen.getAllByRole('list')

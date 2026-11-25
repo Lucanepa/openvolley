@@ -3,7 +3,9 @@
 // in as props instead of looked up in lib/infoHints.ts.
 //
 // A TAP, not a hover: the reader is on a phone in a hall, where `title=` never
-// appears. A real button so keyboards and screen readers reach it. Hidden in print.
+// appears. The 16 px icon has a 40 px tap area (before:-inset-3); p-0 /
+// border-0 / bg-transparent undo the app's legacy `button {}` rule (its padding
+// squeezed the icon to nothing). A real button so keyboards and screen readers reach it. Hidden in print.
 //
 //   <label>Spielzeit <InfoHint eyebrow="Regel 4.2">Die Pause zwischen…</InfoHint></label>
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -58,7 +60,7 @@ export function InfoHint({
         aria-expanded={open}
         aria-label={label}
         title={label}
-        className="inline-flex items-center justify-center w-4 h-4 rounded-full text-stone-400 hover:text-sky-700 hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-sky-500/50 transition-colors"
+        className="relative box-border inline-flex items-center justify-center w-4 h-4 p-0 border-0 bg-transparent rounded-full text-stone-400 hover:text-sky-700 hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-sky-500/50 transition-colors before:absolute before:-inset-3 before:content-['']"
       >
         <Info size={13} />
       </button>
