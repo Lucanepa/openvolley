@@ -572,7 +572,8 @@
     "refereeEmail": "E-mail (facultatif)",
     "refereeEmailHint": "Pour la feuille de match finale. Seuls les marqueurs de ce match la voient.",
     "teamContactEmail": "E-mail du contact de l'équipe (facultatif)",
-    "teamContactEmailHint": "Reçoit la feuille de match finale par e-mail. Seuls les marqueurs de ce match la voient."
+    "teamContactEmailHint": "Reçoit la feuille de match finale par e-mail. Seuls les marqueurs de ce match la voient.",
+    "sortPlayers": "Trier"
   },
   "scoreboard": {
     "playerOfficials": {

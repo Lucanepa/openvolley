@@ -573,7 +573,8 @@
     "refereeEmail": "E-mail (facoltativa)",
     "refereeEmailHint": "Per il referto finale. La vedono solo i segnapunti di questa partita.",
     "teamContactEmail": "E-mail del contatto della squadra (facoltativa)",
-    "teamContactEmailHint": "Riceve il referto finale per e-mail. La vedono solo i segnapunti di questa partita."
+    "teamContactEmailHint": "Riceve il referto finale per e-mail. La vedono solo i segnapunti di questa partita.",
+    "sortPlayers": "Ordina"
   },
   "scoreboard": {
     "playerOfficials": {

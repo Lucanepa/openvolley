@@ -566,7 +566,8 @@
     "refereeEmail": "E-Mail (freiwillig)",
     "refereeEmailHint": "Für das fertige Matchblatt. Nur die Schreiber dieses Spiels sehen sie.",
     "teamContactEmail": "E-Mail Teamkontakt (freiwillig)",
-    "teamContactEmailHint": "Erhält das fertige Matchblatt per E-Mail. Nur die Schreiber dieses Spiels sehen sie."
+    "teamContactEmailHint": "Erhält das fertige Matchblatt per E-Mail. Nur die Schreiber dieses Spiels sehen sie.",
+    "sortPlayers": "Sortieren"
   },
   "scoreboard": {
     "playerOfficials": {

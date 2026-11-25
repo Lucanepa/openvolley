@@ -573,7 +573,8 @@
     "refereeEmail": "E-Mail (freiwillig)",
     "refereeEmailHint": "Für s fertige Matchblatt. Nur d Schriiber vo däm Spiil gsehnd si.",
     "teamContactEmail": "E-Mail Teamkontakt (freiwillig)",
-    "teamContactEmailHint": "Überchunnt s fertige Matchblatt per E-Mail. Nur d Schriiber vo däm Spiil gsehnd si."
+    "teamContactEmailHint": "Überchunnt s fertige Matchblatt per E-Mail. Nur d Schriiber vo däm Spiil gsehnd si.",
+    "sortPlayers": "Sortiere"
   },
   "scoreboard": {
     "playerOfficials": {

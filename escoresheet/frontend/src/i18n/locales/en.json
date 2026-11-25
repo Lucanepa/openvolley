@@ -574,7 +574,8 @@
     "refereeEmail": "Email (optional)",
     "refereeEmailHint": "For the final scoresheet. Only this match's scorers see it.",
     "teamContactEmail": "Team contact email (optional)",
-    "teamContactEmailHint": "Gets the final scoresheet by email. Only this match's scorers see it."
+    "teamContactEmailHint": "Gets the final scoresheet by email. Only this match's scorers see it.",
+    "sortPlayers": "Sort"
   },
   "scoreboard": {
     "playerOfficials": {

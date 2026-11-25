@@ -56,7 +56,7 @@ import { sheetInputsToMatchInfo } from '../domain/sheetInputs'
 import LongIntervalSwitch from './LongIntervalSwitch'
 import { useSponsorsOption } from '../hooks/useSponsorsOption'
 import SavedTeamPickerModal, { confirmReplaceRoster } from './SavedTeamPickerModal'
-import { focusLeaves, sortedByNumber } from '../utils/rosterOrder'
+import { focusLeaves, sortedByNumber, displayOrder, readRosterSort, saveRosterSort } from '../utils/rosterOrder'
 import { isShirtNumber, shirtNumberDigits, recordNumbersMissingFrom } from '../domain/roster'
 import { playersWithoutNumber } from '../domain/coinTossChecks'
 import { checkUploadedRoster, takesUploadedRoster, uploadedSignaturesKept, uploadedSignaturesToTake } from '../domain/uploadedRoster'
@@ -854,6 +854,20 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
   // Rosters
   const [homeRoster, setHomeRoster] = useState([])
   const [awayRoster, setAwayRoster] = useState([])
+  // # / A–Z: the order the player rows are shown in (utils/rosterOrder
+  // displayOrder). The A–Z order is taken when it is chosen, a row is added or
+  // removed, or focus leaves the list (the *OrderTick), never while a row is
+  // edited, so a row does not jump away from the cursor
+  const [rosterSort, setRosterSort] = useState(readRosterSort)
+  const [homeOrderTick, setHomeOrderTick] = useState(0)
+  const [awayOrderTick, setAwayOrderTick] = useState(0)
+  // (the ids: another roster of the same size, e.g. the test roster loaded)
+  const homeIdsKey = homeRoster.map(p => p.id ?? '').join(',')
+  const awayIdsKey = awayRoster.map(p => p.id ?? '').join(',')
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const homeShownOrder = useMemo(() => displayOrder(homeRoster, rosterSort), [rosterSort, homeRoster.length, homeIdsKey, homeOrderTick])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const awayShownOrder = useMemo(() => displayOrder(awayRoster, rosterSort), [rosterSort, awayRoster.length, awayIdsKey, awayOrderTick])
   const [homeNum, setHomeNum] = useState('')
   const [homeFirst, setHomeFirst] = useState('')
   const [homeLast, setHomeLast] = useState('')
@@ -5225,9 +5239,20 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
             </div>
           </div>
         )}
+        {homeRoster.length > 1 && (
+          <div className="mb-2 flex items-center justify-center gap-2" data-testid="roster-sort-home">
+            <span className="text-xs font-medium text-stone-500">{t('matchSetup.sortPlayers', 'Sort')}</span>
+            <SegmentedControl
+              ariaLabel={t('matchSetup.sortPlayers', 'Sort')}
+              options={[{ value: 'number', label: '#' }, { value: 'name', label: 'A–Z' }]}
+              value={rosterSort}
+              onChange={(v) => { setRosterSort(v); saveRosterSort(v) }}
+            />
+          </div>
+        )}
         {/* Sorted by number once focus leaves the list, not while a row is
             edited (utils/rosterOrder) */}
-        <div className={cn('roster-grid', lfpTrackingEnabled && 'has-lfp', ROSTER_TABLE)} onBlur={e => { if (focusLeaves(e)) setHomeRoster(sortedByNumber) }}>
+        <div className={cn('roster-grid', lfpTrackingEnabled && 'has-lfp', ROSTER_TABLE)} onBlur={e => { if (focusLeaves(e)) { setHomeRoster(sortedByNumber); setHomeOrderTick(n => n + 1) } }}>
           {/* Roster Header Row */}
           <div className={cn('roster-grid-row grid-header', ROSTER_TABLE_HEAD)}>
             <div></div>
@@ -5242,7 +5267,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
           </div>
           {(() => {
             const homeLiberoCount = homeRoster.filter(p => p.libero).length
-            return homeRoster.map((p, i) => {
+            return homeShownOrder.filter(i => i < homeRoster.length).map((i) => {
+            const p = homeRoster[i]
             // Check if this player's number is a duplicate
             const isDuplicate = p.number != null && p.number !== '' &&
               homeRoster.some((other, idx) => idx !== i && other.number === p.number)
@@ -6299,8 +6325,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
             </div>
           </div>
         )}
+        {awayRoster.length > 1 && (
+          <div className="mb-2 flex items-center justify-center gap-2" data-testid="roster-sort-away">
+            <span className="text-xs font-medium text-stone-500">{t('matchSetup.sortPlayers', 'Sort')}</span>
+            <SegmentedControl
+              ariaLabel={t('matchSetup.sortPlayers', 'Sort')}
+              options={[{ value: 'number', label: '#' }, { value: 'name', label: 'A–Z' }]}
+              value={rosterSort}
+              onChange={(v) => { setRosterSort(v); saveRosterSort(v) }}
+            />
+          </div>
+        )}
         {/* Sorted by number once focus leaves the list (as the home one) */}
-        <div className={cn('roster-grid', lfpTrackingEnabled && 'has-lfp', ROSTER_TABLE)} onBlur={e => { if (focusLeaves(e)) setAwayRoster(sortedByNumber) }}>
+        <div className={cn('roster-grid', lfpTrackingEnabled && 'has-lfp', ROSTER_TABLE)} onBlur={e => { if (focusLeaves(e)) { setAwayRoster(sortedByNumber); setAwayOrderTick(n => n + 1) } }}>
           {/* Roster Header Row */}
           <div className={cn('roster-grid-row grid-header', ROSTER_TABLE_HEAD)}>
             <div></div>
@@ -6315,7 +6352,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
           </div>
           {(() => {
             const awayLiberoCount = awayRoster.filter(pl => pl.libero).length
-            return awayRoster.map((p, i) => {
+            return awayShownOrder.filter(i => i < awayRoster.length).map((i) => {
+            const p = awayRoster[i]
             const isDuplicate = p.number != null && p.number !== '' &&
               awayRoster.some((other, idx) => idx !== i && other.number === p.number)
             // saved without a number: its # asks for one (no coin toss until then)
