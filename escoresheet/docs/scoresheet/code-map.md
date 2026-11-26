@@ -190,8 +190,8 @@ Scoreboard and MatchEnd; test matches by `App.jsx:2455-2480`; server matches by
 | `match_type_3` / `level`, `match_type_3_other` | `U23\|U19\|U17\|other` | header |
 | `league` | string | header "League" |
 | `gameNumber` (string), `game_n` (number), `externalId` | | header "Match No" (`gameNumber ‖ externalId`, NOT `game_n`), file name (`gameNumber ‖ externalId ‖ game_n`), storage path (`scoresheetGameId`: `gameNumber ‖ game_n ‖ externalId ‖ external_id`). Three different orders. |
-| `homeShortName`, `awayShortName` | string (setup falls back to the first 8 letters of the name, upper case) | set boxes, results, roster headers, file name |
-| `homeTeamId`, `awayTeamId` | Dexie ids | `teams` rows: `name` (header, winner, file-name fallback), `shortName`, `color`, `benchStaff` |
+| `homeShortName`, `awayShortName` | retired 26.11.2026: no longer written or read (older match rows may still hold one) | — |
+| `homeTeamId`, `awayTeamId` | Dexie ids | `teams` rows: `name` (header, set boxes, results, roster headers, winner, file name), `color`, `benchStaff` |
 | `city`, `hall` | string | header |
 | `scheduledAt` | UTC ISO | header date (UTC date, see 10.2) and time (local), match start fallback, file-name date (UTC) |
 | `coinTossTeamA` (`home\|away`), `coinTossTeamB`, `coinTossServeA`, `coinTossServeB`, `firstServe` | | A/B mapping, S/R crosses, first server, "coin toss confirmed" |
@@ -307,7 +307,7 @@ serviceRounds` are passed but unused.
 | Start / End | local `HH:MM` | `sets.startTime` (only once the set has points or a start time), `sets.endTime` |
 | A/B circle | position | `isSwapped` |
 | S/R cross | from `match.coinTossServeA` only, alternating by set parity | `StandardSet.tsx:308-330`. (The service tracker uses `getFirstServeTeamKey`, which also falls back to `match.firstServe`: with `coinTossServeA` missing the crosses stay blank while the boxes are filled.) |
-| Team short name | when the set is "open": set 1 after coin toss, set n after set n-1 finished, set 4 only if both teams won a set, sets 3/4 never in best-of-3 | `homeShortName / awayShortName` |
+| Team name (full, shrinks to fit) | when the set is "open": set 1 after coin toss, set n after set n-1 finished, set 4 only if both teams won a set, sets 3/4 never in best-of-3 | `teamAName / teamBName` (sheetModel) |
 | Roman header I-VI | static | |
 | Starting players | lineup before the first point (`getStartingLineup`, FIVB 7.3.4 rectification aware) | `lineup` events |
 | Substitution cell (per column) | `playerIn` of the first sub of that starter (circled when the starter came back) | `substitution` events, grouped by starter (`assignSubsToColumns`); exceptional subs skipped (said to go to remarks) |
@@ -357,7 +357,7 @@ name) and RESULT `3:1` only once a team has 3 (2 in best-of-3) sets.
 
 ### 4.8 Rosters (`FooterSection.tsx` `Roster`, l. 631-872)
 
-Home always on the left, away on the right; header = short name + A/B circle.
+Home always on the left, away on the right; header = full team name (shrinks to fit) + A/B circle.
 Columns `DoB (44px) | No (20px) | Lic. (40px) | Name`: 14 player rows
 (captain number circled, `LFP` tag), LIBERO (the registered liberos, also
 after a re-designation, then the re-designated ones marked `R`: `rosterLiberos`),

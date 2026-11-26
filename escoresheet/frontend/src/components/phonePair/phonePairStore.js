@@ -73,7 +73,7 @@ export function usePhonePairPanel() {
 export function phonePairMatchOf(data, { lang = 'en', fallbackHome = 'Home', fallbackAway = 'Away' } = {}) {
   const match = data?.match
   if (!match) return null
-  const name = (team, fallback) => String(team?.name || team?.shortName || fallback).slice(0, 60)
+  const name = (team, fallback) => String(team?.name || fallback).slice(0, 60)
   const context = { home: name(data.homeTeam, fallbackHome), away: name(data.awayTeam, fallbackAway), lang }
   const no = match.game_n ?? match.gameNumber ?? match.externalId ?? null
   if (no != null && String(no).trim()) context.matchNo = String(no).trim().slice(0, 20)

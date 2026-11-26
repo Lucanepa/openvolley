@@ -1,11 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { TEST_MATCH_SEED_KEY, newTestMatchSeedKey, isTestMatchSeedKey, testMatchSeedKeyFor, getTestHomeTeamShortName, getTestAwayTeamShortName, getTestTeamByExternalId, TEST_HOME_TEAM_EXTERNAL_ID, TEST_AWAY_TEAM_EXTERNAL_ID, TEST_TEAM_SEED_DATA, TEST_HOME_BENCH, TEST_AWAY_BENCH, seedTeamPatch } from '../testSeeds'
+import { TEST_MATCH_SEED_KEY, newTestMatchSeedKey, isTestMatchSeedKey, testMatchSeedKeyFor, getTestTeamByExternalId, TEST_HOME_TEAM_EXTERNAL_ID, TEST_AWAY_TEAM_EXTERNAL_ID, TEST_TEAM_SEED_DATA, TEST_HOME_BENCH, TEST_AWAY_BENCH, seedTeamPatch } from '../testSeeds'
 import { playerOfficialLinks } from '../../domain/playerOfficials'
 import { relayMatchKey } from '../../utils/serverDataSync'
-import { SHORT_NAME_MAX, cleanShortName } from '../../domain/teamIdentity'
-import { teamShortLabels } from '../../utils/teamShortLabels'
 
 // A test (rehearsal) match publishes its live state to the venue relay and
 // shows in its match list: its seed key is its relay room, so two scorers
@@ -45,9 +43,7 @@ describe('test match seed key', () => {
 // The server test match names its teams by these external ids: they must find
 // the seed teams, or the sheet and the PDF's file name said HOME / AWAY.
 describe('test team seeds', () => {
-  it('the external ids find the seed teams and their short names', () => {
-    expect(getTestHomeTeamShortName()).not.toBe('HOME')
-    expect(getTestAwayTeamShortName()).not.toBe('AWAY')
+  it('the external ids find the seed teams', () => {
     expect(getTestTeamByExternalId(TEST_HOME_TEAM_EXTERNAL_ID)?.players.length).toBeGreaterThan(6)
     expect(getTestTeamByExternalId(TEST_AWAY_TEAM_EXTERNAL_ID)?.players.length).toBeGreaterThan(6)
     expect(getTestTeamByExternalId('test-team-home')).toBe(getTestTeamByExternalId(TEST_HOME_TEAM_EXTERNAL_ID))
@@ -57,24 +53,22 @@ describe('test team seeds', () => {
 // Owner 2026-11-20: made-up clubs only (they were "VBC Zürich" and a real
 // club); a device seeded with the teams of before takes the new names
 describe('test team names', () => {
-  it('are made-up clubs with short names as Match Setup stores them, and two different labels', () => {
+  it('are made-up clubs, without a short name (retired 26.11.2026)', () => {
     const [home, away] = TEST_TEAM_SEED_DATA
-    expect([home.name, home.shortName, away.name, away.shortName]).toEqual(['VBC Musterau', 'MUS', 'VC Beispielstadt', 'BSP'])
+    expect([home.name, away.name]).toEqual(['VBC Musterau', 'VC Beispielstadt'])
     for (const team of TEST_TEAM_SEED_DATA) {
       expect(team.name).not.toMatch(/Zürich|Luzern/i)
-      expect(team.shortName.length).toBeLessThanOrEqual(SHORT_NAME_MAX)
-      expect(cleanShortName(team.shortName)).toBe(team.shortName)
+      expect(team).not.toHaveProperty('shortName')
     }
-    expect(teamShortLabels({ shortName: home.shortName, name: home.name }, { shortName: away.shortName, name: away.name })).toEqual(['MUS', 'BSP'])
     // the colours stay (DictateApp.jsx and the dictation videos show them)
     expect([home.color, away.color]).toEqual(['#3b82f6', '#dc2626'])
   })
 
-  it('a stored seed team of before takes the name and short name of its definition, never another colour', () => {
+  it('a stored seed team of before takes the name of its definition, never another colour', () => {
     const [home, away] = TEST_TEAM_SEED_DATA
-    expect(seedTeamPatch({ id: 1, seedKey: home.seedKey, name: 'VBC Zürich', shortName: 'ZÜRICH', color: '#3b82f6' }, home)).toEqual({ name: 'VBC Musterau', shortName: 'MUS' })
-    expect(seedTeamPatch({ id: 2, seedKey: away.seedKey, name: 'Volley Luzern', shortName: 'LUZERN', color: '#16a34a' }, away)).toEqual({ name: 'VC Beispielstadt', shortName: 'BSP' })
-    expect(seedTeamPatch({ id: 2, name: 'VC Beispielstadt', shortName: 'LUZERN' }, away)).toEqual({ shortName: 'BSP' })
+    expect(seedTeamPatch({ id: 1, seedKey: home.seedKey, name: 'VBC Zürich', shortName: 'ZÜRICH', color: '#3b82f6' }, home)).toEqual({ name: 'VBC Musterau' })
+    expect(seedTeamPatch({ id: 2, seedKey: away.seedKey, name: 'Volley Luzern', shortName: 'LUZERN', color: '#16a34a' }, away)).toEqual({ name: 'VC Beispielstadt' })
+    expect(seedTeamPatch({ id: 2, name: 'VC Beispielstadt', shortName: 'LUZERN' }, away)).toBeNull()
     expect(seedTeamPatch({ id: 1, name: 'VBC Musterau', shortName: 'MUS', color: '#000000' }, home)).toBeNull()
     expect(seedTeamPatch(null, home)).toBeNull()
   })

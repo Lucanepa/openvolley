@@ -4328,11 +4328,8 @@ function handleHttpRequest(req, res) {
           return
         }
         const text = (v, max = 120) => (typeof v === 'string' && v.trim() ? v.trim().replace(/[\r\n]+/g, ' ').slice(0, max) : 'N/A')
-        const team = (t) => {
-          const name = text(t?.name)
-          const short = t?.short_name || t?.shortName
-          return typeof short === 'string' && short.trim() ? `${name} (${text(short, 20)})` : name
-        }
+        // the full name only (the short name is retired, 26.11.2026)
+        const team = (t) => text(t?.name)
         const { date, time } = matchMailDateTime(m.scheduled_at)
         const gameN = m.game_n ?? 'N/A'
         const emailBody = `

@@ -52,12 +52,10 @@
       <aside class="team-controls shadow-card" data-side="left">
         <div class="team-info">
           <div>
-            <span>
+            <div class="" data-testid="column-team-left" title="VBC Musterau">
               "A"
-            <span>
               "-"
-            <span>
-              "MUS"
+              "VBC Musterau"
         <div>
           <div class="to-sub-counter" data-help-id="scoreboard-timeout-left">
             <div class="to-sub-value">
@@ -311,12 +309,10 @@
       <aside class="team-controls shadow-card" data-side="right">
         <div class="team-info">
           <div>
-            <span>
+            <div class="" data-testid="column-team-right" title="VC Beispielstadt">
               "B"
-            <span>
               "-"
-            <span>
-              "BSP"
+              "VC Beispielstadt"
         <div>
           <div class="to-sub-counter" data-help-id="scoreboard-timeout-right">
             <div class="to-sub-value">

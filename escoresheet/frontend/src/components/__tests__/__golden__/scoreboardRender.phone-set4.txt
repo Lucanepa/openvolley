@@ -6,7 +6,7 @@
         <div>
           <span data-testid="phone-header-sets">
             "Set 4 · sets 2 : 1"
-          <span data-testid="phone-header-teams">
+          <div class="" data-testid="phone-header-teams">
             "VBC Musterau"
             "–"
             "VC Beispielstadt"
@@ -22,8 +22,8 @@
       <section aria-label="Score">
         <div>
           <div>
-            <span>
-              "B · BSP"
+            <div class="" title="VC Beispielstadt">
+              "B · VC Beispielstadt"
             <span aria-hidden="true">
               <span>
                 "SERVE"
@@ -35,8 +35,8 @@
           <span data-testid="phone-score-right">
             "14"
           <div>
-            <span>
-              "A · MUS"
+            <div class="" title="VBC Musterau">
+              "A · VBC Musterau"
             <span aria-hidden="false" aria-label="Serve #1" data-testid="phone-serve-pill">
               <span>
                 "SERVE"

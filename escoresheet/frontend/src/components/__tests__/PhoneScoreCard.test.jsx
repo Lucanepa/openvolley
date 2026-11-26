@@ -37,7 +37,11 @@ describe('PhoneScoreboard: the score cards on a narrow phone', () => {
     const info = screen.getByTestId('phone-score-left').previousElementSibling
     expect(info.style.overflow).toBe('hidden')
     expect(info.style.minWidth).toBe('0px')
-    for (const line of info.children) {
+    const [name, ...lines] = info.children
+    // the full team name shrinks to fit the card (FitText) rather than being cut
+    expect(name.style.width).toBe('100%')
+    expect(name.style.overflow).toBe('hidden')
+    for (const line of lines) {
       expect(line.style.maxWidth).toBe('100%')
       // the serve pill cuts its word short, never the server's number
       const clipped = line.dataset.testid === 'phone-serve-pill' ? line.firstChild : line

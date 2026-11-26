@@ -79,10 +79,11 @@ async function mount(b) {
   await waitFor(() => expect(document.querySelector('[data-score-row]')).not.toBeNull())
 }
 
-// The header names the left team first
+// The header names the left team first (by its full name; HOM / AWY below
+// are the tests' labels for the two teams)
 const leftTeam = () => {
   const text = document.body.textContent
-  return text.indexOf('HOM') < text.indexOf('AWY') ? 'HOM' : 'AWY'
+  return text.indexOf('Home VC') < text.indexOf('Away VC') ? 'HOM' : 'AWY'
 }
 const serveSide = () => document.querySelector('[data-serve-block]')?.getAttribute('data-serve-block') ?? null
 // The header's "SET n" and the big score ("SETS" over it in the interval)

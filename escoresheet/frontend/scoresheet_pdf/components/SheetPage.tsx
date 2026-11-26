@@ -24,7 +24,7 @@ export const SheetPage = React.memo(function SheetPage({ model, readOnly, onRema
 }) {
   const {
     match, sets, officials, teamAKey, coinTossConfirmed, bestOf, isBestOf3, bestOf3ExtraSets,
-    sheetHomeTeam, sheetAwayTeam, teamAName, teamBName, homeShortName, awayShortName, teamAShortName, teamBShortName,
+    sheetHomeTeam, sheetAwayTeam, teamAName, teamBName, homeName, awayName,
     set1ServeIsA, set5SwitchAt,
     set1Data, set2Data, set3Data, set4Data, emptySetData, emptyGrid,
     shouldShowSet1, shouldShowSet2, shouldShowSet3, shouldShowSet4,
@@ -69,8 +69,8 @@ export const SheetPage = React.memo(function SheetPage({ model, readOnly, onRema
             <div className="flex-1">
               <StandardSet
                 setNumber={1}
-                teamNameLeft={shouldShowSet1 && !emptyGrid[1] ? teamAShortName : ''}
-                teamNameRight={shouldShowSet1 && !emptyGrid[1] ? teamBShortName : ''}
+                teamNameLeft={shouldShowSet1 && !emptyGrid[1] ? teamAName : ''}
+                teamNameRight={shouldShowSet1 && !emptyGrid[1] ? teamBName : ''}
                 firstServeTeamA={shouldShowSet1 && !emptyGrid[1] ? set1ServeIsA : undefined}
                 {...(emptyGrid[1] ? emptySetData : set1Data)}
                 unused={emptyGrid[1]}
@@ -90,8 +90,8 @@ export const SheetPage = React.memo(function SheetPage({ model, readOnly, onRema
               <StandardSet
                 setNumber={2}
                 isSwapped={true}
-                teamNameLeft={shouldShowSet2 && !emptyGrid[2] ? teamBShortName : ''}
-                teamNameRight={shouldShowSet2 && !emptyGrid[2] ? teamAShortName : ''}
+                teamNameLeft={shouldShowSet2 && !emptyGrid[2] ? teamBName : ''}
+                teamNameRight={shouldShowSet2 && !emptyGrid[2] ? teamAName : ''}
                 firstServeTeamA={shouldShowSet2 && !emptyGrid[2] ? set1ServeIsA : undefined}
                 {...(emptyGrid[2] ? emptySetData : set2Data)}
                 unused={emptyGrid[2]}
@@ -141,8 +141,8 @@ export const SheetPage = React.memo(function SheetPage({ model, readOnly, onRema
             <div className="flex-1">
               <StandardSet
                 setNumber={3}
-                teamNameLeft={shouldShowSet3 && !emptyGrid[3] ? teamAShortName : ''}
-                teamNameRight={shouldShowSet3 && !emptyGrid[3] ? teamBShortName : ''}
+                teamNameLeft={shouldShowSet3 && !emptyGrid[3] ? teamAName : ''}
+                teamNameRight={shouldShowSet3 && !emptyGrid[3] ? teamBName : ''}
                 firstServeTeamA={shouldShowSet3 && !emptyGrid[3] ? set1ServeIsA : undefined}
                 {...(emptyGrid[3] ? emptySetData : set3Data)}
                 unused={emptyGrid[3]}
@@ -162,8 +162,8 @@ export const SheetPage = React.memo(function SheetPage({ model, readOnly, onRema
               <StandardSet
                 setNumber={4}
                 isSwapped={true}
-                teamNameLeft={shouldShowSet4 && !emptyGrid[4] ? teamBShortName : ''}
-                teamNameRight={shouldShowSet4 && !emptyGrid[4] ? teamAShortName : ''}
+                teamNameLeft={shouldShowSet4 && !emptyGrid[4] ? teamBName : ''}
+                teamNameRight={shouldShowSet4 && !emptyGrid[4] ? teamAName : ''}
                 firstServeTeamA={shouldShowSet4 && !emptyGrid[4] ? set1ServeIsA : undefined}
                 {...(shouldShowSet4 && !emptyGrid[4] ? set4Data : emptySetData)}
                 unused={emptyGrid[4]}
@@ -227,8 +227,8 @@ export const SheetPage = React.memo(function SheetPage({ model, readOnly, onRema
             </div>
             <div className="flex-1">
               <SetFive
-                teamNameA={set5Shown ? (set5LeftTeamIsB ? teamBShortName : teamAShortName) : ''}
-                teamNameB={set5Shown ? (set5LeftTeamIsB ? teamAShortName : teamBShortName) : ''}
+                teamNameA={set5Shown ? (set5LeftTeamIsB ? teamBName : teamAName) : ''}
+                teamNameB={set5Shown ? (set5LeftTeamIsB ? teamAName : teamBName) : ''}
                 teamALabel={set5Shown ? (set5LeftTeamIsB ? "B" : "A") : ''}
                 teamBLabel={set5Shown ? (set5LeftTeamIsB ? "A" : "B") : ''}
                 firstServeTeamA={set5Shown
@@ -296,8 +296,8 @@ export const SheetPage = React.memo(function SheetPage({ model, readOnly, onRema
             <div className="flex flex-col shrink-0" style={{ height: '8.4cm', width: `calc(75mm + ${COURT_CHANGE_W})` }}>
               <Results
                 flush
-                teamAShortName={teamAShortName}
-                teamBShortName={teamBShortName}
+                teamAName={teamAName}
+                teamBName={teamBName}
                 setResults={setResults}
                 matchStart={matchStart}
                 matchEnd={matchEndFinal}
@@ -316,7 +316,7 @@ export const SheetPage = React.memo(function SheetPage({ model, readOnly, onRema
         <div className="flex flex-1 min-w-0" style={{ marginLeft: FOOTER_GAP, gap: FOOTER_GAP }}>
           <div className="shrink-0 min-w-0" style={{ width: `calc(50mm - ${FOOTER_GAP})` }}>
             <Roster
-              team={homeShortName}
+              team={homeName}
               side={teamAKey === 'home' ? 'A' : 'B'}
               players={homeRows}
               liberos={homeLiberos}
@@ -331,7 +331,7 @@ export const SheetPage = React.memo(function SheetPage({ model, readOnly, onRema
           </div>
           <div className="flex-1 min-w-0">
             <Roster
-              team={awayShortName}
+              team={awayName}
               side={teamAKey === 'away' ? 'A' : 'B'}
               players={awayRows}
               liberos={awayLiberos}

@@ -40,7 +40,7 @@ import LongPressProgressIndicator from './LongPressProgressIndicator'
 import DraggedPlayerOverlay from './DraggedPlayerOverlay'
 import { setPlayerDragImage } from '../utils/dragImage'
 import { noteOwnTapClick, trackOwnTapClicks } from '../utils/pointerPresses'
-import { teamShortLabels } from '../utils/teamShortLabels'
+import { FitText } from '../../scoresheet_pdf/components/FitText'
 import { LOG_REWRITE_EVENTS, liveStateLastAction } from '../utils/refereeLastEvent.js'
 import ballFallback from '../ball_fallback.png'
 import { isLocalOnly } from '../domain/matchKind'
@@ -4232,7 +4232,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     await db.matches.update(matchId, matchUpdate)
     await logEventRef.current?.('court_captain_designation', payload)
     const team = teamKey === 'home' ? data?.homeTeam : data?.awayTeam
-    const teamName = team?.shortName || team?.name || (teamKey === 'home' ? t('common.home', 'Home') : t('common.away', 'Away'))
+    const teamName = team?.name || (teamKey === 'home' ? t('common.home', 'Home') : t('common.away', 'Away'))
     deferUi(() => toast.info(t('scoreboard.captainOnCourt.autoNotice', { team: teamName, n: playerNumber, defaultValue: '{{team}}: #{{n}} game captain' }), { duration: 3000 }))
   })
 
@@ -12239,7 +12239,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     })
 
     // Send substitution action to referee to show modal
-    const teamName = team === 'home' ? data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home') : data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away')
+    const teamName = team === 'home' ? data?.homeTeam?.name || t('common.home') : data?.awayTeam?.name || t('common.away')
     sendActionToReferee('substitution', {
       team,
       teamName,
@@ -14844,20 +14844,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   const teamALabel = leftTeam.isTeamA ? 'A' : 'B'
   const teamBLabel = rightTeam.isTeamA ? 'A' : 'B'
-  // The match's short name, else the team's, else one derived from the name
-  // without "VBC" / "VC" / ...; never the same for both teams
-  // (utils/teamShortLabels.js: the first 3 letters gave "VBC" to both teams of
-  // "VBC Klosterau D2 - VBC Rebberg D1")
-  const [homeShortLabel, awayShortLabel] = teamShortLabels(
-    { shortName: data?.match?.homeShortName, teamShortName: data?.homeTeam?.shortName, name: data?.homeTeam?.name },
-    { shortName: data?.match?.awayShortName, teamShortName: data?.awayTeam?.shortName, name: data?.awayTeam?.name }
-  )
-  const teamAShortName = (leftIsHome ? homeShortLabel : awayShortLabel) || leftTeam.name || 'A'
-  const teamBShortName = (leftIsHome ? awayShortLabel : homeShortLabel) || rightTeam.name || 'B'
-  // The teams on the court sides now, and how this screen names each: "A · VBC"
+  // Each team by its full name everywhere (the short name is retired,
+  // 26.11.2026); where the room is fixed it shrinks to fit (FitText)
+  const courtLeftName = leftTeam.name || 'A'
+  const courtRightName = rightTeam.name || 'B'
+  // The column headers' font (1.6vh), the most a team name there may take
+  const headerNameFont = Math.max(8, Math.round(viewportHeight * 0.032) / 2)
+  // The teams on the court sides now, and how this screen names each: "A · VBC Musterau"
   const leftTeamKeyNow = leftIsHome ? 'home' : 'away'
   const rightTeamKeyNow = leftIsHome ? 'away' : 'home'
-  const teamTitleOf = (teamKey) => teamKey === leftTeamKeyNow ? `${teamALabel} · ${teamAShortName}` : `${teamBLabel} · ${teamBShortName}`
+  const teamTitleOf = (teamKey) => teamKey === leftTeamKeyNow ? `${teamALabel} · ${courtLeftName}` : `${teamBLabel} · ${courtRightName}`
 
   // Help content function - deprecated, interactive help system replaces this
   const getHelpContent = () => {
@@ -15085,8 +15081,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         side,
         teamKey,
         label: isLeft ? teamALabel : teamBLabel,
-        name: team.name,
-        shortName: isLeft ? teamAShortName : teamBShortName,
+        name: isLeft ? courtLeftName : courtRightName,
         color: team.color,
         setsWon: setsWon?.[side] || 0,
         points: pointsBySide[side] || 0,
@@ -15452,8 +15447,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       <BenchRequestCards
         queue={benchBridge.queue}
         teams={{
-          home: { name: data?.match?.homeShortName || data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home'), colour: effectiveTeamColour('home', data?.homeTeam, data?.match) },
-          away: { name: data?.match?.awayShortName || data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away'), colour: effectiveTeamColour('away', data?.awayTeam, data?.match) }
+          home: { name: data?.homeTeam?.name || t('common.home'), colour: effectiveTeamColour('home', data?.homeTeam, data?.match) },
+          away: { name: data?.awayTeam?.name || t('common.away'), colour: effectiveTeamColour('away', data?.awayTeam, data?.match) }
         }}
         rallyInPlay={rallyStatus === 'in_play'}
         donePairs={benchBridge.donePairs}
@@ -16108,9 +16103,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   boxSizing: 'border-box'
                 }}
               >
-                <span style={{ flexShrink: 0 }}>{teamALabel}</span>
-                <span style={{ flexShrink: 0 }}>-</span>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{teamAShortName}</span>
+                <FitText max={headerNameFont} min={5} title={courtLeftName} data-testid="column-team-left" style={{ flex: '1 1 0', textAlign: 'center' }}>{teamALabel} - {courtLeftName}</FitText>
                 {(isCompactMode || headerCollapsed) && (
                   <span data-testid="column-sets-left" style={SB_COLUMN_SETS_BADGE}>
                     {setsWon.left}
@@ -17424,7 +17417,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           }}
                         >
                           <span>{t('scoreboard.lineup', 'Line-up')}</span>
-                          <span style={{ fontSize: 'clamp(12px, 2.5vw, 18px)', fontWeight: 600 }}>{teamALabel} - {teamAShortName}</span>
+                          <span style={{ fontSize: 'clamp(12px, 2.5vw, 18px)', fontWeight: 600, textAlign: 'center', overflowWrap: 'anywhere', padding: '0 8px' }}>{teamALabel} - {courtLeftName}</span>
                         </button>
                       )}
                       {!rightTeamLineupSet && (
@@ -17458,7 +17451,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           }}
                         >
                           <span>{t('scoreboard.lineup', 'Line-up')}</span>
-                          <span style={{ fontSize: 'clamp(12px, 2.5vw, 18px)', fontWeight: 600 }}>{teamBLabel} - {teamBShortName}</span>
+                          <span style={{ fontSize: 'clamp(12px, 2.5vw, 18px)', fontWeight: 600, textAlign: 'center', overflowWrap: 'anywhere', padding: '0 8px' }}>{teamBLabel} - {courtRightName}</span>
                         </button>
                       )}
                     </>
@@ -18919,7 +18912,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       const serving = side === 'left' ? leftServing : rightServing
                       const team = side === 'left' ? leftTeam : rightTeam
                       const label = side === 'left' ? teamALabel : teamBLabel
-                      const name = side === 'left' ? teamAShortName : teamBShortName
+                      const name = side === 'left' ? courtLeftName : courtRightName
                       return (
                         <div
                           key={side}
@@ -18947,7 +18940,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           />
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', maxWidth: '100%', fontSize: 'calc(15px * var(--scale-factor))', fontWeight: 600, color: 'var(--ov-text, #1c1917)' }}>
                             <span style={{ ...teamBoxStyle(team.color), padding: '2px 7px', borderRadius: '4px', fontSize: '0.8em', fontWeight: 700 }}>{label}</span>
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                            <span style={{ minWidth: 0, overflowWrap: 'anywhere', textAlign: 'center' }}>{name}</span>
                           </span>
                         </div>
                       )
@@ -19607,9 +19600,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   boxSizing: 'border-box'
                 }}
               >
-                <span style={{ flexShrink: 0 }}>{teamBLabel}</span>
-                <span style={{ flexShrink: 0 }}>-</span>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{teamBShortName}</span>
+                <FitText max={headerNameFont} min={5} title={courtRightName} data-testid="column-team-right" style={{ flex: '1 1 0', textAlign: 'center' }}>{teamBLabel} - {courtRightName}</FitText>
                 {(isCompactMode || headerCollapsed) && (
                   <span data-testid="column-sets-right" style={SB_COLUMN_SETS_BADGE}>
                     {setsWon.right}
@@ -24033,8 +24024,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           teamAKey={teamAKey}
           leftIsHome={leftIsHome}
           isMatchEnd={setEndTimeModal.isMatchEnd}
-          homeTeamName={data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home')}
-          awayTeamName={data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away')}
+          homeTeamName={data?.homeTeam?.name || t('common.home')}
+          awayTeamName={data?.awayTeam?.name || t('common.away')}
           // The team record's colour first, like the header boxes and the
           // discs: Manual Adjustments edits only the team, so match.homeColor
           // can be stale (or missing on an imported match)
@@ -24272,9 +24263,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             </p>
             <div style={{ marginBottom: '16px', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
               <span style={{ ...teamBoxStyle(data?.homeTeam?.color || '#ef4444'), padding: '2px 6px', borderRadius: '4px', fontSize: '12px', fontWeight: 700 }}>{teamAKey === 'home' ? 'A' : 'B'}</span>
-              <span>{data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home')}</span>
+              <span>{data?.homeTeam?.name || t('common.home')}</span>
               <strong style={{ fontSize: '20px' }}>{courtSwitchModal.homePoints} : {courtSwitchModal.awayPoints}</strong>
-              <span>{data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away')}</span>
+              <span>{data?.awayTeam?.name || t('common.away')}</span>
               <span style={{ ...teamBoxStyle(data?.awayTeam?.color || '#3b82f6'), padding: '2px 6px', borderRadius: '4px', fontSize: '12px', fontWeight: 700 }}>{teamAKey === 'away' ? 'A' : 'B'}</span>
             </div>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
@@ -24858,8 +24849,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           : decisionChangeOutcomes({ events: data?.events, point: lastEvent, score, match: data?.match })
 
         // Get team names for display
-        const homeTeamName = data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home')
-        const awayTeamName = data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away')
+        const homeTeamName = data?.homeTeam?.name || t('common.home')
+        const awayTeamName = data?.awayTeam?.name || t('common.away')
         const oldTeamName = oldTeam === 'home' ? homeTeamName : awayTeamName
 
         // A/B labels and team colors

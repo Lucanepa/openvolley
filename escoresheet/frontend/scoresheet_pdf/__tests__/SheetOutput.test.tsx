@@ -158,16 +158,17 @@ describe('the generated sheet', () => {
     expect(text).toContain('02.09.1979')
   })
 
-  it('rosters: Licence | No | Name, sorted by number, normalised dates, a short name always', () => {
-    const data = fixture({ match: { awayShortName: '' } })
+  it('rosters: Licence | No | Name, sorted by number, normalised dates, the full team name', () => {
+    const data = fixture()
     const { container } = render(<App matchData={data} autoAction="preview" />)
     const text = sheetText(container)
-    const home = text.slice(text.indexOf('MUST-H1LicenceNoName'))
-    expect(home.startsWith('MUST-H1LicenceNoName')).toBe(true)
+    const home = text.slice(text.indexOf('VBC Musterdorf H1LicenceNoName'))
+    expect(home.startsWith('VBC Musterdorf H1LicenceNoName')).toBe(true)
     // 1, 3, 7, 12 in shirt-number order, ISO dates as DD.MM.YYYY
     expect(home).toMatch(/01\.03\.19981Home1, A\.03\.03\.19983Home3, A\.07\.03\.19987Home7, A\.03\.03\.199812Home12, A\./)
-    // the away short name was empty: the team name
+    // the stored short names (MUST-H1 / SPATZ, from before their retirement) are not printed
     expect(text).toContain('BVolley Spatz Academica H1LicenceNoName')
+    expect(text).not.toMatch(/MUST-H1|SPATZ/)
     expect(text).toContain('02.03.19982Away2, X.')
     expect(text).not.toContain('Lic.')
   })

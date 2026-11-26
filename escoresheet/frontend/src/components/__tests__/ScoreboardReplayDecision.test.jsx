@@ -181,7 +181,7 @@ describe('rally mode: the decision change on a replay', () => {
     expect(currentScore()).toBe('1:1')
     expect(outcomeOf('point_home')).toEqual({ score: '2:1', serve: 'home' })
     expect(outcomeOf('point_away')).toEqual({ score: '1:2', serve: 'away' })
-    expect(screen.getByTestId('decision-outcome-point_away').textContent).toContain('HOM 1 : 2 AWY')
+    expect(screen.getByTestId('decision-outcome-point_away').textContent).toContain('Home VC 1 : 2 Away VC')
     fireEvent.click(radio('point_away'))
     await waitFor(() => expect(radio('point_away').getAttribute('aria-checked')).toBe('true'), { timeout: 5000 })
     expect(confirmButton().disabled).toBe(false)

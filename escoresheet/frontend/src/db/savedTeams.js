@@ -71,7 +71,6 @@ export function bundleToRows(bundle) {
     competitionId: t.competition_id,
     competition: competitions.get(t.competition_id) || null,
     name: t.name || '',
-    shortName: t.short_name || '',
     club: t.club || '',
     color: t.color || '',
     svrzTeamName: t.svrz_team_name || '',

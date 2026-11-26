@@ -24,7 +24,7 @@ function shownOf(model: SheetModel, setNumber: StandardSetNumber): boolean {
 
 /** StandardSet's props for set 1-4, as SheetPage passes them. */
 export function standardSetProps(model: SheetModel, setNumber: StandardSetNumber) {
-  const { teamAShortName, teamBShortName, set1ServeIsA, emptyGrid, emptySetData } = model;
+  const { teamAName, teamBName, set1ServeIsA, emptyGrid, emptySetData } = model;
   const named = shownOf(model, setNumber) && !emptyGrid[setNumber];
   // sets 2 and 4: the teams changed courts, team B on the left
   const swapped = setNumber === 2 || setNumber === 4;
@@ -34,8 +34,8 @@ export function standardSetProps(model: SheetModel, setNumber: StandardSetNumber
     ...(filled ? setDataOf(model, setNumber) : emptySetData),
     setNumber,
     isSwapped: swapped,
-    teamNameLeft: named ? (swapped ? teamBShortName : teamAShortName) : '',
-    teamNameRight: named ? (swapped ? teamAShortName : teamBShortName) : '',
+    teamNameLeft: named ? (swapped ? teamBName : teamAName) : '',
+    teamNameRight: named ? (swapped ? teamAName : teamBName) : '',
     firstServeTeamA: named ? set1ServeIsA : undefined,
     unused: emptyGrid[setNumber]
   };
@@ -44,15 +44,15 @@ export function standardSetProps(model: SheetModel, setNumber: StandardSetNumber
 /** SetFive's props (the deciding set: index 5, printed as set 3 in a best-of-3), as SheetPage passes them. */
 export function setFiveProps(model: SheetModel) {
   const {
-    teamAShortName, teamBShortName, emptyGrid, set5SwitchAt,
+    teamAName, teamBName, emptyGrid, set5SwitchAt,
     set5Data, set5Shown, set5LeftTeamIsB, set5FirstServeTeamKey, set5TeamOnLeft, set5FinalScoreLeft, set5FinalScoreRight,
     markedPointsA_Left, markedPointsA_Right, markedPointsB, circledPointsA_Left, circledPointsA_Right, circledPointsB,
     set5ServiceRoundsLeftTeam_Before, set5ServiceRoundsLeftTeam_After, set5ServiceRoundsRightTeam
   } = model;
   const d = set5Shown ? set5Data : null;
   return {
-    teamNameA: d ? (set5LeftTeamIsB ? teamBShortName : teamAShortName) : '',
-    teamNameB: d ? (set5LeftTeamIsB ? teamAShortName : teamBShortName) : '',
+    teamNameA: d ? (set5LeftTeamIsB ? teamBName : teamAName) : '',
+    teamNameB: d ? (set5LeftTeamIsB ? teamAName : teamBName) : '',
     teamALabel: d ? (set5LeftTeamIsB ? 'B' : 'A') : '',
     teamBLabel: d ? (set5LeftTeamIsB ? 'A' : 'B') : '',
     // whether the team in panel 1 serves first

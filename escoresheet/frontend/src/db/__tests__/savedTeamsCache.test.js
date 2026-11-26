@@ -36,7 +36,7 @@ describe('saved teams cache', () => {
   it('maps the bundle to camelCase rows with the competition embedded', () => {
     const [row] = bundleToRows(bundle())
     expect(row).toMatchObject({
-      id: 't1', competitionId: 'c1', shortName: 'VBC', svrzTeamName: 'VBC  Test D1', nameKey: 'vbc test', svrzKey: 'vbc test d1',
+      id: 't1', competitionId: 'c1', svrzTeamName: 'VBC  Test D1', nameKey: 'vbc test', svrzKey: 'vbc test d1',
       competition: { id: 'c1', season: '2026/27', vmLeagues: ['2. Liga Damen'], archived: false }, updatedAt: '2026-09-02T00:00:00Z'
     })
     expect(row.players).toHaveLength(1)

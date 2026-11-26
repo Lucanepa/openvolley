@@ -257,7 +257,6 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
   const beach = sportOf(competition) === 'beach'
   const [fields, setFields] = useState(() => ({
     name: team.name || '',
-    short_name: team.short_name || '',
     club: team.club || '',
     color: team.color || '',
     svrz_team_name: team.svrz_team_name || ''
@@ -291,7 +290,7 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
       setPlayers((team.players || []).map(toPlayerDraft))
       setStaff((team.staff || []).map(toStaffDraft))
     }
-    const keys = ['name', 'short_name', 'club', 'color', 'svrz_team_name']
+    const keys = ['name', 'club', 'color', 'svrz_team_name']
     if (keys.every((k) => (fields[k] || '') === (prev[k] || ''))) {
       setFields(Object.fromEntries(keys.map((k) => [k, team[k] || ''])))
     }
@@ -346,7 +345,7 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
     setFieldsError('')
   }
   const vm = vmNameOptions({ clubs, clubName: fields.club, scheduleNames: scheduleNames || svrzNames, all: allVmNames })
-  const fieldKeys = beach ? ['name', 'short_name', 'club', 'color'] : ['name', 'short_name', 'club', 'color', 'svrz_team_name']
+  const fieldKeys = beach ? ['name', 'club', 'color'] : ['name', 'club', 'color', 'svrz_team_name']
   const fieldsDirty = fieldKeys.some(k => (fields[k] || '') !== (team[k] || ''))
 
   const saveFields = async () => {
@@ -358,7 +357,6 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
     setSavingFields(true)
     const sent = {
       name: fields.name.trim(),
-      short_name: fields.short_name.trim() || null,
       club: fields.club.trim() || null,
       color: fields.color ? fields.color.toLowerCase() : null
     }
@@ -606,9 +604,6 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label={t('savedTeams.teamName')}>
             <Input value={fields.name} onChange={setField('name')} maxLength={120} required />
-          </Field>
-          <Field label={t('savedTeams.shortName')}>
-            <Input value={fields.short_name} onChange={setField('short_name')} maxLength={20} />
           </Field>
           <Field label={t('savedTeams.club')}>
             {clubs

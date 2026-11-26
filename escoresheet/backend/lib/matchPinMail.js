@@ -32,11 +32,8 @@ export function pinFromBody (value) {
 // the mail), at most `max` characters, 'N/A' when empty.
 const line = (v, max = 120) => (typeof v === 'string' && v.trim() ? v.trim().replace(/[\r\n]+/g, ' ').slice(0, max) : 'N/A')
 
-const teamLine = (t) => {
-  const name = line(t?.name)
-  const short = t?.short_name || t?.shortName
-  return typeof short === 'string' && short.trim() ? `${name} (${line(short, 20)})` : name
-}
+// The full name only: a short name stored before its retirement (26.11.2026) is not mailed
+const teamLine = (t) => line(t?.name)
 
 /**
  * @param {object} m           the stored match: game_n, home_team, away_team, league

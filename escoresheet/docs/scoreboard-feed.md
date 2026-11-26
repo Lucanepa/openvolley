@@ -145,7 +145,7 @@ Team A plays now, so a board can show the teams as they stand on the court.
 
 | Field | Meaning |
 |---|---|
-| `team_a_name`, `team_b_name`, `team_a_short`, `team_b_short` | Team names (short: up to 12 characters) |
+| `team_a_name`, `team_b_name`, `team_a_short`, `team_b_short` | Team names. OpenVolley shows the full name everywhere (the typed short name was retired 26.11.2026); `team_*_short` is derived from the name without the club-type words (`VBC Klosterau D2` → `Klosterau D2`), for boards that need a shorter label |
 | `team_a_color`, `team_b_color` | The shirt colour each team chose, `#rrggbb`. Pick black or white text by contrast |
 | `points_a`, `points_b` | Points in the current set |
 | `sets_won_a`, `sets_won_b` | Sets won |

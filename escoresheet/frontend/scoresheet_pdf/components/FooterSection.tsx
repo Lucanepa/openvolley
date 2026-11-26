@@ -238,8 +238,8 @@ interface SetResult {
 }
 
 interface ResultsProps {
-  teamAShortName?: string;
-  teamBShortName?: string;
+  teamAName?: string;
+  teamBName?: string;
   setResults?: SetResult[];
   matchStart?: string;
   matchEnd?: string;
@@ -265,8 +265,8 @@ const SetIntervalCountdown: React.FC<{ endTime?: string; duration?: string }> = 
 };
 
 const ResultsView: React.FC<ResultsProps> = ({
-  teamAShortName = '',
-  teamBShortName = '',
+  teamAName = '',
+  teamBName = '',
   setResults = [],
   matchStart = '',
   matchEnd = '',
@@ -310,12 +310,12 @@ const ResultsView: React.FC<ResultsProps> = ({
                 {/* Team names */}
                 <div className="flex items-center gap-1 px-1 border-b border-black bg-gray-50 min-w-0 overflow-hidden" data-testid="result-head" data-block="A">
                     <CircleLetter letter="A" size={16} fontPx={9} />
-                    <FitText max={9} min={5} multiline style={{ height: RESULT_HEAD_TEXT_H }} className="font-bold text-center uppercase w-full bg-transparent leading-none flex items-center justify-center" data-testid="result-head-name">{coinTossConfirmed ? teamAShortName : ''}</FitText>
+                    <FitText max={9} min={5} multiline style={{ height: RESULT_HEAD_TEXT_H }} className="font-bold text-center uppercase w-full bg-transparent leading-none flex items-center justify-center" data-testid="result-head-name">{coinTossConfirmed ? teamAName : ''}</FitText>
                 </div>
                 <div className="border-b border-black bg-gray-200" data-testid="result-head" data-block="C"></div>
                 <div className="flex items-center gap-1 px-1 border-b border-black bg-gray-50 flex-row-reverse min-w-0 overflow-hidden" data-testid="result-head" data-block="B">
                     <CircleLetter letter="B" size={16} fontPx={9} />
-                    <FitText max={9} min={5} multiline style={{ height: RESULT_HEAD_TEXT_H }} className="font-bold text-center uppercase w-full bg-transparent leading-none flex items-center justify-center" data-testid="result-head-name">{coinTossConfirmed ? teamBShortName : ''}</FitText>
+                    <FitText max={9} min={5} multiline style={{ height: RESULT_HEAD_TEXT_H }} className="font-bold text-center uppercase w-full bg-transparent leading-none flex items-center justify-center" data-testid="result-head-name">{coinTossConfirmed ? teamBName : ''}</FitText>
                 </div>
 
                 {/* Column headings */}

@@ -37,19 +37,6 @@ export function counterPips(used, limit) {
 }
 
 /**
- * The short name of a team on the score card: the match's short name, the
- * team's, else its name (the card truncates a long one).
- * @param {'home'|'away'} key
- * @param {object|null} match
- * @param {object|null} team
- * @returns {string}
- */
-export function benchShortName(key, match, team) {
-  const short = key === 'home' ? match?.homeShortName : match?.awayShortName
-  return String(short || team?.shortName || team?.short_name || team?.name || '').trim()
-}
-
-/**
  * A team's sanctions as the bench's sanctions box lists them: every sanction
  * event of the team in the match, once each, in the order of `events` (the
  * bench sorts them by seq). Read from the events alone, never from who is

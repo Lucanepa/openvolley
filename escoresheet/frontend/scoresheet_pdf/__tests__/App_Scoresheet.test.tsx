@@ -95,7 +95,7 @@ describe('App_Scoresheet', () => {
     expect(results).toContain('02125')
 
     // Match not finished: final RESULT box stays empty instead of a live "1:1"
-    expect(text).toContain('WINNERRESULTAHOM')
+    expect(text).toContain('WINNERRESULTAHome Team')
   })
 
   it('prints a pre-rally line-up rectification (FIVB 7.3.4) and the later substitution of the rectified-in player', () => {
@@ -464,8 +464,10 @@ describe('App_Scoresheet sponsors on clothing', () => {
     const { text, header } = sheetText(data)
     expect(header.home).toBe('Home Team (+)')
     expect(header.away).toBe('Away Team (-)')
-    expect(text).toContain('HOM (+)')
-    expect(text).toContain('AWY (-)')
+    // the full names everywhere (the short name is retired): header, set boxes, roster, result
+    expect(text.split('Home Team (+)').length - 1).toBeGreaterThanOrEqual(3)
+    expect(text.split('Away Team (-)').length - 1).toBeGreaterThanOrEqual(3)
+    expect(text).not.toMatch(/HOM|AWY/)
   })
 
   it('a match read from the server (match_info only) prints its marks too', () => {

@@ -112,13 +112,12 @@ const CONFIRM_SETUP = /^Confirm set \d setup$/
 const events = async () => (await db.events.toArray()).sort((a, b) => a.seq - b.seq)
 const ofType = async (type) => (await events()).filter(e => e.type === type)
 
-// The scoring screen's team columns: "A-HOM" / "B-AWA" (letter, short name)
+// The scoring screen's team columns: "A - Home VC" / "B - Away VC" (letter, full name)
 const homeOnLeftOnScreen = () => {
-  const text = document.body.textContent
-  const home = text.search(/[AB]-HOM/)
-  const away = text.search(/[AB]-AWA/)
-  if (home < 0 || away < 0) throw new Error('team columns not shown yet')
-  return home < away
+  const left = document.querySelector('[data-testid="column-team-left"]')?.textContent || ''
+  const right = document.querySelector('[data-testid="column-team-right"]')?.textContent || ''
+  if (!/^[AB] - (Home|Away) VC$/.test(left) || !/^[AB] - (Home|Away) VC$/.test(right)) throw new Error('team columns not shown yet')
+  return left.endsWith('Home VC')
 }
 // The team the court has on the left in a set, as the match row says
 const leftTeam = (m, set) => {
@@ -364,7 +363,7 @@ describe('Set 4 -> set 5: the teams stay where set 4 ended until the set 5 setup
     expect((await db.matches.get(matchId)).coinTossTeamA).toBe('away')
     mount(matchId)
     await waitFor(() => expect(homeOnLeftOnScreen()).toBe(false), { timeout: 20000 })
-    expect(document.body.textContent).toMatch(/B-HOM/)
+    expect(document.body.textContent).toMatch(/B - Home VC/)
     // away (A now) wins set 4
     const state = await endSet('Point A')
 
@@ -395,7 +394,7 @@ describe('Set 4 -> set 5: the teams stay where set 4 ended until the set 5 setup
     mount(matchId)
     await waitFor(() => expect(button(CONFIRM_SETUP)).toBeTruthy(), { timeout: 15000 })
     await waitFor(() => expect(homeOnLeftOnScreen()).toBe(false))
-    expect(document.body.textContent).toMatch(/B-HOM/)
+    expect(document.body.textContent).toMatch(/B - Home VC/)
     await settle()
 
     await setupSwitchSides(matchId)
@@ -475,8 +474,8 @@ describe('Best-of-3: set 2 -> the deciding set keeps set 2\'s sides', () => {
 describe('The phone layout in the break before set 5', () => {
   // the phone's team cards: the left one first
   const homeOnLeftOnPhone = () => {
-    const text = within(screen.getByTestId('phone-scoreboard')).getAllByText(/^[AB] · (HOM|AWA)$/).map(e => e.textContent)
-    return text[0].includes('HOM')
+    const text = within(screen.getByTestId('phone-scoreboard')).getAllByText(/^[AB] · (Home|Away) VC$/).map(e => e.textContent)
+    return text[0].includes('Home VC')
   }
 
   it('shows set 4\'s sides (A on the left there), its "Switch sides" moves the teams, Confirm starts set 5 as shown', async () => {

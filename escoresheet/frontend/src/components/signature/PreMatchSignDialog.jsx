@@ -42,7 +42,7 @@ function signerName(data, team, role) {
  * @param {object} props
  * @param {object} props.data the Scoreboard's live match data
  * @param {'home'|'away'} props.team
- * @param {string} props.teamTitle "A · Short name", as the screen shows the team
+ * @param {string} props.teamTitle "A · VBC Musterau", as the screen shows the team
  * @param {number|string} props.matchId
  * @param {() => void} props.onClose
  * @param {() => void} [props.onCorrectRoster] opens "Reopen roster" for the team

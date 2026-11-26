@@ -90,8 +90,8 @@ describe('savedTeamToRoster', () => {
   })
 
   it('reads the meta from both team shapes', () => {
-    expect(savedTeamToRoster({ name: 'A', short_name: 'AA', color: '#112233' }).meta).toEqual({ name: 'A', shortName: 'AA', color: '#112233' })
-    expect(savedTeamToRoster({ name: 'B', shortName: 'BB', color: null }).meta).toEqual({ name: 'B', shortName: 'BB', color: '' })
+    expect(savedTeamToRoster({ name: 'A', short_name: 'AA', color: '#112233' }).meta).toEqual({ name: 'A', color: '#112233' })
+    expect(savedTeamToRoster({ name: 'B', shortName: 'BB', color: null }).meta).toEqual({ name: 'B', color: '' })
   })
 })
 

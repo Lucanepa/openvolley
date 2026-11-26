@@ -86,7 +86,6 @@ export const TEST_TEAM_SEED_DATA = [
   {
     seedKey: 'test-team-home',
     name: 'VBC Musterau',
-    shortName: 'MUS',
     color: '#3b82f6',
     players: [
       { number: 1, firstName: 'Luca', lastName: 'Keller', dob: '100211', libero: '', isCaptain: true, isLfp: true },
@@ -106,7 +105,6 @@ export const TEST_TEAM_SEED_DATA = [
   {
     seedKey: 'test-team-away',
     name: 'VC Beispielstadt',
-    shortName: 'BSP',
     color: '#dc2626', // the red preset (DEFAULT_HOME_COLOUR)
     players: [
       { number: 1, firstName: 'Tom', lastName: 'Weber', dob: '100803', libero: 'libero1', isCaptain: false, isLfp: true },
@@ -126,15 +124,14 @@ export const TEST_TEAM_SEED_DATA = [
 ]
 
 /**
- * What a stored seed team takes from its seed definition: { name?, shortName? }
- * when they differ (a device seeded with the teams of before), else null. The
+ * What a stored seed team takes from its seed definition: { name? } when it
+ * differs (a device seeded with the teams of before), else null. The
  * colour is left as it is.
  */
 export function seedTeamPatch(team, definition) {
   if (!team || !definition) return null
   const patch = {}
   if (team.name !== definition.name) patch.name = definition.name
-  if (team.shortName !== definition.shortName) patch.shortName = definition.shortName
   return Object.keys(patch).length ? patch : null
 }
 
@@ -149,18 +146,6 @@ const SEED_KEY_OF_EXTERNAL_ID = {
 export function getTestTeamByExternalId(externalId) {
   const seedKey = SEED_KEY_OF_EXTERNAL_ID[externalId] || externalId
   return TEST_TEAM_SEED_DATA.find(t => t.seedKey === seedKey)
-}
-
-// Get home team short name
-export function getTestHomeTeamShortName() {
-  const team = getTestTeamByExternalId(TEST_HOME_TEAM_EXTERNAL_ID)
-  return team?.shortName || 'HOME'
-}
-
-// Get away team short name
-export function getTestAwayTeamShortName() {
-  const team = getTestTeamByExternalId(TEST_AWAY_TEAM_EXTERNAL_ID)
-  return team?.shortName || 'AWAY'
 }
 
 export const TEST_REFEREE_SEED_DATA = [

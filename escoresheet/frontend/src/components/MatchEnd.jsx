@@ -950,14 +950,12 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     if (role === 'captain-a') {
       const team = homeLabel === 'A' ? homeTeam : awayTeam
       const captain = homeLabel === 'A' ? homeCaptain : awayCaptain
-      // return `Captain A - ${team?.shortName || team?.name || 'Team A'}${captain ? ` (#${captain.number})` : ''}`
-      return t('matchEnd.captainA', { team: team?.shortName || team?.name || 'Team A' }) + (captain ? ` (#${captain.number})` : '')
+      return t('matchEnd.captainA', { team: team?.name || 'Team A' }) + (captain ? ` (#${captain.number})` : '')
     }
     if (role === 'captain-b') {
       const team = homeLabel === 'B' ? homeTeam : awayTeam
       const captain = homeLabel === 'B' ? homeCaptain : awayCaptain
-      // return `Captain B - ${team?.shortName || team?.name || 'Team B'}${captain ? ` (#${captain.number})` : ''}`
-      return t('matchEnd.captainB', { team: team?.shortName || team?.name || 'Team B' }) + (captain ? ` (#${captain.number})` : '')
+      return t('matchEnd.captainB', { team: team?.name || 'Team B' }) + (captain ? ` (#${captain.number})` : '')
     }
     if (role === 'asst-scorer') return t('matchEnd.assistantScorer', 'Assistant scorer')
     if (role === 'scorer') return t('matchEnd.scorer', 'Scorer')

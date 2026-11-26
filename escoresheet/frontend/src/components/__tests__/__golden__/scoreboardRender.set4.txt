@@ -52,12 +52,10 @@
       <aside class="team-controls shadow-card" data-side="left">
         <div class="team-info">
           <div>
-            <span>
+            <div class="" data-testid="column-team-left" title="VC Beispielstadt">
               "B"
-            <span>
               "-"
-            <span>
-              "BSP"
+              "VC Beispielstadt"
         <div>
           <div class="to-sub-counter" data-help-id="scoreboard-timeout-left">
             <svg aria-hidden="true" class="lucide lucide-pointer" data-tap-hint-icon="" data-testid="timeout-tap-hint-left" fill="none" height="24" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg">
@@ -413,12 +411,10 @@
       <aside class="team-controls shadow-card" data-side="right">
         <div class="team-info">
           <div>
-            <span>
+            <div class="" data-testid="column-team-right" title="VBC Musterau">
               "A"
-            <span>
               "-"
-            <span>
-              "MUS"
+              "VBC Musterau"
         <div>
           <div class="to-sub-counter" data-help-id="scoreboard-timeout-right">
             <svg aria-hidden="true" class="lucide lucide-pointer" data-tap-hint-icon="" data-testid="timeout-tap-hint-right" fill="none" height="24" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg">

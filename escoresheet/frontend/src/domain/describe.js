@@ -111,7 +111,7 @@ export function teamLabel(teamKey, ctx = {}) {
   const fallback = tr(ctx.t, 'corrections.teamLetter', 'Team {{letter}}', { letter })
   return {
     key: teamKey,
-    name: team?.name || team?.shortName || fallback,
+    name: team?.name || fallback,
     letter,
     color: team?.color || (teamKey === 'home' ? '#3b82f6' : '#ef4444')
   }

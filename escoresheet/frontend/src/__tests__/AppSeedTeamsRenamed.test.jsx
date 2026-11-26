@@ -13,7 +13,7 @@ beforeAll(offline)
 afterAll(online)
 
 describe('App: the seed teams of before', () => {
-  it('take the made-up names and short names on start, the colour and the players stay', async () => {
+  it('take the made-up names on start, the colour and the players stay', async () => {
     await db.open()
     const home = await db.teams.add({ name: 'VBC Zürich', shortName: 'ZÜRICH', color: '#3b82f6', seedKey: 'test-team-home', test: true, createdAt: '2026-10-01T00:00:00.000Z' })
     const away = await db.teams.add({ name: 'Volley Luzern', shortName: 'LUZERN', color: '#16a34a', seedKey: 'test-team-away', test: true, createdAt: '2026-10-01T00:00:00.000Z' })
@@ -22,8 +22,9 @@ describe('App: the seed teams of before', () => {
     await waitFor(() => expect(button('Test match')).toBeTruthy())
     await waitFor(async () => expect((await db.teams.get(home))?.name).toBe('VBC Musterau'))
     const [h, a] = [await db.teams.get(home), await db.teams.get(away)]
-    expect([h.name, h.shortName, h.color]).toEqual(['VBC Musterau', 'MUS', '#3b82f6'])
-    expect([a.name, a.shortName, a.color]).toEqual(['VC Beispielstadt', 'BSP', '#16a34a'])
+    // a short name stored before its retirement (26.11.2026) is left as it was: nothing reads it
+    expect([h.name, h.color]).toEqual(['VBC Musterau', '#3b82f6'])
+    expect([a.name, a.color]).toEqual(['VC Beispielstadt', '#16a34a'])
     // no second seed team, the stored players kept
     expect(await db.teams.filter((t) => t.seedKey === 'test-team-home' || t.seedKey === 'test-team-away').count()).toBe(2)
     expect(await db.players.where('teamId').equals(away).count()).toBe(1)

@@ -47,7 +47,7 @@ const playerRow = (teamId) => (p) => ({
 export { rebuildSetStart }
 
 const teamRow = (id, team) => (team?.name
-  ? { id, name: team.name, shortName: team.short_name, color: team.color }
+  ? { id, name: team.name, color: team.color }
   : null)
 
 /**

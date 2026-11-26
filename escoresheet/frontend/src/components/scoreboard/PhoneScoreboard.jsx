@@ -5,6 +5,7 @@ import { ActionSheet } from '../../ui/Modal.jsx'
 import { COURT_SURFACE, HEADER_SURFACE, normaliseColour, teamBoxStyle, teamTextPaint } from '../../utils/teamColours'
 import { COURT_CELLS, PHONE_COUNTER_HEIGHT_PX, PHONE_COURT_MIN_PX, PHONE_RECENT_MIN_PX, PHONE_SQUARE_MIN_PX, PHONE_SQUARE_RESERVE_PX, officialRoleShort, recentLinesFor, tintOf } from './phoneLayout'
 import { captainRingStyle } from './captainRing'
+import { FitText } from '../../../scoresheet_pdf/components/FitText'
 import RallyTapNotice from './RallyTapNotice'
 import HoldToConfirmButton from './HoldToConfirmButton.jsx'
 import { MissingSignatureButton } from '../signature/PreMatchSignDialog.jsx'
@@ -56,7 +57,7 @@ import { SubstitutionPicker } from './SubstitutionPicker.jsx'
  * @param {{ timeouts: number, subs: number }} [props.limits] time-outs and substitutions per set
  * @param {object} props.actions the Scoreboard's handlers (see Scoreboard.jsx)
  *
- * TeamVM: { side, teamKey, label ('A'|'B'), name, shortName, color, setsWon,
+ * TeamVM: { side, teamKey, label ('A'|'B'), name (the full name), color, setsWon,
  *   points, timeouts, subs (every substitution of the set, exceptional
  *   ones included), subsRegular (the regular ones: the SUB tile's colour,
  *   the limit), lineupSet, lineupOptional (easy match),
@@ -131,7 +132,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
     }
   }
   const paint = { left: paintOf(left), right: paintOf(right) }
-  const teamTitle = (team) => `${team.label} · ${team.shortName || team.name}`
+  const teamTitle = (team) => `${team.label} · ${team.name}`
   // The header names the match as it is listed, home – away, and counts the
   // sets in that order: it does not swap with the court sides (the cards do)
   const [home, away] = right.teamKey === 'home' ? [right, left] : [left, right]
@@ -148,9 +149,9 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
         <span data-testid="phone-header-sets" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ov-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {t('scoreboard.phone.setInfo', { set: setNumber, home: home.setsWon, away: away.setsWon })}
         </span>
-        <span data-testid="phone-header-teams" style={{ fontSize: 14, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <FitText max={14} min={5} data-testid="phone-header-teams" style={{ fontWeight: 700 }}>
           {home.name} – {away.name}
-        </span>
+        </FitText>
       </div>
       <IconSquare label={t('scoreboard.buttons.undo')} onClick={() => actions.undo()} disabled={!canUndo}>
         <Undo2 size={20} aria-hidden="true" />
@@ -177,7 +178,9 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
     const server = serverNumber !== null && serverNumber !== undefined && serverNumber !== '' ? String(serverNumber) : null
     const info = (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0, overflow: 'hidden', alignItems: team.side === 'left' ? 'flex-start' : 'flex-end' }}>
-        <span style={{ ...line, fontSize: 12, fontWeight: 700, color: p.ink }}>{teamTitle(team)}</span>
+        {/* the full name on up to two lines, smaller until it fits the card
+            (the short name is retired, 26.11.2026) */}
+        <FitText max={12} min={5} multiline title={team.name} style={{ width: '100%', height: 29, lineHeight: 1.2, display: 'flex', alignItems: 'center', justifyContent: team.side === 'left' ? 'flex-start' : 'flex-end', textAlign: team.side === 'left' ? 'left' : 'right', fontWeight: 700, color: p.ink }}>{teamTitle(team)}</FitText>
         <span
           aria-hidden={!isServing}
           data-testid={isServing ? 'phone-serve-pill' : undefined}

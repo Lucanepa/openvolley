@@ -329,10 +329,8 @@ describe('Load match from schedule with rosters entered', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'pick-schedule-game' }))
     await waitFor(() => expect(ui.confirm).toHaveBeenCalledTimes(1))
     expect(ui.confirm.mock.calls[0][0].title).toBe('matchSetup.scheduleSwapTitle')
-    // short names are cleared by a schedule load: fill them in
-    fireEvent.change(await screen.findByLabelText('common.home matchSetup.short'), { target: { value: 'BET' } })
-    fireEvent.change(screen.getByLabelText('common.away matchSetup.short'), { target: { value: 'ALP' } })
-    fireEvent.click(screen.getByRole('button', { name: 'matchSetup.save' }))
+    // no short names to fill in (retired 26.11.2026): Save is ready at once
+    fireEvent.click(await screen.findByRole('button', { name: 'matchSetup.save' }))
     await waitFor(() => expect(store.tables.matches.get(1).homeTeamId).toBe(12))
     const m = store.tables.matches.get(1)
     expect(m.awayTeamId).toBe(11)
