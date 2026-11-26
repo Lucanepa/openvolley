@@ -7380,7 +7380,9 @@
       "add": "Aggiungi una riga",
       "remove": "Rimuovi",
       "apply_one": "Usa {{count}} giocatore",
-      "apply_other": "Usa {{count}} giocatori"
+      "apply_other": "Usa {{count}} giocatori",
+      "struck_one": "Escluso, barrato sulla lista: {{names}}",
+      "struck_other": "Esclusi, barrati sulla lista ({{count}}): {{names}}"
     },
     "col": {
       "number": "N.",
@@ -7414,7 +7416,8 @@
       "ocr-load": "Il riconoscimento del testo non è partito. Sul web serve una connessione la prima volta (circa 12 MB). Riprova, importa il PDF o inserisci i giocatori a mano.",
       "ocr-timeout": "La lettura ha richiesto troppo tempo su questo dispositivo. Prova una foto nitida con solo la lista, importa il PDF o inserisci i giocatori a mano.",
       "ocr-empty": "Nessuna riga di giocatore trovata. Controlla che tutta la lista sia nitida nella foto, poi riprova.",
-      "retry": "Riprova"
+      "retry": "Riprova",
+      "ocr-blurry": "La foto è troppo sfocata per essere letta. Rifalla: tieni fermo il tablet, con buona luce, tutta la lista nitida."
     }
   }
 }

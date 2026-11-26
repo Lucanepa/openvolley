@@ -79,6 +79,16 @@ describe('RosterPhotoImport', () => {
     expect(screen.queryByTestId('roster-photo-players')).toBeNull()
   })
 
+  it('a row struck out on the list is named on the confirm screen and never applied (real photos, 2026-11-26)', async () => {
+    readRosterPhoto.mockResolvedValue({ ...read(), struck: [{ firstName: 'Rita', lastName: 'Probst', licence: '123459' }] })
+    const onApply = vi.fn()
+    render(<RosterPhotoImport side="home" teamLabel="VBC" onApply={onApply} />)
+    await toCrop()
+    fireEvent.click(screen.getByTestId('roster-photo-read'))
+    expect(await screen.findByTestId('roster-photo-struck')).toHaveTextContent('rosterPhoto.confirm.struck:1')
+    expect(screen.getAllByTestId('roster-photo-row')).toHaveLength(2)
+  })
+
   it('Cancel on the confirm screen applies nothing', async () => {
     readRosterPhoto.mockResolvedValue(read())
     const onApply = vi.fn()

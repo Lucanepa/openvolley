@@ -85,6 +85,15 @@ describe('readRosterPhoto (Tesseract on this device)', () => {
     await expect(reading).rejects.toMatchObject({ code: 'ocr-cancelled' })
   })
 
+  it('a page read without certainty (out of focus) is "take it again", not a list', async () => {
+    const { createWorker } = fakeTesseract({ data: { ...vmShot, confidence: 48 } })
+    await expect(readRosterPhoto(new Blob(['page']), { createWorker, dir: '/ocr/x/' })).rejects.toMatchObject({ code: 'ocr-blurry' })
+    const empty = fakeTesseract({ data: { blocks: [], confidence: 62 } })
+    await expect(readRosterPhoto(new Blob(['page']), { createWorker: empty.createWorker, dir: '/ocr/x/' })).rejects.toMatchObject({ code: 'ocr-blurry' })
+    const sharp = fakeTesseract({ data: { blocks: [], confidence: 90 } })
+    await expect(readRosterPhoto(new Blob(['page']), { createWorker: sharp.createWorker, dir: '/ocr/x/' })).rejects.toMatchObject({ code: 'ocr-empty' })
+  })
+
   it('a progress callback gets the share and the phase', async () => {
     const { createWorker, calls } = fakeTesseract()
     const seen = []

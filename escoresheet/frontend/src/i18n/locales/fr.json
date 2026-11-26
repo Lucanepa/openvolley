@@ -7374,7 +7374,9 @@
       "add": "Ajouter une ligne",
       "remove": "Retirer",
       "apply_one": "Utiliser {{count}} joueur",
-      "apply_other": "Utiliser {{count}} joueurs"
+      "apply_other": "Utiliser {{count}} joueurs",
+      "struck_one": "Laissé de côté, barré sur la liste : {{names}}",
+      "struck_other": "Laissés de côté, barrés sur la liste ({{count}}) : {{names}}"
     },
     "col": {
       "number": "N°",
@@ -7408,7 +7410,8 @@
       "ocr-load": "La reconnaissance de texte n’a pas pu démarrer. Sur le web, elle a besoin d’une connexion la première fois (environ 12 Mo). Réessaie, importe le PDF ou saisis les joueurs à la main.",
       "ocr-timeout": "La lecture a pris trop de temps sur cet appareil. Essaie une photo nette avec seulement la liste, importe le PDF ou saisis les joueurs à la main.",
       "ocr-empty": "Aucune ligne de joueur trouvée. Vérifie que toute la liste est nette sur la photo, puis réessaie.",
-      "retry": "Réessayer"
+      "retry": "Réessayer",
+      "ocr-blurry": "La photo est trop floue pour être lue. Reprends-la : tiens la tablette immobile, avec une bonne lumière, toute la liste nette."
     }
   }
 }

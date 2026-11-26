@@ -88,6 +88,12 @@ export default function RosterConfirmStep ({ roster, issues, onChange }) {
       <p className="m-0 text-xs text-stone-500" data-testid="roster-photo-method">
         {[t('rosterPhoto.confirm.method'), fromSaved ? t('rosterPhoto.confirm.fromSaved', { count: fromSaved }) : null].filter(Boolean).join(' · ')}
       </p>
+      {roster.struck?.length > 0 && (
+        // rows struck out on the list: not playing, never applied (named so the scorer knows)
+        <Banner tone="info" data-testid="roster-photo-struck">
+          {t('rosterPhoto.confirm.struck', { count: roster.struck.length, names: roster.struck.map((p) => [p.lastName, p.firstName].filter(Boolean).join(' ') || p.licence).join(', ') })}
+        </Banner>
+      )}
       {(toFix > 0 || toCheck > 0) && (
         <Banner tone={toFix > 0 ? 'danger' : 'warning'} data-testid="roster-photo-issues">
           {[toFix ? t('rosterPhoto.confirm.toFix', { count: toFix }) : null, toCheck ? t('rosterPhoto.confirm.toCheck', { count: toCheck }) : null].filter(Boolean).join(' · ')}

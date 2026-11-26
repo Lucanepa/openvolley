@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   cornersFromGray, evenLight, homography, insetCorners, orderCorners, otsuThreshold, pageSize, plausiblePage, project,
-  removeRules, ringInRegion, ringScore, rotateCorners, stretchContrast, warpGray
+  removeRules, ringInRegion, ringScore, rotateCorners, stretchContrast, warpGray, struckThrough, handInk, turnGray
 } from '../scan'
 
 // a grey page (255) of w x h with draw(x, y) -> value | undefined
@@ -182,5 +182,41 @@ describe('circles (a circled number: the captain)', () => {
     expect(ringInRegion(page(100, 100), 100, 100, region, 16)).toBeNull()
     // a ring far smaller than a line of print is a letter's loop
     expect(ringInRegion(circled(100, 100, 50, 50, 6, false), 100, 100, region, 16)).toBeNull()
+  })
+})
+
+// (real photos, 2026-11-26) a row's words as boxes on a 400 x 60 page
+const rowWords = [{ x0: 20, y0: 20, x1: 80, y1: 40 }, { x0: 110, y0: 20, x1: 160, y1: 40 }, { x0: 200, y0: 20, x1: 270, y1: 40 }, { x0: 300, y0: 20, x1: 380, y1: 40 }]
+const inWords = (x, y) => rowWords.some((w) => x >= w.x0 && x < w.x1 && y >= w.y0 && y < w.y1 && (x + y) % 3 === 0)
+
+describe('a row struck out, the team\'s handwriting, a page turned', () => {
+  it('struckThrough: a pen line through the row is; a number written between two names is not', () => {
+    const struck = page(400, 60, (x, y) => (inWords(x, y) || (Math.abs(y - 30 - (x - 20) * 0.01) < 1.5 && x >= 15 && x <= 385) ? 20 : undefined))
+    expect(struckThrough(struck, 400, 60, rowWords)).toBe(true)
+    const marked = page(400, 60, (x, y) => (inWords(x, y) || (x >= 170 && x <= 190 && y >= 18 && y <= 44 && x % 4 === 0) ? 20 : undefined))
+    expect(struckThrough(marked, 400, 60, rowWords)).toBe(false)
+    expect(struckThrough(page(400, 60, (x, y) => (inWords(x, y) ? 20 : undefined)), 400, 60, rowWords)).toBe(false)
+  })
+
+  it('handInk: ink left of the SV number and between the names, none of the printed words, a pale pen too', () => {
+    // a number in the margin (pale grey), a mark between the 2nd and 3rd word, a speck
+    const g = page(400, 60, (x, y) => {
+      if (inWords(x, y)) return 20
+      if (x >= 2 && x <= 12 && y >= 16 && y <= 44 && (x === 4 || y === 16 || y === 44)) return 170
+      if (x >= 172 && x <= 186 && y >= 22 && y <= 40 && (x === 174 || y === 40)) return 40
+      if (x === 290 && y === 30) return 20
+      return undefined
+    })
+    const groups = handInk(g, 400, 60, { left: 20, x0: -100, x1: 400, y: 30, line: 20, skip: rowWords, beyond: null }, { leftOf: 20 })
+    expect(groups.map((b) => [b.where, b.x0 <= 4 && b.x1 >= 12 ? 'margin' : b.x0 >= 172 && b.x1 <= 188 ? 'between' : 'other'])).toEqual([['left', 'margin'], ['inside', 'between']])
+  })
+
+  it('turnGray: a quarter turn clockwise, four make the page again', () => {
+    const g = new Uint8ClampedArray([1, 2, 3, 4, 5, 6]) // 3 x 2
+    const q = turnGray(g, 3, 2, 1)
+    expect([q.width, q.height, [...q.gray]]).toEqual([2, 3, [4, 1, 5, 2, 6, 3]])
+    let back = { gray: g, width: 3, height: 2 }
+    for (let i = 0; i < 4; i++) back = turnGray(back.gray, back.width, back.height, 1)
+    expect([...back.gray]).toEqual([...g])
   })
 })

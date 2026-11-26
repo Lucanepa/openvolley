@@ -7381,7 +7381,9 @@
       "add": "Add a row",
       "remove": "Remove",
       "apply_one": "Use {{count}} player",
-      "apply_other": "Use {{count}} players"
+      "apply_other": "Use {{count}} players",
+      "struck_one": "Left out, struck out on the list: {{names}}",
+      "struck_other": "Left out, struck out on the list ({{count}}): {{names}}"
     },
     "col": {
       "number": "No.",
@@ -7415,7 +7417,8 @@
       "ocr-load": "The text recognition could not start. On the web it needs a connection the first time (about 12 MB). Try again, import the PDF or type the players.",
       "ocr-timeout": "Reading took too long on this device. Try a sharp photo with only the list in it, import the PDF or type the players.",
       "ocr-empty": "No player row was found. Check that the whole list is in the photo and sharp, then try again.",
-      "retry": "Try again"
+      "retry": "Try again",
+      "ocr-blurry": "The photo is too blurry to read. Take it again: hold the tablet still, with good light, the whole list sharp."
     }
   }
 }

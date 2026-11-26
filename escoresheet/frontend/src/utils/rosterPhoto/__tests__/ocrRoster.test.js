@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cleanWord, ocrLines, rosterFromOcr, HANDWRITTEN_MAX } from '../ocrRoster'
+import { cleanWord, ocrLines, rosterFromOcr, marksOfHand, withHandReadings, HANDWRITTEN_MAX } from '../ocrRoster'
 import vmSkew from './fixtures/ocr-vm-de-skew.json'
 import vmShot from './fixtures/ocr-vm-de-screenshot.json'
 import tableDe from './fixtures/ocr-table-de-skew.json'
@@ -220,5 +220,135 @@ describe('cleanWord and ocrLines', () => {
     const lines = ocrLines(page(line(100, [['123456', 100]]), line(104, [['Anna', 200]]), line(140, [['234567', 100]])))
     expect(lines).toHaveLength(2)
     expect(lines[0].words.map(w => w.text)).toEqual(['123456', 'Anna'])
+  })
+})
+
+// The failure patterns of the owner's real photos (2026-11-26), on made-up
+// lists: words with their own box ([text, x0, width?, conf?, dy?, height?]).
+const wl = (y, words) => ({
+  words: words.map(([text, x0, w = 10 * text.length, conf = 92, dy = 0, h = 20]) => ({ text, confidence: conf, bbox: { x0, y0: y + dy, x1: x0 + w, y1: y + dy + h } }))
+})
+const listHead = wl(100, [['SV-Nr.', 100], ['Vorname', 200], ['Nachname', 400], ['M/F', 600], ['Geburtsdatum', 660], ['LK', 820], ['LAS', 880]])
+const person = (y, licence, first, last, dob, { before = [], between = [], after = [] } = {}) =>
+  wl(y, [...before, [licence, 100], [first, 200], ...between, [last, 400], ['F', 610], [dob, 660], ['RLL', 820], ...after])
+const players = (r) => r.players.map((p) => `${p.licence} ${p.firstName} ${p.lastName}`)
+
+describe('rosterFromOcr: real photos\' failure patterns (made-up lists)', () => {
+  it('two rows read close together, a big handwritten number reaching into the next, stay two rows', () => {
+    const r = rosterFromOcr(page(listHead,
+      person(140, '123456', 'Anna', 'Muster', '14.03.2004', { between: [['33', 300, 20, 90, -14, 44]] }),
+      person(164, '234567', 'Bea', 'Beispiel', '02.05.2003', { between: [['12', 300, 20, 90, -8, 40]] })))
+    expect(players(r)).toEqual(['123456 Anna Muster', '234567 Bea Beispiel'])
+    expect(r.players.map((p) => p.number)).toEqual([33, 12])
+  })
+
+  it('a page edge read as a tall "|" does not join a line to the one above it', () => {
+    const lines = ocrLines(page(wl(40, [['Generiert', 100], ['am:', 200]]), wl(60, [['|', 0, 4, 90, -30, 60], ['Coach:', 100], ['#312977', 170], ['Petra', 260], ['Exempel', 320], ['(1980)', 400]])))
+    expect(lines).toHaveLength(2)
+  })
+
+  it('handwriting between the names stays out of them and is kept aside to read again', () => {
+    const r = rosterFromOcr(page(listHead, person(140, '123456', 'Anna', 'Muster', '14.03.2004', { between: [['AT', 300, 20, 68], ['(x', 340, 20, 85]] })))
+    expect(players(r)).toEqual(['123456 Anna Muster'])
+    expect(r.players[0].handAt).toMatchObject({ left: 100, line: 20 })
+  })
+
+  it('a name and a circled number read as one word: the name stays ("Anna(1)")', () => {
+    const r = rosterFromOcr(page(listHead, wl(140, [['123456', 100], ['Anna(1)', 200, 90], ['Muster', 400], ['F', 610], ['14.03.2004', 660]])))
+    expect(r.players[0]).toMatchObject({ firstName: 'Anna', lastName: 'Muster', number: 1, isCaptain: true })
+  })
+
+  it('a name read with a small first letter gets its capital back', () => {
+    const r = rosterFromOcr(page(listHead, person(140, '123456', 'anna', 'Muster', '14.03.2004')))
+    expect(r.players[0].firstName).toBe('Anna')
+  })
+
+  it('a row whose SV number the photo cut off is kept, its SV number empty (to check), never dropped', () => {
+    const r = rosterFromOcr(page(listHead,
+      person(140, '123456', 'Anna', 'Muster', '14.03.2004'),
+      wl(180, [['Bea', 200], ['Beispiel', 400], ['F', 610], ['02.05.2003', 660]])))
+    expect(r.players).toHaveLength(2)
+    const bea = r.players[1]
+    expect(bea).toMatchObject({ licence: '', firstName: 'Bea', lastName: 'Beispiel' })
+    expect(fieldIssues(importedRosterOf(r, 'ocr')).players[1].licence).toBeTruthy()
+  })
+
+  it('a row written in by hand under the table is shown, every field to check', () => {
+    const r = rosterFromOcr(page(listHead,
+      person(140, '123456', 'Anna', 'Muster', '14.03.2004'),
+      wl(220, [['345678', 100, 60, 59], ['MEIER', 210, 50, 40], ['LINA', 400, 40, 92]])))
+    const hand = r.players.find((p) => p.licence === '345678')
+    expect(hand).toBeTruthy()
+    expect(`${hand.firstName} ${hand.lastName}`).toMatch(/MEIER.*LINA/)
+    for (const f of ['licence', 'firstName', 'lastName']) expect(hand.confidence[f]).toBeLessThanOrEqual(HANDWRITTEN_MAX)
+  })
+
+  it('an SV number starting a digit right of its column lost that digit: to check, read again from the column', () => {
+    const r = rosterFromOcr(page(listHead,
+      person(140, '123456', 'Anna', 'Muster', '14.03.2004'),
+      person(180, '234567', 'Bea', 'Beispiel', '02.05.2003'),
+      wl(220, [['23456', 117], ['Cleo', 200], ['Exempel', 400], ['F', 610], ['01.06.2001', 660]])))
+    const cleo = r.players.find((p) => p.firstName === 'Cleo')
+    expect(cleo.confidence.licence).toBeLessThanOrEqual(0.4)
+    expect(cleo.licenceAt).toMatchObject({ lost: true })
+    expect(cleo.licenceAt.x0).toBeLessThan(117)
+  })
+
+  it('a row struck out by hand is left out and named, never imported as playing', () => {
+    const r = rosterFromOcr(page(listHead,
+      person(140, '123456', 'Anna', 'Muster', '14.03.2004'),
+      person(180, '234567', 'Bea', 'Beispiel', '02.05.2003')), { struck: (words) => words.some((w) => w.y0 >= 180) })
+    expect(players(r)).toEqual(['123456 Anna Muster'])
+    expect(r.struck).toEqual([{ firstName: 'Bea', lastName: 'Beispiel', licence: '234567' }])
+    expect(importedRosterOf(r, 'ocr').struck).toHaveLength(1)
+  })
+
+  it('a page askew, its lower rows sloping more: the words of two rows Tesseract put in one line go back to their rows', () => {
+    // each row drops more to the right; the reading put the end of row 3 with the start of row 4
+    const slope = (row) => 0.012 + 0.004 * row
+    const at = (row, x) => Math.round(140 + 44 * row + slope(row) * (x - 100))
+    const words = (row, list) => list.map(([text, x]) => ({ text, confidence: 92, bbox: { x0: x, y0: at(row, x), x1: x + 10 * text.length, y1: at(row, x) + 20 } }))
+    const people = [['123456', 'Anna', 'Muster', '14.03.2004'], ['234567', 'Bea', 'Beispiel', '02.05.2003'], ['345678', 'Cleo', 'Exempel', '01.06.2001'], ['456789', 'Dora', 'Probst', '09.09.1999'], ['567890', 'Ella', 'Platz', '10.10.1998']]
+    const cells = (i) => [[people[i][0], 100], [people[i][1], 200], [people[i][2], 400], ['F', 610], [people[i][3], 660], ['RLL', 820], ['X', 900]]
+    const lines = [listHead, ...[0, 1, 2].map((i) => ({ words: words(i, cells(i)) }))]
+    lines.push({ words: words(3, cells(3).slice(0, 3)) })
+    lines.push({ words: [...words(4, cells(4).slice(0, 2)), ...words(3, cells(3).slice(3))] })
+    lines.push({ words: words(4, cells(4).slice(2)) })
+    const r = rosterFromOcr(page(...lines))
+    expect(players(r)).toEqual(people.map(([l, f, n]) => `${l} ${f} ${n}`))
+    expect(r.players.every((p) => p.dob)).toBe(true)
+  })
+})
+
+describe('the handwriting read again (ocr.js) and what it gives', () => {
+  it('marksOfHand: a number, C or K the captain, L / L1 / L2 a libero (not a number)', () => {
+    expect(marksOfHand('3K')).toMatchObject({ number: 3, captain: true, libero: false })
+    expect(marksOfHand('7 L1')).toMatchObject({ number: 7, libero: true })
+    expect(marksOfHand('L2')).toMatchObject({ number: null, libero: true })
+    expect(marksOfHand('99 L2')).toMatchObject({ number: 99, libero: true })
+    expect(marksOfHand('1 2')).toMatchObject({ number: null, unsure: true })
+    expect(marksOfHand('333')).toMatchObject({ number: null, unsure: true })
+  })
+
+  it('withHandReadings: its number wins, a ring is the captain, two numbers are unsure, nothing above HANDWRITTEN_MAX', () => {
+    const p = { number: 2, isCaptain: false, isLibero: false, confidence: { licence: 0.9 } }
+    const a = withHandReadings(p, [{ text: '27', conf: 0.95 }])
+    expect(a).toMatchObject({ number: 27, isCaptain: false })
+    expect(a.confidence.number).toBeLessThanOrEqual(HANDWRITTEN_MAX)
+    const b = withHandReadings(p, [{ text: '', conf: 0.5, ringed: true }, { text: '5', conf: 0.9 }])
+    expect(b).toMatchObject({ number: 5, isCaptain: true })
+    expect(b.confidence.isCaptain).toBeLessThanOrEqual(HANDWRITTEN_MAX)
+    const c = withHandReadings(p, [{ text: '14', conf: 0.9 }, { text: '41', conf: 0.9 }])
+    expect(c.number).toBe(14)
+    expect(c.confidence.number).toBeLessThanOrEqual(0.4)
+    expect(withHandReadings(p, [])).toBe(p)
+  })
+})
+
+describe('cleanWord: what real photos misread', () => {
+  it('a date with a dash, a date with a digit run into it, an SV number with a full stop', () => {
+    expect(cleanWord('14.03-2004')).toBe('14.03.2004')
+    expect(cleanWord('1281120058')).toBe('28.11.2005')
+    expect(cleanWord('345671.')).toBe('345671')
   })
 })

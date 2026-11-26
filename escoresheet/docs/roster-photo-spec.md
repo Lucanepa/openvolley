@@ -151,9 +151,38 @@ app, load error, timeout, empty, cancel), `savedTeamNames.test.js`, `RosterPhoto
 (nothing applied before "Use", red blocks, edits applied, remove, error and retry). The fixtures and
 their sources: `src/utils/rosterPhoto/__tests__/fixtures/`.
 
-**Not yet tried on real photos or real handwriting.** The fixtures are rendered lists with a
-hand-like script and a drawn circle; real handwriting, real light and the A7 Lite's speed need the
-owner's sample photos (DE / FR / IT). The confirm screen is there for exactly that.
+### 3.7 Tuned on real photos (2026-11-26)
+
+The owner's 13 photos (DE / FR / IT lists, pen marks, four on their side, one blurry, a phone's
+shadow, one row struck out, one row added by hand) were run through the app's own path in Chromium
+and scored against an answer key; they stay off the repo (names, dates of birth). What changed:
+
+- **Corners**: the bright region's hull joined into four sides, and the four straight edges fitted
+  to its outline; the one covering the region best wins (a shadow, a hand, a second sheet or
+  something dark on the page's edge pulled the extreme points in or out).
+- **Rows**: lines joined by their words' middle, never two with an SV number each; a page askew or
+  bent is regrouped along its slope (the lower rows slope more); a row whose SV number the photo cut
+  off is kept (SV number empty, to check); a row without a printed date (written in by hand) keeps
+  its words and every field is to check; an SV number starting right of its column is read again
+  from the column's start (a lost first digit), to check.
+- **Names**: between the SV number and the date only print stays (handwriting read as "AT", "(x",
+  "2g" is kept aside); "Anna(1)" is split; a small first letter gets its capital.
+- **Handwriting** (`ocr.js` readHandwriting): the ink on each player row that no printed word
+  explains (scan.js `handInk`: left of the SV number up to the date, and right of the table) is
+  cut out, made black on white by its own ink, and read alone, digits and C / K / L only; a circled
+  group is the captain and its inside is read. Every handwritten mark stays amber.
+- **Struck rows** (scan.js `struckThrough`, on the page before its rules go): ink across most of
+  the gaps between a row's words at their middle. Left out of the players, named on the confirm
+  screen (`roster.struck`), never applied.
+- **Orientation**: a page read with few sure words is tried a quarter turn either way and upside
+  down on a small copy, then read the way it reads best; a page the right way up is read once.
+  Turn stays.
+- **Blur**: a page read below 55 % (or with no row below 70 %) is `ocr-blurry`: "take it again".
+
+Result (counts only; the table is in PR #358): every printed row found on the 12 readable photos,
+SV numbers, names and dates of birth 94 to 95 % exact, **no wrong field without amber or red**.
+Handwritten shirt numbers are the weak part (Tesseract reads print; about half of them right),
+always amber. If that is not good enough, plan B (section 4) is the next step.
 
 ## 4. Plan B: our own OCR server (planned, not built)
 

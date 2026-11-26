@@ -7363,7 +7363,9 @@
       "add": "Zeile hinzufügen",
       "remove": "Entfernen",
       "apply_one": "{{count}} Spieler übernehmen",
-      "apply_other": "{{count}} Spieler übernehmen"
+      "apply_other": "{{count}} Spieler übernehmen",
+      "struck_one": "Weggelassen, auf der Liste durchgestrichen: {{names}}",
+      "struck_other": "Weggelassen, auf der Liste durchgestrichen ({{count}}): {{names}}"
     },
     "col": {
       "number": "Nr.",
@@ -7397,7 +7399,8 @@
       "ocr-load": "Die Texterkennung konnte nicht starten. Im Web braucht sie beim ersten Mal eine Verbindung (etwa 12 MB). Versuch es nochmals, importiere das PDF oder erfasse die Spieler von Hand.",
       "ocr-timeout": "Das Lesen dauerte auf diesem Gerät zu lange. Versuch ein scharfes Foto nur mit der Liste, importiere das PDF oder erfasse die Spieler von Hand.",
       "ocr-empty": "Keine Spielerzeile gefunden. Prüfe, ob die ganze Liste scharf im Foto ist, und versuch es nochmals.",
-      "retry": "Nochmals versuchen"
+      "retry": "Nochmals versuchen",
+      "ocr-blurry": "Das Foto ist zu unscharf zum Lesen. Mach es nochmals: Tablet ruhig halten, gutes Licht, die ganze Liste scharf."
     }
   }
 }

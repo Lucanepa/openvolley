@@ -7375,7 +7375,9 @@
       "add": "Ziile dezuefüege",
       "remove": "Entferne",
       "apply_one": "{{count}} Spieler übernä",
-      "apply_other": "{{count}} Spieler übernä"
+      "apply_other": "{{count}} Spieler übernä",
+      "struck_one": "Wäggla, uf de Liste duregstriche: {{names}}",
+      "struck_other": "Wäggla, uf de Liste duregstriche ({{count}}): {{names}}"
     },
     "col": {
       "number": "Nr.",
@@ -7409,7 +7411,8 @@
       "ocr-load": "D Texterkännig hät nöd chöne starte. Im Web bruucht si s erscht Mal e Verbindig (öppe 12 MB). Probier s nomal, importier s PDF oder erfass d Spieler vo Hand.",
       "ocr-timeout": "S Läse hät uf dem Grät z lang duuret. Probier es scharfs Foto nume mit de Liste, importier s PDF oder erfass d Spieler vo Hand.",
       "ocr-empty": "Kei Spielerziile gfunde. Prüef, öb di ganzi Liste scharf im Foto isch, und probier s nomal.",
-      "retry": "Nomal probiere"
+      "retry": "Nomal probiere",
+      "ocr-blurry": "S Foto isch z unscharf zum Läse. Mach s nomal: Tablet ruhig halte, guets Liecht, di ganzi Liste scharf."
     }
   }
 }
