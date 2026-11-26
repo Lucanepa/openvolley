@@ -24,8 +24,9 @@ function rememberDone(how) {
 
 /**
  * Home's card for a first start (owner plan 24.11.2026): "New here? Take
- * the 5-minute tour". Once started or put aside it does not come back on
- * this device; the tour stays in the help ("?" > Your first match).
+ * the tour" (no length: it depends on the scorer, owner follow-up
+ * 26.11.2026). Once started or put aside it does not come back on this
+ * device; the tour stays in the help ("?" > Your first match).
  */
 export default function HomeTourCard({ onStart, className }) {
   const { t } = useTranslation()

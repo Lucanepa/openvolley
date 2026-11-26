@@ -1,9 +1,13 @@
-// Home's "New here? Take the 5-minute tour" (HomeTourCard): once started or
+// Home's "New here? Take the tour" (HomeTourCard): once started or
 // put aside, it does not come back on this device
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, fireEvent, cleanup, screen } from '@testing-library/react'
 import '../../../i18n'
 import en from '../../../i18n/locales/en.json'
+import de from '../../../i18n/locales/de.json'
+import deCH from '../../../i18n/locales/de-CH.json'
+import fr from '../../../i18n/locales/fr.json'
+import it_ from '../../../i18n/locales/it.json'
 import HomeTourCard, { HOME_TOUR_CARD_KEY, homeTourCardDone } from '../HomeTourCard'
 
 beforeEach(() => {
@@ -44,6 +48,14 @@ describe('Home tour card', () => {
     } finally {
       get.mockRestore()
       set.mockRestore()
+    }
+  })
+
+  // Owner follow-up 26.11.2026: the tour takes as long as the scorer takes
+  // (the video of it runs 7 to 8 minutes): no length on the card
+  it('promises no length, in any language', () => {
+    for (const [lang, d] of Object.entries({ en, de, 'de-CH': deCH, fr, it: it_ })) {
+      expect(d.walkthrough.homeCard.title, lang).not.toMatch(/\d|minute|Minute|minuti/)
     }
   })
 })

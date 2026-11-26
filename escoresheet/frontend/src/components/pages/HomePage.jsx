@@ -80,7 +80,7 @@ export default function HomePage({
   deviceCheckCard = null,
   // the match Continue resumes (App): { home, away, score, stage, lastSaved, state, unsent }
   continueInfo = null,
-  // "New here? Take the 5-minute tour" (App, components/walkthrough/HomeTourCard)
+  // "New here? Take the tour" (App, components/walkthrough/HomeTourCard)
   tourCard = null
 }) {
   const { t, i18n } = useTranslation()
