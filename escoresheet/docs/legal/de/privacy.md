@@ -831,8 +831,8 @@ beim Abmelden und spätestens 36 Stunden nach dem Spiel.
 
 **Lizenzlisten der Vereine (OpenVolley):** Die Vereinsverantwortlichen
 können die Listen der Spielerinnen und Spieler, Schreiberinnen und Schreiber
-sowie Trainerinnen und Trainer ihres Vereins aus der Vereinsadministration von
-VolleyManager hochladen. Die Datei wird im Browser gelesen: Gespeichert werden
+sowie Trainerinnen und Trainer ihres Vereins aus der Vereinsadministration
+von Swiss Volley hochladen. Die Datei wird im Browser gelesen: Gespeichert werden
 nur Lizenznummer, Nachname, Vorname und Geschlecht jeder Person; die Spalte
 mit dem Geburtsdatum wird nicht gelesen, und nichts anderes aus der Datei wird
 an den Server geschickt. Die Listen sind für die Vereinsverantwortlichen und
@@ -891,19 +891,19 @@ löscht, auch wenn das Konto, das sie angelegt hat, gelöscht wird.
 ## 11. Daten von Schiedsrichterinnen und Schiedsrichtern
 
 **Spielansetzungen von Swiss Volley:** Der Server übernimmt täglich die
-offiziellen Spielansetzungen aus dem VolleyManager von Swiss Volley, für den
+offiziellen Spielansetzungen aus dem System von Swiss Volley, für den
 Zeitraum von gestern bis 14 Tage voraus: Teams, Halle und Adresse, Liga, 1.
 und 2. Schiedsrichter mit ihren Namen, Linienrichter, Aufgebote. Dafür
-verwendet der Server ein Konto im VolleyManager. Zweck: offizielle Spiele mit
+verwendet der Server ein Konto in diesem System. Zweck: offizielle Spiele mit
 den richtigen Offiziellen laden. Namen sind öffentlich (Abschnitt 8).
-VolleyManager schickt auch die Geburtsdaten der Schiedsrichterinnen und
+Das System von Swiss Volley schickt auch die Geburtsdaten der Schiedsrichterinnen und
 Schiedsrichter; der Server liest und speichert sie nicht (seit
 dem 19. November 2026; die vorher gespeicherten wurden gelöscht). Die Ansetzungen
 werden wie die Spielaufzeichnungen aufbewahrt (Abschnitt 16).
 
 **Lizenznummern der Schiedsrichterinnen und Schiedsrichter:** Seit
 dem 20. November 2026 speichert der Server auch die Lizenznummer (die Nummer
-von Swiss Volley), die VolleyManager für den 1. und 2. Schiedsrichter
+von Swiss Volley), die das System von Swiss Volley für den 1. und 2. Schiedsrichter
 schickt. Diese Nummern sind nicht öffentlich: Nur die Administration und die
 Konten, die Hallenspiele schreiben, sehen sie, damit die Scorer-App sie beim
 Laden eines offiziellen Spiels neben den Schiedsrichtern einträgt. Sie werden
@@ -1074,8 +1074,8 @@ Kaderlisten. Cloudflare darf die Daten nur für die
 Erbringung seines Dienstes verwenden.
 
 **Eigenständig verantwortlich** sind: GitHub, Inc. (USA) für Downloads und
-die Versionsliste, F-Droid für den App-Katalog, Swiss Volley für die Daten
-im VolleyManager.
+die Versionsliste, F-Droid für den App-Katalog, Swiss Volley für
+die Daten in seinem eigenen System.
 
 **Datensicherungen** liegen verschlüsselt auf meinem Server bei Infomaniak und
 auf meinem eigenen Speichergerät, beide in der Schweiz. Sie werden

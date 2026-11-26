@@ -569,7 +569,7 @@
     "clubBlockedTitle": "Non è una partita in casa della tua società",
     "clubRequired": "Il tuo account non ha ancora una società. Un admin la aggiunge prima che tu possa refertare partite ufficiali.",
     "notYourClub": "{{home}} gioca in casa. Referti solo le partite in casa di {{clubs}}.",
-    "gameNotInSchedule": "La partita {{game}} non è nel calendario VolleyManager, quindi la squadra di casa è sconosciuta. Controlla il numero della partita.",
+    "gameNotInSchedule": "La partita {{game}} non è nel calendario ufficiale, quindi la squadra di casa è sconosciuta. Controlla il numero della partita.",
     "refereeEmail": "E-mail (facoltativa)",
     "refereeEmailHint": "Per il referto finale. La vedono solo i segnapunti di questa partita.",
     "teamContactEmail": "E-mail del contatto della squadra (facoltativa)",
@@ -3654,7 +3654,7 @@
       "q_myTeams": "Posso modificare io le squadre della mia società?",
       "a_myTeams": "Sì. «Le mie squadre» contiene tutte le squadre della tua società. Scegli il genere e la squadra, poi modifica la rosa e invia gli elenchi delle partite, come fa un responsabile della squadra.",
       "q_missingTeam": "Manca una squadra della mia società.",
-      "a_missingTeam": "Le squadre della società sono i nomi delle squadre di VolleyManager; un amministratore le aggiunge nella scheda Società. Scrivi a support@openvolley.app."
+      "a_missingTeam": "Le squadre della società sono i nomi delle squadre del calendario ufficiale; un amministratore le aggiunge nella scheda Società. Scrivi a support@openvolley.app."
     },
     "teamLinks": {
       "q_what": "Cos'è un link per la squadra?",
@@ -3688,7 +3688,7 @@
     },
     "teamManager": {
       "q_squad": "Cos'è la rosa della stagione?",
-      "a_squad": "Tutti quelli che possono giocare in questa stagione, con numero e licenza. Aggiungili con «Aggiungi giocatore», «Importa Einsatzliste» (il PDF di VolleyManager) o «Aggiungi dalla società», poi tocca «Salva la rosa». I segnapunti possono caricare questa rosa nella configurazione della partita.",
+      "a_squad": "Tutti quelli che possono giocare in questa stagione, con numero e licenza. Aggiungili con «Aggiungi giocatore», «Importa Einsatzliste» (il PDF di Swiss Volley) o «Aggiungi dalla società», poi tocca «Salva la rosa». I segnapunti possono caricare questa rosa nella configurazione della partita.",
       "q_games": "Quali partite sono elencate?",
       "a_games": "Tutte le partite della tua squadra da oggi in poi, in casa e in trasferta, dal calendario.",
       "q_prepare": "Come invio l'elenco di una partita?",
@@ -3710,7 +3710,7 @@
     },
     "clubLicences": {
       "q_what": "Cosa sono gli elenchi di licenze?",
-      "a_what": "Gli elenchi di giocatori, segnapunti e allenatori dell'amministrazione della società di VolleyManager. Con questi, «Aggiungi dalla società» propone le persone della tua società, e gli scudi verdi segnano le persone che sono negli elenchi.",
+      "a_what": "Gli elenchi di giocatori, segnapunti e allenatori dell'amministrazione della società di Swiss Volley. Con questi, «Aggiungi dalla società» propone le persone della tua società, e gli scudi verdi segnano le persone che sono negli elenchi.",
       "q_upload": "Come li carico?",
       "a_upload": "La mia società › Licenze. Scegli l'elenco (Giocatori, Segnapunti o Allenatori), tocca «Scegli file Excel» e scegli l'esportazione .xlsx. Controlla l'anteprima e tocca «Salva elenco». Ogni caricamento sostituisce quell'elenco.",
       "q_kept": "Cosa viene inviato e conservato?",
@@ -3748,7 +3748,7 @@
       "q_approve": "Come approvo un nuovo account? (amministratori)",
       "a_approve": "Account › In attesa: tocca «Approva come segnapunti», o «Ruoli» per altri ruoli, e «Società» per la società per cui referta. I responsabili della società e della squadra si impostano nella pagina della società e in La mia società, non in Ruoli.",
       "q_club": "Come configuro una società? (amministratori)",
-      "a_club": "Società › «Nuova società»: nome, e-mail di contatto e le squadre VolleyManager della società. Salvala, poi scegli i suoi responsabili tra i suoi account, o invia un link da responsabile della società.",
+      "a_club": "Società › «Nuova società»: nome, e-mail di contatto e le squadre della società, come nel calendario ufficiale. Salvala, poi scegli i suoi responsabili tra i suoi account, o invia un link da responsabile della società.",
       "q_savedTeams": "Cosa c'è in Squadre salvate?",
       "a_savedTeams": "Le rose di ogni stagione e campionato, comprese quelle che i responsabili delle squadre tengono in Le mie squadre. I segnapunti le caricano nella configurazione della partita."
     }
@@ -4649,11 +4649,11 @@
       "saved": "Società salvata",
       "deleted": "Società eliminata",
       "name": "Nome della società",
-      "teams": "Squadre VolleyManager",
-      "teamsHint": "Le squadre di cui i refertisti della società refertano le partite in casa, scritte come in VolleyManager.",
+      "teams": "Squadre del calendario",
+      "teamsHint": "Le squadre di cui i refertisti della società refertano le partite in casa, scritte come nel calendario ufficiale.",
       "searchTeams": "Cerca squadre, p. es. Musterdorf",
       "picked": "Squadre scelte: {{count}}",
-      "noVmTeams": "Nessuna squadra VolleyManager corrisponde.",
+      "noVmTeams": "Nessuna squadra del calendario corrisponde.",
       "inClub": "in {{club}}",
       "scorers": "Refertisti: {{count}}",
       "noTeams": "Ancora nessuna squadra",
@@ -4850,7 +4850,7 @@
       "noOfficials": "Ancora nessun ufficiale di squadra. Aggiungili sopra sotto Giocatori.",
       "importPdf": "Importa Einsatzliste",
       "pdfEmpty": "Nessun giocatore trovato in questo PDF.",
-      "pdfFailed": "Questo PDF non si è potuto leggere. È l’Einsatzliste di VolleyManager?",
+      "pdfFailed": "Questo PDF non si è potuto leggere. È l’Einsatzliste di Swiss Volley?",
       "pdfImported": "Einsatzliste importata: {{added}} aggiunti, {{updated}} aggiornati. Controlla e salva.",
       "pdfImportedGame": "{{count}} giocatori dell’Einsatzliste spuntati. Controlla e invia.",
       "captainShort": "C",
@@ -4927,7 +4927,7 @@
       "rowRemoved": "{{name}} rimosso dalla lista {{list}}.",
       "personTeams": "Squadre",
       "title": "Licenze",
-      "hint": "Carica gli elenchi dell’amministrazione della società di VolleyManager (l’esportazione Excel). Il file viene letto su questo dispositivo: solo numero di licenza, cognome, nome e sesso vengono inviati e conservati. Ogni caricamento sostituisce quell’elenco.",
+      "hint": "Carica gli elenchi dell’amministrazione della società di Swiss Volley (l’esportazione Excel). Il file viene letto su questo dispositivo: solo numero di licenza, cognome, nome e sesso vengono inviati e conservati. Ogni caricamento sostituisce quell’elenco.",
       "list": "Elenco",
       "manual": "Aggiunto a mano",
       "manualCount_one": "{{count}} aggiunta a mano",
@@ -4944,8 +4944,8 @@
       "empty": "Nessuna persona trovata in questo file.",
       "tooMany": "Al massimo {{max}} persone per elenco.",
       "tooBig": "Questo file è troppo grande per un elenco della società.",
-      "notXlsx": "Questo file non si è potuto leggere. È un’esportazione .xlsx di VolleyManager?",
-      "noColumns": "A questo file manca una colonna per: {{missing}}. È l’esportazione dell’amministrazione della società di VolleyManager?",
+      "notXlsx": "Questo file non si è potuto leggere. È un’esportazione .xlsx di Swiss Volley?",
+      "noColumns": "A questo file manca una colonna per: {{missing}}. È l’esportazione dell’amministrazione della società di Swiss Volley?",
       "fields": {
         "sv_number": "numero di licenza",
         "last_name": "cognome",
@@ -5215,7 +5215,7 @@
     "genderMixed": "Misto",
     "category": "Categoria",
     "categoryHint": "Ad esempio attivi o U19",
-    "vmLeagues": "Leghe VolleyManager",
+    "vmLeagues": "Leghe del calendario",
     "vmLeaguesHint": "Le partite ufficiali di queste leghe propongono le squadre salvate",
     "archived": "Archiviata",
     "showArchived": "Mostra archiviate",
@@ -5225,7 +5225,7 @@
     "shortName": "Nome breve",
     "club": "Club",
     "color": "Colore",
-    "svrzTeamName": "Nome della squadra in VolleyManager",
+    "svrzTeamName": "Nome della squadra nel calendario",
     "svrzTeamNameHint": "Esattamente come nel calendario ufficiale",
     "players": "Giocatrici e giocatori",
     "staff": "Ufficiali di squadra",
@@ -5309,7 +5309,7 @@
     "joinWithPin": "Unisciti con il PIN della partita",
     "clubRequired": "Non sincronizzata: il tuo account non ha ancora una società. Un admin la aggiunge; la partita è al sicuro su questo dispositivo.",
     "notYourClub": "Non sincronizzata: la partita {{game}} non è una partita in casa della tua società. La partita è al sicuro su questo dispositivo.",
-    "gameNotInSchedule": "Non sincronizzata: la partita {{game}} non è nel calendario VolleyManager. La partita è al sicuro su questo dispositivo.",
+    "gameNotInSchedule": "Non sincronizzata: la partita {{game}} non è nel calendario ufficiale. La partita è al sicuro su questo dispositivo.",
     "matchClosedDiffers": "Non sincronizzata: questa partita è chiusa sul server e la copia di questo dispositivo è diversa. Aprila per caricare la versione ufficiale o rimuovere questa copia.",
     "closedCopy": {
       "title": "Chiusa sul server",
@@ -7025,14 +7025,14 @@
         },
         "hand": "Inserito a mano: non nelle liste della società",
         "handLink": "Inserito a mano: tocca per collegarlo a una persona della società",
-        "manual": "Nelle liste della società, aggiunto a mano: verde quando la lista di VolleyManager ha il numero di licenza",
-        "manualLink": "Nelle liste della società, aggiunto a mano: tocca per collegarlo a una persona delle liste di VolleyManager",
-        "match": "Nelle liste della società, da una partita: verde quando la lista di VolleyManager ha il numero di licenza",
-        "matchLink": "Nelle liste della società, da una partita: tocca per collegarlo a una persona delle liste di VolleyManager"
+        "manual": "Nelle liste della società, aggiunto a mano: verde quando la lista di Swiss Volley ha il numero di licenza",
+        "manualLink": "Nelle liste della società, aggiunto a mano: tocca per collegarlo a una persona delle liste di Swiss Volley",
+        "match": "Nelle liste della società, da una partita: verde quando la lista di Swiss Volley ha il numero di licenza",
+        "matchLink": "Nelle liste della società, da una partita: tocca per collegarlo a una persona delle liste di Swiss Volley"
       },
       "offer": {
         "title": "Salvare anche nella società?",
-        "body": "Non ancora nelle liste di {{club}}. Le persone spuntate vi vengono salvate: ogni squadra della società può aggiungerle. Il loro scudo resta grigio finché la lista di VolleyManager non ha il loro numero di licenza.",
+        "body": "Non ancora nelle liste di {{club}}. Le persone spuntate vi vengono salvate: ogni squadra della società può aggiungerle. Il loro scudo resta grigio finché la lista di Swiss Volley non ha il loro numero di licenza.",
         "theClub": "la società",
         "list": {
           "players": "Lista giocatori",
@@ -7045,7 +7045,7 @@
         "saveOnly": "Salva solo la rosa",
         "added_one": "{{count}} aggiunta alle liste della società",
         "added_other": "{{count}} aggiunte alle liste della società",
-        "limit": "Troppe persone aggiunte a mano. Carica invece la lista della società da VolleyManager.",
+        "limit": "Troppe persone aggiunte a mano. Carica invece la lista della società di Swiss Volley.",
         "failed": "La rosa è salvata, ma l’aggiunta alle liste della società non è riuscita. Salva di nuovo per riprovare."
       }
   },

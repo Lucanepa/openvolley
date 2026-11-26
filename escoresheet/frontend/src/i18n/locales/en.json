@@ -570,7 +570,7 @@
     "clubBlockedTitle": "Not a home game of your club",
     "clubRequired": "Your account has no club yet. An admin adds your club before you can score official games.",
     "notYourClub": "{{home}} is the home team. You score the home games of {{clubs}} only.",
-    "gameNotInSchedule": "Game {{game}} is not in the VolleyManager schedule, so its home team is unknown. Check the game number.",
+    "gameNotInSchedule": "Game {{game}} is not in the official schedule, so its home team is unknown. Check the game number.",
     "refereeEmail": "Email (optional)",
     "refereeEmailHint": "For the final scoresheet. Only this match's scorers see it.",
     "teamContactEmail": "Team contact email (optional)",
@@ -3655,7 +3655,7 @@
       "q_myTeams": "Can I edit my club's teams myself?",
       "a_myTeams": "Yes. “My Teams” has every team of your club. Pick the gender and the team, then edit the squad and send game rosters, as a team manager does.",
       "q_missingTeam": "A team of my club is missing.",
-      "a_missingTeam": "The club's teams are VolleyManager's team names; an admin adds them in the Clubs tab. Write to support@openvolley.app."
+      "a_missingTeam": "The club's teams are the team names of the official schedule; an admin adds them in the Clubs tab. Write to support@openvolley.app."
     },
     "teamLinks": {
       "q_what": "What is a team link?",
@@ -3689,7 +3689,7 @@
     },
     "teamManager": {
       "q_squad": "What is the squad of the season?",
-      "a_squad": "Everyone who may play this season, with number and licence. Add them with “Add player”, “Import Einsatzliste” (the PDF from VolleyManager) or “Add from club”, then tap “Save roster”. Scorers can load this squad in Match setup.",
+      "a_squad": "Everyone who may play this season, with number and licence. Add them with “Add player”, “Import Einsatzliste” (the PDF from Swiss Volley) or “Add from club”, then tap “Save roster”. Scorers can load this squad in Match setup.",
       "q_games": "Which games are listed?",
       "a_games": "Every game of your team from today on, home and away, from the schedule.",
       "q_prepare": "How do I send a game's roster?",
@@ -3711,7 +3711,7 @@
     },
     "clubLicences": {
       "q_what": "What are the licence lists?",
-      "a_what": "The players, scorers and coaches lists from VolleyManager's club administration. With them, “Add from club” offers your club's people, and green shields mark people who are in the lists.",
+      "a_what": "The players, scorers and coaches lists from Swiss Volley's club administration. With them, “Add from club” offers your club's people, and green shields mark people who are in the lists.",
       "q_upload": "How do I upload them?",
       "a_upload": "My Club › Licences. Pick the list (Players, Scorers or Coaches), tap “Choose Excel file” and pick the .xlsx export. Check the preview and tap “Save list”. Each upload replaces that list.",
       "q_kept": "What is sent and kept?",
@@ -3749,7 +3749,7 @@
       "q_approve": "How do I approve a new account? (admins)",
       "a_approve": "Accounts › Pending: tap “Approve as scorer”, or “Roles” for other roles, and “Clubs” for the club they score for. Club and team managers are set on the club's page and in My Club, not under Roles.",
       "q_club": "How do I set up a club? (admins)",
-      "a_club": "Clubs › “New club”: name, contact e-mail and the club's VolleyManager teams. Save it, then pick its club managers from its accounts, or send a club manager link.",
+      "a_club": "Clubs › “New club”: name, contact e-mail and the club's teams as in the official schedule. Save it, then pick its club managers from its accounts, or send a club manager link.",
       "q_savedTeams": "What is under Saved Teams?",
       "a_savedTeams": "The squads of each season and league, including the ones team managers keep in My Teams. Scorers load them in Match setup."
     }
@@ -4650,11 +4650,11 @@
       "saved": "Club saved",
       "deleted": "Club deleted",
       "name": "Club name",
-      "teams": "VolleyManager teams",
-      "teamsHint": "The teams whose home games the club's scorers score, as VolleyManager spells them.",
+      "teams": "Teams in the schedule",
+      "teamsHint": "The teams whose home games the club's scorers score, as the official schedule spells them.",
       "searchTeams": "Search teams, e.g. Musterdorf",
       "picked": "Teams picked: {{count}}",
-      "noVmTeams": "No VolleyManager team matches.",
+      "noVmTeams": "No team of the schedule matches.",
       "inClub": "in {{club}}",
       "scorers": "Scorers: {{count}}",
       "noTeams": "No teams yet",
@@ -4851,7 +4851,7 @@
       "noOfficials": "No team officials yet. Add them under Players above.",
       "importPdf": "Import Einsatzliste",
       "pdfEmpty": "No players found in this PDF.",
-      "pdfFailed": "This PDF could not be read. Is it the Einsatzliste from VolleyManager?",
+      "pdfFailed": "This PDF could not be read. Is it the Einsatzliste from Swiss Volley?",
       "pdfImported": "Einsatzliste imported: {{added}} added, {{updated}} updated. Check it and save.",
       "pdfImportedGame": "{{count}} players from the Einsatzliste ticked. Check and send.",
       "captainShort": "C",
@@ -4928,7 +4928,7 @@
       "rowRemoved": "{{name}} removed from the {{list}} list.",
       "personTeams": "Teams",
       "title": "Licences",
-      "hint": "Upload the lists of VolleyManager's club administration (the Excel export). The file is read on this device: only licence number, last name, first name and gender are sent and kept. Each upload replaces that list.",
+      "hint": "Upload the lists of Swiss Volley's club administration (the Excel export). The file is read on this device: only licence number, last name, first name and gender are sent and kept. Each upload replaces that list.",
       "list": "List",
       "manual": "Added by hand",
       "manualCount_one": "{{count}} added by hand",
@@ -4945,8 +4945,8 @@
       "empty": "No people found in this file.",
       "tooMany": "At most {{max}} people per list.",
       "tooBig": "This file is too big for a club list.",
-      "notXlsx": "This file could not be read. Is it an .xlsx export from VolleyManager?",
-      "noColumns": "This file has no column for: {{missing}}. Is it the club administration export from VolleyManager?",
+      "notXlsx": "This file could not be read. Is it an .xlsx export from Swiss Volley?",
+      "noColumns": "This file has no column for: {{missing}}. Is it the club administration export from Swiss Volley?",
       "fields": {
         "sv_number": "licence number",
         "last_name": "last name",
@@ -5216,7 +5216,7 @@
     "genderMixed": "Mixed",
     "category": "Category",
     "categoryHint": "For example senior or U19",
-    "vmLeagues": "VolleyManager leagues",
+    "vmLeagues": "Leagues in the schedule",
     "vmLeaguesHint": "Official games of these leagues suggest the saved teams",
     "archived": "Archived",
     "showArchived": "Show archived",
@@ -5226,7 +5226,7 @@
     "shortName": "Short name",
     "club": "Club",
     "color": "Colour",
-    "svrzTeamName": "VolleyManager team name",
+    "svrzTeamName": "Team name in the schedule",
     "svrzTeamNameHint": "Exactly as in the official schedule",
     "players": "Players",
     "staff": "Team officials",
@@ -5310,7 +5310,7 @@
     "joinWithPin": "Join with game PIN",
     "clubRequired": "Not synced: your account has no club yet. An admin adds it; the match is safe on this device.",
     "notYourClub": "Not synced: game {{game}} is not a home game of your club. The match is safe on this device.",
-    "gameNotInSchedule": "Not synced: game {{game}} is not in the VolleyManager schedule. The match is safe on this device.",
+    "gameNotInSchedule": "Not synced: game {{game}} is not in the official schedule. The match is safe on this device.",
     "matchClosedDiffers": "Not synced: this match is closed on the server and this device's copy differs. Open it to load the official version or remove this copy.",
     "closedCopy": {
       "title": "Closed on the server",
@@ -7026,14 +7026,14 @@
         },
         "hand": "Typed by hand: not in the club's lists",
         "handLink": "Typed by hand: tap to link to someone of the club",
-        "manual": "In the club's lists, added by hand: green once VolleyManager's list has the licence number",
-        "manualLink": "In the club's lists, added by hand: tap to link to someone of VolleyManager's lists",
-        "match": "In the club's lists, from a match: green once VolleyManager's list has the licence number",
-        "matchLink": "In the club's lists, from a match: tap to link to someone of VolleyManager's lists"
+        "manual": "In the club's lists, added by hand: green once Swiss Volley's list has the licence number",
+        "manualLink": "In the club's lists, added by hand: tap to link to someone of Swiss Volley's lists",
+        "match": "In the club's lists, from a match: green once Swiss Volley's list has the licence number",
+        "matchLink": "In the club's lists, from a match: tap to link to someone of Swiss Volley's lists"
       },
       "offer": {
         "title": "Save in the club too?",
-        "body": "Not in {{club}}'s lists yet. The ones ticked are kept there, so every team of the club can add them. Their shield stays gray until VolleyManager's list has their licence number.",
+        "body": "Not in {{club}}'s lists yet. The ones ticked are kept there, so every team of the club can add them. Their shield stays gray until Swiss Volley's list has their licence number.",
         "theClub": "the club",
         "list": {
           "players": "Players list",
@@ -7046,7 +7046,7 @@
         "saveOnly": "Save the roster only",
         "added_one": "{{count}} added to the club's lists",
         "added_other": "{{count}} added to the club's lists",
-        "limit": "Too many people added by hand. Upload the club's list from VolleyManager instead.",
+        "limit": "Too many people added by hand. Upload the club's list from Swiss Volley instead.",
         "failed": "The roster is saved, but adding to the club's lists failed. Save again to retry."
       }
   },

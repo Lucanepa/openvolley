@@ -740,8 +740,8 @@ device the copy is deleted once the server knows that it was accepted, when
 the account signs out, and at the latest 36 hours after the game.
 
 **Club licence lists (OpenVolley):** a club's managers can upload the
-club's lists of players, scorers and coaches from VolleyManager's club
-administration. The file is read in the browser: only the licence number, last
+club's lists of players, scorers and coaches from Swiss
+Volley's club administration. The file is read in the browser: only the licence number, last
 name, first name and gender of each person are kept; the file's date of birth
 column is not read, and nothing else of the file is sent to the server. The
 lists are visible to the club's managers and the administrators. A team
@@ -798,17 +798,17 @@ created it is deleted.
 ## 11. Data about referees
 
 **Match assignments from Swiss Volley:** every day the server copies the
-official match assignments from Swiss Volley's VolleyManager, for the period
+official match assignments from Swiss Volley's system, for the period
 from yesterday to 14 days ahead: teams, hall and address, league, 1st and 2nd
-referee with their names, line judges, call-ups. The server uses a
-VolleyManager account for this. Purpose: loading official matches with the
-correct officials. Names are public (section 8). VolleyManager also sends the
+referee with their names, line judges, call-ups. The server uses an
+account in that system for this. Purpose: loading official matches with the
+correct officials. Names are public (section 8). Swiss Volley's system also sends the
 referees' dates of birth; the server does not read or keep them (since
 19 November 2026; those kept before were deleted). The assignments are kept
 like the match records (section 16).
 
 **Referees' licence numbers:** since 20 November 2026 the server also keeps
-the licence number (the Swiss Volley number) that VolleyManager sends for the
+the licence number (the Swiss Volley number) that Swiss Volley's system sends for the
 1st and 2nd referee. These numbers are not public: only the administrators
 and the accounts that score indoor matches can see them, so that the scorer
 app fills them in beside the referees when it loads an official match. They
@@ -967,8 +967,8 @@ therefore technically see the content of requests, including rosters.
 Cloudflare may use the data only to provide its service.
 
 **Independently responsible** are: GitHub, Inc. (USA) for downloads and the
-version list, F-Droid for the app catalogue, Swiss Volley for the data in
-VolleyManager.
+version list, F-Droid for the app catalogue, Swiss Volley for
+the data in its own system.
 
 **Backups** are kept encrypted on my server at Infomaniak and on my own
 storage device, both in Switzerland. They are encrypted before they leave the

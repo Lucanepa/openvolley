@@ -807,7 +807,7 @@ accettato, all'uscita e al più tardi 36 ore dopo la partita.
 
 **Elenchi delle licenze delle società (OpenVolley):** i responsabili di una
 società possono caricare gli elenchi di giocatrici e giocatori, segnapunti e
-allenatori della società dall'amministrazione della società di VolleyManager.
+allenatori della società dall'amministrazione della società di Swiss Volley.
 Il file viene letto nel browser: di ogni persona vengono conservati solo
 numero di licenza, cognome, nome e sesso; la colonna della data di nascita non
 viene letta, e nient'altro del file viene inviato al server. Gli elenchi sono
@@ -862,19 +862,19 @@ l'account che li ha creati viene cancellato.
 ## 11. Dati sugli arbitri
 
 **Designazioni di Swiss Volley:** ogni giorno il server riprende le
-designazioni ufficiali dal VolleyManager di Swiss Volley, per il periodo da
+designazioni ufficiali dal sistema di Swiss Volley, per il periodo da
 ieri a 14 giorni in avanti: squadre, palestra e indirizzo, lega, 1° e
 2° arbitro con i loro nomi, giudici di linea, convocazioni. A tal fine il
-server usa un account VolleyManager. Scopo: caricare le partite ufficiali con
+server usa un account in questo sistema. Scopo: caricare le partite ufficiali con
 gli ufficiali di gara corretti. I nomi sono pubblici (sezione 8).
-VolleyManager invia anche le date di nascita degli arbitri; il server non le
+Il sistema di Swiss Volley invia anche le date di nascita degli arbitri; il server non le
 legge e non le conserva (dal 19 novembre 2026; quelle conservate prima sono
 state cancellate). Le designazioni sono conservate come i verbali delle
 partite (sezione 16).
 
 **Numeri di licenza degli arbitri:** dal 20 novembre 2026 il server conserva
-anche il numero di licenza (il numero di Swiss Volley) che VolleyManager
-invia per il 1° e il 2° arbitro. Questi numeri non sono pubblici: solo gli
+anche il numero di licenza (il numero di Swiss Volley) che
+il sistema di Swiss Volley invia per il 1° e il 2° arbitro. Questi numeri non sono pubblici: solo gli
 amministratori e gli account che refertano partite indoor li vedono, affinché
 l'app di refertazione li inserisca accanto agli arbitri quando carica una
 partita ufficiale. Sono cancellati con le designazioni (la stagione della
@@ -1042,8 +1042,8 @@ richieste, comprese le liste squadra. Cloudflare può usare i
 dati solo per fornire il proprio servizio.
 
 **Sono responsabili in modo indipendente:** GitHub, Inc. (USA) per i download e
-l'elenco delle versioni, F-Droid per il catalogo delle app, Swiss Volley per i
-dati nel VolleyManager.
+l'elenco delle versioni, F-Droid per il catalogo delle app, Swiss Volley per
+i dati nel proprio sistema.
 
 **Le copie di sicurezza** sono conservate cifrate sul mio server presso
 Infomaniak e sul mio dispositivo di archiviazione, entrambi in Svizzera.

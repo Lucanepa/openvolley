@@ -562,7 +562,7 @@
     "clubBlockedTitle": "Kein Heimspiel deines Vereins",
     "clubRequired": "Deinem Konto ist noch kein Verein zugeordnet. Ein Admin ordnet ihn zu, bevor du offizielle Spiele führen kannst.",
     "notYourClub": "{{home}} ist das Heimteam. Du führst nur die Heimspiele von {{clubs}}.",
-    "gameNotInSchedule": "Spiel {{game}} steht nicht im VolleyManager-Spielplan, das Heimteam ist darum unbekannt. Prüfe die Spielnummer.",
+    "gameNotInSchedule": "Spiel {{game}} steht nicht im offiziellen Spielplan, das Heimteam ist darum unbekannt. Prüfe die Spielnummer.",
     "refereeEmail": "E-Mail (freiwillig)",
     "refereeEmailHint": "Für das fertige Matchblatt. Nur die Schreiber dieses Spiels sehen sie.",
     "teamContactEmail": "E-Mail Teamkontakt (freiwillig)",
@@ -3378,7 +3378,7 @@
       "q_myTeams": "Kann ich die Teams meines Vereins selbst bearbeiten?",
       "a_myTeams": "Ja. «Meine Teams» hat jedes Team deines Vereins. Wähle Geschlecht und Team, bearbeite dann den Saisonkader und schicke Spielkader, wie es Teamverantwortliche tun.",
       "q_missingTeam": "Ein Team meines Vereins fehlt.",
-      "a_missingTeam": "Die Teams des Vereins sind die Teamnamen aus VolleyManager; ein Admin fügt sie im Reiter Vereine hinzu. Schreibe an support@openvolley.app."
+      "a_missingTeam": "Die Teams des Vereins sind die Teamnamen aus dem offiziellen Spielplan; ein Admin fügt sie im Reiter Vereine hinzu. Schreibe an support@openvolley.app."
     },
     "teamLinks": {
       "q_what": "Was ist ein Team-Link?",
@@ -3412,7 +3412,7 @@
     },
     "teamManager": {
       "q_squad": "Was ist der Saisonkader?",
-      "a_squad": "Alle, die diese Saison spielen dürfen, mit Nummer und Lizenz. Füge sie mit «Spieler hinzufügen», «Einsatzliste importieren» (das PDF aus VolleyManager) oder «Aus dem Verein hinzufügen» hinzu und tippe dann auf «Kader speichern». Schreiber können diesen Kader in der Spieleinrichtung laden.",
+      "a_squad": "Alle, die diese Saison spielen dürfen, mit Nummer und Lizenz. Füge sie mit «Spieler hinzufügen», «Einsatzliste importieren» (das PDF von Swiss Volley) oder «Aus dem Verein hinzufügen» hinzu und tippe dann auf «Kader speichern». Schreiber können diesen Kader in der Spieleinrichtung laden.",
       "q_games": "Welche Spiele sind aufgelistet?",
       "a_games": "Jedes Spiel deines Teams ab heute, Heim- und Auswärtsspiele, aus dem Spielplan.",
       "q_prepare": "Wie schicke ich den Kader eines Spiels?",
@@ -3434,7 +3434,7 @@
     },
     "clubLicences": {
       "q_what": "Was sind die Lizenzlisten?",
-      "a_what": "Die Listen der Spieler, Schreiber und Trainer aus der Vereinsverwaltung von VolleyManager. Mit ihnen bietet «Aus dem Verein hinzufügen» die Leute deines Vereins an, und grüne Schilder markieren Personen, die in den Listen sind.",
+      "a_what": "Die Listen der Spieler, Schreiber und Trainer aus der Vereinsverwaltung von Swiss Volley. Mit ihnen bietet «Aus dem Verein hinzufügen» die Leute deines Vereins an, und grüne Schilder markieren Personen, die in den Listen sind.",
       "q_upload": "Wie lade ich sie hoch?",
       "a_upload": "Mein Verein › Lizenzen. Wähle die Liste (Spieler, Schreiber oder Trainer), tippe auf «Excel-Datei wählen» und wähle den .xlsx-Export. Prüfe die Vorschau und tippe auf «Liste speichern». Jeder Upload ersetzt diese Liste.",
       "q_kept": "Was wird gesendet und gespeichert?",
@@ -3472,7 +3472,7 @@
       "q_approve": "Wie gebe ich ein neues Konto frei? (Admins)",
       "a_approve": "Konten › Ausstehend: Tippe auf «Als Schreiber freigeben», oder auf «Rollen» für andere Rollen und auf «Vereine» für den Verein, für den die Person erfasst. Vereins- und Teamverantwortliche werden auf der Seite des Vereins und in Mein Verein festgelegt, nicht unter Rollen.",
       "q_club": "Wie richte ich einen Verein ein? (Admins)",
-      "a_club": "Vereine › «Neuer Verein»: Name, Kontakt-E-Mail und die VolleyManager-Teams des Vereins. Speichere ihn, wähle dann seine Vereinsverantwortlichen aus seinen Konten oder schicke einen Link als Vereinsverantwortliche/r.",
+      "a_club": "Vereine › «Neuer Verein»: Name, Kontakt-E-Mail und die Teams des Vereins, wie im offiziellen Spielplan. Speichere ihn, wähle dann seine Vereinsverantwortlichen aus seinen Konten oder schicke einen Link als Vereinsverantwortliche/r.",
       "q_savedTeams": "Was steht unter Gespeicherte Teams?",
       "a_savedTeams": "Die Kader jeder Saison und Liga, auch die, welche Teamverantwortliche in Meine Teams pflegen. Schreiber laden sie in der Spieleinrichtung."
     }
@@ -4628,11 +4628,11 @@
       "saved": "Verein gespeichert",
       "deleted": "Verein gelöscht",
       "name": "Vereinsname",
-      "teams": "VolleyManager-Teams",
-      "teamsHint": "Die Teams, deren Heimspiele die Schreiber des Vereins führen, so wie VolleyManager sie schreibt.",
+      "teams": "Teams im Spielplan",
+      "teamsHint": "Die Teams, deren Heimspiele die Schreiber des Vereins führen, so wie der offizielle Spielplan sie schreibt.",
       "searchTeams": "Teams suchen, z. B. Musterdorf",
       "picked": "Gewählte Teams: {{count}}",
-      "noVmTeams": "Kein VolleyManager-Team passt.",
+      "noVmTeams": "Kein Team im Spielplan passt.",
       "inClub": "bei {{club}}",
       "scorers": "Schreiber: {{count}}",
       "noTeams": "Noch keine Teams",
@@ -4829,7 +4829,7 @@
       "noOfficials": "Noch keine Teamoffiziellen. Erfasse sie oben unter Kader.",
       "importPdf": "Einsatzliste importieren",
       "pdfEmpty": "In diesem PDF wurden keine Spieler gefunden.",
-      "pdfFailed": "Dieses PDF liess sich nicht lesen. Ist es die Einsatzliste aus VolleyManager?",
+      "pdfFailed": "Dieses PDF liess sich nicht lesen. Ist es die Einsatzliste von Swiss Volley?",
       "pdfImported": "Einsatzliste importiert: {{added}} neu, {{updated}} aktualisiert. Prüfe sie und speichere.",
       "pdfImportedGame": "{{count}} Spieler aus der Einsatzliste angehakt. Prüfen und schicken.",
       "captainShort": "K",
@@ -4906,7 +4906,7 @@
       "rowRemoved": "{{name}} aus der Liste {{list}} entfernt.",
       "personTeams": "Teams",
       "title": "Lizenzen",
-      "hint": "Lade die Listen aus der Vereinsadministration von VolleyManager hoch (den Excel-Export). Die Datei wird auf diesem Gerät gelesen: Nur Lizenznummer, Name, Vorname und Geschlecht werden geschickt und gespeichert. Jeder Upload ersetzt diese Liste.",
+      "hint": "Lade die Listen aus der Vereinsadministration von Swiss Volley hoch (den Excel-Export). Die Datei wird auf diesem Gerät gelesen: Nur Lizenznummer, Name, Vorname und Geschlecht werden geschickt und gespeichert. Jeder Upload ersetzt diese Liste.",
       "list": "Liste",
       "manual": "Von Hand eingetragen",
       "manualCount_one": "{{count}} von Hand eingetragen",
@@ -4923,8 +4923,8 @@
       "empty": "In dieser Datei wurden keine Personen gefunden.",
       "tooMany": "Höchstens {{max}} Personen pro Liste.",
       "tooBig": "Diese Datei ist zu gross für eine Vereinsliste.",
-      "notXlsx": "Diese Datei liess sich nicht lesen. Ist es ein .xlsx-Export aus VolleyManager?",
-      "noColumns": "Dieser Datei fehlt eine Spalte für: {{missing}}. Ist es der Export der Vereinsadministration aus VolleyManager?",
+      "notXlsx": "Diese Datei liess sich nicht lesen. Ist es ein .xlsx-Export von Swiss Volley?",
+      "noColumns": "Dieser Datei fehlt eine Spalte für: {{missing}}. Ist es der Export der Vereinsadministration von Swiss Volley?",
       "fields": {
         "sv_number": "Lizenznummer",
         "last_name": "Name",
@@ -5194,7 +5194,7 @@
     "genderMixed": "Mixed",
     "category": "Kategorie",
     "categoryHint": "Zum Beispiel Aktive oder U19",
-    "vmLeagues": "VolleyManager-Ligen",
+    "vmLeagues": "Ligen im Spielplan",
     "vmLeaguesHint": "Offizielle Spiele dieser Ligen schlagen die gespeicherten Teams vor",
     "archived": "Archiviert",
     "showArchived": "Archivierte anzeigen",
@@ -5204,7 +5204,7 @@
     "shortName": "Kurzname",
     "club": "Verein",
     "color": "Farbe",
-    "svrzTeamName": "Teamname im VolleyManager",
+    "svrzTeamName": "Teamname im Spielplan",
     "svrzTeamNameHint": "Genau wie im offiziellen Spielplan",
     "players": "Spielerinnen und Spieler",
     "staff": "Teamoffizielle",
@@ -5288,7 +5288,7 @@
     "joinWithPin": "Mit Spiel-PIN beitreten",
     "clubRequired": "Nicht synchronisiert: Deinem Konto ist noch kein Verein zugeordnet. Ein Admin ordnet ihn zu; das Spiel ist auf diesem Gerät sicher.",
     "notYourClub": "Nicht synchronisiert: Spiel {{game}} ist kein Heimspiel deines Vereins. Das Spiel ist auf diesem Gerät sicher.",
-    "gameNotInSchedule": "Nicht synchronisiert: Spiel {{game}} steht nicht im VolleyManager-Spielplan. Das Spiel ist auf diesem Gerät sicher.",
+    "gameNotInSchedule": "Nicht synchronisiert: Spiel {{game}} steht nicht im offiziellen Spielplan. Das Spiel ist auf diesem Gerät sicher.",
     "matchClosedDiffers": "Nicht synchronisiert: Dieses Spiel ist auf dem Server abgeschlossen und die Kopie auf diesem Gerät weicht ab. Öffne es, um die offizielle Version zu laden oder diese Kopie zu entfernen.",
     "closedCopy": {
       "title": "Auf dem Server abgeschlossen",
@@ -7008,14 +7008,14 @@
         },
         "hand": "Von Hand eingetragen: nicht in den Listen des Vereins",
         "handLink": "Von Hand eingetragen: tippen, um mit jemandem aus dem Verein zu verknüpfen",
-        "manual": "In den Listen des Vereins, von Hand eingetragen: grün, sobald die Liste aus VolleyManager die Lizenznummer hat",
-        "manualLink": "In den Listen des Vereins, von Hand eingetragen: tippen, um mit jemandem aus den Listen von VolleyManager zu verknüpfen",
-        "match": "In den Listen des Vereins, aus einem Spiel: grün, sobald die Liste aus VolleyManager die Lizenznummer hat",
-        "matchLink": "In den Listen des Vereins, aus einem Spiel: tippen, um mit jemandem aus den Listen von VolleyManager zu verknüpfen"
+        "manual": "In den Listen des Vereins, von Hand eingetragen: grün, sobald die Liste von Swiss Volley die Lizenznummer hat",
+        "manualLink": "In den Listen des Vereins, von Hand eingetragen: tippen, um mit jemandem aus den Listen von Swiss Volley zu verknüpfen",
+        "match": "In den Listen des Vereins, aus einem Spiel: grün, sobald die Liste von Swiss Volley die Lizenznummer hat",
+        "matchLink": "In den Listen des Vereins, aus einem Spiel: tippen, um mit jemandem aus den Listen von Swiss Volley zu verknüpfen"
       },
       "offer": {
         "title": "Auch im Verein speichern?",
-        "body": "Noch nicht in den Listen von {{club}}. Die angekreuzten werden dort gespeichert, so kann jedes Team des Vereins sie hinzufügen. Ihr Schild bleibt grau, bis die Liste aus VolleyManager ihre Lizenznummer hat.",
+        "body": "Noch nicht in den Listen von {{club}}. Die angekreuzten werden dort gespeichert, so kann jedes Team des Vereins sie hinzufügen. Ihr Schild bleibt grau, bis die Liste von Swiss Volley ihre Lizenznummer hat.",
         "theClub": "dem Verein",
         "list": {
           "players": "Spielerliste",
@@ -7028,7 +7028,7 @@
         "saveOnly": "Nur Kader speichern",
         "added_one": "{{count}} in die Listen des Vereins aufgenommen",
         "added_other": "{{count}} in die Listen des Vereins aufgenommen",
-        "limit": "Zu viele von Hand hinzugefügte Personen. Lade stattdessen die Liste des Vereins aus VolleyManager hoch.",
+        "limit": "Zu viele von Hand hinzugefügte Personen. Lade stattdessen die Liste des Vereins von Swiss Volley hoch.",
         "failed": "Kader gespeichert, aber die Aufnahme in die Listen des Vereins ist fehlgeschlagen. Nochmals speichern, um es erneut zu versuchen."
       }
   },
