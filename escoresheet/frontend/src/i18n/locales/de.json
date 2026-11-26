@@ -2911,6 +2911,9 @@
       "q_importPdf": "Wie importiere ich einen Kader aus einer PDF?",
       "a_importPdf": "Lass in «Kader bearbeiten» «Lokal» ausgewählt und tippe auf «PDF hochladen». Wähle das Kader-PDF des Teams oder die Einsatzliste und tippe auf «PDF importieren». Es ersetzt die Spieler und die Bankoffiziellen. Bei mehr als 14 Spielern kreuzt du an, wer spielt. Prüfe dann die Geburtsdaten, ergänze fehlende Trikotnummern und lege Captain und Liberos fest. Ein Geburtsdatum am 1. Januar ist oft ein Platzhalter (01.01.1900, wenn das Datum nicht bekannt ist) oder ein Importfehler: Der Kader listet diese Personen über den Spielern auf. Korrigiere die Daten, die du kennst. Die Auslosung fragt nicht danach.",
       "tip_importPdf": "Tippe hier, um die Spieler aus einem Kader-PDF zu importieren.",
+      "q_importPhoto": "Kann ich die Einsatzliste aus einem Foto importieren?",
+      "a_importPhoto": "Ja. Lass in «Kader bearbeiten» «Lokal» ausgewählt und tippe auf «Foto der Liste». Fotografiere die ausgedruckte Liste oder wähle ein Bild davon (auch ein Screenshot geht; zoome hinein, bis die Tabelle ihn füllt). Zieh die vier Ecken auf die Seite und tippe auf «Liste lesen»: Das Foto wird auf diesem Gerät gelesen, nicht gesendet und nicht gespeichert. Prüfe die Zeilen: Ein rotes Feld musst du korrigieren, ein gelbes prüfen. Trikotnummern, Kapitän (C, K oder eine eingekreiste Nummer) und Liberos (L), die auf der Liste stehen, gelten für dieses Spiel; leere Nummern kommen aus dem gespeicherten Team. Erst mit «Übernehmen» ändert sich etwas. Ein PDF der Liste wird zuverlässiger gelesen als ein Foto.",
+      "tip_importPhoto": "Tippe hier, um die Einsatzliste aus einem Foto zu lesen.",
       "q_liberos": "Wie bestimme ich Liberos?",
       "a_liberos": "Wähle im Kader in der Libero-Spalte «Libero 1» oder «Libero 2». Ein Team hat höchstens 2 Liberos. Mit mehr als 12 Spielern braucht es 2.",
       "tip_liberos": "Wähle hier «Libero 1» oder «Libero 2», um diesen Spieler zum Libero zu machen.",
@@ -3121,7 +3124,8 @@
       "clubLicences": "Lizenzlisten des Vereins",
       "clubApi": "Vereins-API",
       "managerAccounts": "Manager-Konten und Rollen",
-      "rosters": "Kader"
+      "rosters": "Kader",
+      "rosterDetails": "Kader: Details"
     },
     "scoring": {
       "q_doubleTap": "Ich habe doppelt getippt: Warum gab es nur einen Punkt?",
@@ -7314,5 +7318,89 @@
     "scorerOffline": "Schreiber offline",
     "fullscreen": "Vollbild",
     "exitFullscreen": "Vollbild verlassen"
+  },
+  "rosterPhoto": {
+    "button": "Foto der Liste",
+    "title": "Einsatzliste aus einem Foto · {{team}}",
+    "loading": "Foto wird geöffnet…",
+    "source": {
+      "description": "Fotografiere die ausgedruckte Liste oder wähle ein Bild davon auf diesem Gerät.",
+      "tipFlat": "Leg die Liste flach hin und halte das Gerät gerade darüber.",
+      "tipLight": "Gutes Licht, kein Schatten über den Namen.",
+      "tipWhole": "Die ganze Seite im Bild, scharf.",
+      "take": "Foto aufnehmen",
+      "choose": "Bild wählen",
+      "private": "Wird auf diesem Gerät gelesen: Das Foto wird weder gesendet noch gespeichert."
+    },
+    "crop": {
+      "description": "Zieh die vier Ecken auf die Ecken der Seite. Die dicke Kante ist oben: «Drehen» verschiebt sie.",
+      "top": "Oben",
+      "turn": "Drehen",
+      "another": "Anderes Foto",
+      "read": "Liste lesen",
+      "cornerTopLeft": "Ecke oben links",
+      "cornerTopRight": "Ecke oben rechts",
+      "cornerBottomRight": "Ecke unten rechts",
+      "cornerBottomLeft": "Ecke unten links"
+    },
+    "reading": {
+      "prepare": "Texterkennung wird vorbereitet…",
+      "read": "Liste wird gelesen… {{percent}} %"
+    },
+    "confirm": {
+      "description": "Prüfe jede Zeile und korrigiere, was falsch gelesen wurde. Erst mit «Übernehmen» ändert sich etwas.",
+      "method": "Auf diesem Gerät gelesen (Texterkennung)",
+      "fromSaved_one": "{{count}} Name aus dem gespeicherten Team",
+      "fromSaved_other": "{{count}} Namen aus dem gespeicherten Team",
+      "toFix_one": "{{count}} Feld korrigieren (rot)",
+      "toFix_other": "{{count}} Felder korrigieren (rot)",
+      "toCheck_one": "{{count}} Feld prüfen (gelb)",
+      "toCheck_other": "{{count}} Felder prüfen (gelb)",
+      "players_one": "{{count}} Spieler",
+      "players_other": "{{count}} Spieler",
+      "officials": "Trainer und Assistenten",
+      "empty": "Keine Spielerzeilen mehr.",
+      "add": "Zeile hinzufügen",
+      "remove": "Entfernen",
+      "apply_one": "{{count}} Spieler übernehmen",
+      "apply_other": "{{count}} Spieler übernehmen",
+      "struck_one": "Weggelassen, auf der Liste durchgestrichen: {{names}}",
+      "struck_other": "Weggelassen, auf der Liste durchgestrichen ({{count}}): {{names}}"
+    },
+    "col": {
+      "number": "Nr.",
+      "lastName": "Name",
+      "firstName": "Vorname",
+      "licence": "Lizenz",
+      "captain": "C",
+      "captainLong": "Kapitän",
+      "libero": "L",
+      "liberoLong": "Libero"
+    },
+    "role": {
+      "coach": "Trainer",
+      "ac1": "Assistent 1",
+      "ac2": "Assistent 2"
+    },
+    "issue": {
+      "number": "Eine Trikotnummer ist 1 bis 99.",
+      "duplicateNumber": "Diese Nummer steht zweimal auf der Liste.",
+      "licence": "Prüfe die Lizenznummer: nur Ziffern, wie auf der Liste.",
+      "missingLicence": "Keine Lizenznummer gelesen.",
+      "missingName": "Ein Name ist nötig.",
+      "odd": "Sieht falsch gelesen aus: prüfe es.",
+      "unsure": "Im Foto schwer lesbar: prüfe es.",
+      "twoCaptains": "Nur ein Kapitän.",
+      "tooManyLiberos": "Höchstens zwei Liberos.",
+      "captainLibero": "Ein Libero kann nicht Kapitän sein."
+    },
+    "error": {
+      "photo-unreadable": "Das Foto liess sich nicht öffnen. Versuch ein anderes.",
+      "ocr-load": "Die Texterkennung konnte nicht starten. Im Web braucht sie beim ersten Mal eine Verbindung (etwa 12 MB). Versuch es nochmals, importiere das PDF oder erfasse die Spieler von Hand.",
+      "ocr-timeout": "Das Lesen dauerte auf diesem Gerät zu lange. Versuch ein scharfes Foto nur mit der Liste, importiere das PDF oder erfasse die Spieler von Hand.",
+      "ocr-empty": "Keine Spielerzeile gefunden. Prüfe, ob die ganze Liste scharf im Foto ist, und versuch es nochmals.",
+      "retry": "Nochmals versuchen",
+      "ocr-blurry": "Das Foto ist zu unscharf zum Lesen. Mach es nochmals: Tablet ruhig halten, gutes Licht, die ganze Liste scharf."
+    }
   }
 }

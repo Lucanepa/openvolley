@@ -1,6 +1,6 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.28 · As of 23 November 2026
+**OpenVolley and OpenBeach** · Version 1.29 · As of 24 November 2026
 
 This policy is available in German, English, French and Italian. The English
 version is binding.
@@ -423,11 +423,16 @@ record and are listed in the final scoresheet email (below). Legal basis:
 section 20; kept with the match (section 16).
 
 **Who enters the data:** the scorer in the app, team managers on the roster
-page (`roster.openvolley.app`) and in the manager (section 10), competition managers through saved teams
-(section 10), and the official match assignments from Swiss Volley
-(section 11). Players do not enter their data themselves. An Einsatzliste
-imported in the match setup fills in names, shirt numbers and licence
-numbers; the dates of birth on it are not taken over.
+page (`roster.openvolley.app`) and in the manager (section 10), competition
+managers through saved teams (section 10), and the official match assignments
+from Swiss Volley (section 11). Players do not enter their data themselves. An
+Einsatzliste imported in the match setup fills in names, shirt numbers and
+licence numbers; the dates of birth on it are not taken over. It can be
+imported from its PDF or from a photo of it: the photo is read on the device
+(text recognition in the app), is not sent anywhere and is not kept (on
+Android, the file the camera app saves for it is deleted when the app next
+starts); the rows read are shown to the scorer, who corrects them before
+anything is taken over.
 
 **Purpose:** an electronic scoresheet for official matches: recording during
 the match, the official match record, checking eligibility (licence number),

@@ -12,7 +12,8 @@ import { browserCheck } from './browser-check.js'
 import { buildChannelPlugin } from './build-channel.js'
 import { cspMeta } from './csp.js'
 import { htmlToImageFontSize } from './vite-plugin-html-to-image-font-size.js'
-import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, PRECACHE_MAX_FILE_BYTES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, API_NETWORK_ONLY_ROUTE, STATIC_ASSETS_ROUTE, PWA_INCLUDE_ASSETS, PWA_ICONS } from './pwa-workbox.js'
+import { ocrAssets } from './vite-plugin-ocr-assets.js'
+import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, PRECACHE_MAX_FILE_BYTES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, API_NETWORK_ONLY_ROUTE, STATIC_ASSETS_ROUTE, OCR_FILES_ROUTE, PWA_INCLUDE_ASSETS, PWA_ICONS } from './pwa-workbox.js'
 
 // Valid HTML pages for the app (folder-based structure for clean URLs)
 const validPages = [
@@ -111,6 +112,9 @@ export default defineConfig({
     // (csp.js; the web builds send it in _headers). After themeBoot in this
     // list, so its tag lands above the boot script and covers it too.
     cspMeta({ enabled: isCapacitor }),
+    // The photo import's text recognition, in the build as ocr/<version>/
+    // (vite-plugin-ocr-assets.js; not precached on the web, pwa-workbox.js)
+    ocrAssets(),
     // A dev-branch build (Pages preview): its test backend, never the
     // production one, noindex and the "Test build" badge (build-channel.js)
     buildChannelPlugin(),
@@ -260,6 +264,8 @@ export default defineConfig({
           offlineNavigationRoute,
           // API routes - network only: the answers are the signed-in account's
           API_NETWORK_ONLY_ROUTE,
+          // The photo import's recognition files, kept after their first use (pwa-workbox.js)
+          OCR_FILES_ROUTE,
           // Static assets - cache first, never an HTML answer (pwa-workbox.js)
           STATIC_ASSETS_ROUTE,
           {

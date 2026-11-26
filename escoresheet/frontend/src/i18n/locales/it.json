@@ -3187,6 +3187,9 @@
       "q_importPdf": "Come importo una rosa da PDF?",
       "a_importPdf": "In «Modifica roster», lascia selezionato «Locale» e tocca «Carica PDF». Scegli il PDF del roster della squadra o l'Einsatzliste, poi tocca «Importa PDF». Sostituisce i giocatori e gli ufficiali di panchina. Con più di 14 giocatori, spunta chi gioca. Poi controlla le date di nascita, inserisci i numeri di maglia mancanti e imposta il capitano e i liberi. Una data di nascita al 1° gennaio è spesso un segnaposto (01.01.1900 quando la data non è nota) o un errore d'importazione: il roster elenca queste persone sopra i giocatori. Correggi le date che conosci. Il sorteggio non te le chiede.",
       "tip_importPdf": "Tocca qui per importare i giocatori dal PDF di un roster.",
+      "q_importPhoto": "Posso importare l'Einsatzliste da una foto?",
+      "a_importPhoto": "Sì. In «Modifica roster», lascia selezionato «Locale» e tocca «Foto della lista». Fotografa la lista stampata o scegli un'immagine della lista (va bene anche uno screenshot; ingrandisci finché la tabella lo riempie). Trascina i quattro angoli sulla pagina, poi tocca «Leggi la lista»: la foto viene letta su questo dispositivo, non inviata né conservata. Controlla le righe: un campo rosso va corretto, uno giallo controllato. I numeri di maglia, il capitano (C, K o un numero cerchiato) e i liberi (L) scritti sulla lista valgono per questa partita; i numeri lasciati vuoti vengono dalla squadra salvata. Nulla cambia prima di «Usa». Il PDF della lista viene letto in modo più affidabile di una foto.",
+      "tip_importPhoto": "Tocca qui per leggere l'Einsatzliste da una foto.",
       "q_liberos": "Come designo i libero?",
       "a_liberos": "Nel roster, scegli «Libero 1» o «Libero 2» nella colonna del libero. Una squadra ha al massimo 2 libero. Con più di 12 giocatori ne servono 2.",
       "tip_liberos": "Scegli qui «Libero 1» o «Libero 2» per rendere libero questo giocatore.",
@@ -3397,7 +3400,8 @@
       "clubLicences": "Elenchi di licenze della società",
       "clubApi": "API della società",
       "managerAccounts": "Account e ruoli nel manager",
-      "rosters": "Roster"
+      "rosters": "Roster",
+      "rosterDetails": "Roster: dettagli"
     },
     "scoring": {
       "q_doubleTap": "Ho toccato due volte: perché è arrivato un solo punto?",
@@ -7331,5 +7335,89 @@
     "scorerOffline": "Segnapunti offline",
     "fullscreen": "Schermo intero",
     "exitFullscreen": "Esci da schermo intero"
+  },
+  "rosterPhoto": {
+    "button": "Foto della lista",
+    "title": "Einsatzliste da una foto · {{team}}",
+    "loading": "Apertura della foto…",
+    "source": {
+      "description": "Fotografa la lista stampata, oppure scegli un’immagine della lista su questo dispositivo.",
+      "tipFlat": "Appoggia la lista in piano e tieni il dispositivo dritto sopra.",
+      "tipLight": "Buona luce, nessuna ombra sui nomi.",
+      "tipWhole": "Tutta la pagina nell’immagine, nitida.",
+      "take": "Scatta una foto",
+      "choose": "Scegli un’immagine",
+      "private": "Letta su questo dispositivo: la foto non viene inviata né conservata."
+    },
+    "crop": {
+      "description": "Trascina i quattro angoli sugli angoli della pagina. Il bordo spesso è in alto: «Ruota» lo sposta.",
+      "top": "Alto",
+      "turn": "Ruota",
+      "another": "Altra foto",
+      "read": "Leggi la lista",
+      "cornerTopLeft": "Angolo in alto a sinistra",
+      "cornerTopRight": "Angolo in alto a destra",
+      "cornerBottomRight": "Angolo in basso a destra",
+      "cornerBottomLeft": "Angolo in basso a sinistra"
+    },
+    "reading": {
+      "prepare": "Preparazione del riconoscimento del testo…",
+      "read": "Lettura della lista… {{percent}} %"
+    },
+    "confirm": {
+      "description": "Controlla ogni riga e correggi ciò che è stato letto male. Nulla cambia prima di «Usa».",
+      "method": "Letta su questo dispositivo (riconoscimento del testo)",
+      "fromSaved_one": "{{count}} nome dalla squadra salvata",
+      "fromSaved_other": "{{count}} nomi dalla squadra salvata",
+      "toFix_one": "{{count}} campo da correggere (rosso)",
+      "toFix_other": "{{count}} campi da correggere (rosso)",
+      "toCheck_one": "{{count}} campo da controllare (giallo)",
+      "toCheck_other": "{{count}} campi da controllare (giallo)",
+      "players_one": "{{count}} giocatore",
+      "players_other": "{{count}} giocatori",
+      "officials": "Allenatore e assistenti",
+      "empty": "Nessuna riga di giocatore rimasta.",
+      "add": "Aggiungi una riga",
+      "remove": "Rimuovi",
+      "apply_one": "Usa {{count}} giocatore",
+      "apply_other": "Usa {{count}} giocatori",
+      "struck_one": "Escluso, barrato sulla lista: {{names}}",
+      "struck_other": "Esclusi, barrati sulla lista ({{count}}): {{names}}"
+    },
+    "col": {
+      "number": "N.",
+      "lastName": "Cognome",
+      "firstName": "Nome",
+      "licence": "Licenza",
+      "captain": "C",
+      "captainLong": "Capitano",
+      "libero": "L",
+      "liberoLong": "Libero"
+    },
+    "role": {
+      "coach": "Allenatore",
+      "ac1": "Assistente 1",
+      "ac2": "Assistente 2"
+    },
+    "issue": {
+      "number": "Un numero di maglia va da 1 a 99.",
+      "duplicateNumber": "Questo numero è due volte sulla lista.",
+      "licence": "Controlla il numero di licenza: solo cifre, come sulla lista.",
+      "missingLicence": "Nessun numero di licenza letto.",
+      "missingName": "Serve un cognome.",
+      "odd": "Sembra letto male: controlla.",
+      "unsure": "Difficile da leggere nella foto: controlla.",
+      "twoCaptains": "Un solo capitano.",
+      "tooManyLiberos": "Al massimo due liberi.",
+      "captainLibero": "Un libero non può essere capitano."
+    },
+    "error": {
+      "photo-unreadable": "Non è stato possibile aprire la foto. Provane un’altra.",
+      "ocr-load": "Il riconoscimento del testo non è partito. Sul web serve una connessione la prima volta (circa 12 MB). Riprova, importa il PDF o inserisci i giocatori a mano.",
+      "ocr-timeout": "La lettura ha richiesto troppo tempo su questo dispositivo. Prova una foto nitida con solo la lista, importa il PDF o inserisci i giocatori a mano.",
+      "ocr-empty": "Nessuna riga di giocatore trovata. Controlla che tutta la lista sia nitida nella foto, poi riprova.",
+      "retry": "Riprova",
+      "ocr-blurry": "La foto è troppo sfocata per essere letta. Rifalla: tieni fermo il tablet, con buona luce, tutta la lista nitida."
+    }
   }
 }

@@ -30,7 +30,8 @@ import { browserCheck } from '../browser-check.js'
 import { buildChannelPlugin, buildChannel, devHeadersFile } from '../build-channel.js'
 import { securityHeaderLines } from '../csp.js'
 import { htmlToImageFontSize } from '../vite-plugin-html-to-image-font-size.js'
-import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, PRECACHE_MAX_FILE_BYTES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, API_NETWORK_ONLY_ROUTE, STATIC_ASSETS_ROUTE, PWA_INCLUDE_ASSETS, PWA_ICONS } from '../pwa-workbox.js'
+import { ocrAssets } from '../vite-plugin-ocr-assets.js'
+import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, PRECACHE_MAX_FILE_BYTES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, API_NETWORK_ONLY_ROUTE, STATIC_ASSETS_ROUTE, OCR_FILES_ROUTE, PWA_INCLUDE_ASSETS, PWA_ICONS } from '../pwa-workbox.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const frontendDir = resolve(__dirname, '..')
@@ -379,6 +380,9 @@ async function buildSubdomain(subdomain, basePath = '/') {
         // A dev-branch build (Pages preview): its test backend, noindex and
         // the "Test build" badge (build-channel.js), as in vite.config.js
         buildChannelPlugin(),
+        // The photo import's text recognition (vite-plugin-ocr-assets.js): only
+        // the scorer's app has Match Setup
+        ocrAssets({ enabled: subdomain === 'app' }),
         ...(usesPwa(config) ? [VitePWA({
           registerType: 'prompt',
           includeAssets: PWA_INCLUDE_ASSETS,
@@ -402,6 +406,8 @@ async function buildSubdomain(subdomain, basePath = '/') {
               offlineNavigationRoute,
               // the API from the network only, never cached (pwa-workbox.js)
               API_NETWORK_ONLY_ROUTE,
+              // the photo import's recognition files, after their first use (pwa-workbox.js)
+              OCR_FILES_ROUTE,
               // cache first, never an HTML answer (pwa-workbox.js)
               STATIC_ASSETS_ROUTE,
               {
