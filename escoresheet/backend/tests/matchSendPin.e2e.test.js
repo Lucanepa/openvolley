@@ -181,8 +181,8 @@ describe('POST /api/match/send-pin', { skip: SKIP }, () => {
     assert.ok(sent[0].text.includes(`Game PIN: ${GAME_PIN}`), sent[0].text)
     assert.ok(sent[0].text.includes(PIN_MAIL_SENTENCE))
     // the full names only: a short name stored before its retirement (26.11.2026) is not mailed
-    assert.ok(sent[0].text.includes('Home: Alpha VC\n'), sent[0].text)
-    assert.ok(sent[0].text.includes('Away: Beta VC\n'), sent[0].text)
+    assert.match(sent[0].text, /^Home: Alpha VC\r?$/m)
+    assert.match(sent[0].text, /^Away: Beta VC\r?$/m)
     assert.ok(!/ALP|BET/.test(sent[0].text))
     assert.ok(sent[0].text.includes('League: 3L'))
     assert.ok(sent[0].text.includes('Date: 21.11.2026'))
