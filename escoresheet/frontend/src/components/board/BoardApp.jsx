@@ -11,6 +11,9 @@
  *   with plain instructions, or the score (BoardScore), with a small footer
  *   for the connection and the code.
  * - The screen is kept awake (Screen Wake Lock, where the browser has it).
+ * - ?overlay (/board?overlay#ABCD2345): the stream overlay. A see-through
+ *   page with a small score bug (BoardOverlay) for OBS or any broadcast app's
+ *   browser source; the waiting screens shrink to one small line.
  *
  * Plain DOM and CSS only (no exotic APIs): TV browsers and HDMI sticks run it.
  */
@@ -20,6 +23,7 @@ import { Loader2, Maximize, Minimize } from 'lucide-react'
 import { cn } from '../../ui/cn.js'
 import { FOCUS_RING } from '../../ui/Button.jsx'
 import BoardScore from './BoardScore'
+import BoardOverlay from './BoardOverlay'
 import {
   createBoardFeed,
   emptyBoardView,
@@ -136,7 +140,7 @@ export function BoardCodeForm({ onSubmit, initialValue = '' }) {
   )
 }
 
-function StatusScreen({ view, onAnother }) {
+function StatusScreen({ view, onAnother, compact = false }) {
   const { t } = useTranslation()
   const game = view.game
   const content = {
@@ -150,6 +154,14 @@ function StatusScreen({ view, onAnother }) {
     offline: [t('board.offlineTitle', 'No connection to the server'), t('board.offlineBody', 'Check the network of this screen. The scoreboard reconnects by itself.')]
   }[view.state] || [t('board.connecting', 'Connecting…'), '']
   const [title, body] = content
+  // The stream overlay: one small line where the score bug goes, no panel over the video
+  if (compact) {
+    return (
+      <p className="fixed left-[2.5vw] top-[2.5vw] m-0 rounded-[0.3em] bg-stone-900/90 px-[0.6em] py-[0.3em] font-medium text-white text-[length:clamp(12px,1.1vw,48px)]" data-testid="board-status" data-state={view.state} role="status">
+        {title}
+      </p>
+    )
+  }
   return (
     <Panel testId="board-status" state={view.state}>
       {view.state === 'connecting' && <Loader2 className="h-[clamp(32px,7vmin,96px)] w-[clamp(32px,7vmin,96px)] animate-spin text-stone-400" aria-hidden="true" />}
@@ -225,13 +237,16 @@ function Footer({ view, onAnother }) {
 }
 
 const defaultCreateFeed = (opts) => createBoardFeed(opts)
+/** ?overlay in the address: the stream overlay (BoardOverlay) */
+const overlayFromUrl = () => typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('overlay')
 
 /**
  * @param {object} props
  * @param {object|null} [props.initialTarget]  the target to follow (undefined: from the address)
  * @param {(opts: { target: object, onView: (v: object) => void }) => { start(): void, stop(): void }} [props.createFeed]
+ * @param {boolean} [props.overlay]  the stream overlay: a see-through page with a small score bug
  */
-export default function BoardApp({ initialTarget, createFeed = defaultCreateFeed }) {
+export default function BoardApp({ initialTarget, createFeed = defaultCreateFeed, overlay = overlayFromUrl() }) {
   const { t } = useTranslation()
   const [target, setTarget] = useState(() => (initialTarget === undefined ? takeBoardTargetFromUrl() : initialTarget))
   const [view, setView] = useState(() => emptyBoardView(target))
@@ -263,6 +278,14 @@ export default function BoardApp({ initialTarget, createFeed = defaultCreateFeed
 
   useWakeLock(!!target)
 
+  // A see-through page: the broadcast app lays it over the camera
+  useEffect(() => {
+    if (!overlay) return undefined
+    const els = [document.documentElement, document.body]
+    for (const el of els) el.style.background = 'transparent'
+    return () => { for (const el of els) el.style.background = '' }
+  }, [overlay])
+
   const choose = useCallback((next) => {
     setBoardTargetInUrl(next)
     setTarget(next)
@@ -275,7 +298,7 @@ export default function BoardApp({ initialTarget, createFeed = defaultCreateFeed
   const hasScore = !!(target && view.left && view.right)
   return (
     <div
-      className="ov-kit fixed inset-0 flex flex-col gap-[1.5vmin] overflow-hidden bg-gradient-to-b from-stone-50 to-stone-100 p-[1.5vmin] text-stone-900"
+      className={cn('ov-kit fixed inset-0 flex flex-col gap-[1.5vmin] overflow-hidden p-[1.5vmin] text-stone-900', !overlay && 'bg-gradient-to-b from-stone-50 to-stone-100')}
       style={{ paddingBottom: 'calc(1.5vmin + env(safe-area-inset-bottom, 0px))' }}
       translate="no"
       data-testid="board-state"
@@ -283,13 +306,15 @@ export default function BoardApp({ initialTarget, createFeed = defaultCreateFeed
     >
       {!target ? (
         <BoardCodeForm onSubmit={choose} />
+      ) : hasScore && overlay ? (
+        <BoardOverlay view={view} />
       ) : hasScore ? (
         <>
           <BoardScore view={view} />
           <Footer view={view} onAnother={another} />
         </>
       ) : (
-        <StatusScreen view={{ ...view, code: view.code || (target.kind === 'code' ? formatBoardCode(target.code) : null) }} onAnother={another} />
+        <StatusScreen view={{ ...view, code: view.code || (target.kind === 'code' ? formatBoardCode(target.code) : null) }} onAnother={another} compact={overlay} />
       )}
     </div>
   )

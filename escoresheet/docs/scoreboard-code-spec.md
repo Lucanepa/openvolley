@@ -156,6 +156,7 @@ or substitutions (the summary does not carry them).
 | Wire contract | `backend/tests/helpers/displayCodeContract.js` |
 | Scorer | `src/utils/scoreboardCode.js`, `src/components/scoreboardCode/*`, `components/matchMenu.jsx` (`show-on-scoreboard`) |
 | Board page | `src/components/board/BoardApp.jsx`, `src/utils/boardFeed.js`, `src/livescore-main.jsx` (`/board`) |
+| Stream overlay | `src/components/board/BoardOverlay.jsx`: `/board?overlay#CODE` (or `?overlay#12345` for a game number) is a see-through page with a small score bug for OBS or any broadcast app's browser source, so the score is part of the video on YouTube, Twitch or any other platform. Same feed as the board; the scorer's code panel shows the link. |
 | Third parties | `docs/scoreboard-feed.md`, `tools/scoreboard-client/` |
 
 ## 5. Deploy

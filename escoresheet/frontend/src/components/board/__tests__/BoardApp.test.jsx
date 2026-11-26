@@ -216,6 +216,60 @@ describe('BoardApp', () => {
     expect(window.location.hash).toBe('')
   })
 
+  it('?overlay: a see-through page with the score bug, no footer', () => {
+    window.history.replaceState(null, '', '/board?overlay#ABCD2345')
+    const { createFeed, made, push } = fakeFeed()
+    const { unmount } = render(<BoardApp createFeed={createFeed} />)
+    expect(made[0].target).toEqual(TARGET)
+    expect(document.body.style.backgroundColor).toBe('transparent')
+    expect(document.documentElement.style.backgroundColor).toBe('transparent')
+    expect(screen.getByTestId('board-state').className).not.toMatch(/bg-gradient/)
+
+    // before the score: one small line, no panel over the video
+    expect(screen.getByTestId('board-status')).toHaveAttribute('data-state', 'connecting')
+    expect(screen.queryByTestId('board-another-code')).toBeNull()
+
+    push(liveView())
+    const bug = screen.getByTestId('board-overlay')
+    expect(screen.queryByTestId('board-footer')).toBeNull()
+    expect(screen.queryByTestId('board-team-left')).toBeNull()
+    expect(screen.getByTestId('overlay-name-left')).toHaveTextContent('AWA')
+    expect(screen.getByTestId('overlay-name-right')).toHaveTextContent('Home VC')
+    expect(screen.getByTestId('overlay-points-left')).toHaveTextContent('18')
+    expect(screen.getByTestId('overlay-points-right')).toHaveTextContent('21')
+    expect(screen.getByTestId('overlay-sets-left')).toHaveTextContent('1')
+    expect(screen.getByTestId('overlay-serve-left')).toHaveAttribute('data-serving', 'true')
+    expect(screen.getByTestId('overlay-serve-right')).toHaveAttribute('data-serving', 'false')
+    expect(screen.getByTestId('overlay-phase')).toHaveTextContent('Set 3')
+    expect(screen.getByTestId('overlay-phase')).toHaveTextContent('25–22 · 19–25')
+    expect(screen.queryByTestId('overlay-stale')).toBeNull()
+    // the team colour is data: on the stripe as the scorer set it
+    expect(screen.getByTestId('overlay-team-left').firstChild).toHaveStyle({ background: '#fde047' })
+
+    push(liveView({ phase: 'timeout' }))
+    expect(screen.getByTestId('overlay-phase')).toHaveTextContent('Time-out')
+    push(liveView({ phase: 'set_break', connected: false }))
+    expect(screen.getByTestId('overlay-phase')).toHaveTextContent('Set break')
+    expect(screen.getByTestId('overlay-stale')).toHaveTextContent('Reconnecting…')
+
+    // match end: sets won in the big cell, no sets column
+    push(liveView({ phase: 'final', left: team({ name: 'A', sets: 3 }), right: team({ name: 'B', sets: 1 }) }))
+    expect(bug).toHaveAttribute('data-phase', 'final')
+    expect(screen.getByTestId('overlay-points-left')).toHaveTextContent('3')
+    expect(screen.queryByTestId('overlay-sets-left')).toBeNull()
+    expect(screen.getByTestId('overlay-phase')).toHaveTextContent('Match end')
+
+    unmount()
+    expect(document.body.style.backgroundColor).toBe('')
+  })
+
+  it('without ?overlay the page keeps its own background', () => {
+    const { createFeed } = fakeFeed()
+    render(<BoardApp initialTarget={TARGET} createFeed={createFeed} />)
+    expect(document.body.style.backgroundColor).toBe('')
+    expect(screen.getByTestId('board-state').className).toMatch(/bg-gradient/)
+  })
+
   it('keeps the screen awake where the browser can', async () => {
     const release = vi.fn(async () => {})
     const request = vi.fn(async () => ({ release }))

@@ -1,12 +1,13 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { QRCodeSVG } from 'qrcode.react'
-import { Loader2, MonitorPlay, RefreshCw, Unlink } from 'lucide-react'
+import { Copy, Loader2, MonitorPlay, RefreshCw, Unlink } from 'lucide-react'
 import { Button, Skeleton, confirmDialog } from '../../ui'
 import { dayLabel, timeLabel } from '../../ui/format'
 import { boardPageUrl, displayScoreboardCode, relayStatusUrl, scoreboardCodes } from '../../utils/scoreboardCode'
 import { scorerRelay } from '../../utils/relayPublisher'
 import { isLocalRelayUrl } from '../../utils/backendConfig'
+import { copyToClipboard } from '../../utils/networkInfo'
 
 /** "20:45", or "22.11. 08:45" when it ends on another day than today. */
 export function validUntilLabel(endsAt, now = Date.now()) {
@@ -39,6 +40,7 @@ export default function ScoreboardCodePanel({ match, onClose, codes = scoreboard
   const [stopped, setStopped] = useState(false)
   const [busy, setBusy] = useState(false)
   const [relayStatus, setRelayStatus] = useState(null)
+  const [copied, setCopied] = useState(false)
   const lan = !!relay?.url && isLocalRelayUrl(relay.url)
 
   useEffect(() => {
@@ -94,6 +96,8 @@ export default function ScoreboardCodePanel({ match, onClose, codes = scoreboard
 
   const url = state?.code ? boardPageUrl(state.code, { relayUrl: relay?.url ?? null, relayStatus }) : null
   const shownUrl = url ? url.split('#')[0].replace(/^https?:\/\//, '') : ''
+  // The same board as a score bug for a live stream (components/board/BoardOverlay)
+  const streamUrl = url ? url.replace('#', '?overlay#') : null
   const statusKey = state?.relay === 'refused'
     ? (REFUSED_KEYS[state.reason] || 'scoreboardCode.stateRefused')
     : STATE_KEYS[state?.relay] || STATE_KEYS.waiting
@@ -138,6 +142,15 @@ export default function ScoreboardCodePanel({ match, onClose, codes = scoreboard
               <p className="m-0 tabular-nums text-xs text-stone-500">{t('scoreboardCode.validUntil', { time: validUntilLabel(state.endsAt) })}</p>
               <p className="m-0 text-xs text-stone-500">{t('scoreboardCode.readOnly')}</p>
               {url && <span className="sr-only" data-testid="scoreboard-code-link">{url}</span>}
+              {streamUrl && (
+                <div className="flex flex-col gap-1 border-t border-stone-100 pt-2" data-testid="scoreboard-code-stream">
+                  <p className="m-0 text-xs text-stone-600">{t('scoreboardCode.streamOverlay')}</p>
+                  <p className="m-0 break-all font-mono text-xs text-stone-800" data-testid="scoreboard-code-stream-link">{streamUrl}</p>
+                  <Button variant="ghost" size="sm" icon={Copy} className="self-start" onClick={async () => { setCopied((await copyToClipboard(streamUrl))?.success === true) }} data-testid="scoreboard-code-stream-copy">
+                    {copied ? t('scoreboardCode.copied') : t('scoreboardCode.copyLink')}
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
