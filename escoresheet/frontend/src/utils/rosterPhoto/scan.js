@@ -293,9 +293,11 @@ export function otsuThreshold (gray) {
 
 /**
  * The page's corners in a small grey copy (width x height): the largest
- * bright region (paper is brighter than a table, a floor or a hand), and its
- * four extreme points. null when no bright region covers a fifth of the photo
- * (a close-up of the page: the scorer drags the corners).
+ * bright region (paper is brighter than a table, a floor or a hand), and the
+ * four-sided shape round it (quadOfHull: a corner cut off by a shadow, a hand
+ * or the photo's edge is where the page's two long edges meet, not the
+ * region's extreme point). null when no bright region covers a fifth of the
+ * photo (a close-up of the page: the scorer drags the corners).
  */
 export function cornersFromGray (gray, width, height) {
   const t = otsuThreshold(gray)
@@ -327,7 +329,238 @@ export function cornersFromGray (gray, width, height) {
   if (!best || best.n < 0.2 * width * height) return null
   // the page fills the picture (a screenshot, a close-up): its edges are the page's
   if (best.n > 0.85 * width * height) return [[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]]
-  return [best.tl, best.tr, best.br, best.bl]
+  // the region's outline: its first and last pixel on each row and column
+  const inRegion = (x, y) => label[y * width + x] === best.id
+  const left = []
+  const right = []
+  const top = []
+  const bottom = []
+  for (let y = 0; y < height; y++) {
+    let first = -1
+    let last = -1
+    for (let x = 0; x < width; x++) if (inRegion(x, y)) { if (first < 0) first = x; last = x }
+    if (first >= 0) { left.push([first, y]); right.push([last, y]) }
+  }
+  for (let x = 0; x < width; x++) {
+    let first = -1
+    let last = -1
+    for (let y = 0; y < height; y++) if (inRegion(x, y)) { if (first < 0) first = y; last = y }
+    if (first >= 0) { top.push([x, first]); bottom.push([x, last]) }
+  }
+  // two guesses, the one whose shape covers the region best wins: the hull's
+  // (a page turned far, a corner cut off) and the straight edges' (something
+  // bright touching the page: a hand, a second sheet, a reflection)
+  const candidates = [
+    quadOfHull(convexHull([...left, ...right]), width, height),
+    quadOfEdges({ left, right, top, bottom }, width, height)
+  ].filter(Boolean).map(orderCorners)
+  let pick = null
+  for (const q of candidates) {
+    const f = quadFit(q, inRegion, width, height, best.n)
+    if (!pick || f > pick.f) pick = { q, f }
+  }
+  return pick ? pick.q : [best.tl, best.tr, best.br, best.bl]
+}
+
+/** Whether (x, y) lies inside the convex quad [tl, tr, br, bl] (either winding). */
+function insideQuad (q, x, y) {
+  let sign = 0
+  for (let i = 0; i < 4; i++) {
+    const [ax, ay] = q[i]
+    const [bx, by] = q[(i + 1) % 4]
+    const c = (bx - ax) * (y - ay) - (by - ay) * (x - ax)
+    if (c === 0) continue
+    if (sign && Math.sign(c) !== sign) return false
+    sign = Math.sign(c)
+  }
+  return true
+}
+
+/** How well a quad matches the region: the F-score of the pixels inside it against the region's. */
+function quadFit (q, inRegion, width, height, regionSize) {
+  let inside = 0
+  let both = 0
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (!insideQuad(q, x + 0.5, y + 0.5)) continue
+      inside++
+      if (inRegion(x, y)) both++
+    }
+  }
+  return inside && regionSize ? (2 * both) / (inside + regionSize) : 0
+}
+
+/**
+ * The line most points of one side of the outline lie on (within 2 % of the
+ * photo): pairs of points spread along the side tried in turn (no chance: the
+ * same photo gives the same corners), then fitted to the points near the best.
+ * byY: the side runs down (left, right), so x is a function of y.
+ * @returns {{ a: number[], b: number[] } | null} two points on it
+ */
+function edgeLine (points, byY, tolerance) {
+  if (points.length < 8) return null
+  const u = (p) => (byY ? p[1] : p[0])
+  const v = (p) => (byY ? p[0] : p[1])
+  const SAMPLES = 24
+  const maxGap = Math.max(2, Math.round(points.length * 0.03))
+  const picks = Array.from({ length: SAMPLES }, (_, i) => points[Math.round((i * (points.length - 1)) / (SAMPLES - 1))])
+  let best = null
+  for (let i = 0; i < SAMPLES; i++) {
+    for (let j = i + 1; j < SAMPLES; j++) {
+      const p = picks[i]
+      const q = picks[j]
+      if (u(q) === u(p)) continue
+      const m = (v(q) - v(p)) / (u(q) - u(p))
+      if (Math.abs(m) > 1.2) continue
+      const c = v(p) - m * u(p)
+      // the points on it, and again those of its longest stretch: a page's
+      // edge is mostly one piece; a line across a bump (a hand) and the far
+      // end of the edge is two. (Not the stretch alone: something dark lying
+      // on the page's edge cuts it in two, and the dark thing's straight
+      // side is one.)
+      let all = 0
+      let longest = 0
+      let run = 0
+      let gap = 0
+      for (const r of points) {
+        if (Math.abs(v(r) - (m * u(r) + c)) <= tolerance) { all++; run++; gap = 0 } else if (++gap > maxGap) run = 0
+        if (run > longest) longest = run
+      }
+      const n = all + longest
+      if (!best || n > best.n) best = { m, c, n, all }
+    }
+  }
+  if (!best || best.all < 0.3 * points.length) return null
+  // least squares over the points near it
+  let su = 0
+  let sv = 0
+  let suu = 0
+  let suv = 0
+  let k = 0
+  for (const r of points) {
+    if (Math.abs(v(r) - (best.m * u(r) + best.c)) > tolerance) continue
+    su += u(r); sv += v(r); suu += u(r) * u(r); suv += u(r) * v(r); k++
+  }
+  const d = k * suu - su * su
+  const m = Math.abs(d) > 1e-9 ? (k * suv - su * sv) / d : best.m
+  const c = (sv - m * su) / k
+  const at = (t) => (byY ? [m * t + c, t] : [t, m * t + c])
+  return { a: at(0), b: at(1000) }
+}
+
+/** The quad of the page's four straight edges (edgeLine on each side of the outline), or null. */
+export function quadOfEdges ({ left, right, top, bottom }, width, height) {
+  const tol = 0.02 * Math.max(width, height)
+  const lines = [edgeLine(top, false, tol), edgeLine(right, true, tol), edgeLine(bottom, false, tol), edgeLine(left, true, tol)]
+  if (lines.some((l) => !l)) return null
+  const meet = (s, t) => {
+    const [x1, y1] = s.a
+    const [x2, y2] = s.b
+    const [x3, y3] = t.a
+    const [x4, y4] = t.b
+    const d = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+    if (Math.abs(d) < 1e-9) return null
+    const a = x1 * y2 - y1 * x2
+    const b = x3 * y4 - y3 * x4
+    return [(a * (x3 - x4) - (x1 - x2) * b) / d, (a * (y3 - y4) - (y1 - y2) * b) / d]
+  }
+  const corners = [meet(lines[3], lines[0]), meet(lines[0], lines[1]), meet(lines[1], lines[2]), meet(lines[2], lines[3])]
+  const near = (p) => p && p[0] > -0.25 * width && p[0] < 1.25 * width && p[1] > -0.25 * height && p[1] < 1.25 * height
+  return corners.every(near) ? corners : null
+}
+
+/** The convex hull of points (Andrew's monotone chain), in order round it. */
+export function convexHull (points) {
+  const p = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1])
+  if (p.length < 3) return p
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+  const half = (list) => {
+    const out = []
+    for (const q of list) {
+      while (out.length >= 2 && cross(out[out.length - 2], out[out.length - 1], q) <= 0) out.pop()
+      out.push(q)
+    }
+    out.pop()
+    return out
+  }
+  return [...half(p), ...half(p.reverse())]
+}
+
+/**
+ * The page's four corners from the hull of its bright region: the hull's
+ * edges joined into straight sides, the four sides that turn like a page's
+ * (each about a right angle from the next) and are longest together, and
+ * where each meets the next. A corner a shadow, a hand or the photo's edge
+ * took away is a short side between two long ones, left out, so the long
+ * ones meet where the page's corner is. null when no four sides do.
+ */
+export function quadOfHull (hull, width, height) {
+  const n = hull.length
+  if (n < 4) return null
+  const angle = (a, b) => Math.atan2(b[1] - a[1], b[0] - a[0])
+  const turn = (a1, a2) => {
+    let d = a2 - a1
+    while (d <= -Math.PI) d += 2 * Math.PI
+    while (d > Math.PI) d -= 2 * Math.PI
+    return d
+  }
+  // start at the sharpest bend, so no side is split at the list's start
+  let start = 0
+  let sharpest = -1
+  for (let i = 0; i < n; i++) {
+    const t = Math.abs(turn(angle(hull[(i + n - 1) % n], hull[i]), angle(hull[i], hull[(i + 1) % n])))
+    if (t > sharpest) { sharpest = t; start = i }
+  }
+  const STRAIGHT = (14 * Math.PI) / 180
+  const sides = []
+  let side = null
+  for (let k = 0; k < n; k++) {
+    const a = hull[(start + k) % n]
+    const b = hull[(start + k + 1) % n]
+    if (side && Math.abs(turn(angle(side.a, side.b), angle(a, b))) < STRAIGHT && Math.abs(turn(angle(side.a, b), angle(a, b))) < STRAIGHT) side.b = b
+    else {
+      if (side) sides.push(side)
+      side = { a, b }
+    }
+  }
+  sides.push(side)
+  for (const s of sides) { s.len = Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1]); s.dir = angle(s.a, s.b) }
+  const meet = (s, u) => {
+    const [x1, y1] = s.a
+    const [x2, y2] = s.b
+    const [x3, y3] = u.a
+    const [x4, y4] = u.b
+    const d = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+    if (Math.abs(d) < 1e-9) return null
+    const a = x1 * y2 - y1 * x2
+    const b = x3 * y4 - y3 * x4
+    return [(a * (x3 - x4) - (x1 - x2) * b) / d, (a * (y3 - y4) - (y1 - y2) * b) / d]
+  }
+  const m = sides.length
+  if (m < 4) return null
+  const near = (p) => p && p[0] > -0.25 * width && p[0] < 1.25 * width && p[1] > -0.25 * height && p[1] < 1.25 * height
+  let best = null
+  for (let i = 0; i < m; i++) {
+    for (let j = i + 1; j < m; j++) {
+      for (let k = j + 1; k < m; k++) {
+        for (let l = k + 1; l < m; l++) {
+          const four = [sides[i], sides[j], sides[k], sides[l]]
+          const len = four.reduce((sum, s) => sum + s.len, 0)
+          if (best && len <= best.len) continue
+          let ok = true
+          for (let q = 0; q < 4 && ok; q++) {
+            const t = Math.abs(turn(four[q].dir, four[(q + 1) % 4].dir))
+            ok = t > (50 * Math.PI) / 180 && t < (130 * Math.PI) / 180
+          }
+          if (!ok) continue
+          const corners = four.map((s, q) => meet(four[(q + 3) % 4], s))
+          if (!corners.every(near)) continue
+          best = { len, corners }
+        }
+      }
+    }
+  }
+  return best ? best.corners : null
 }
 
 /**

@@ -70,6 +70,36 @@ describe('corners and the homography', () => {
     expect(insetCorners(100, 50)).toEqual([[4, 2], [96, 2], [96, 48], [4, 48]])
   })
 
+  // (real photos, 2026-11-26: the region's extreme points cut the table)
+  const close = (p, q, d = 3) => Math.abs(p[0] - q[0]) <= d && Math.abs(p[1] - q[1]) <= d
+  const tilted = [[22, 12], [138, 18], [134, 112], [18, 106]]
+  const insideTilted = (x, y) => {
+    let sign = 0
+    for (let i = 0; i < 4; i++) {
+      const [ax, ay] = tilted[i]
+      const [bx, by] = tilted[(i + 1) % 4]
+      const c = Math.sign((bx - ax) * (y - ay) - (by - ay) * (x - ax))
+      if (sign && c && c !== sign) return false
+      sign = c || sign
+    }
+    return true
+  }
+  const onTable = (extra) => page(160, 120, (x, y) => (extra(x, y) || insideTilted(x, y) ? 230 : 50))
+
+  it('cornersFromGray: a corner a shadow takes away is where the two long edges meet', () => {
+    // the phone's shadow over the bottom left: that corner is dark
+    const g = onTable(() => false).map((v, i) => (i % 160 < 60 && Math.floor(i / 160) > 70 && (i % 160) + 110 - Math.floor(i / 160) < 70 ? 50 : v))
+    const c = cornersFromGray(g, 160, 120)
+    tilted.forEach((p, i) => expect(close(c[i], p), `corner ${i}: ${c[i]}`).toBe(true))
+  })
+
+  it('cornersFromGray: something bright touching the page (a hand, a second sheet) does not pull a corner', () => {
+    // a bright blob joined to the page at the bottom left, out to the photo's edge
+    const g = onTable((x, y) => y > 96 && y < 118 && x < 40)
+    const c = cornersFromGray(g, 160, 120)
+    tilted.forEach((p, i) => expect(close(c[i], p), `corner ${i}: ${c[i]}`).toBe(true))
+  })
+
   it('plausiblePage: a convex shape of a fifth of the photo or more; a triangle or a sliver is none', () => {
     expect(plausiblePage([[10, 10], [90, 12], [88, 95], [8, 90]], 100, 100)).toBe(true)
     // two corners on one spot (a bright sky): a triangle
