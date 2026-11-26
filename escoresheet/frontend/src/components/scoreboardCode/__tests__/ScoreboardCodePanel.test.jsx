@@ -76,6 +76,22 @@ describe('ScoreboardCodePanel', () => {
     await screen.findByTestId('scoreboard-code-following')
   })
 
+  it('offers the same board as a stream overlay link, with Copy', async () => {
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockImplementation(async () => {})
+    try {
+      show()
+      const raw = (await screen.findByTestId('scoreboard-code')).textContent.replace('-', '')
+      const link = `https://livescore.openvolley.app/board?overlay#${raw}`
+      expect(screen.getByTestId('scoreboard-code-stream-link').textContent).toBe(link)
+      expect(screen.getByText(/browser source in OBS/)).toBeTruthy()
+      fireEvent.click(screen.getByTestId('scoreboard-code-stream-copy'))
+      await waitFor(() => expect(screen.getByTestId('scoreboard-code-stream-copy').textContent).toBe('Copied'))
+      expect(writeText).toHaveBeenCalledWith(link)
+    } finally {
+      writeText.mockRestore()
+    }
+  })
+
   it('New code asks first, then replaces the code', async () => {
     show()
     const before = (await screen.findByTestId('scoreboard-code')).textContent
