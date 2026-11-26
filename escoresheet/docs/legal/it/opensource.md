@@ -43,6 +43,9 @@ PDF.js, per il testo del PDF del referto).
 | Dexie, dexie-react-hooks | Apache-2.0 |
 | jsPDF | MIT |
 | PDF.js (pdfjs-dist) | Apache-2.0 |
+| Tesseract.js, tesseract.js-core (riconoscimento del testo dell'importazione da foto) | Apache-2.0 |
+| Dati linguistici Tesseract tedesco, francese, italiano (@tesseract.js-data) | Apache-2.0 (pacchetto: MIT) |
+| wasm-feature-detect | Apache-2.0 |
 | JSZip | MIT (o GPL-3.0-or-later) |
 | fflate | MIT |
 | html-to-image | MIT |

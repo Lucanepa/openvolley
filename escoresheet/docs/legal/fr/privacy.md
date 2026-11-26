@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.28 · État au 23 novembre 2026
+**OpenVolley et OpenBeach** · Version 1.29 · État au 24 novembre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version anglaise fait foi.
@@ -489,12 +489,18 @@ l'e-mail de la feuille de match finale (ci-dessous). Base juridique : section 20
 match (section 16).
 
 **Qui saisit les données :** le marqueur dans l'application, les responsables
-d'équipe sur la page des listes d'équipe (`roster.openvolley.app`) et dans le site de gestion (section 10), les
-gestionnaires de compétition au moyen des équipes enregistrées (section 10)
-et les convocations officielles de Swiss Volley (section 11). Les joueuses et
-joueurs ne saisissent pas eux-mêmes leurs données. Une Einsatzliste importée
-dans la préparation du match remplit les noms, numéros de maillot et numéros
-de licence ; ses dates de naissance ne sont pas reprises.
+d'équipe sur la page des listes d'équipe (`roster.openvolley.app`) et dans le
+site de gestion (section 10), les gestionnaires de compétition au moyen des
+équipes enregistrées (section 10) et les convocations officielles de Swiss
+Volley (section 11). Les joueuses et joueurs ne saisissent pas eux-mêmes leurs
+données. Une Einsatzliste importée dans la préparation du match remplit les
+noms, numéros de maillot et numéros de licence ; ses dates de naissance ne
+sont pas reprises. Elle peut être importée depuis son PDF ou depuis une photo
+: la photo est lue sur l'appareil (reconnaissance de texte dans
+l'application), n'est envoyée nulle part et n'est pas conservée (sur Android,
+le fichier que l'application appareil photo enregistre pour elle est supprimé
+au prochain démarrage de l'application) ; les lignes lues sont montrées au
+marqueur, qui les corrige avant que quoi que ce soit ne soit repris.
 
 **But :** une feuille de match électronique pour les matchs officiels :
 saisie pendant le match, procès-verbal officiel du match, contrôle de la
