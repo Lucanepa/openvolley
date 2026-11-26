@@ -13,6 +13,11 @@ import Modal from './components/Modal'
 import ContextualHelpPanel from './components/help/ContextualHelpPanel'
 import SpotlightOverlay from './components/help/SpotlightOverlay'
 import { OPEN_HELP_EVENT } from './components/help/helpEvents'
+import Walkthrough from './components/walkthrough/Walkthrough'
+import DemoAuthScope from './components/walkthrough/DemoAuthScope'
+import HomeTourCard from './components/walkthrough/HomeTourCard'
+import { startWalkthrough, useWalkthrough } from './components/walkthrough/walkthroughStore'
+import { removeDemoData } from './components/walkthrough/demoData'
 import ConnectionStatus from './components/ConnectionStatus'
 import StartupConnectivityModal from './components/StartupConnectivityModal'
 import MainHeader from './components/MainHeader'
@@ -322,6 +327,22 @@ export default function App() {
     return () => window.removeEventListener(OPEN_HELP_EVENT, onOpenHelp)
   }, [])
   const [spotlightTarget, setSpotlightTarget] = useState(null)
+  // "Your first match" (components/walkthrough): whether it runs, and a new
+  // Match setup after it put the test rosters back (restoreTestRosters)
+  const walkthrough = useWalkthrough()
+  const [setupKey, setSetupKey] = useState(0)
+  const walkthroughApi = useRef(null)
+  const walkthroughCtx = useMemo(() => ({
+    db,
+    page: () => walkthroughApi.current?.page(),
+    matchId: () => walkthroughApi.current?.matchId(),
+    isPhone: () => !!walkthroughApi.current?.isPhone(),
+    goHome: () => walkthroughApi.current?.goHome(),
+    createTestMatch: () => walkthroughApi.current?.createTestMatch(),
+    showSetup: (id) => walkthroughApi.current?.showSetup(id),
+    showScoreboard: (id) => walkthroughApi.current?.showScoreboard(id),
+    restoreTestRosters: (id) => walkthroughApi.current?.restoreTestRosters(id)
+  }), [])
   const [connectionSetupModal, setConnectionSetupModal] = useState(false)
   const { syncStatus, retryErrors, isOnline } = useSyncQueue()
   // The sync indicator reads the queue counts itself (a live query there, so a
@@ -2160,7 +2181,8 @@ export default function App() {
         await db.teams.delete(team.id)
       }
     })
-
+    // the walkthrough's demo data goes with the test data (demoData.js)
+    await removeDemoData(db)
   }
 
   async function resetSupabaseTestMatch() {
@@ -4001,6 +4023,56 @@ export default function App() {
   // focus reaches a scoring control (read-only, the owner 2026-10-27)
   const movedCopyOpen = matchId != null && isScorerMoved({ cloudBlock: openMatchBlock })
 
+  // The walkthrough's view of the screens (walkthroughFlow.js): read live
+  // (this render's values), so its steps see where the app is now
+  walkthroughApi.current = {
+    page: () => currentPage,
+    matchId: () => matchId,
+    isPhone: () => phoneLayoutOn,
+    goHome: () => {
+      setShowCoinToss(false)
+      goHome()
+    },
+    createTestMatch: () => openFromHome(createNewTestMatch),
+    showSetup: async (id) => {
+      await preloadMatchSetup(id)
+      setMatchId(id)
+      setShowCoinToss(false)
+      setShowMatchEnd(false)
+      setShowManualAdjustments(false)
+      setShowMatchSetup(true)
+    },
+    showScoreboard: async (id) => {
+      await preloadScoreboard(id)
+      setMatchId(id)
+      setShowMatchSetup(false)
+      setShowCoinToss(false)
+      setShowMatchEnd(false)
+      setShowManualAdjustments(false)
+    },
+    // the test teams' rosters as seeded (a roster left without numbers
+    // keeps the coin toss waiting), then Match setup read again
+    restoreTestRosters: async (id) => {
+      const m = await db.matches.get(id)
+      if (!m || m.test !== true) return
+      await db.transaction('rw', db.teams, db.players, async () => {
+        for (const teamId of [m.homeTeamId, m.awayTeamId]) {
+          const team = teamId != null ? await db.teams.get(teamId) : null
+          const seed = team && TEST_TEAM_SEED_DATA.find(d => d.seedKey === team.seedKey)
+          if (!seed) continue
+          await db.players.where('teamId').equals(teamId).delete()
+          const timestamp = new Date().toISOString()
+          await db.players.bulkAdd(seed.players.map(p => ({
+            teamId, number: p.number, name: `${p.lastName} ${p.firstName}`, lastName: p.lastName, firstName: p.firstName,
+            dob: p.dob, libero: p.libero || '', isCaptain: p.isCaptain, isLfp: p.isLfp || false, role: null, test: true, createdAt: timestamp
+          })))
+        }
+      })
+      await preloadMatchSetup(id)
+      setSetupKey(k => k + 1)
+    }
+  }
+
   return (
     <div className="app-root" onClick={(e) => {
       // Close connection menu and debug menu when clicking outside
@@ -4184,7 +4256,10 @@ export default function App() {
                   lfpTrackingEnabled={lfpTrackingEnabled && !globalTool}
                 />
               ) : showMatchSetup && matchId ? (
+                // the walkthrough's test match: Match setup as an account sees it (simulated, DemoAuthScope)
+                <DemoAuthScope matchId={matchId}>
                 <MatchSetup
+                  key={setupKey}
                   matchId={matchId}
                   onStart={continueMatch}
                   onReturn={returnToMatch}
@@ -4202,6 +4277,7 @@ export default function App() {
                   onInitialOfficialGameUsed={() => setPendingOfficialGame(null)}
                   onReady={() => setOpeningMatch(null)}
                 />
+                </DemoAuthScope>
               ) : showManualAdjustments && matchId ? (
                 <ManualAdjustments
                   matchId={matchId}
@@ -4275,6 +4351,7 @@ export default function App() {
                     restartTestMatch={restartTestMatch}
                     onOpenSettings={() => setHomeOptionsModal(true)}
                     onRestoreMatch={() => setRestoreMatchModal(true)}
+                    tourCard={walkthrough.active ? null : <HomeTourCard onStart={() => startWalkthrough()} className="mb-4" />}
                   />
                   )}
                 </>
@@ -4896,7 +4973,14 @@ export default function App() {
                 setHelpPanelOpen(false)
                 setSpotlightTarget({ helpId, tooltipKey })
               }}
+              onStartWalkthrough={(chapter) => {
+                setHelpPanelOpen(false)
+                setHelpDialogScreen(null)
+                startWalkthrough({ chapter })
+              }}
             />
+            {/* "Your first match": its card and spotlight over the screens */}
+            <Walkthrough appCtx={walkthroughCtx} />
             {spotlightTarget && (
               <SpotlightOverlay
                 targetHelpId={spotlightTarget.helpId}
