@@ -5198,7 +5198,8 @@
     "suggestionHome": "Home: {{name}}, {{count}} players known",
     "suggestionAway": "Away: {{name}}, {{count}} players known",
     "chooseHome": "Choose home players",
-    "chooseAway": "Choose away players"
+    "chooseAway": "Choose away players",
+    "sourceClub": "Club list"
   },
   "savedTeams": {
     "title": "Saved teams",

@@ -46,16 +46,24 @@ describe('walkthrough: tablet', () => {
     fireEvent.click(document.querySelector('[data-testid="help-walkthrough-start"]'))
 
     let demoSeen = false
+    let clubToTick = 0
+    let poolUnticked = 0
     const seen = await walkAll({
       log: true,
       onStep: (step) => {
         // the simulated signed-in ways show in the roster editor
         if (step.id === 'rosterSaved') demoSeen = !!document.querySelector('[data-testid="load-saved-team-home"]')
+        // after "Load saved team", the demo club still has players to tick
+        // (not "In the roster"), and "Choose players" offers some unticked
+        if (step.id === 'rosterClubPick') clubToTick = [...document.querySelectorAll('[data-testid="club-picker-row"] input[type="checkbox"]')].filter(c => !c.disabled && !c.checked).length
+        if (step.id === 'rosterChooseList') poolUnticked = [...document.querySelectorAll('[data-testid="player-pool-row"]')].filter(c => !c.checked).length
       }
     })
     expect(seen.filter(s => s.phase !== 'ready')).toEqual([])
     expect(seen.map(s => s.id)).toEqual(STEPS.map(s => s.id))
     expect(demoSeen).toBe(true)
+    expect(clubToTick).toBeGreaterThanOrEqual(3)
+    expect(poolUnticked).toBeGreaterThanOrEqual(3)
 
     // the deciding set was reached through the app's own set ends, the log consistent
     const matchId = getWalkthrough().matchId

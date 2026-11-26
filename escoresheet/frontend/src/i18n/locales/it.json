@@ -5197,7 +5197,8 @@
     "suggestionHome": "Casa: {{name}}, {{count}} giocatori noti",
     "suggestionAway": "Ospite: {{name}}, {{count}} giocatori noti",
     "chooseHome": "Giocatori di casa",
-    "chooseAway": "Giocatori ospiti"
+    "chooseAway": "Giocatori ospiti",
+    "sourceClub": "Lista della società"
   },
   "savedTeams": {
     "title": "Squadre salvate",

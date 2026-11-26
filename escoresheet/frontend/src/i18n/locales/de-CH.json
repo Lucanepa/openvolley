@@ -5192,7 +5192,8 @@
     "suggestionHome": "Heim: {{name}}, {{count}} Spieler bekannt",
     "suggestionAway": "Gascht: {{name}}, {{count}} Spieler bekannt",
     "chooseHome": "Heimspieler uswähle",
-    "chooseAway": "Gastspieler uswähle"
+    "chooseAway": "Gastspieler uswähle",
+    "sourceClub": "Vereinslischte"
   },
   "savedTeams": {
     "title": "Gespeicherte Teams",

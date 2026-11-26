@@ -5191,7 +5191,8 @@
     "suggestionHome": "Domicile : {{name}}, {{count}} joueurs connus",
     "suggestionAway": "Visiteur : {{name}}, {{count}} joueurs connus",
     "chooseHome": "Joueurs à domicile",
-    "chooseAway": "Joueurs visiteurs"
+    "chooseAway": "Joueurs visiteurs",
+    "sourceClub": "Liste du club"
   },
   "savedTeams": {
     "title": "Équipes enregistrées",

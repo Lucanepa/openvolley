@@ -79,6 +79,7 @@ import ClubPlayerPickerModal from './ClubPlayerPickerModal'
 import ClubGenderNotice from './ClubGenderNotice'
 import JanuaryDobNotice from './JanuaryDobNotice'
 import { clubOfTeam } from '../db/clubPlayers'
+import { isWalkthroughDemoUser } from '../domain/walkthroughDemo'
 import { addClubPlayersToRoster, applyClubFill, benchOfficialOfRole, benchRolesOf, clubFillOfRow, clubGenderWarnings, clubPersonOfRow, linkRowToClub, matchGenderOf, offeredClubPlayers, rosterHasPerson, setBenchOfficial } from '../domain/clubPlayers'
 import ClubShield from './manage/ClubShield'
 import { officialCheck, OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS } from '../lib/accountApi'
@@ -3137,7 +3138,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
 
   // Every player known for a side: the roster now (unless it is replaced),
   // an Einsatzliste just read, the saved team (the one picked, else the
-  // schedule suggestion) and earlier matches of the team on this device
+  // schedule suggestion) and earlier matches of the team on this device. The
+  // walkthrough's demo account adds its club's list (domain/walkthroughDemo:
+  // players the demo saved team does not have come unticked); a real
+  // account's pool stays as it was
   const buildPoolFor = async (side, { savedTeam = null, imported = null, includeCurrent = true } = {}) => {
     const name = side === 'home' ? home : away
     // A guest match: only what is in this form or was just imported
@@ -3154,7 +3158,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
       current: includeCurrent ? (side === 'home' ? homeRoster : awayRoster) : [],
       imported: imported || [],
       saved: saved ? savedTeamToRoster(saved).roster : [],
-      earlier: earlier.map(r => r.players)
+      earlier: earlier.map(r => r.players),
+      club: isWalkthroughDemoUser(user?.id) && clubTeams[side]
+        ? addClubPlayersToRoster([], offeredClubPlayers(clubTeams[side].players, clubGender).players).roster
+        : []
     })
   }
 

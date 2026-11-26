@@ -77,8 +77,11 @@ export function demoSavedTeamRows() {
   }]
 }
 
-// The club's licence list: the saved team's players (their numbers come
-// from it) and three more without a number on the saved team
+// The club's licence list: three players the saved team does not have, then
+// the saved team's (their numbers come from it). The three come first: "Add
+// from club" lists the club in this order, and after "Load saved team" its
+// players are all "In the roster", so the ones to tick are at the top; the
+// player pool offers them unticked ("Choose players", MatchSetup)
 const CLUB_EXTRA = [
   ['Ruben', 'Lauener', '904120'],
   ['Andrin', 'Pfister', '904121'],
@@ -92,7 +95,7 @@ const CLUB_EXTRA = [
  */
 export function demoClubRow(teamName) {
   const person = ([first, last, licence]) => ({ sv_number: licence, last_name: last, first_name: first, gender: null, manual: false, from_match: false })
-  const players = [...SAVED_PLAYERS.map(([, first, last, licence]) => person([first, last, licence])), ...CLUB_EXTRA.map(person)]
+  const players = [...CLUB_EXTRA.map(person), ...SAVED_PLAYERS.map(([, first, last, licence]) => person([first, last, licence]))]
   const coach = { ...person(['Urs', 'Gfeller', '904190']), lists: ['coaches'] }
   return {
     clubId: DEMO_CLUB_ID,
