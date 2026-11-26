@@ -72,6 +72,15 @@ export function goToChapter(chapter) {
   goToStep(firstStepOfChapter(chapter))
 }
 
+/**
+ * Is this the walkthrough's own test match, while it runs? (The coin toss
+ * leaves its signatures empty: the tour's "Captain and coach sign here" step
+ * then matches the screen, owner follow-up 26.11.2026.)
+ */
+export function isWalkthroughMatch(matchId) {
+  return state.active === true && state.matchId != null && matchId != null && state.matchId === matchId
+}
+
 /** The test match the walkthrough made (its prepare steps use it again). */
 export function setWalkthroughMatch(matchId) {
   set({ matchId: matchId ?? null })

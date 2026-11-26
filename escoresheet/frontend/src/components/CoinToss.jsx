@@ -42,6 +42,7 @@ import { useFormStack } from '../hooks/useFormStack'
 import { usePhoneWidth } from '../hooks/usePhoneWidth'
 import { focusLeaves, steadyOrder } from '../utils/rosterOrder'
 import { isShirtNumber, shirtNumberDigits } from '../domain/roster'
+import { isWalkthroughMatch } from './walkthrough/walkthroughStore'
 
 // volleyui (RESTYLE-SPEC P3b). Sign A/B and the coach/captain sign buttons are
 // the kit outline button until signed, then the emerald success state: a
@@ -610,8 +611,11 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           setSavedSignatures(prev => ({ ...prev, awayCaptain: match.awayCaptainSignature }))
         }
 
-        // For test matches, pre-fill placeholder signatures so buttons show ✓
-        if (match.test && !match.homeCoachSignature) {
+        // For test matches, pre-fill placeholder signatures so buttons show ✓;
+        // not on the walkthrough's own test match, whose step "Captain and
+        // coach sign here" shows the buttons unsigned (a test match still
+        // gets the placeholders when its toss is confirmed, see below)
+        if (match.test && !match.homeCoachSignature && !isWalkthroughMatch(match.id)) {
           const placeholder = generatePlaceholderSignature()
           setHomeCoachSignature(placeholder)
           setHomeCaptainSignature(placeholder)
