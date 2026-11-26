@@ -1570,6 +1570,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               // lines, which ran out of the fixed h-11 box
               className="h-auto"
               onClick={() => setRosterModal('teamA')}
+              data-testid="cointoss-roster-a"
               style={{ padding: sizes.actionButtonPadding, fontSize: sizes.actionButtonFont, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight, whiteSpace: phone ? 'nowrap' : undefined }}
             >
               {phone ? t('roster.title', 'Roster') : t('coinToss.showRoster')} ({teamAInfo.roster.length})
@@ -1582,6 +1583,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                 variant="secondary"
                 size="xl"
                 ref={signAButtonRef}
+                data-testid="cointoss-sign-a"
                 onClick={() => { setSignatureMenuA(!signatureMenuA); setSignatureMenuB(false) }}
                 aria-expanded={signatureMenuA}
                 // h-auto on a phone: a long label (Signature équipe A) takes two lines
@@ -1674,6 +1676,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               // lines, which ran out of the fixed h-11 box
               className="h-auto"
               onClick={() => setRosterModal('teamB')}
+              data-testid="cointoss-roster-b"
               style={{ padding: sizes.actionButtonPadding, fontSize: sizes.actionButtonFont, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight, whiteSpace: phone ? 'nowrap' : undefined }}
             >
               {phone ? t('roster.title', 'Roster') : t('coinToss.showRoster')} ({teamBInfo.roster.length})
@@ -1686,6 +1689,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                 variant="secondary"
                 size="xl"
                 ref={signBButtonRef}
+                data-testid="cointoss-sign-b"
                 onClick={() => { setSignatureMenuB(!signatureMenuB); setSignatureMenuA(false) }}
                 aria-expanded={signatureMenuB}
                 // h-auto on a phone: a long label (Signature équipe B) takes two lines

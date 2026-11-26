@@ -4953,7 +4953,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
       <MatchSetupHomeTeamView kitScale={kitScale}>
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
           <div>
-            <Button variant="ghost" size="xl" className="bg-white" onClick={() => { restoreHomeTeam(); restoreSideSignatures('home'); setCurrentView('main') }}>← {t('common.back')}</Button>
+            <Button variant="ghost" size="xl" className="bg-white" data-testid="roster-back-home" onClick={() => { restoreHomeTeam(); restoreSideSignatures('home'); setCurrentView('main') }}>← {t('common.back')}</Button>
           </div>
           {/* a long team name wraps, never widens the page */}
           <h2 className="m-0 min-w-0 text-center text-base font-semibold text-stone-700 [overflow-wrap:anywhere]">{home || t('matchSetup.homeTeam')}</h2>
@@ -5629,7 +5629,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
         </div>
 
         <div className="flex justify-end">
-          <Button variant="positive" size="xl" onClick={async () => {
+          <Button variant="positive" size="xl" data-testid="roster-confirm-home" onClick={async () => {
 
             // Check if any changes were made (skip sync if no changes)
             const hasChanges = hasRosterChanged(
@@ -6030,7 +6030,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
       <MatchSetupAwayTeamView kitScale={kitScale}>
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
           <div>
-            <Button variant="ghost" size="xl" className="bg-white" onClick={() => { restoreAwayTeam(); restoreSideSignatures('away'); setCurrentView('main') }}>← {t('common.back')}</Button>
+            <Button variant="ghost" size="xl" className="bg-white" data-testid="roster-back-away" onClick={() => { restoreAwayTeam(); restoreSideSignatures('away'); setCurrentView('main') }}>← {t('common.back')}</Button>
           </div>
           {/* a long team name wraps, never widens the page */}
           <h2 className="m-0 min-w-0 text-center text-base font-semibold text-stone-700 [overflow-wrap:anywhere]">{away || t('matchSetup.awayTeam')}</h2>
@@ -6709,7 +6709,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
         </div>
 
         <div className="flex justify-end">
-          <Button variant="positive" size="xl" onClick={async () => {
+          <Button variant="positive" size="xl" data-testid="roster-confirm-away" onClick={async () => {
 
             // Check if any changes were made (skip sync if no changes)
             const hasChanges = hasRosterChanged(
@@ -7667,7 +7667,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
       {/* Connection toggles moved to Scoreboard Options menu (ConnectionSetupModal) */}
 
       <div className={cn('grid-4 setup-section', !matchInfoConfirmed && 'pointer-events-none opacity-50')}>
-        <div className={cn('flex flex-col gap-5 p-4 sm:p-5', SETUP_BLOCK)} style={{ order: 1 }}>
+        <div className={cn('flex flex-col gap-5 p-4 sm:p-5', SETUP_BLOCK)} style={{ order: 1 }} data-testid="setup-team-home">
           {/* Row 1: Status + Team Name + Sync Indicator; on a phone the chip
               takes the row under the name, and a long name wraps instead of
               widening the card */}
@@ -7722,7 +7722,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 })
               }}
             />
-            {!setupLocked && <Button variant="secondary" size="xl" className="max-sm:w-full sm:ml-auto" onClick={() => setCurrentView('home')}>{t('matchSetup.editRoster')}</Button>}
+            {!setupLocked && <Button variant="secondary" size="xl" className="max-sm:w-full sm:ml-auto" data-testid="edit-roster-home" onClick={() => setCurrentView('home')}>{t('matchSetup.editRoster')}</Button>}
           </div>
           {coloursTooClose(homeColor, awayColor) && <CloseColourNote />}
           <SentRosterCard row={setupLocked ? null : sentRosters.home} side="home" newVersion={!!match?.sentRosterUsed?.home} onUse={() => applySentRoster('home')} onDismiss={() => dismissSentRoster('home')} />
@@ -7730,7 +7730,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
           <ClubGenderNotice warnings={clubWarnings.home} gender={clubGender} />
         </div>
 
-        <div className={cn('flex flex-col gap-5 p-4 sm:p-5', SETUP_BLOCK)} style={{ order: 2 }}>
+        <div className={cn('flex flex-col gap-5 p-4 sm:p-5', SETUP_BLOCK)} style={{ order: 2 }} data-testid="setup-team-away">
           {/* Row 1: Status + Team Name + Sync Indicator; on a phone the chip
               takes the row under the name, and a long name wraps instead of
               widening the card */}
@@ -7785,7 +7785,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 })
               }}
             />
-            {!setupLocked && <Button variant="secondary" size="xl" className="max-sm:w-full sm:ml-auto" onClick={() => setCurrentView('away')}>{t('matchSetup.editRoster')}</Button>}
+            {!setupLocked && <Button variant="secondary" size="xl" className="max-sm:w-full sm:ml-auto" data-testid="edit-roster-away" onClick={() => setCurrentView('away')}>{t('matchSetup.editRoster')}</Button>}
           </div>
           {coloursTooClose(homeColor, awayColor) && <CloseColourNote />}
           <SentRosterCard row={setupLocked ? null : sentRosters.away} side="away" newVersion={!!match?.sentRosterUsed?.away} onUse={() => applySentRoster('away')} onDismiss={() => dismissSentRoster('away')} />
