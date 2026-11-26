@@ -58,6 +58,30 @@ const handNumber = (text) => (text.length <= 2 && [...text].every((c) => /\d/.te
   ? [...text].map((c) => HAND_DIGIT[c] ?? c).join('')
   : null)
 const DATE = /^\d{1,2}[./]\d{1,2}[./]\d{4}$/
+// a printed name's word: a capital, then letters with at least one small one
+// ("Müller", "McLean", "D'Angelo", "Garcia-Lopez"), or a particle
+const NAME_WORD = /^\p{Lu}[\p{L}\p{M}'’.-]*\p{Ll}[\p{L}\p{M}'’.-]*$/u
+const PARTICLE = /^(von|vom|van|zu|zur|de|del|della|dello|dei|degli|di|da|dal|dos|das|do|du|des|der|den|la|le|lo|ten|ter|al|el|bin|ibn|st)$/
+const nameLike = (w) => PARTICLE.test(w.text) || (NAME_WORD.test(w.text) && !(w.text.length <= 2 && w.conf < 70)) ||
+  // a name read with a small first letter ("anna"): letters only, long enough to be no mark
+  /^\p{Ll}\p{L}{3,}$/u.test(w.text)
+// a name and a handwritten mark read as one word ("Anna(1)", "Anna©")
+const GLUED = /^(\p{L}[\p{L}'’-]{2,})([([©®@].*)$/u
+function unglue (w) {
+  const m = GLUED.exec(String(w.text || '').trim())
+  if (!m) return [w]
+  const cut = w.x0 + ((w.x1 - w.x0) * m[1].length) / m[0].length
+  return [{ ...w, text: m[1], x1: cut }, { ...w, text: m[2], x0: cut }]
+}
+/**
+ * Whether a word between the SV number and the date is print (a name, the
+ * gender) and not handwriting the recognition made letters of ("AT", "(x",
+ * "2g", "\\X", a short "Ss" it was unsure of: real photos, 2026-11-26), which
+ * would end up in a name.
+ */
+export const printedWord = (w) => GENDER_WORD.test(w.text) || nameLike(w)
+// how far left of the SV number a team writes the shirt number, in lines
+const LEAD_REACH = 7
 // before the SV number or after the date a mark may be read small or twice
 // ("c", "Cc" for one handwritten C)
 const MARK = /^[([]?([CKL])\1?[)\].]?$/i
@@ -77,26 +101,44 @@ const DIGIT_LOOKALIKE = { O: '0', o: '0', D: '0', Q: '0', I: '1', l: '1', '|': '
  */
 export function ocrLines (data) {
   const found = []
+  // a line's middle and the height of its letters: the median of its words
+  // that are text (a page edge read as a tall "|", a big handwritten number
+  // reaching into the next row: real photos, 2026-11-26), not their extremes
+  const middleOf = (words) => {
+    const text = words.filter((w) => !RULE.test(w.text.trim()))
+    const use = text.length ? text : words
+    return { mid: median(use.map((w) => (w.y0 + w.y1) / 2)), h: Math.max(1, median(use.map((w) => w.y1 - w.y0))) }
+  }
   const take = (line) => {
     const words = (line?.words || [])
       .filter((w) => w && typeof w.text === 'string' && w.bbox)
       .map((w) => ({ text: w.text, conf: Number.isFinite(w.confidence) ? w.confidence : 0, ...w.bbox }))
-    if (words.length) found.push({ words, top: Math.min(...words.map((w) => w.y0)), bottom: Math.max(...words.map((w) => w.y1)) })
+    if (!words.length) return
+    found.push({ words, top: Math.min(...words.map((w) => w.y0)), bottom: Math.max(...words.map((w) => w.y1)), ...middleOf(words) })
   }
   if (Array.isArray(data?.blocks) && data.blocks.length) {
     for (const b of data.blocks) for (const p of b?.paragraphs || []) for (const l of p?.lines || []) take(l)
   } else if (Array.isArray(data?.lines)) {
     for (const l of data.lines) take(l)
   }
-  found.sort((a, b) => (a.top + a.bottom) - (b.top + b.bottom))
+  found.sort((a, b) => a.mid - b.mid)
+  const span = (l) => [Math.min(...l.words.map((w) => w.x0)), Math.max(...l.words.map((w) => w.x1))]
+  const hasLicence = (l) => l.words.some((w) => LICENCE.test(cleanWord(w.text)))
   const lines = []
   for (const l of found) {
     const prev = lines[lines.length - 1]
-    const overlap = prev ? Math.min(prev.bottom, l.bottom) - Math.max(prev.top, l.top) : 0
-    if (prev && overlap > 0.5 * Math.min(prev.bottom - prev.top, l.bottom - l.top)) {
+    let one = false
+    if (prev && Math.abs(prev.mid - l.mid) < 0.6 * Math.min(prev.h, l.h) && !(hasLicence(prev) && hasLicence(l))) {
+      // beside each other, not one over the other (two rows read close together)
+      const [a0, a1] = span(prev)
+      const [b0, b1] = span(l)
+      one = Math.min(a1, b1) - Math.max(a0, b0) < 0.2 * Math.min(a1 - a0, b1 - b0)
+    }
+    if (one) {
       prev.words.push(...l.words)
       prev.top = Math.min(prev.top, l.top)
       prev.bottom = Math.max(prev.bottom, l.bottom)
+      Object.assign(prev, middleOf(prev.words))
     } else lines.push({ ...l, words: [...l.words] })
   }
   return lines
@@ -121,7 +163,7 @@ export function cleanWord (text) {
   }
   // the gender column's letter read twice ("FF")
   s = s.replace(/^([MFH])\1+$/, '$1')
-  s = s.replace(/[.,]$/, (m) => (DATE.test(s.slice(0, -1)) ? '' : m))
+  s = s.replace(/[.,]$/, (m) => (DATE.test(s.slice(0, -1)) || /^\d{5,6}$/.test(s.slice(0, -1)) ? '' : m))
   const loose = !DATE.test(s) && LOOSE_DATE.exec(s)
   return loose ? `${loose[1]}.${loose[2]}.${loose[3]}` : s
 }
@@ -142,17 +184,21 @@ export function cleanWord (text) {
  */
 function takeMarks (words, circled = () => false, tableRight = Infinity) {
   const at = words.findIndex((w) => LICENCE.test(w.text))
-  if (at < 0) return { words, number: null, numberConf: 1, numberWord: null, captain: false, libero: false, markConf: 1 }
+  if (at < 0) return { words, number: null, numberConf: 1, numberWord: null, captain: false, libero: false, markConf: 1, hand: [] }
   const dateAt = words.findIndex((w, i) => i > at && DATE.test(w.text))
   const end = dateAt >= 0 ? dateAt : words.length
+  // (a word far left of the SV number is the page's edge or the table under it)
+  const reach = words[at].x0 - LEAD_REACH * (words[at].y1 - words[at].y0)
   // where a number stood: before the SV number wins, then between, then after the date
   const RANK = { leading: 3, inside: 2, trailing: 1 }
   const out = []
+  const hand = [] // words of handwriting the recognition misread (read again: ocr.js)
   let found = null // { number, conf, word, where, ringed }
   let captain = false
   let libero = false
   let markConf = 1
   words.forEach((w, i) => {
+    if (i < at && w.x1 < reach) return
     const leading = i < at
     const inside = i > at && i < end
     const trailing = dateAt >= 0 && i > dateAt
@@ -183,14 +229,26 @@ function takeMarks (words, circled = () => false, tableRight = Infinity) {
       return
     }
     // whatever else stands before the SV number is no part of the row
-    if (leading) return
+    if (leading) { hand.push(w); return }
+    // between the SV number and the date only print stays (the names)
+    // (a date's pieces stay: "14" "03.2004")
+    if (inside && !printedWord(w) && !/^[\d./,]+$/.test(w.text)) { hand.push(w); return }
     out.push(w)
   })
+  // no printed name at all: a row written in by hand under the table (its
+  // words are the names, read as well as they could be; the row is shown,
+  // every field to check, never dropped: owner, 2026-11-26)
+  const named = out.some((w) => w.x0 > words[at].x1 && /\p{L}{2,}/u.test(w.text) && !GENDER_WORD.test(w.text))
+  if (!named) {
+    const back = hand.filter((w) => w.x0 > words[at].x1 && /\p{L}{2,}/u.test(w.text))
+    for (const w of back) { out.push(w); hand.splice(hand.indexOf(w), 1) }
+    out.sort((a, b) => a.x0 - b.x0)
+  }
   if (found && (found.ringed || circled(found.word))) {
     captain = true
     markConf = Math.min(markConf, found.conf)
   }
-  return { words: out, number: found?.number ?? null, numberConf: found?.conf ?? 1, numberWord: found?.word ?? null, captain, libero, markConf }
+  return { words: out, number: found?.number ?? null, numberConf: found?.conf ?? 1, numberWord: found?.word ?? null, captain, libero, markConf, hand }
 }
 
 // "Trainer: #12345 | Anna Muster (1980)" as read: the "#" or the "|" lost or
@@ -239,7 +297,7 @@ function snapColumns (items) {
  * libero the team wrote in and a confidence per field; null fields where the
  * photo had nothing.
  */
-export function rosterFromOcr (data, { circled, ringAt } = {}) {
+export function rosterFromOcr (data, { circled, ringAt, struck } = {}) {
   const lines = ocrLines(data)
   const height = median(lines.flatMap((l) => l.words.map((w) => w.y1 - w.y0))) || 1
   const scale = LINE_HEIGHT / height
@@ -261,15 +319,18 @@ export function rosterFromOcr (data, { circled, ringAt } = {}) {
     return n
   }
   let lastRow = null // the player row just above: { licence, words, bottom }
+  const printedBoxes = [] // every word of print on the page (not the handwriting)
   lines.forEach((line, index) => {
     const words = line.words
+      .flatMap(unglue)
       .map((w) => ({ ...w, text: cleanWord(w.text) }))
       .filter((w) => w.text)
       .sort((a, b) => a.x0 - b.x0)
     // a name that went on in the line below its row ("Sánchez-Robles" /
     // "Herrero"): a short line of letters only, right under a player row
     // (a number or a mark written beside it counts for that row)
-    const nameBit = (w) => /^\p{L}[\p{L}'’.-]*$/u.test(w.text) && !BARE_MARK.test(w.text)
+    // (print only: handwriting under the last row is no name's end)
+    const nameBit = (w) => nameLike(w) && !BARE_MARK.test(w.text)
     const markBit = (w) => SHIRT.test(w.text) || BARE_MARK.test(w.text)
     if (lastRow && words.length && words.length <= 4 && words.some(nameBit) && words.every((w) => nameBit(w) || markBit(w)) &&
         line.top - lastRow.bottom < 0.8 * height) {
@@ -308,6 +369,19 @@ export function rosterFromOcr (data, { circled, ringAt } = {}) {
       if (i >= 0) {
         rawLicence = words[i].text
         words[i] = { ...words[i], text: standIn() }
+      } else if (headers) {
+        // a row of the table whose SV number the photo lost (cut off at the
+        // page's edge, a pen over it): names and a date of birth below the
+        // table's header. Kept, its SV number empty or as read (real photos,
+        // 2026-11-26: such rows were dropped without a word)
+        const first = words.findIndex((w) => NAME_WORD.test(w.text))
+        const dateAt = words.findIndex((w) => birthDateLike(w.text))
+        if (first >= 0 && dateAt > first) {
+          const before = words[first - 1]
+          rawLicence = before && /^\d{1,7}$/.test(before.text) && words[first].x0 - before.x1 < 3 * height ? before.text : ''
+          const x0 = Math.min(headers[0].x, words[first].x0 - 3 * height)
+          words.splice(0, first, { ...words[first], text: standIn(), x0, x1: x0 + 2.5 * height, conf: 0 })
+        }
       }
     }
     const marks = takeMarks(words, circled, tableRight)
@@ -379,11 +453,28 @@ export function rosterFromOcr (data, { circled, ringAt } = {}) {
         }
       }
       const nameWords = kept.filter((w) => /\p{L}{2,}/u.test(w.text))
+      // what the photo shows of the row (no stand-in): the print, where the
+      // team's handwriting is read again (ocr.js), and whether a pen struck it out
+      const printed = kept.filter((w) => w.conf > 0 && w.text !== NO_NAME && w.text !== STAND_IN_DATE)
+      const dateWord = kept.find((w) => DATE.test(w.text) && w.conf > 0)
+      const hand = {
+        left: licenceWord.x0,
+        x0: licenceWord.x0 - LEAD_REACH * height,
+        x1: dateWord ? dateWord.x0 - 0.2 * height : Math.max(...kept.map((w) => w.x1)) + 4 * height,
+        // (the SV number's middle: always print, where the line's may lean on a big handwritten number)
+        y: (licenceWord.y0 + licenceWord.y1) / 2,
+        line: height,
+        // every printed word near the row (filled in below: the rows above and under it too)
+        skip: [],
+        beyond: Number.isFinite(tableRight) ? tableRight + 0.5 * height : null
+      }
+      const struckOut = !!struck && struck(printed.filter((w) => !dateWord || w.x1 <= dateWord.x1))
       const lfpWord = headers && kept.find((w) => w.x0 > licenceWord.x1 && LFP_MARK.test(w.text))
       const column = lfpWord && headers.filter((h) => h.x <= (lfpWord.x0 + lfpWord.x1) / 2).pop()
       rows.set(licenceWord.text, {
         lfp: !!column?.lfp,
         licenceConf: licenceWord.conf / 100,
+        licenceX: licenceWord.x0,
         nameConf: nameWords.length ? Math.min(...nameWords.map((w) => w.conf)) / 100 : 0,
         number: marks.number,
         numberConf: Math.min(marks.numberConf, HANDWRITTEN_MAX),
@@ -393,9 +484,12 @@ export function rosterFromOcr (data, { circled, ringAt } = {}) {
         ring: ring?.inner || null,
         rawLicence,
         dateGuessed,
+        hand,
+        struck: struckOut,
         more: []
       })
     }
+    for (const w of kept) if (w.conf > 0 && w.text !== NO_NAME && w.text !== STAND_IN_DATE) printedBoxes.push({ x0: w.x0, y0: w.y0, x1: w.x1, y1: w.y1 })
     const joined = kept.map((w) => w.text).join(' ')
     textLines.push({ text: officialLine(joined) || joined, words: kept })
     // one y per line (its order): the reader's rows are Tesseract's lines,
@@ -404,17 +498,32 @@ export function rosterFromOcr (data, { circled, ringAt } = {}) {
     for (const w of kept) items.push({ str: w.text, x: Math.round(w.x0 * scale), y, width: (w.x1 - w.x0) * scale, page: 1 })
   })
   snapColumns(items)
+  // SV numbers start where the column does: one starting a digit further
+  // right lost its first digit at the page's edge or under a pen ("23456"
+  // for 123456: real photos, 2026-11-26), and still looks like one
+  const column = median([...rows.values()].map((r) => r.licenceX))
+  for (const row of rows.values()) {
+    const { y, line } = row.hand
+    row.hand.skip = printedBoxes.filter((b) => b.y1 > y - 2.5 * line && b.y0 < y + 2.5 * line)
+    if (rows.size >= 3 && row.licenceX - column > 0.4 * height) row.licenceConf = Math.min(row.licenceConf, 0.4)
+  }
 
   const result = parseRosterContent(textLines.map((l) => l.text).join('\n'), items)
   result.players = result.players.map((p) => {
     const row = p.licence ? rows.get(p.licence) : null
     if (!row) return { ...p, confidence: { licence: 0.5, firstName: 0.5, lastName: 0.5 } }
     // the rest of a name from the line below goes to the name it stood under
-    const names = { firstName: p.firstName === NO_NAME ? '' : p.firstName, lastName: p.lastName === NO_NAME ? '' : p.lastName }
+    // (a stand-in for a lost name out again, also beside a real word)
+    const real = (name) => String(name || '').split(/\s+/).filter((w) => w && w !== NO_NAME).join(' ')
+    const names = { firstName: real(p.firstName), lastName: real(p.lastName) }
     for (const m of row.more) {
       const key = String(p.firstName).split(/\s+/).includes(m.under) ? 'firstName' : 'lastName'
       names[key] = `${names[key]} ${m.text}`.trim()
     }
+    // a row without a printed date of birth is no row VolleyManager printed
+    // as read (one written in by hand, a row the photo garbled): every field
+    // to check (real photos, 2026-11-26)
+    const cap = row.dateGuessed ? HANDWRITTEN_MAX : 1
     return {
       ...p,
       ...names,
@@ -426,10 +535,13 @@ export function rosterFromOcr (data, { circled, ringAt } = {}) {
       isLibero: row.libero,
       // the box inside a circle whose number was not read (ocr.js reads it again)
       ...(row.ring && row.number === null ? { ringAt: row.ring } : {}),
+      // where the team's handwriting is read again (ocr.js); struck out by hand
+      handAt: row.hand,
+      ...(row.struck ? { struck: true } : {}),
       confidence: {
-        licence: row.rawLicence !== null ? Math.min(row.licenceConf, 0.3) : row.licenceConf,
-        firstName: row.nameConf,
-        lastName: row.nameConf,
+        licence: Math.min(row.rawLicence !== null ? Math.min(row.licenceConf, 0.3) : row.licenceConf, cap),
+        firstName: Math.min(row.nameConf, cap),
+        lastName: Math.min(row.nameConf, cap),
         ...(row.number !== null ? { number: row.numberConf } : {}),
         ...(row.captain ? { isCaptain: row.markConf } : {}),
         ...(row.libero ? { isLibero: row.markConf } : {})
@@ -457,5 +569,56 @@ export function rosterFromOcr (data, { circled, ringAt } = {}) {
       }
     }
   }
+  // a row struck out by hand is no player of this game (owner): left out,
+  // and named on the confirm screen, never imported as playing
+  result.struck = result.players.filter((p) => p.struck).map(({ firstName, lastName, licence }) => ({ firstName, lastName, licence }))
+  result.players = result.players.filter((p) => !p.struck)
   return result
 }
+
+/**
+ * The marks in what a second reading of a row's handwriting gave (ocr.js:
+ * a group of ink no printed word explains, read alone, digits and C K L
+ * only): "3K" the number 3 and the captain, "7 L1" 7 and a libero ("L1",
+ * "L2": the libero's sign, not a number), "L" a libero, "C" or "K" the
+ * captain. unsure: more than one number, or one of three digits.
+ */
+export function marksOfHand (text) {
+  let t = String(text || '').toUpperCase().replace(/[^0-9CKL ]/g, '')
+  let libero = false
+  let captain = false
+  t = t.replace(/L[12]?/g, () => { libero = true; return ' ' })
+  t = t.replace(/[CK]/g, () => { captain = true; return ' ' })
+  const numbers = t.split(/\s+/).filter(Boolean)
+  const one = numbers.length === 1 && /^\d{1,2}$/.test(numbers[0]) && Number(numbers[0]) >= 1 ? Number(numbers[0]) : null
+  return { number: one, captain, libero, unsure: numbers.length > 1 || numbers.some((n) => n.length > 2) }
+}
+
+/**
+ * A player with the marks a second reading of their row's handwriting found
+ * (reads: [{ text, conf 0..1, ringed }], left to right): its number wins
+ * over the first reading's (which read handwriting with the print's eyes),
+ * two different numbers keep the first and are unsure; C, K, L and a ring
+ * add to what the first reading found. Every mark at most HANDWRITTEN_MAX.
+ */
+export function withHandReadings (player, reads) {
+  const found = (reads || []).map((r) => ({ ...marksOfHand(r.text), conf: Math.min(Number(r.conf) || 0, HANDWRITTEN_MAX), ringed: !!r.ringed }))
+  if (!found.length) return player
+  const out = { ...player, confidence: { ...(player.confidence || {}) } }
+  const numbers = found.filter((f) => f.number !== null)
+  if (numbers.length) {
+    const differ = numbers.some((f) => f.number !== numbers[0].number)
+    out.number = numbers[0].number
+    out.confidence.number = Math.min(numbers[0].conf, differ || numbers[0].unsure ? 0.4 : HANDWRITTEN_MAX)
+  }
+  if (found.some((f) => f.captain || f.ringed)) {
+    out.isCaptain = true
+    out.confidence.isCaptain = Math.min(out.confidence.isCaptain ?? HANDWRITTEN_MAX, ...found.filter((f) => f.captain || f.ringed).map((f) => f.conf))
+  }
+  if (found.some((f) => f.libero)) {
+    out.isLibero = true
+    out.confidence.isLibero = Math.min(out.confidence.isLibero ?? HANDWRITTEN_MAX, ...found.filter((f) => f.libero).map((f) => f.conf))
+  }
+  return out
+}
+

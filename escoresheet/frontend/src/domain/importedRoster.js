@@ -16,7 +16,8 @@
  *       isLfp, isCaptain, isLibero,
  *       confidence?: { [field]: 0..1 }   how sure the reader is (a PDF: none, sure)
  *     }],
- *     coach | ac1 | ac2: { firstName, lastName, licence, confidence? } | null
+ *     coach | ac1 | ac2: { firstName, lastName, licence, confidence? } | null,
+ *     struck?: [{ firstName, lastName, licence }]   rows struck out by hand on a photo: not playing, never applied
  *   }
  *
  * Plain data, no React. An Einsatzliste names its players, the coach and two
@@ -112,6 +113,13 @@ export function importedRosterOf (raw, source) {
     .filter((p) => p.firstName || p.lastName)
   const out = { source: from, players }
   for (const k of OFFICIAL_KEYS) out[k] = officialOf(raw?.[k])
+  // rows struck out on a photo (not playing): named on the confirm screen, never applied
+  const struck = from === 'pdf' || !Array.isArray(raw?.struck)
+    ? []
+    : raw.struck.filter(isObject).slice(0, IMPORT_MAX_PLAYERS)
+      .map((p) => ({ firstName: text(p.firstName), lastName: text(p.lastName), licence: digits(p.licence) }))
+      .filter((p) => p.firstName || p.lastName || p.licence)
+  if (struck.length) out.struck = struck
   return out
 }
 
