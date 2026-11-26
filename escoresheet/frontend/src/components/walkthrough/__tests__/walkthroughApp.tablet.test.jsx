@@ -79,4 +79,18 @@ describe('walkthrough: tablet', () => {
     expect(await db.club_players.where('userId').equals(DEMO_USER_ID).count()).toBe(0)
     expect(card()).toBeNull()
   }, 900000)
+
+  it('one chapter from the "?" panel: Set 5 from Home, with nothing played yet', async () => {
+    mountApp()
+    await waitFor(() => expect(button('Restore match')).toBeTruthy())
+    fireEvent.click(document.querySelector('[data-testid="header-help"]'))
+    await waitFor(() => expect(document.querySelector('[data-testid="help-walkthrough-chapters"]')).toBeTruthy())
+    fireEvent.click(document.querySelector('[data-testid="help-walkthrough-chapters"]'))
+    fireEvent.click(document.querySelector('[data-testid="help-walkthrough-chapter-set5"]'))
+    const from = STEPS.findIndex(s => s.id === 'set5Skip')
+    const seen = await walkAll({ from, log: true })
+    expect(seen.filter(s => s.phase !== 'ready')).toEqual([])
+    const sets = await db.sets.where('matchId').equals(getWalkthrough().matchId).toArray()
+    expect(sets.filter(s => s.finished)).toHaveLength(5)
+  }, 900000)
 })

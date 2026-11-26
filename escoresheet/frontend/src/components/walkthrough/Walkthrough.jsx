@@ -351,7 +351,7 @@ export default function Walkthrough({ appCtx }) {
         {/* progress: this chapter's steps */}
         <div className="mt-3 flex items-center gap-2" aria-label={t('walkthrough.progress', { n: inChapter, total: ofChapter.length })}>
           <div className="h-1 flex-1 overflow-hidden rounded-full bg-stone-200">
-            <div className="h-full rounded-full bg-slate-900 transition-[width]" style={{ width: `${(inChapter / ofChapter.length) * 100}%` }} />
+            <div className="h-full rounded-full bg-slate-900" style={{ width: `${(inChapter / ofChapter.length) * 100}%` }} />
           </div>
           <span className="text-[11px] tabular-nums text-stone-500" data-testid="walkthrough-progress">{inChapter}/{ofChapter.length}</span>
         </div>
@@ -374,6 +374,8 @@ export default function Walkthrough({ appCtx }) {
         @media (prefers-reduced-motion: reduce) {
           @keyframes ov-walkthrough-pulse { 0%, 100% { box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.3); } }
         }
+        /* Options > Effects and speed: nothing moves (html[data-no-motion]) */
+        html[data-no-motion] [data-walkthrough-root] * { animation: none !important; transition: none !important; }
       `}</style>
     </div>,
     document.body

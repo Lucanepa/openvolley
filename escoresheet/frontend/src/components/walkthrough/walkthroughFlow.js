@@ -88,6 +88,14 @@ async function walkthroughMatch(ctx) {
  */
 export async function ensureTestMatch(ctx, { beforeCoinToss = false } = {}) {
   let m = await walkthroughMatch(ctx)
+  if (!m) {
+    // a test match the scorer opened meanwhile (Home's Test match): that one
+    const open = await demoMatch(ctx.matchId(), ctx.db)
+    if (open && open.status !== 'final') {
+      m = open
+      ctx.rememberMatch(open.id)
+    }
+  }
   if (m && beforeCoinToss && m.coinTossConfirmed === true) m = null
   if (m) return m
   await closeDialogs()
