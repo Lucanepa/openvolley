@@ -77,7 +77,6 @@ export default function Walkthrough({ appCtx }) {
   const { t, i18n } = useTranslation()
   const wt = useWalkthrough()
   const step = wt.active ? STEPS[wt.step] : null
-  const [phase, setPhase] = useState('idle') // preparing | ready | missing | error
   const [waiting, setWaiting] = useState(null) // 'dialog' | 'preparing' | null
   const [box, setBox] = useState(null)
   const [keepBox, setKeepBox] = useState(null)
@@ -86,6 +85,13 @@ export default function Walkthrough({ appCtx }) {
   const [chaptersOpen, setChaptersOpen] = useState(false)
   const [busy, setBusy] = useState(null) // the fast-forward: { set }
   const [retry, setRetry] = useState(0)
+  // preparing | ready | missing | error, of one showing of one step (run,
+  // step, retry): a new step is 'preparing' in the very render that shows
+  // it, never the last step's 'ready' (data-phase is what automation reads,
+  // owner follow-up 26.11.2026)
+  const showing = `${wt.run}:${wt.step}:${retry}`
+  const [phaseOf, setPhaseOf] = useState({ showing: null, phase: 'idle' })
+  const phase = phaseOf.showing === showing ? phaseOf.phase : 'preparing'
   const cardRef = useRef(null)
   const [cardSize, setCardSize] = useState(null)
   const leftByClick = useRef(false)
@@ -111,6 +117,7 @@ export default function Walkthrough({ appCtx }) {
   useEffect(() => {
     if (!step) return undefined
     let cancelled = false
+    const setPhase = (p) => setPhaseOf({ showing, phase: p })
     leftByClick.current = false
     setPhase('preparing')
     setBox(null)
@@ -254,7 +261,7 @@ export default function Walkthrough({ appCtx }) {
       if (getWalkthrough().active) nextStep()
     } catch (err) {
       console.warn('[Walkthrough] skip to set 5:', err?.message)
-      setPhase('error')
+      setPhaseOf({ showing, phase: 'error' })
     } finally {
       setBusy(null)
     }
