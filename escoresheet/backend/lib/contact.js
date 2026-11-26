@@ -108,7 +108,7 @@ export const SOURCES = Object.freeze(['app', 'website'])
 
 // The sections of the help (the "?" panel of each screen, openvolley.app/support).
 export const SECTION_IDS = Object.freeze([
-  'home', 'setup', 'rosters', 'coin-toss', 'scoring', 'subs-timeouts', 'sanctions', 'set-end', 'match-end',
+  'home', 'setup', 'rosters', 'roster-details', 'coin-toss', 'scoring', 'subs-timeouts', 'sanctions', 'set-end', 'match-end',
   'corrections', 'connections', 'referee', 'bench', 'livescore', 'handover', 'sync-offline', 'install-updates',
   'global', 'club-manager', 'team-links', 'requests', 'team-manager', 'club-licences', 'club-api', 'manager-accounts'
 ])
@@ -118,6 +118,7 @@ export const SECTION_NAMES = Object.freeze({
   home: 'Home',
   setup: 'Match setup',
   rosters: 'Rosters',
+  'roster-details': 'Roster details',
   'coin-toss': 'Coin toss',
   scoring: 'Scoring',
   'subs-timeouts': 'Substitutions, time-outs, libero',
