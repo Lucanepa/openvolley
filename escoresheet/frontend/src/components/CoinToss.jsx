@@ -31,6 +31,7 @@ import { runConnectionChecks, checksOutcome, readOfflineMode } from '../utils/pr
 import { setExtId, eventExtId } from '../utils/syncIds'
 import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
 import { teamBoxStyle } from '../utils/teamColours'
+import { deriveTeamShortLabel } from '../domain/teamIdentity'
 import { FileTextIcon, SearchIcon, TrashIcon } from './icons'
 import { ArrowLeft, ArrowLeftRight } from 'lucide-react'
 import { Button } from '../ui/Button.jsx'
@@ -78,17 +79,6 @@ function generatePlaceholderSignature() {
   }
   ctx.stroke()
   return canvas.toDataURL('image/png')
-}
-
-// Helper to generate short name from team name (e.g., "VBC Musterau" -> "VBC")
-function generateShortName(name) {
-  if (!name) return ''
-  const cleaned = name.trim().toUpperCase()
-  const words = cleaned.split(/\s+/)
-  if (words.length > 1 && words[0].length <= 4) {
-    return words[0]
-  }
-  return cleaned.substring(0, 4)
 }
 
 // Hook to detect if we should use compact sizing
@@ -247,8 +237,6 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
   // Team info state (loaded from DB)
   const [home, setHome] = useState(t('common.home'))
   const [away, setAway] = useState(t('common.away'))
-  const [homeShortName, setHomeShortName] = useState('')
-  const [awayShortName, setAwayShortName] = useState('')
 
   // Rosters
   const [homeRoster, setHomeRoster] = useState([])
@@ -415,7 +403,6 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           const playersKey = isHome ? 'players_home' : 'players_away'
           const benchKey = isHome ? 'bench_home' : 'bench_away'
           const teamName = isHome ? home : away
-          const shortName = isHome ? homeShortName : awayShortName
           const color = isHome ? homeColor : awayColor
 
           // Update matches table. The proxy does not return written rows, so the
@@ -424,7 +411,6 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             .update({
               [teamKey]: {
                 name: teamName?.trim() || '',
-                short_name: shortName || generateShortName(teamName),
                 color: color
               },
               [playersKey]: roster.map(p => ({
@@ -460,7 +446,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             await apiFrom('match_live_state')
               .update({
                 [colorLiveKey]: color,
-                [shortLiveKey]: shortName || generateShortName(teamName),
+                [shortLiveKey]: deriveTeamShortLabel(teamName),
                 [nameLiveKey]: teamName?.trim() || '',
                 updated_at: new Date().toISOString()
               })
@@ -524,17 +510,9 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
 
         if (homeTeam) {
           setHome(homeTeam.name || t('common.home'))
-          // Use team shortName, or match-level shortName as fallback
-          setHomeShortName(homeTeam.shortName || match.homeShortName || '')
-        } else if (match.homeShortName) {
-          setHomeShortName(match.homeShortName)
         }
         if (awayTeam) {
           setAway(awayTeam.name || t('common.away'))
-          // Use team shortName, or match-level shortName as fallback
-          setAwayShortName(awayTeam.shortName || match.awayShortName || '')
-        } else if (match.awayShortName) {
-          setAwayShortName(match.awayShortName)
         }
 
         // Load rosters
@@ -862,8 +840,8 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               confirmed: true,
               first_serve: firstServeTeam
             },
-            home_team: { name: home, short_name: homeShortName || generateShortName(home), color: homeColor },
-            away_team: { name: away, short_name: awayShortName || generateShortName(away), color: awayColor },
+            home_team: { name: home, color: homeColor },
+            away_team: { name: away, color: awayColor },
             players_home: homeRoster.map(p => ({
               number: p.number,
               first_name: p.firstName,
@@ -1074,8 +1052,6 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           // Team A = coin toss winner, Team B = other team
           const teamAName = teamA === 'home' ? home : away
           const teamBName = teamA === 'home' ? away : home
-          const teamAShort = teamA === 'home' ? homeShortName : awayShortName
-          const teamBShort = teamA === 'home' ? awayShortName : homeShortName
           const teamAColor = teamA === 'home' ? homeColor : awayColor
           const teamBColor = teamA === 'home' ? awayColor : homeColor
 
@@ -1085,10 +1061,10 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               current_set: 1,
               // Team info (constant throughout match)
               team_a_name: teamAName,
-              team_a_short: teamAShort || teamAName?.substring(0, 3).toUpperCase(),
+              team_a_short: deriveTeamShortLabel(teamAName),
               team_a_color: teamAColor || '#ef4444',
               team_b_name: teamBName,
-              team_b_short: teamBShort || teamBName?.substring(0, 3).toUpperCase(),
+              team_b_short: deriveTeamShortLabel(teamBName),
               team_b_color: teamBColor || '#3b82f6',
               // Scores
               sets_won_a: 0,
@@ -1275,8 +1251,8 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
     const allEvents = await db.events.where('matchId').equals(matchId).sortBy('seq')
     uploadScoresheetAsync({
       match: updatedMatchForScoresheet,
-      homeTeam: { name: home, shortName: homeShortName },
-      awayTeam: { name: away, shortName: awayShortName },
+      homeTeam: { name: home },
+      awayTeam: { name: away },
       homePlayers: homeRoster,
       awayPlayers: awayRoster,
       sets: allSets,
@@ -1368,8 +1344,8 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             id: matchData.seed_key, // Use seed_key (external_id) for Supabase lookup
             status: matchData.status || null,
             // JSONB columns only
-            home_team: { name: home, short_name: homeShortName || generateShortName(home), color: homeColor },
-            away_team: { name: away, short_name: awayShortName || generateShortName(away), color: awayColor },
+            home_team: { name: home, color: homeColor },
+            away_team: { name: away, color: awayColor },
             players_home: homeRoster.map(p => ({
               number: p.number,
               first_name: p.firstName,
@@ -1414,16 +1390,11 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
 
   // Computed values
   const teamAInfo = teamA === 'home'
-    ? { name: home, shortName: homeShortName, color: homeColor, roster: homeRoster, bench: benchHome }
-    : { name: away, shortName: awayShortName, color: awayColor, roster: awayRoster, bench: benchAway }
+    ? { name: home, color: homeColor, roster: homeRoster, bench: benchHome }
+    : { name: away, color: awayColor, roster: awayRoster, bench: benchAway }
   const teamBInfo = teamB === 'home'
-    ? { name: home, shortName: homeShortName, color: homeColor, roster: homeRoster, bench: benchHome }
-    : { name: away, shortName: awayShortName, color: awayColor, roster: awayRoster, bench: benchAway }
-
-  // Get display name - use short name if name is too long
-  const getDisplayName = (name) => {
-    return name
-  }
+    ? { name: home, color: homeColor, roster: homeRoster, bench: benchHome }
+    : { name: away, color: awayColor, roster: awayRoster, bench: benchAway }
 
   const teamACoachSig = teamA === 'home' ? homeCoachSignature : awayCoachSignature
   const teamACaptainSig = teamA === 'home' ? homeCaptainSignature : awayCaptainSignature
@@ -1550,8 +1521,8 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                 title={teamAInfo.name}
               >
                 {formStack
-                  ? getDisplayName(teamAInfo.name)
-                  : <span style={TEAM_NAME_CLAMP}>{getDisplayName(teamAInfo.name)}</span>}
+                  ? teamAInfo.name
+                  : <span style={TEAM_NAME_CLAMP}>{teamAInfo.name}</span>}
               </div>
             </div>
           </div>
@@ -1654,8 +1625,8 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                 title={teamBInfo.name}
               >
                 {formStack
-                  ? getDisplayName(teamBInfo.name)
-                  : <span style={TEAM_NAME_CLAMP}>{getDisplayName(teamBInfo.name)}</span>}
+                  ? teamBInfo.name
+                  : <span style={TEAM_NAME_CLAMP}>{teamBInfo.name}</span>}
               </div>
             </div>
           </div>

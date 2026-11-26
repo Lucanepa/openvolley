@@ -49,15 +49,6 @@ export function shirtNumber(value) {
   return n >= 1 && n <= 99 ? n : null
 }
 
-/** As Match Setup: "VBC Musterau" -> "VBC", "Musterdorf" -> "MUST" */
-export function defaultShortName(name) {
-  if (!name) return ''
-  const cleaned = String(name).trim().toUpperCase()
-  const words = cleaned.split(/\s+/)
-  if (words.length > 1 && words[0].length <= 4) return words[0]
-  return cutText(cleaned, 4)
-}
-
 /** The team's current libero for a slot ('libero1' / 'libero2'), or null */
 function liberoInSlot(players, slot) {
   return (players || []).find(p => p?.libero === slot) || null
@@ -277,7 +268,8 @@ const COLOUR = /^#[0-9a-f]{6}$/i
  * Prefill of the easy-match form from the page address, so another program
  * (a scoreboard console) can open OpenVolley on its game:
  *   ?easy=1&home=VBC+Musterdorf&away=VBC+Musterau&bestOf=5&homeColor=%23dc2626
- *   &awayColor=%233b82f6&homeShort=MUST&awayShort=VBCZ&league=3L&game=406201&hall=MSH
+ *   &awayColor=%233b82f6&league=3L&game=406201&hall=MSH
+ * (homeShort / awayShort of older links are ignored: the short name is retired)
  * Returns null when the address does not ask for an easy match.
  */
 export function easyMatchPrefill(search) {
@@ -295,8 +287,6 @@ export function easyMatchPrefill(search) {
   return {
     homeName: text('home'),
     awayName: text('away'),
-    homeShort: text('homeShort', 8).toUpperCase(),
-    awayShort: text('awayShort', 8).toUpperCase(),
     homeColor: colour('homeColor'),
     awayColor: colour('awayColor'),
     bestOf,

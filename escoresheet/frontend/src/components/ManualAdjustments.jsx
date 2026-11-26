@@ -33,7 +33,7 @@ import { TEAM_COLOUR_MARK, coloursTooClose, discRing, effectiveTeamColour, HEADE
 import { Checkbox } from '../ui/Checkbox.jsx'
 import { showsSponsorBoxes, sponsorsOf, sponsorsPatch, SPONSOR_MARK_NO, SPONSOR_MARK_YES } from '../domain/sponsors'
 import { useSponsorsOption } from '../hooks/useSponsorsOption'
-import { cleanShortName, SHORT_NAME_MAX, teamMirrorPatch } from '../domain/teamIdentity'
+import { teamMirrorPatch } from '../domain/teamIdentity'
 import { setLiveStateDirty } from '../utils/eventSync'
 import TeamColourPicker, { CloseColourNote, customColourKey, recallCustomColour, rememberCustomColour } from './TeamColourPicker'
 import TeamShirt from './TeamShirt'
@@ -531,16 +531,15 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
       // match" (scoresheet_pdf/utils/sheetRemarks correctionRemarks)
       const afterMatch = isMatchOverStatus(signedMatch?.status)
       const logged = changes.map(({ inPlace, ...c }) => (afterMatch ? { ...c, afterMatch: true } : c))
-      // the team edits on the match row too (homeShortName, homeColor, ...):
+      // the team edits on the match row too (homeName, homeColor, ...):
       // the scoring screen's live state, the scoresheet and the relay copy
-      // read the match's short name first (domain/teamIdentity)
+      // read the match's first (domain/teamIdentity)
       const teamPatch = teamMirrorPatch({ home: data?.homeTeam, away: data?.awayTeam }, { home: editedHomeTeam, away: editedAwayTeam })
 
       // Update teams in IndexedDB (including bench officials)
       if (editedHomeTeam?.id) {
         await db.teams.update(editedHomeTeam.id, {
           name: editedHomeTeam.name,
-          shortName: editedHomeTeam.shortName,
           color: editedHomeTeam.color,
           benchOfficials: editedHomeBench
         })
@@ -548,7 +547,6 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
       if (editedAwayTeam?.id) {
         await db.teams.update(editedAwayTeam.id, {
           name: editedAwayTeam.name,
-          shortName: editedAwayTeam.shortName,
           color: editedAwayTeam.color,
           benchOfficials: editedAwayBench
         })
@@ -639,9 +637,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
         await syncToSupabase(designationSaved, { signaturesCleared: sheetChanged })
       }
 
-      // A short name or a colour changed: the scoring screen sends its live
+      // A name or a colour changed: the scoring screen sends its live
       // state again when it opens (the referee and bench tablets, the
-      // livescore and Point Hub read team_a_short / team_a_color from it)
+      // livescore and Point Hub read team_a_name / team_a_color from it)
       // The interval switch too: the tablets time the break after set 2 by it
       if (Object.keys(teamPatch).length > 0 || longIntervalChanged(data?.match, editedMatch)) setLiveStateDirty(matchId, true)
 
@@ -692,13 +690,11 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
       // Build teams for Supabase
       const homeTeamData = editedHomeTeam ? {
         name: editedHomeTeam.name,
-        short_name: editedHomeTeam.shortName,
         color: editedHomeTeam.color
       } : null
 
       const awayTeamData = editedAwayTeam ? {
         name: editedAwayTeam.name,
-        short_name: editedAwayTeam.shortName,
         color: editedAwayTeam.color
       } : null
 
@@ -1002,17 +998,6 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
                       />
                     </div>
                     <div>
-                      <label style={labelStyle}>{t('manualAdjustmentsEditor.shortNameMax8', 'Short name (max 8)')}</label>
-                      <input
-                        type="text"
-                        maxLength={8}
-                        value={editedHomeTeam?.shortName || ''}
-                        onChange={(e) => updateTeam('shortName', cleanShortName(e.target.value), true)}
-                        aria-label={`${t('common.home', 'Home')} ${t('manualAdjustmentsEditor.shortNameMax8', 'Short name (max 8)')}`}
-                        style={{ ...inputStyle, width: '100%' }}
-                      />
-                    </div>
-                    <div>
                       <label style={labelStyle}>{t('manualAdjustmentsEditor.color', 'Color')}</label>
                       <select
                         value={editedHomeTeam?.color || '#3b82f6'}
@@ -1062,17 +1047,6 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
                         value={editedAwayTeam?.name || ''}
                         onChange={(e) => updateTeam('name', e.target.value, false)}
                         aria-label={`${t('common.away', 'Away')} ${t('manualAdjustmentsEditor.name', 'Name')}`}
-                        style={{ ...inputStyle, width: '100%' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={labelStyle}>{t('manualAdjustmentsEditor.shortNameMax8', 'Short name (max 8)')}</label>
-                      <input
-                        type="text"
-                        maxLength={8}
-                        value={editedAwayTeam?.shortName || ''}
-                        onChange={(e) => updateTeam('shortName', cleanShortName(e.target.value), false)}
-                        aria-label={`${t('common.away', 'Away')} ${t('manualAdjustmentsEditor.shortNameMax8', 'Short name (max 8)')}`}
                         style={{ ...inputStyle, width: '100%' }}
                       />
                     </div>
@@ -1129,20 +1103,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
                         <span style={teamDotStyle(colourOf(side))} />
                         <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--ov-text)', overflowWrap: 'anywhere', minWidth: 0 }}>{teamNameOf(side)}</span>
                       </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '12px', alignItems: 'end' }}>
-                        <div style={{ minWidth: 0 }}>
-                          <label style={labelStyle}>{t('manualAdjustmentsEditor.shortNameMax8', 'Short name (max 8)')}</label>
-                          <input
-                            type="text"
-                            maxLength={SHORT_NAME_MAX}
-                            autoComplete="off"
-                            value={teamOf(side)?.shortName || ''}
-                            onChange={(e) => updateTeam('shortName', cleanShortName(e.target.value), side === 'home')}
-                            disabled={closed}
-                            aria-label={`${teamNameOf(side)} ${t('manualAdjustmentsEditor.shortNameMax8', 'Short name (max 8)')}`}
-                            style={{ ...inputStyle, width: '100%' }}
-                          />
-                        </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'auto', justifyContent: 'start', gap: '12px', alignItems: 'end' }}>
                         <div>
                           <span style={labelStyle}>{t('manualAdjustmentsEditor.shirtColour')}</span>
                           <button

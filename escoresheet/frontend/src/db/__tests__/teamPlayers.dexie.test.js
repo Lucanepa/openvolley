@@ -12,7 +12,7 @@ const stored = async (teamId) => (await db.players.where('teamId').equals(teamId
   .sort((a, b) => a.number - b.number).map(p => [p.number, p.lastName, p.firstName, p.isCaptain])
 
 async function seedHomeTeam() {
-  const teamId = await db.teams.add({ name: HOME.name, shortName: HOME.shortName, color: HOME.color, seedKey: HOME.seedKey, test: true })
+  const teamId = await db.teams.add({ name: HOME.name, color: HOME.color, seedKey: HOME.seedKey, test: true })
   await db.players.bulkAdd(HOME.players.map(p => ({ teamId, ...p, name: `${p.lastName} ${p.firstName}`, test: true })))
   return teamId
 }
@@ -49,13 +49,13 @@ describe('takeTestMatchTeam', () => {
     const seedId = await seedHomeTeam()
     const own = { number: 99, lastName: 'Eigen', firstName: 'Mia', dob: '', isCaptain: true }
     const formRoster = [...HOME.players.map((p, i) => ({ id: i + 1, ...p })), { id: 50, ...own }]
-    const out = await takeTestMatchTeam({ teamId: seedId, name: ' VC Tornado Adliswil D1 ', color: '#123456', shortName: 'ADL', roster: formRoster, bench: TEST_HOME_BENCH })
+    const out = await takeTestMatchTeam({ teamId: seedId, name: ' VC Tornado Adliswil D1 ', color: '#123456', roster: formRoster, bench: TEST_HOME_BENCH })
     expect(out.teamId).not.toBe(seedId)
     expect(out.roster).toEqual([own])
     expect(out.bench).toEqual([{ role: 'Coach', firstName: '', lastName: '', dob: '' }])
     expect(out.removed).toBe(HOME.players.length + TEST_HOME_BENCH.length)
     const team = await db.teams.get(out.teamId)
-    expect([team.name, team.color, team.shortName, team.test, team.seedKey]).toEqual(['VC Tornado Adliswil D1', '#123456', 'ADL', true, 'test-match-team'])
+    expect([team.name, team.color, team.shortName, team.test, team.seedKey]).toEqual(['VC Tornado Adliswil D1', '#123456', undefined, true, 'test-match-team'])
     expect(await stored(out.teamId)).toEqual([[99, 'Eigen', 'Mia', true]])
     // the seed team as it was: the next test match starts with it
     expect((await db.teams.get(seedId)).name).toBe(HOME.name)

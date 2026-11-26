@@ -100,8 +100,8 @@ describe('SetPreview', () => {
     expect(box).toContain('IIIIIIIVVVI111213141516')
     // 5 -> 9 at 1:1 under position V
     expect(box).toMatch(/IIIIIIIVVVI123456:+91:1/)
-    expect(box).toContain('HOM')
-    expect(box).toContain('AWY')
+    expect(box).toContain('Home Team')
+    expect(box).toContain('Away Team')
     // the home time-out at 1:1 (team A, the left points column)
     const timeouts = container.querySelectorAll('[data-testid="timeout-block"]')
     expect(timeouts).toHaveLength(2)
@@ -119,7 +119,7 @@ describe('SetPreview', () => {
     expect(container.querySelector('[data-testid="set-box"]')).toBeNull()
     expect(text(container.querySelector('[data-testid="set-preview-row"]'))).toContain('SET5')
     // set 5 toss: team B on the left
-    expect(text(container.querySelector('[data-testid="set5-box"]'))).toMatch(/AWY[\s\S]*HOM/)
+    expect(text(container.querySelector('[data-testid="set5-box"]'))).toMatch(/Away Team[\s\S]*Home Team/)
     rerender(<SetPreview matchData={{ ...data, match: { ...data.match, bestOf: 3 }, sets: [data.sets[0], data.sets[1], data.sets[4]] }} setIndex={5} />)
     expect(text(container.querySelector('[data-testid="set-preview-row"]'))).toContain('SET3')
   })

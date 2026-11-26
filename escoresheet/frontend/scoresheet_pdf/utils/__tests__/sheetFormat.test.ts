@@ -3,7 +3,6 @@ import { zurichWallTimeMs } from '../../../src/ui/format.js'
 import {
   buildScoresheetFilename,
   buildScoresheetTitle,
-  displayShortName,
   findOfficial,
   formatClockHoursMinutes,
   formatDob,
@@ -107,11 +106,6 @@ describe('game number and team names', () => {
   it('placeholders (HOME / AWAY / Team A ...) never stand for a team', () => {
     for (const p of ['HOME', 'Away', 'home', 'Team A', 'TEAM B', 'teamB', '', null]) expect(isPlaceholderTeamName(p)).toBe(true)
     for (const n of ['MUST', 'Homeland Volley', 'Team Aarau']) expect(isPlaceholderTeamName(n)).toBe(false)
-    expect(displayShortName('HOME', 'VBC Musterdorf H1')).toBe('VBC Musterdorf H1')
-    expect(displayShortName('', 'VBC Musterdorf H1')).toBe('VBC Musterdorf H1')
-    expect(displayShortName('MUST', 'VBC Musterdorf H1')).toBe('MUST')
-    expect(displayShortName('HOME', '')).toBe('HOME')
-    expect(displayShortName(undefined, undefined)).toBe('')
   })
 })
 
@@ -126,11 +120,13 @@ describe('file name (owner 2026-10-13: game<n>_<league>_<YYYY-MM-DD>)', () => {
     expect(buildScoresheetFilename({ match: { ...match, league: '' } })).toBe('game382208_2026-10-07.pdf')
   })
 
-  it('no game number: the real team names in its place, never "match" or the placeholders', () => {
+  it('no game number: the full team names in its place, never "match", a placeholder or a stored short name', () => {
     const quick = { homeShortName: 'HOME', awayShortName: 'AWAY', league: 'Friendly', scheduledAt: local(2026, 10, 7, 20, 0) }
     const name = buildScoresheetFilename({ match: quick, homeTeam: { name: 'VBC Musterdorf H1' }, awayTeam: { name: 'VC Mühlestadt Academica' } })
     expect(name).toBe('VBC-Musterdorf-H1_vs_VC-Muehlestadt-Academica_Friendly_2026-10-07.pdf')
     expect(name).not.toMatch(/match|HOME|AWAY/)
+    // a short name stored before its retirement (26.11.2026) is not read
+    expect(buildScoresheetFilename({ match: { ...quick, homeShortName: 'MUST' }, homeTeam: { name: 'VBC Musterdorf H1' }, awayTeam: { name: 'VC Mühlestadt Academica' } })).toBe(name)
   })
 
   it('the local match date (not the UTC day), else set 1, else today', () => {

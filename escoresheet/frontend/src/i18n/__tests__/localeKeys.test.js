@@ -202,7 +202,6 @@ const SPEC_KEYS = [
   'savedTeams.teams',
   'savedTeams.newTeam',
   'savedTeams.teamName',
-  'savedTeams.shortName',
   'savedTeams.club',
   'savedTeams.color',
   'savedTeams.svrzTeamName',

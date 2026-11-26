@@ -85,8 +85,6 @@ import {
   TEST_HOME_BENCH,
   TEST_AWAY_BENCH,
   getNextTestMatchStartTime,
-  getTestHomeTeamShortName,
-  getTestAwayTeamShortName,
   getTestTeamByExternalId,
   seedTeamPatch
 } from './constants/testSeeds'
@@ -2303,7 +2301,6 @@ export default function App() {
 
     const homeTeamId = await db.teams.add({
       name: homeTeamData?.name || 'Home',
-      shortName: homeTeamData?.short_name || getTestHomeTeamShortName(),
       color: homeTeamData?.color || '#3b82f6',
       seedKey: homeTeamData?.seed_key || TEST_HOME_TEAM_EXTERNAL_ID,
       externalId: homeTeamData?.external_id || TEST_HOME_TEAM_EXTERNAL_ID,
@@ -2314,7 +2311,6 @@ export default function App() {
 
     const awayTeamId = await db.teams.add({
       name: awayTeamData?.name || 'Away',
-      shortName: awayTeamData?.short_name || getTestAwayTeamShortName(),
       color: awayTeamData?.color || '#dc2626',
       seedKey: awayTeamData?.seed_key || TEST_AWAY_TEAM_EXTERNAL_ID,
       externalId: awayTeamData?.external_id || TEST_AWAY_TEAM_EXTERNAL_ID,
@@ -2483,9 +2479,6 @@ export default function App() {
       awayTeamUploadPin: connectionPins.upload_away || matchData.away_team_upload_pin || null,
       homeTeamId,
       awayTeamId,
-      // the set boxes, rosters and the PDF's file name read them from the match
-      homeShortName: homeTeamData?.short_name || getTestHomeTeamShortName(),
-      awayShortName: awayTeamData?.short_name || getTestAwayTeamShortName(),
       bench_home: homeBench,
       bench_away: awayBench,
       officials,
@@ -2997,7 +2990,6 @@ export default function App() {
           const timestamp = new Date().toISOString()
           const teamId = await db.teams.add({
             name: definition.name,
-            shortName: definition.shortName,
             color: definition.color,
             seedKey: definition.seedKey,
             test: true,
@@ -3027,14 +3019,13 @@ export default function App() {
           team = {
             id: teamId,
             name: definition.name,
-            shortName: definition.shortName,
             color: definition.color,
             seedKey: definition.seedKey,
             test: true,
             createdAt: timestamp
           }
         } else {
-          // The seed definition's name and short name win (a device seeded
+          // The seed definition's name wins (a device seeded
           // with the teams of before takes the made-up ones, 2026-11-20); the
           // colour stays as the scorer may have set it
           const patch = seedTeamPatch(team, definition)
@@ -3248,8 +3239,6 @@ export default function App() {
         status: 'scheduled',
         homeTeamId: homeTeam.id,
         awayTeamId: awayTeam.id,
-        homeShortName: homeTeam.shortName,
-        awayShortName: awayTeam.shortName,
         hall: TEST_MATCH_DEFAULTS.hall,
         city: TEST_MATCH_DEFAULTS.city,
         league: TEST_MATCH_DEFAULTS.league,
@@ -3643,7 +3632,6 @@ export default function App() {
       await db.transaction('rw', db.matches, db.teams, async () => {
         const team = (side) => db.teams.add({
           name: form[`${side}Name`],
-          shortName: form[`${side}Short`],
           color: form[`${side}Color`],
           seedKey: EASY_TEAM_SEED_KEYS[side],
           test: true,
@@ -3656,8 +3644,6 @@ export default function App() {
           status: 'scheduled',
           homeTeamId,
           awayTeamId,
-          homeShortName: form.homeShort,
-          awayShortName: form.awayShort,
           hall: form.hall || '',
           city: '',
           league: form.league || '',

@@ -928,12 +928,10 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
         ...restorePins(match),
         home_team: homeTeam ? {
           name: homeTeam.name,
-          short_name: homeTeam.shortName || homeTeam.short_name,
           color: homeTeam.color
         } : null,
         away_team: awayTeam ? {
           name: awayTeam.name,
-          short_name: awayTeam.shortName || awayTeam.short_name,
           color: awayTeam.color
         } : null,
         players_home: toCloudPlayers(homePlayers),
@@ -1187,12 +1185,10 @@ export async function restoreMatchInPlace(matchId, jsonData, { checkServer = ser
         ...restorePins(restoredLocal || match),
         home_team: homeTeam ? {
           name: homeTeam.name,
-          short_name: homeTeam.shortName || homeTeam.short_name,
           color: homeTeam.color
         } : (match.home_team || null),
         away_team: awayTeam ? {
           name: awayTeam.name,
-          short_name: awayTeam.shortName || awayTeam.short_name,
           color: awayTeam.color
         } : (match.away_team || null),
         players_home: toCloudPlayers(homePlayers || match.players_home),
@@ -1954,9 +1950,6 @@ export function localMatchRowFromCloud(cloudData, { homeTeamId = null, awayTeamI
     // when this device's clock is behind the previous one's
     // (serverDataSync.liveClockOffset)
     liveClockOffsetMs: liveClockOffsetAfter(cloudData.liveState),
-    // Short names at match level (for easy access)
-    homeShortName: homeTeamData.short_name || null,
-    awayShortName: awayTeamData.short_name || null,
     // JSONB data stored locally
     officials: officialsFromCloud(match.officials),
     bench_home: benchFromCloud(match.bench_home),
@@ -2065,7 +2058,6 @@ export async function importMatchFromSupabase(cloudData, { replaceNewer = false 
     if (homeTeamData.name) {
       homeTeamId = await db.teams.add({
         name: homeTeamData.name,
-        shortName: homeTeamData.short_name,
         color: homeTeamData.color,
         createdAt: new Date().toISOString()
       })
@@ -2074,7 +2066,6 @@ export async function importMatchFromSupabase(cloudData, { replaceNewer = false 
     if (awayTeamData.name) {
       awayTeamId = await db.teams.add({
         name: awayTeamData.name,
-        shortName: awayTeamData.short_name,
         color: awayTeamData.color,
         createdAt: new Date().toISOString()
       })

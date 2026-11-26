@@ -173,7 +173,7 @@ const SANCTION_SHORT = {
 /**
  * The footer's "Last action" text.
  * @param {{ type: string, team?: 'home'|'away'|null, data?: object }|null} lastEvent
- * @param {{ homeLabel: string, awayLabel: string, homeShort: string, awayShort: string,
+ * @param {{ homeLabel: string, awayLabel: string, homeName: string, awayName: string,
  *   leftLabel: string, rightLabel: string, leftPoints: number, rightPoints: number,
  *   setLabel?: (setIndex: number) => (number|string), t: Function }} ctx
  */
@@ -182,8 +182,8 @@ export function refereeEventLabel(lastEvent, ctx) {
   const t = typeof ctx.t === 'function' ? ctx.t : (key) => key
   const team = lastEvent.team
   const teamLbl = team === 'home' ? ctx.homeLabel : team === 'away' ? ctx.awayLabel : ''
-  const teamShort = team === 'home' ? ctx.homeShort : team === 'away' ? ctx.awayShort : ''
-  const teamInfo = teamLbl ? [teamLbl, teamShort, `(${courtScore(ctx)})`].filter(Boolean).join(' ') : ''
+  const teamName = team === 'home' ? ctx.homeName : team === 'away' ? ctx.awayName : ''
+  const teamInfo = teamLbl ? [teamLbl, teamName, `(${courtScore(ctx)})`].filter(Boolean).join(' ') : ''
   const data = lastEvent.data || {}
   const withTeam = (text) => [text, teamInfo].filter(Boolean).join(' ')
 

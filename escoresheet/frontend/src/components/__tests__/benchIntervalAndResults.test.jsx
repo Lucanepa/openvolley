@@ -83,8 +83,10 @@ describe('bench match end: the result table', () => {
     const { container, getByText } = render(<MatchEntry matchId="m1" team="away" onBack={() => {}} embedded />)
     await waitFor(() => expect(getByText('The match has ended')).toBeTruthy())
     const text = container.textContent
-    expect(text).toContain('MUSTERAU')
-    expect(text).toContain('BEISPIEL')
+    // the full names (the stored short names MUSTERAU / BEISPIEL are retired)
+    expect(text).toContain('VBC Musterau')
+    expect(text).toContain('VC Beispielstadt')
+    expect(text).not.toContain('BEISPIEL')
     // 15:38 to 16:07 Zürich time (UTC+1 in November): 29 minutes
     expect(text).toContain('15 h 38 min')
     expect(text).toContain('16 h 07 min')

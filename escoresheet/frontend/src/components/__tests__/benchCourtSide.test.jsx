@@ -160,8 +160,9 @@ describe('bench tablet: the score card, counters and rows', () => {
     const { container } = render(<MatchEntry matchId="m1" team="away" onBack={() => {}} embedded />)
     await waitFor(() => expect(container.querySelector('[data-bench-points="own"]')).toBeTruthy())
     const text = (sel) => container.querySelector(sel)?.textContent
-    expect(text('[data-bench-team="own"]')).toBe('BEISPIEL')
-    expect(text('[data-bench-team="opp"]')).toBe('MUSTER')
+    // the full names, not the stored short names (retired 26.11.2026)
+    expect(text('[data-bench-team="own"]')).toBe('Away')
+    expect(text('[data-bench-team="opp"]')).toBe('Home')
     expect(text('[data-bench-points="own"]')).toBe('2')
     expect(text('[data-bench-points="opp"]')).toBe('3')
     expect(text('[data-bench-set]')).toBe('3')

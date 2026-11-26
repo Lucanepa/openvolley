@@ -48,7 +48,8 @@ globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} 
 
 const { default: Referee } = await import('../Referee')
 
-// Team A is home (HOM), team B away (AWY)
+// Team A is home (Home VC), team B away (Away VC); the stored short names
+// (HOM / AWY, from before their retirement) are not shown
 function bundle(match, set) {
   return {
     success: true,
@@ -71,13 +72,14 @@ async function mount(match, set) {
   const push = relay.onData || relay.subscriber
   await act(async () => { push(bundle(match, set)) })
   await settle()
-  await waitFor(() => expect(document.body.textContent).toContain('HOM'))
+  await waitFor(() => expect(document.body.textContent).toContain('Home VC'))
+  expect(document.body.textContent).not.toMatch(/HOM|AWY/)
 }
 
 // The header names the left team first
 const leftTeam = () => {
   const text = document.body.textContent
-  return text.indexOf('HOM') < text.indexOf('AWY') ? 'A' : 'B'
+  return text.indexOf('Home VC') < text.indexOf('Away VC') ? 'A' : 'B'
 }
 
 const set = (index, extra = {}) => ({ index, homePoints: 3, awayPoints: 2, finished: false, ...extra })

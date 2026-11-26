@@ -498,8 +498,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         match: {
           id: -1,
           status: 'live',
-          homeShortName: 'HOM',
-          awayShortName: 'AWY',
           coinTossTeamA: 'home',
           firstServe: 'home'
         },
@@ -1502,9 +1500,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     awayLibero: teamLiberoColour(data?.awayTeam)
   })
 
-  // Compute team name texts for adaptive sizing
-  const leftShortName = (leftTeam === 'home' ? data?.match?.homeShortName : data?.match?.awayShortName) || leftTeamData?.name || 'Team'
-  const rightShortName = (rightTeam === 'home' ? data?.match?.homeShortName : data?.match?.awayShortName) || rightTeamData?.name || 'Team'
+  // The full team names (the short name is retired, 26.11.2026), sized together
+  const leftTeamName = leftTeamData?.name || 'Team'
+  const rightTeamName = rightTeamData?.name || 'Team'
 
   // Resize observer for adaptive text container widths
   useEffect(() => {
@@ -1517,8 +1515,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     return () => observer.disconnect()
   }, [section2AContainerEl])
 
-  // Synced font sizes for paired team names (SECTION 2A)
-  const section2AFontSize = useSyncedFontSize([leftShortName, rightShortName], section2AWidth, 28, 14, true)
+  // Synced font sizes for paired team names (SECTION 2A): down to 8px (Android's
+  // WebView draws nothing smaller) so a long full name still fits
+  const section2AFontSize = useSyncedFontSize([leftTeamName, rightTeamName], section2AWidth, 28, 8, true)
 
   // Get team-level sanctions (formal warning, improper request, delay warning, bench sanctions)
   // Also returns player-level sanctions (warnings, penalties, expulsions, disqualifications)
@@ -2649,7 +2648,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 textOverflow: 'ellipsis',
                 maxWidth: '100%'
               }}>
-                {leftShortName}
+                {leftTeamName}
               </div>
             </div>
             <div style={{ padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)', ...teamBoxStyle(leftColor), borderRadius: '6px', fontSize: 'clamp(18px, 4.5vw, 32px)', fontWeight: 800, flexShrink: 0 }}>{leftLabel}</div>
@@ -2702,7 +2701,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                     fontWeight: 'inherit',
                   }}
                 >
-                  {rightShortName}
+                  {rightTeamName}
                 </span>
               </div>
             </div>
@@ -3192,8 +3191,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   {refereeEventLabel(lastEvent, {
                     homeLabel,
                     awayLabel,
-                    homeShort: data?.match?.homeShortName || data?.homeTeam?.name || t('common.home'),
-                    awayShort: data?.match?.awayShortName || data?.awayTeam?.name || t('common.away'),
+                    homeName: data?.homeTeam?.name || t('common.home'),
+                    awayName: data?.awayTeam?.name || t('common.away'),
                     leftLabel,
                     rightLabel,
                     leftPoints: leftDisplayScore,
@@ -3260,8 +3259,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         <BenchRequestIndicator
           matchId={matchId}
           teams={{
-            home: { name: data?.match?.homeShortName || data?.homeTeam?.shortName || data?.homeTeam?.name, colour: effectiveTeamColour('home', data?.homeTeam, data?.match) },
-            away: { name: data?.match?.awayShortName || data?.awayTeam?.shortName || data?.awayTeam?.name, colour: effectiveTeamColour('away', data?.awayTeam, data?.match) }
+            home: { name: data?.homeTeam?.name, colour: effectiveTeamColour('home', data?.homeTeam, data?.match) },
+            away: { name: data?.awayTeam?.name, colour: effectiveTeamColour('away', data?.awayTeam, data?.match) }
           }}
         />
       )}

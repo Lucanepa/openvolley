@@ -120,19 +120,6 @@ export function isPlaceholderTeamName(name: unknown): boolean {
   return /^(home|away|team\s*[ab]|heim|gast)$/i.test(s)
 }
 
-/**
- * The short name printed in the set boxes, the rosters and the result table:
- * the stored short name, else the team's full name (also when the short name
- * is a placeholder such as HOME / AWAY and a real name is known).
- */
-export function displayShortName(shortName: unknown, fullName: unknown): string {
-  const short = shortName === null || shortName === undefined ? '' : String(shortName).trim()
-  const full = fullName === null || fullName === undefined ? '' : String(fullName).trim()
-  if (short && !isPlaceholderTeamName(short)) return short
-  if (full && !isPlaceholderTeamName(full)) return full
-  return short || full
-}
-
 const TRANSLITERATION: Record<string, string> = {
   ä: 'ae', ö: 'oe', ü: 'ue', Ä: 'Ae', Ö: 'Oe', Ü: 'Ue', ß: 'ss',
   é: 'e', è: 'e', ê: 'e', ë: 'e', É: 'E', È: 'E', Ê: 'E', Ë: 'E',
@@ -205,8 +192,8 @@ export function buildScoresheetFilename(
   const league = sanitizeFilenamePart(compactLeagueCode(match.league), 30)
   let who = game ? `game${game}` : ''
   if (!who) {
-    const home = sanitizeFilenamePart(displayShortName(match.homeShortName, data.homeTeam?.name ?? match.homeTeamName), 30) || 'Home'
-    const away = sanitizeFilenamePart(displayShortName(match.awayShortName, data.awayTeam?.name ?? match.awayTeamName), 30) || 'Away'
+    const home = sanitizeFilenamePart(String(data.homeTeam?.name || match.homeTeamName || ''), 30) || 'Home'
+    const away = sanitizeFilenamePart(String(data.awayTeam?.name || match.awayTeamName || ''), 30) || 'Away'
     who = `${home}_vs_${away}`
   }
   const stem = [who, league, date].filter(Boolean).join('_')
@@ -216,8 +203,8 @@ export function buildScoresheetFilename(
 /** The PDF's document title (metadata, field-spec 13.1). */
 export function buildScoresheetTitle(data: { match?: any; homeTeam?: any; awayTeam?: any; sets?: any[] }): string {
   const match = data.match || {}
-  const home = data.homeTeam?.name || match.homeTeamName || displayShortName(match.homeShortName, '') || 'Home'
-  const away = data.awayTeam?.name || match.awayTeamName || displayShortName(match.awayShortName, '') || 'Away'
+  const home = data.homeTeam?.name || match.homeTeamName || 'Home'
+  const away = data.awayTeam?.name || match.awayTeamName || 'Away'
   const firstSetStart = (data.sets || []).find((s: any) => s?.index === 1)?.startTime
   const date = formatSheetDate(match.scheduledAt) || formatSheetDate(firstSetStart)
   const game = gameNumberOf(match)

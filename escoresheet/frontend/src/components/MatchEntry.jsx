@@ -11,6 +11,7 @@ import ballFallback from '../ball_fallback.png'
 // stay cached (old green ball) after an update
 const ballImage = ballFallback
 import { Results } from '../../scoresheet_pdf/components/FooterSection'
+import { FitText } from '../../scoresheet_pdf/components/FitText'
 import { setDurationMinutes, matchTimes, isoOf } from '../../scoresheet_pdf/utils/matchTimes'
 import { isDefaultSet } from '../../scoresheet_pdf/utils/scoresheetModel'
 import { formatClockHoursMinutes, formatHoursMinutes } from '../../scoresheet_pdf/utils/sheetFormat'
@@ -40,7 +41,7 @@ import { getSideAForSet, getFirstServeForSet } from '../domain/rules'
 import { countRegularSubstitutions, countAllSubstitutions } from '../domain/substitutions'
 import { sanctionTarget, compareBySeq } from '../domain/describe'
 import { TEAM_COLOUR_MARK, matchDiscPaint, teamLiberoColour, markColourOn, teamBoxStyle, effectiveTeamColour } from '../utils/teamColours'
-import { TIMEOUT_LIMIT, SUBSTITUTION_LIMIT, counterTone, counterPips, benchShortName, teamSanctionsForDisplay } from './bench/benchLayout.js'
+import { TIMEOUT_LIMIT, SUBSTITUTION_LIMIT, counterTone, counterPips, teamSanctionsForDisplay } from './bench/benchLayout.js'
 import BenchRequestPanel from './bench/BenchRequestPanel.jsx'
 import { benchSetIndex } from '../domain/benchRequests'
 
@@ -843,12 +844,10 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
 
   // Show results when match is finished
   if (isMatchFinished) {
-    const teamAShortName = data?.match?.coinTossTeamA === 'home'
-      ? (data?.match?.homeShortName || data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home'))
-      : (data?.match?.awayShortName || data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away'))
-    const teamBShortName = data?.match?.coinTossTeamA === 'home'
-      ? (data?.match?.awayShortName || data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away'))
-      : (data?.match?.homeShortName || data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home'))
+    const homeName = data?.homeTeam?.name || t('common.home')
+    const awayName = data?.awayTeam?.name || t('common.away')
+    const teamAName = data?.match?.coinTossTeamA === 'home' ? homeName : awayName
+    const teamBName = data?.match?.coinTossTeamA === 'home' ? awayName : homeName
 
     return (
       <div style={{
@@ -899,8 +898,8 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
               by the match's end), the times and the best-of-3 rows, as on
               the scorer's sheet */}
           <Results
-            teamAShortName={teamAShortName}
-            teamBShortName={teamBShortName}
+            teamAName={teamAName}
+            teamBName={teamBName}
             setResults={calculateSetResults}
             matchStart={matchTimesText.start}
             matchEnd={matchTimesText.end}
@@ -930,8 +929,8 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
   const ownTeam = ownKey === 'home' ? data.homeTeam : data.awayTeam
   const oppTeam = oppKey === 'home' ? data.homeTeam : data.awayTeam
   const scoreSides = [
-    { key: 'own', name: benchShortName(ownKey, data.match, ownTeam) || teamInfo.name, colour: effectiveTeamColour(ownKey, ownTeam, data.match), points: points.team, serving: isServing },
-    { key: 'opp', name: benchShortName(oppKey, data.match, oppTeam) || opponentInfo.name, colour: effectiveTeamColour(oppKey, oppTeam, data.match), points: points.opponent, serving: !isServing && !!data.set }
+    { key: 'own', name: ownTeam?.name || teamInfo.name, colour: effectiveTeamColour(ownKey, ownTeam, data.match), points: points.team, serving: isServing },
+    { key: 'opp', name: oppTeam?.name || opponentInfo.name, colour: effectiveTeamColour(oppKey, oppTeam, data.match), points: points.opponent, serving: !isServing && !!data.set }
   ]
   const counters = [
     { key: 'to', label: t('matchEntry.to', 'TO'), value: timeoutsUsed, limit: TIMEOUT_LIMIT, tone: counterTone(timeoutsUsed, TIMEOUT_LIMIT) },
@@ -1013,15 +1012,15 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
                 ...teamBoxStyle(s.colour),
                 borderRadius: '8px',
                 padding: '3px 10px',
-                fontSize: 'clamp(13px, 1.8vh, 20px)',
                 fontWeight: 700,
                 letterSpacing: '0.02em',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
+                display: 'flex',
                 minWidth: 0,
                 maxWidth: '100%'
-              }}>{s.name}</span>
+              }}>
+                {/* the full name, smaller until it fits (the short name is retired) */}
+                <FitText max={18} min={5} title={s.name}>{s.name}</FitText>
+              </span>
             </div>
             <span data-bench-points={s.key} style={{
               fontSize: 'clamp(56px, min(11vh, 26vw), 168px)',

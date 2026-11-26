@@ -86,13 +86,12 @@ afterAll(() => {
 
 const button = (text) => [...document.querySelectorAll('button')].find(b => b.textContent.trim().startsWith(text) && !b.disabled)
 
-// The scoring screen's team columns: "A-HOM" / "B-AWA" (letter, short name)
+// The scoring screen's team columns: "A - Home VC" / "B - Away VC" (letter, full name)
 const homeOnLeftOnScreen = () => {
-  const text = document.body.textContent
-  const home = text.search(/[AB]-HOM/)
-  const away = text.search(/[AB]-AWA/)
-  if (home < 0 || away < 0) throw new Error('team columns not shown yet')
-  return home < away
+  const left = document.querySelector('[data-testid="column-team-left"]')?.textContent || ''
+  const right = document.querySelector('[data-testid="column-team-right"]')?.textContent || ''
+  if (!/^[AB] - (Home|Away) VC$/.test(left) || !/^[AB] - (Home|Away) VC$/.test(right)) throw new Error('team columns not shown yet')
+  return left.endsWith('Home VC')
 }
 
 // The team the court has on the left in a set, as the match row says
@@ -186,8 +185,8 @@ async function expectSwapKeepsSides(matchId, { currentSet, homeLeftNow }) {
   mountScoreboard(matchId)
   await waitFor(() => expect(homeOnLeftOnScreen()).toBe(homeLeftNow), { timeout: 20000 })
   // the letters follow the swap: home is B now
-  expect(document.body.textContent).toMatch(/B-HOM/)
-  expect(document.body.textContent).toMatch(/A-AWA/)
+  expect(document.body.textContent).toMatch(/B - Home VC/)
+  expect(document.body.textContent).toMatch(/A - Away VC/)
 }
 
 describe('Swap A/B moves no team (Manual adjustments, then the scoring screen)', () => {
@@ -273,7 +272,7 @@ describe('Undo after Swap A/B of an event logged before it', () => {
     expect(m.coinTossTeamA).toBe('away')
     expect(leftTeam(m, 2)).toBe('away')
     await waitFor(() => expect(homeOnLeftOnScreen()).toBe(false))
-    expect(document.body.textContent).toMatch(/B-HOM/)
+    expect(document.body.textContent).toMatch(/B - Home VC/)
     cleanup()
   }, 120000)
 

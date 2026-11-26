@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { counterTone, counterPips, benchShortName, teamSanctionsForDisplay, TIMEOUT_LIMIT, SUBSTITUTION_LIMIT } from '../benchLayout.js'
+import { counterTone, counterPips, teamSanctionsForDisplay, TIMEOUT_LIMIT, SUBSTITUTION_LIMIT } from '../benchLayout.js'
 
 describe('counterTone', () => {
   it('marks a used-up limit', () => {
@@ -25,15 +25,6 @@ describe('counterPips', () => {
   it('never draws more pips than the limit', () => {
     expect(counterPips(9, 2)).toEqual([true, true])
     expect(counterPips(-1, 2)).toEqual([false, false])
-  })
-})
-
-describe('benchShortName', () => {
-  it('prefers the match short name, then the team, then the name', () => {
-    expect(benchShortName('home', { homeShortName: 'MUSTER' }, { name: 'VBC Musterdorf' })).toBe('MUSTER')
-    expect(benchShortName('away', {}, { shortName: 'BEISPIEL', name: 'Volley Beispiel' })).toBe('BEISPIEL')
-    expect(benchShortName('away', null, { name: 'Volley Beispiel' })).toBe('Volley Beispiel')
-    expect(benchShortName('home', null, null)).toBe('')
   })
 })
 

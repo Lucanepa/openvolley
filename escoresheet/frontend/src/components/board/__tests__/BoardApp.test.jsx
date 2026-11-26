@@ -102,8 +102,8 @@ describe('BoardApp', () => {
     render(<BoardApp initialTarget={TARGET} createFeed={createFeed} />)
     push(liveView())
     expect(screen.getByTestId('board-state')).toHaveAttribute('data-state', 'live')
-    // a long name shows the short one
-    expect(screen.getByTestId('board-name-left')).toHaveTextContent('AWA')
+    // the full name, also a long one (the short name is retired)
+    expect(screen.getByTestId('board-name-left')).toHaveTextContent('Away Volleyball Club Nord')
     expect(screen.getByTestId('board-name-right')).toHaveTextContent('Home VC')
     expect(screen.getByTestId('board-points-left')).toHaveTextContent('18')
     expect(screen.getByTestId('board-points-right')).toHaveTextContent('21')

@@ -47,6 +47,7 @@ import { generateSecurePin } from '../utils/stringUtils'
 import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
 import { buildConnectionPins } from '../utils/connectionPins'
 import { coloursTooClose, DEFAULT_AWAY_COLOUR, DEFAULT_HOME_COLOUR, isCustomColour, isDefaultTeamColour, readableTextOn, teamBoxStyle } from '../utils/teamColours'
+import { deriveTeamShortLabel } from '../domain/teamIdentity'
 import { missingConnectionPins, connectionPinsSyncJob, fetchPendingRoster, clearPendingRosterJob, isKnownDob, cleanLicence, scorerIdentified } from '../utils/remoteRoster'
 import { ClipboardIcon } from './icons'
 import { AlertTriangle, Loader2 } from 'lucide-react'
@@ -276,7 +277,7 @@ export function isSetupLocked(match) {
 
 // The info page's fields kept in its draft (db/setupDrafts) until Save
 const INFO_DRAFT_KEYS = ['date', 'time', 'hall', 'city', 'type1', 'type1Other', 'championshipType', 'championshipTypeOther',
-  'type2', 'type3', 'type3Other', 'bestOf', 'pointsRegular', 'pointsDeciding', 'gameN', 'league', 'home', 'away', 'homeColor', 'awayColor', 'homeShortName', 'awayShortName',
+  'type2', 'type3', 'type3Other', 'bestOf', 'pointsRegular', 'pointsDeciding', 'gameN', 'league', 'home', 'away', 'homeColor', 'awayColor',
   'ref1First', 'ref1Last', 'ref1Country', 'ref1Dob', 'ref1Email', 'ref2First', 'ref2Last', 'ref2Country', 'ref2Dob', 'ref2Email',
   'scorerFirst', 'scorerLast', 'scorerCountry', 'scorerDob', 'scorerLicence', 'asstFirst', 'asstLast', 'asstCountry', 'asstDob',
   'lineJudge1', 'lineJudge2', 'lineJudge3', 'lineJudge4', 'homeContactEmail', 'awayContactEmail',
@@ -315,7 +316,7 @@ const sameTeamName = (a, b) => String(a || '').trim().toLowerCase() === String(b
 function hasMatchInfoChanged(original, current) {
   if (!original) return true // No original, consider it changed
   const keys = ['date', 'time', 'hall', 'city', 'type1', 'type1Other', 'championshipType', 'championshipTypeOther',
-    'type2', 'type3', 'type3Other', 'bestOf', 'pointsRegular', 'pointsDeciding', 'gameN', 'league', 'home', 'away', 'homeColor', 'awayColor', 'homeShortName', 'awayShortName',
+    'type2', 'type3', 'type3Other', 'bestOf', 'pointsRegular', 'pointsDeciding', 'gameN', 'league', 'home', 'away', 'homeColor', 'awayColor',
     'homeSponsors', 'awaySponsors', 'sponsorsMarked', 'longIntervalAfterSet2']
   for (const key of keys) {
     if (!isEqual(original[key], current[key])) return true
@@ -610,18 +611,6 @@ function isNavigatorOnline() {
   return typeof navigator === 'undefined' || navigator.onLine !== false
 }
 
-// Helper to generate short name from team name (first 3-4 chars uppercase)
-function generateShortName(name) {
-  if (!name) return ''
-  // Remove common prefixes/suffixes and take first word or first 4 chars
-  const cleaned = name.trim().toUpperCase()
-  const words = cleaned.split(/\s+/)
-  if (words.length > 1 && words[0].length <= 4) {
-    return words[0]
-  }
-  return cleaned.substring(0, 4)
-}
-
 // The value beside a name as the server stores it: a date of birth from
 // DD.MM.YYYY to YYYY-MM-DD; a licence number as it is (a Swiss match: licence
 // or date, domain/idMode)
@@ -711,8 +700,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
   const [league, setLeague] = useState('')
   const [homeColor, setHomeColor] = useState(DEFAULT_HOME_COLOUR)
   const [awayColor, setAwayColor] = useState(DEFAULT_AWAY_COLOUR)
-  const [homeShortName, setHomeShortName] = useState('')
-  const [awayShortName, setAwayShortName] = useState('')
   // Sponsors on clothing (domain/sponsors.js): one box per team while the
   // option is on (or the match is already marked); the first tick marks the match
   const [homeSponsors, setHomeSponsors] = useState(false)
@@ -738,8 +725,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
   const canConfirmMatchInfo = Boolean(
     home?.trim() &&
     away?.trim() &&
-    homeShortName?.trim() &&  // Home short name must be filled
-    awayShortName?.trim() &&  // Away short name must be filled
     date?.trim() &&      // Date must be filled
     !dateError &&        // Date must be valid
     time?.trim() &&      // Time must be filled
@@ -757,8 +742,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
     const missing = []
     if (!home?.trim()) missing.push(t('matchSetup.homeTeamName') || 'Home team')
     if (!away?.trim()) missing.push(t('matchSetup.awayTeamName') || 'Away team')
-    if (!homeShortName?.trim()) missing.push(`${t('common.home')} ${t('matchSetup.short')}`)
-    if (!awayShortName?.trim()) missing.push(`${t('common.away')} ${t('matchSetup.short')}`)
     if (!date?.trim()) missing.push(t('matchSetup.date') || 'Date')
     else if (dateError) missing.push(t('matchSetup.date') + ' (invalid)')
     if (!time?.trim()) missing.push(t('matchSetup.time') || 'Time')
@@ -780,8 +763,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
     const missing = []
     if (!home?.trim()) missing.push(t('matchSetup.homeTeamName') || 'Home team')
     if (!away?.trim()) missing.push(t('matchSetup.awayTeamName') || 'Away team')
-    if (!homeShortName?.trim()) missing.push(`${t('common.home')} ${t('matchSetup.short')}`)
-    if (!awayShortName?.trim()) missing.push(`${t('common.away')} ${t('matchSetup.short')}`)
     if (!date?.trim()) missing.push(t('matchSetup.date') || 'Date')
     else if (dateError) missing.push(`${t('matchSetup.date')} (${t('common.invalid') || 'invalid'})`)
     if (!time?.trim()) missing.push(t('matchSetup.time') || 'Time')
@@ -1433,7 +1414,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
     if (currentView === 'info') {
       originalMatchInfoRef.current = {
         date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther,
-        type2, type3, type3Other, bestOf, pointsRegular, pointsDeciding, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName,
+        type2, type3, type3Other, bestOf, pointsRegular, pointsDeciding, gameN, league, home, away, homeColor, awayColor,
         homeSponsors, awaySponsors, sponsorsMarked, longIntervalAfterSet2
       }
       originalOfficialsRef.current = {
@@ -1667,12 +1648,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
               },
               home_team: {
                 name: homeTeam?.name || home || t('common.home'),
-                short_name: homeTeam?.shortName || match.homeShortName || generateShortName(homeTeam?.name || home || t('common.home')),
                 color: homeTeam?.color || homeColor
               },
               away_team: {
                 name: awayTeam?.name || away || t('common.away'),
-                short_name: awayTeam?.shortName || match.awayShortName || generateShortName(awayTeam?.name || away || t('common.away')),
                 color: awayTeam?.color || awayColor
               },
               bench_home: match.bench_home || benchHome || [],
@@ -1719,7 +1698,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
     setType1(o.type1); setType1Other(o.type1Other); setChampionshipType(o.championshipType); setChampionshipTypeOther(o.championshipTypeOther)
     setType2(o.type2); setType3(o.type3); setType3Other(o.type3Other); setBestOf(o.bestOf ?? null); setPointsRegular(o.pointsRegular ?? 25); setPointsDeciding(o.pointsDeciding ?? 15); setGameN(o.gameN); setLeague(o.league)
     setHome(o.home); setAway(o.away); setHomeColor(o.homeColor); setAwayColor(o.awayColor)
-    setHomeShortName(o.homeShortName); setAwayShortName(o.awayShortName)
     setHomeSponsors(!!o.homeSponsors); setAwaySponsors(!!o.awaySponsors); setSponsorsMarked(!!o.sponsorsMarked)
     setLongIntervalAfterSet2(o.longIntervalAfterSet2 === true)
   }
@@ -1858,13 +1836,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
           setRef1Country(''); setRef2Country(''); setScorerCountry(''); setAsstCountry('')
         }
         if (match.setTargets) { setPointsRegular(setTargetsOf(match).regular); setPointsDeciding(setTargetsOf(match).deciding) }
-        // The placeholder will show a suggestion, but won't auto-fill a value
-        if (match.homeShortName && match.homeShortName.trim()) {
-          setHomeShortName(match.homeShortName)
-        }
-        if (match.awayShortName && match.awayShortName.trim()) {
-          setAwayShortName(match.awayShortName)
-        }
         {
           const s = sponsorsOf(match)
           setHomeSponsors(s.home); setAwaySponsors(s.away); setSponsorsMarked(s.marked)
@@ -2227,8 +2198,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
         const matchUpdate = {
           hall,
           city,
-          homeShortName: homeShortName || home.substring(0, 8).toUpperCase(),
-          awayShortName: awayShortName || away.substring(0, 8).toUpperCase(),
           homeSponsors, awaySponsors, sponsorsMarked, longIntervalAfterSet2,
           game_n: gameN ? Number(gameN) : null,
           gameNumber: gameN ? gameN : null,
@@ -2272,7 +2241,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
             await db.teams.update(homeTeamId, {
               name: home.trim(),
               color: homeColor,
-              shortName: homeShortName || home.trim().substring(0, 8).toUpperCase(),
               benchStaff: benchHome
             })
           } else {
@@ -2280,7 +2248,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
             homeTeamId = await db.teams.add({
               name: home.trim(),
               color: homeColor,
-              shortName: homeShortName || home.trim().substring(0, 8).toUpperCase(),
               benchStaff: benchHome,
               createdAt: new Date().toISOString()
             })
@@ -2295,7 +2262,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
             await db.teams.update(awayTeamId, {
               name: away.trim(),
               color: awayColor,
-              shortName: awayShortName || away.trim().substring(0, 8).toUpperCase(),
               benchStaff: benchAway
             })
           } else {
@@ -2303,7 +2269,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
             awayTeamId = await db.teams.add({
               name: away.trim(),
               color: awayColor,
-              shortName: awayShortName || away.trim().substring(0, 8).toUpperCase(),
               benchStaff: benchAway,
               createdAt: new Date().toISOString()
             })
@@ -2335,7 +2300,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
     if (view === 'info') {
       const values = {
         date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther, type2, type3, type3Other, bestOf,
-        pointsRegular, pointsDeciding, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName,
+        pointsRegular, pointsDeciding, gameN, league, home, away, homeColor, awayColor,
         ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, homeContactEmail, awayContactEmail, ref2First, ref2Last, ref2Country, ref2Dob, ref2Email,
         scorerFirst, scorerLast, scorerCountry, scorerDob, scorerLicence, asstFirst, asstLast, asstCountry, asstDob,
         lineJudge1, lineJudge2, lineJudge3, lineJudge4, homeSponsors, awaySponsors, sponsorsMarked, longIntervalAfterSet2
@@ -2363,7 +2328,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
 
     return () => clearTimeout(timeoutId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther, type2, type3, type3Other, bestOf, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName, homeRoster, awayRoster, benchHome, benchAway, ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, ref2First, ref2Last, ref2Country, ref2Dob, ref2Email, scorerFirst, scorerLast, scorerCountry, scorerDob, scorerLicence, asstFirst, asstLast, asstCountry, asstDob, lineJudge1, lineJudge2, lineJudge3, lineJudge4, homeContactEmail, awayContactEmail, homeSponsors, awaySponsors, sponsorsMarked, longIntervalAfterSet2, homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature, currentView, setupLocked, draftReadyFor])
+  }, [date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther, type2, type3, type3Other, bestOf, gameN, league, home, away, homeColor, awayColor, homeRoster, awayRoster, benchHome, benchAway, ref1First, ref1Last, ref1Country, ref1Dob, ref1Email, ref2First, ref2Last, ref2Country, ref2Dob, ref2Email, scorerFirst, scorerLast, scorerCountry, scorerDob, scorerLicence, asstFirst, asstLast, asstCountry, asstDob, lineJudge1, lineJudge2, lineJudge3, lineJudge4, homeContactEmail, awayContactEmail, homeSponsors, awaySponsors, sponsorsMarked, longIntervalAfterSet2, homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature, currentView, setupLocked, draftReadyFor])
 
   // Back on the main view (Save, Back, a roster confirmed): no draft left
   useEffect(() => {
@@ -2550,7 +2515,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
     // Check if any changes were made (skip sync if no changes)
     const currentMatchInfo = {
       date, time, hall, city, type1, type1Other, championshipType, championshipTypeOther,
-      type2, type3, type3Other, bestOf, pointsRegular, pointsDeciding, gameN, league, home, away, homeColor, awayColor, homeShortName, awayShortName,
+      type2, type3, type3Other, bestOf, pointsRegular, pointsDeciding, gameN, league, home, away, homeColor, awayColor,
       homeSponsors, awaySponsors, sponsorsMarked, longIntervalAfterSet2
     }
     const currentOfficials = {
@@ -2616,8 +2581,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
       let awayBench = benchAway
       const testTeams = { home: null, away: null }
       if (match?.test === true) {
-        testTeams.home = await takeTestMatchTeam({ teamId: homeTeamId, name: home, color: homeColor, shortName: homeShortName, roster: homeRoster, bench: benchHome })
-        testTeams.away = await takeTestMatchTeam({ teamId: awayTeamId, name: away, color: awayColor, shortName: awayShortName, roster: awayRoster, bench: benchAway })
+        testTeams.home = await takeTestMatchTeam({ teamId: homeTeamId, name: home, color: homeColor, roster: homeRoster, bench: benchHome })
+        testTeams.away = await takeTestMatchTeam({ teamId: awayTeamId, name: away, color: awayColor, roster: awayRoster, bench: benchAway })
         if (testTeams.home) { homeTeamId = testTeams.home.teamId; homeBench = testTeams.home.bench }
         if (testTeams.away) { awayTeamId = testTeams.away.teamId; awayBench = testTeams.away.bench }
       }
@@ -2626,7 +2591,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
         homeTeamId = await db.teams.add({
           name: home.trim(),
           color: homeColor,
-          shortName: homeShortName || home.trim().substring(0, 8).toUpperCase(),
           benchStaff: homeBench,
           createdAt: new Date().toISOString()
         })
@@ -2635,7 +2599,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
         await db.teams.update(homeTeamId, {
           name: home.trim(),
           color: homeColor,
-          shortName: homeShortName || home.trim().substring(0, 8).toUpperCase(),
           benchStaff: homeBench
         })
       }
@@ -2644,7 +2607,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
         awayTeamId = await db.teams.add({
           name: away.trim(),
           color: awayColor,
-          shortName: awayShortName || away.trim().substring(0, 8).toUpperCase(),
           benchStaff: awayBench,
           createdAt: new Date().toISOString()
         })
@@ -2653,7 +2615,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
         await db.teams.update(awayTeamId, {
           name: away.trim(),
           color: awayColor,
-          shortName: awayShortName || away.trim().substring(0, 8).toUpperCase(),
           benchStaff: awayBench
         })
       }
@@ -2693,8 +2654,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
         awayTeamId,
         homeName: home.trim(),
         awayName: away.trim(),
-        homeShortName: homeShortName || generateShortName(home.trim()),
-        awayShortName: awayShortName || generateShortName(away.trim()),
         homeSponsors, awaySponsors, sponsorsMarked, longIntervalAfterSet2,
         homeColor,
         awayColor,
@@ -2764,8 +2723,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
           // the interval switch as just saved (localMatch is the record before)
           ...sheetInputsToMatchInfo({ ...localMatch, longIntervalAfterSet2 })
         },
-        home_team: { name: home.trim(), short_name: homeShortName || generateShortName(home.trim()), color: homeColor },
-        away_team: { name: away.trim(), short_name: awayShortName || generateShortName(away.trim()), color: awayColor },
+        home_team: { name: home.trim(), color: homeColor },
+        away_team: { name: away.trim(), color: awayColor },
         bench_home: homeBench || [],
         bench_away: awayBench || [],
         officials: buildOfficialsArray(
@@ -3109,8 +3068,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
   // Handler for Load Official Match modal selection
   // ---- Saved teams and the one-cloud-match-per-official-game rule ----
 
-  // Fill a side's roster and team officials from a saved team. Name, short
-  // name and colour only where empty (the colour where it is the default).
+  // Fill a side's roster and team officials from a saved team. Name and
+  // colour only where empty (the colour where it is the default).
   // Everything stays editable.
   const applySavedTeam = (side, team, chosen = null) => {
     if (!team) return
@@ -3120,13 +3079,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
       setHomeRoster(sorted)
       setBenchHome(bench)
       if (!home?.trim() || home === 'Home') setHome(meta.name)
-      if (!homeShortName && meta.shortName) setHomeShortName(meta.shortName)
       if (meta.color && isDefaultTeamColour('home', homeColor)) setHomeColor(meta.color)
     } else {
       setAwayRoster(sorted)
       setBenchAway(bench)
       if (!away?.trim() || away === 'Away') setAway(meta.name)
-      if (!awayShortName && meta.shortName) setAwayShortName(meta.shortName)
       if (meta.color && isDefaultTeamColour('away', awayColor)) setAwayColor(meta.color)
     }
     toast.success(t('savedTeams.loaded', { name: team.name }))
@@ -3476,7 +3433,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
     if (g.bestOf) setBestOf(g.bestOf)
     setGameN(g.gameN || ''); setLeague(g.league || '')
     setHome(g.home || ''); setAway(g.away || '')
-    setHomeShortName(''); setAwayShortName('')
     const ref = (n) => ({ first: g[`referee${n}First`] || '', last: g[`referee${n}Last`] || '' })
     setRef1First(ref(1).first); setRef1Last(ref(1).last); setRef1Dob(''); setRef1Email('')
     setRef2First(ref(2).first); setRef2Last(ref(2).last); setRef2Dob(''); setRef2Email('')
@@ -3565,10 +3521,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
     setLeague(matchData.league)
     setHome(matchData.home)
     setAway(matchData.away)
-
-    // Clear short names - user must fill them in manually for official matches
-    setHomeShortName('')
-    setAwayShortName('')
 
     // Referees and line judges: this game's, or none (a second game loaded
     // kept the first game's referees, their DOB and line judges)
@@ -3668,7 +3620,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
         date: setDate, time: setTime, hall: setHall, city: setCity, type1: setType1, type1Other: setType1Other,
         championshipType: setChampionshipType, championshipTypeOther: setChampionshipTypeOther, type2: setType2, type3: setType3,
         type3Other: setType3Other, bestOf: setBestOf, pointsRegular: setPointsRegular, pointsDeciding: setPointsDeciding, gameN: setGameN, league: setLeague, home: setHome, away: setAway,
-        homeColor: setHomeColor, awayColor: setAwayColor, homeShortName: setHomeShortName, awayShortName: setAwayShortName,
+        homeColor: setHomeColor, awayColor: setAwayColor,
         ref1First: setRef1First, ref1Last: setRef1Last, ref1Country: setRef1Country, ref1Dob: setRef1Dob, ref1Email: setRef1Email,
         homeContactEmail: setHomeContactEmail, awayContactEmail: setAwayContactEmail,
         homeSponsors: setHomeSponsors, awaySponsors: setAwaySponsors, sponsorsMarked: setSponsorsMarked,
@@ -4624,7 +4576,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                   </div>
                 </div>
                 <div className="flex items-end gap-4 stack:flex-col stack:items-stretch stack:gap-3">
-                  <Field tone="form" className={cn(FIELD, 'flex-[0_0_60%] stack:basis-auto')} label={t('matchSetup.teamName')}>
+                  <Field tone="form" className={cn(FIELD, 'flex-1 stack:basis-auto')} label={t('matchSetup.teamName')}>
                     <Input
                       size="lg"
                       aria-label={`${t('common.home')} ${t('matchSetup.teamName')}`}
@@ -4632,18 +4584,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                       value={home}
                       onChange={e => setHome(e.target.value)}
                       placeholder={t('matchSetup.homeTeamName')}
-                      className="text-center font-semibold"
-                    />
-                  </Field>
-                  <Field tone="form" className={cn(FIELD, 'flex-[0_0_calc(40%-16px)] stack:basis-auto')} label={t('matchSetup.short')}>
-                    <Input
-                      size="lg"
-                      aria-label={`${t('common.home')} ${t('matchSetup.short')}`}
-                      type="text"
-                      value={homeShortName}
-                      onChange={e => setHomeShortName(e.target.value.toUpperCase())}
-                      maxLength={8}
-                      placeholder={t('common.home').toUpperCase()}
                       className="text-center font-semibold"
                     />
                   </Field>
@@ -4710,7 +4650,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                   </div>
                 </div>
                 <div className="flex items-end gap-4 stack:flex-col stack:items-stretch stack:gap-3">
-                  <Field tone="form" className={cn(FIELD, 'flex-[0_0_60%] stack:basis-auto')} label={t('matchSetup.teamName')}>
+                  <Field tone="form" className={cn(FIELD, 'flex-1 stack:basis-auto')} label={t('matchSetup.teamName')}>
                     <Input
                       size="lg"
                       aria-label={`${t('common.away')} ${t('matchSetup.teamName')}`}
@@ -4718,18 +4658,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                       value={away}
                       onChange={e => setAway(e.target.value)}
                       placeholder={t('matchSetup.awayTeamName')}
-                      className="text-center font-semibold"
-                    />
-                  </Field>
-                  <Field tone="form" className={cn(FIELD, 'flex-[0_0_calc(40%-16px)] stack:basis-auto')} label={t('matchSetup.short')}>
-                    <Input
-                      size="lg"
-                      aria-label={`${t('common.away')} ${t('matchSetup.short')}`}
-                      type="text"
-                      value={awayShortName}
-                      onChange={e => setAwayShortName(e.target.value.toUpperCase())}
-                      maxLength={8}
-                      placeholder={t('common.away').toUpperCase()}
                       className="text-center font-semibold"
                     />
                   </Field>
@@ -5706,12 +5634,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
               const storedIds = await writeTeamPlayers(match.homeTeamId, homeRoster)
               setHomeRoster(homeRoster.map((p, idx) => (storedIds[idx] != null && p.id !== storedIds[idx] ? { ...p, id: storedIds[idx] } : p)))
 
-              // Update match with short name and bench officials. The
+              // Update match with the bench officials. The
               // signatures are stored by their pads and Clear at once (each
               // queues the match's whole signatures object): this save sends
               // none, a partial object would replace the cloud's
               const updateData = {
-                homeShortName: homeShortName || home.substring(0, 3).toUpperCase(),
                 bench_home: benchHome  // Save bench officials to match record
               }
 
@@ -5728,7 +5655,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                   payload: {
                     id: match.seed_key,
                     // JSONB columns
-                    home_team: { name: home?.trim() || '', short_name: homeShortName || generateShortName(home), color: homeColor },
+                    home_team: { name: home?.trim() || '', color: homeColor },
                     players_home: homeRoster.filter(p => p.firstName || p.lastName).map(p => ({
                       number: p.number || null,
                       first_name: p.firstName || '',
@@ -5761,7 +5688,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                     await apiFrom('match_live_state')
                       .update({
                         [colorKey]: homeColor,
-                        [shortKey]: homeShortName || generateShortName(home),
+                        [shortKey]: deriveTeamShortLabel(home),
                         [nameKey]: home?.trim() || '',
                         // on the match's live-state clock (serverDataSync liveStateNow)
                         updated_at: new Date(liveStateNow(match)).toISOString()
@@ -5980,7 +5907,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                     setHomeRoster([...TEST_HOME_TEAM.players].sort((a, b) => a.number - b.number))
                     setBenchHome(TEST_HOME_BENCH)
                     if (!home || home === 'Home') setHome(TEST_HOME_TEAM.name)
-                    if (!homeShortName) setHomeShortName(TEST_HOME_TEAM.shortName)
                     setTestRosterConfirm(null)
                   }}
                 >
@@ -6786,12 +6712,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
               const storedIds = await writeTeamPlayers(match.awayTeamId, awayRoster)
               setAwayRoster(awayRoster.map((p, idx) => (storedIds[idx] != null && p.id !== storedIds[idx] ? { ...p, id: storedIds[idx] } : p)))
 
-              // Update match with short name and bench officials. The
+              // Update match with the bench officials. The
               // signatures are stored by their pads and Clear at once (each
               // queues the match's whole signatures object): this save sends
               // none, a partial object would replace the cloud's
               const updateData = {
-                awayShortName: awayShortName || away.substring(0, 3).toUpperCase(),
                 bench_away: benchAway  // Save bench officials to match record
               }
 
@@ -6808,7 +6733,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                   payload: {
                     id: match.seed_key,
                     // JSONB columns
-                    away_team: { name: away?.trim() || '', short_name: awayShortName || generateShortName(away), color: awayColor },
+                    away_team: { name: away?.trim() || '', color: awayColor },
                     players_away: awayRoster.filter(p => p.firstName || p.lastName).map(p => ({
                       number: p.number || null,
                       first_name: p.firstName || '',
@@ -6842,7 +6767,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                     await apiFrom('match_live_state')
                       .update({
                         [colorKey]: awayColor,
-                        [shortKey]: awayShortName || generateShortName(away),
+                        [shortKey]: deriveTeamShortLabel(away),
                         [nameKey]: away?.trim() || '',
                         // on the match's live-state clock (serverDataSync liveStateNow)
                         updated_at: new Date(liveStateNow(match)).toISOString()
@@ -7061,7 +6986,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                     setAwayRoster([...TEST_AWAY_TEAM.players].sort((a, b) => a.number - b.number))
                     setBenchAway(TEST_AWAY_BENCH)
                     if (!away || away === 'Away') setAway(TEST_AWAY_TEAM.name)
-                    if (!awayShortName) setAwayShortName(TEST_AWAY_TEAM.shortName)
                     setTestRosterConfirm(null)
                   }}
                 >
@@ -7953,8 +7877,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                     match_type_2: type2,
                     match_type_3: type3,
                     match_type_3_other: type3 === 'other' ? type3Other : null,
-                    homeShortName: homeShortName || home.substring(0, 10).toUpperCase(),
-                    awayShortName: awayShortName || away.substring(0, 10).toUpperCase(),
                     homeSponsors, awaySponsors, sponsorsMarked, longIntervalAfterSet2,
                     game_n: gameN ? Number(gameN) : null,
                     gameNumber: gameN ? gameN : null,
@@ -8064,14 +7986,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                     if (!awayCounts.hasCoach) {
                       setupIssues.push('Away team: must have a coach')
                     }
-                  }
-
-                  // Check short names
-                  if (!homeShortName || homeShortName.trim() === '') {
-                    setupIssues.push('Home team short name')
-                  }
-                  if (!awayShortName || awayShortName.trim() === '') {
-                    setupIssues.push('Away team short name')
                   }
 
                   if (setupIssues.length > 0) {
@@ -8331,7 +8245,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                   if (match?.seed_key) {
                     const teamKey = isHome ? 'home_team' : 'away_team'
                     const teamName = isHome ? home : away
-                    const shortName = isHome ? homeShortName : awayShortName
 
                     // Update matches table. The proxy does not return written
                     // rows, so look the cloud UUID up separately for match_live_state.
@@ -8339,7 +8252,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                       .update({
                         [teamKey]: {
                           name: teamName?.trim() || '',
-                          short_name: shortName || generateShortName(teamName),
                           color: color
                         }
                       })

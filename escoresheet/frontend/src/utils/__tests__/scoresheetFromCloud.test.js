@@ -44,7 +44,8 @@ describe('scoresheetDataFromCloud', () => {
     expect(d.match.homeCaptainSignature).toBe('data:image/png;base64,AAA')
     // the "Corrected after the match" remarks come with the match
     expect(d.match.manualChanges).toEqual([{ afterMatch: true, text: 'Set 1 times corrected' }])
-    expect(d.homeTeam).toMatchObject({ id: d.match.homeTeamId, name: 'Home Club', shortName: 'HOME' })
+    expect(d.homeTeam).toMatchObject({ id: d.match.homeTeamId, name: 'Home Club' })
+    expect(d.homeTeam).not.toHaveProperty('shortName')
     expect(d.awayTeam).toMatchObject({ id: d.match.awayTeamId, name: 'Away Club' })
     expect(d.homePlayers).toEqual([expect.objectContaining({ teamId: d.homeTeam.id, number: 7, firstName: 'Ana', lastName: 'Muster', isCaptain: true, isLfp: true })])
     expect(d.awayPlayers[0]).toMatchObject({ teamId: d.awayTeam.id, number: 4, libero: 'libero1', isLfp: false })

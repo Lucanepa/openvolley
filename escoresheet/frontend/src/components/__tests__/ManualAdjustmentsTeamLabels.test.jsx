@@ -1,6 +1,6 @@
 // Edit match info during the match (Match › Edit match info, the match info
-// tab alone): each team's short name and shirt colour (owner, on the Point Hub
-// board). The save writes the team record, the match row's mirror fields the
+// tab alone): each team's shirt colour (owner, on the Point Hub board; the
+// short name it had is retired, 26.11.2026). The save writes the team record, the match row's mirror fields the
 // live state reads first, queues the cloud update with the team and marks the
 // live state for a fresh push; the team names stay read-only.
 import 'fake-indexeddb/auto'
@@ -37,8 +37,8 @@ async function liveMatch() {
   return { matchId, home, away }
 }
 
-describe('Edit match info: short names and shirt colours', () => {
-  it('changes a short name and a colour; the live state gets them', async () => {
+describe('Edit match info: shirt colours', () => {
+  it('changes a colour; the live state gets it; no short name to edit', async () => {
     const { matchId, home, away } = await liveMatch()
     render(<ManualAdjustments matchId={matchId} initialTab="info" tabIds={['info']} onClose={() => {}} onSave={() => {}} />)
     const card = await screen.findByTestId('edit-team-labels', {}, { timeout: 5000 })
@@ -46,8 +46,7 @@ describe('Edit match info: short names and shirt colours', () => {
     expect(within(card).getByText('Home VC')).toBeTruthy()
     expect(within(card).queryByDisplayValue('Home VC')).toBeNull()
 
-    fireEvent.change(screen.getByLabelText('Home VC Short name (max 8)'), { target: { value: 'newhome12' } })
-    expect(screen.getByLabelText('Home VC Short name (max 8)').value).toBe('NEWHOME1')
+    expect(within(card).queryByLabelText(/Short name/)).toBeNull()
 
     fireEvent.click(screen.getByTestId('edit-team-colour-away'))
     const dialog = await screen.findByTestId('edit-team-colour-dialog')
@@ -57,23 +56,23 @@ describe('Edit match info: short names and shirt colours', () => {
     await waitFor(() => expect(screen.queryByTestId('edit-team-colour-dialog')).toBeNull())
 
     fireEvent.click(button('Save changes'))
-    await waitFor(async () => expect((await db.matches.get(matchId)).homeShortName).toBe('NEWHOME1'), { timeout: 5000 })
+    await waitFor(async () => expect((await db.matches.get(matchId)).awayColor).toBe(picked), { timeout: 5000 })
     const m = await db.matches.get(matchId)
-    expect(m).toMatchObject({ homeShortName: 'NEWHOME1', awayColor: picked, awayShortName: 'AWY', homeName: 'Home VC', awayName: 'Away VC' })
-    expect(await db.teams.get(home)).toMatchObject({ name: 'Home VC', shortName: 'NEWHOME1', color: '#ef4444' })
+    expect(m).toMatchObject({ awayColor: picked, homeName: 'Home VC', awayName: 'Away VC' })
+    expect(await db.teams.get(home)).toMatchObject({ name: 'Home VC', color: '#ef4444' })
     expect(await db.teams.get(away)).toMatchObject({ name: 'Away VC', color: picked })
 
     // what the scoring screen sends as team_a_* / team_b_* (team A = away here)
     const live = liveTeamIdentity(m, await db.teams.get(home), await db.teams.get(away))
-    expect(live).toMatchObject({ teamAShort: 'AWY', teamAColor: picked, teamBShort: 'NEWHOME1', teamBColor: '#ef4444' })
+    expect(live).toMatchObject({ teamAName: 'Away VC', teamAShort: 'Away', teamAColor: picked, teamBShort: 'Home', teamBColor: '#ef4444' })
     await waitFor(() => expect(isLiveStateDirty(matchId)).toBe(true), { timeout: 5000 })
 
     // the cloud match gets the teams through the sync queue
     const job = (await db.sync_queue.toArray()).filter(j => j.resource === 'match' && j.payload?.id === m.seed_key).at(-1)
-    expect(job.payload.home_team).toMatchObject({ name: 'Home VC', short_name: 'NEWHOME1', color: '#ef4444' })
-    expect(job.payload.away_team).toMatchObject({ name: 'Away VC', short_name: 'AWY', color: picked })
+    expect(job.payload.home_team).toEqual({ name: 'Home VC', color: '#ef4444' })
+    expect(job.payload.away_team).toEqual({ name: 'Away VC', color: picked })
     // logged like every edit of this page
-    expect(m.manualChanges.map(c => c.field)).toEqual(expect.arrayContaining(['home.shortName', 'away.color']))
+    expect(m.manualChanges.map(c => c.field)).toEqual(expect.arrayContaining(['away.color']))
   }, 30000)
 
   it('at the match end (Teams tab offered) the info tab shows no second copy', async () => {

@@ -46,7 +46,6 @@ export function rosterOfTeam(bundle, team) {
     team,
     letter,
     name: (typeof teamRow === 'string' ? teamRow : teamRow.name) || '',
-    shortName: teamRow.shortName || (team === 'home' ? m.homeShortName : m.awayShortName) || '',
     players: valid
       .map((p) => ({
         number: Number(p.number),
@@ -88,7 +87,7 @@ export default function RefereeRosters({ bundle, onClose }) {
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const teamLabel = (r) => [r.letter, r.shortName || r.name].filter(Boolean).join(' · ')
+  const teamLabel = (r) => [r.letter, r.name].filter(Boolean).join(' · ')
 
   return (
     <div

@@ -9,7 +9,7 @@
 import { SANCTION_ROWS } from '../components/FooterSection';
 import { remarksSignaturesOf } from '../../src/domain/remarksSignatures';
 import type { Player, SanctionRecord } from '../types_scoresheet';
-import { asArray, displayShortName, findOfficial, formatDob, formatHoursMinutes, formatClockHoursMinutes, formatPersonName, idHeadingOf, normalizeOfficials } from './sheetFormat';
+import { asArray, findOfficial, formatDob, formatHoursMinutes, formatClockHoursMinutes, formatPersonName, idHeadingOf, normalizeOfficials } from './sheetFormat';
 import { extractLiberoData, rosterLiberos } from './extractLiberoData';
 import {
   countAllSubstitutions,
@@ -111,16 +111,14 @@ export function buildSheetModel(data: MatchData, { lfpShown, extraRemarks }: She
   const sheetHomeTeam: any = homeTeam && sponsors.marked ? { ...homeTeam, name: markOf('home', homeTeam.name) } : homeTeam;
   const sheetAwayTeam: any = awayTeam && sponsors.marked ? { ...awayTeam, name: markOf('away', awayTeam.name) } : awayTeam;
 
-  // Use full team names
-  const teamAName = markOf(teamAKey, (teamAKey === 'home' ? homeTeam?.name : awayTeam?.name) || '');
-  const teamBName = markOf(teamBKey, (teamBKey === 'home' ? homeTeam?.name : awayTeam?.name) || '');
-
-  // Short names for the set boxes, the rosters and the result table: the stored
-  // short name, else (empty or a HOME / AWAY placeholder) the team's full name
-  const homeShortName = markOf('home', displayShortName(match?.homeShortName, homeTeam?.name ?? match?.homeTeamName));
-  const awayShortName = markOf('away', displayShortName(match?.awayShortName, awayTeam?.name ?? match?.awayTeamName));
-  const teamAShortName = teamAKey === 'home' ? homeShortName : awayShortName;
-  const teamBShortName = teamBKey === 'home' ? homeShortName : awayShortName;
+  // Every name on the sheet is the full one (the short name is retired,
+  // 26.11.2026), the match row's while the team is not loaded: the header, the
+  // set boxes, the rosters and the result table (those shrink it to fit, FitText)
+  const nameOf = (team: any, stored: unknown) => String(team?.name || stored || '').trim();
+  const homeName = markOf('home', nameOf(homeTeam, match?.homeTeamName));
+  const awayName = markOf('away', nameOf(awayTeam, match?.awayTeamName));
+  const teamAName = teamAKey === 'home' ? homeName : awayName;
+  const teamBName = teamBKey === 'home' ? homeName : awayName;
 
   // Who served first in set 1, as "is it Team A": coinTossServeA, else the legacy
   // match.firstServe (server-synced matches may store coinTossServeA = null).
@@ -542,7 +540,7 @@ export function buildSheetModel(data: MatchData, { lfpShown, extraRemarks }: She
   return {
     match, homeTeam, awayTeam, sets, events, officials,
     teamAKey, teamBKey, coinTossConfirmed, bestOf, isBestOf3, bestOf3ExtraSets,
-    sheetHomeTeam, sheetAwayTeam, teamAName, teamBName, homeShortName, awayShortName, teamAShortName, teamBShortName,
+    sheetHomeTeam, sheetAwayTeam, teamAName, teamBName, homeName, awayName,
     set1ServeIsA, set5SwitchAt,
     lcsData, hasLiberoActivity, sheetWarnings,
     set1Data, set2Data, set3Data, set4Data, emptySetData, emptyGrid,

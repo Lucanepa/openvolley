@@ -78,7 +78,7 @@ describe('the saved team editor', () => {
     expect(screen.getAllByDisplayValue('VBC Musterdorf H1').map((el) => el.getAttribute('role'))).toEqual([null, 'combobox'])
     fireEvent.click(screen.getByText('manage.accounts.save'))
     await waitFor(() => expect(api.savedTeamsApi.updateTeam).toHaveBeenCalledWith('t1', {
-      name: 'VBC Musterdorf H1', short_name: null, club: 'VBC Musterdorf', color: null, svrz_team_name: 'VBC Musterdorf H1'
+      name: 'VBC Musterdorf H1', club: 'VBC Musterdorf', color: null, svrz_team_name: 'VBC Musterdorf H1'
     }))
   })
 

@@ -4,8 +4,8 @@
  * and bench, plus the schedule-game suggestions. Spec section 6.1.
  *
  * A saved team may come in either shape:
- * - the API's snake_case team ({ short_name, svrz_team_name, competition_id, updated_at, ... }),
- * - the Dexie cache's camelCase row ({ shortName, svrzTeamName, competition: {...}, updatedAt, ... }).
+ * - the API's snake_case team ({ svrz_team_name, competition_id, updated_at, ... }),
+ * - the Dexie cache's camelCase row ({ svrzTeamName, competition: {...}, updatedAt, ... }).
  * Players and staff stay in the API's snake_case shape in both.
  */
 
@@ -90,7 +90,6 @@ function sortByOrder(list) {
 }
 
 // Field access for both team shapes.
-export function teamShortName(team) { return team?.shortName ?? team?.short_name ?? '' }
 export function teamSvrzName(team) { return team?.svrzTeamName ?? team?.svrz_team_name ?? '' }
 export function teamUpdatedAt(team) { return team?.updatedAt ?? team?.updated_at ?? null }
 export function teamCompetitionId(team) { return team?.competitionId ?? team?.competition_id ?? team?.competition?.id ?? null }
@@ -100,7 +99,7 @@ export function teamCompetitionId(team) { return team?.competitionId ?? team?.co
  * saved licence number (a Swiss match: licence or date of birth,
  * domain/idMode); a saved date of birth never comes into the match (owner
  * 2026-11-19).
- * @returns {{ roster: object[], bench: object[], meta: {name: string, shortName: string, color: string}, warnings: {key: string, params: object}[] }}
+ * @returns {{ roster: object[], bench: object[], meta: {name: string, color: string}, warnings: {key: string, params: object}[] }}
  */
 export function savedTeamToRoster(team) {
   const warnings = []
@@ -138,7 +137,7 @@ export function savedTeamToRoster(team) {
   return {
     roster,
     bench,
-    meta: { name: team?.name || '', shortName: teamShortName(team) || '', color: team?.color || '' },
+    meta: { name: team?.name || '', color: team?.color || '' },
     warnings
   }
 }

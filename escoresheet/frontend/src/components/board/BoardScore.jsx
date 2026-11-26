@@ -14,16 +14,22 @@ import { useTranslation } from 'react-i18next'
 import { Volleyball } from '@phosphor-icons/react'
 import { readableTextOn } from '../../utils/teamColours'
 import { BOARD_SUBS_PER_SET, BOARD_TIMEOUTS_PER_SET } from '../../utils/boardFeed'
+import { FitText } from '../../../scoresheet_pdf/components/FitText'
 
 /** A band with no team colour (a live state without one) */
 const FALLBACK_COLOUR = '#44403c' // stone-700
-/** A name longer than this shows the short name, when the team has one */
-const LONG_NAME = 18
-
-export function bandName(team) {
-  const name = team?.name || ''
-  if (name.length > LONG_NAME && team?.short) return team.short
-  return name
+/**
+ * The band name's largest font in px: the size the band's CSS gave it
+ * (landscape min(4vw, 7vh), portrait min(6.5vw, 4.2vh), 20 to 112 px). The
+ * full name (the short name is retired, 26.11.2026) shrinks from there until
+ * it fits two lines. The page renders on every point, so a resize follows.
+ */
+function bandNameMax() {
+  if (typeof window === 'undefined') return 112
+  const w = window.innerWidth
+  const h = window.innerHeight
+  const fluid = h >= w ? Math.min(w * 0.065, h * 0.042) : Math.min(w * 0.04, h * 0.07)
+  return Math.round(Math.min(112, Math.max(20, fluid)))
 }
 
 function ServeSlot({ serving, label, testId }) {
@@ -86,6 +92,7 @@ function TeamBand({ team, side, final, winner }) {
   const text = readableTextOn(colour)
   const main = final ? team.sets : team.points
   const serveLeft = side === 'left'
+  const nameMax = bandNameMax()
   return (
     <section
       className="flex min-h-0 min-w-0 flex-col items-center justify-between overflow-hidden rounded-3xl px-[2vmin] py-[2vmin]"
@@ -93,12 +100,16 @@ function TeamBand({ team, side, final, winner }) {
       aria-label={team.name}
       data-testid={`board-team-${side}`}
     >
-      <h2
-        className="w-full text-center font-semibold leading-tight line-clamp-2 [overflow-wrap:anywhere] text-[length:clamp(20px,min(4vw,7vh),112px)] portrait:text-[length:clamp(20px,min(6.5vw,4.2vh),112px)]"
-        data-testid={`board-name-${side}`}
-        title={team.name}
-      >
-        {bandName(team)}
+      <h2 className="w-full font-semibold" data-testid={`board-name-${side}`} title={team.name}>
+        <FitText
+          multiline
+          max={nameMax}
+          min={10}
+          className="w-full flex items-center justify-center text-center leading-tight [overflow-wrap:anywhere]"
+          style={{ height: `${Math.round(nameMax * 2.5)}px` }}
+        >
+          {team.name}
+        </FitText>
       </h2>
 
       <div className="flex w-full min-h-0 items-center justify-center font-bold leading-none tabular-nums text-[length:min(25vw,40vh)] portrait:text-[length:min(42vw,22vh)]">
@@ -143,7 +154,7 @@ function PhaseBanner({ view }) {
     return (
       <div role="status" data-testid="board-banner" data-phase="final" className="flex flex-wrap items-baseline justify-center gap-x-[2vmin] rounded-2xl bg-emerald-700 px-[3vmin] py-[1vmin] text-white">
         <span className={big}>{t('board.matchEnd', 'Match end')}</span>
-        {winner && <span className={`${big} font-semibold`}>{t('board.winner', '{{name}} wins {{score}}', { name: bandName(winner), score })}</span>}
+        {winner && <span className={`${big} font-semibold`}>{t('board.winner', '{{name}} wins {{score}}', { name: winner.name, score })}</span>}
       </div>
     )
   }

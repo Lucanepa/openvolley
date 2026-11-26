@@ -53,7 +53,7 @@ export function pixelCheckMatch() {
     match: {
       id: 1, status: 'ended', bestOf: 3, set5LeftTeam: 'B', set5FirstServe: 'B',
       coinTossTeamA: 'home', coinTossTeamB: 'away', coinTossServeA: true,
-      homeShortName: 'MUSTER', awayShortName: 'BEISPIEL', gameNumber: '900001', league: 'TEST LEAGUE',
+      gameNumber: '900001', league: 'TEST LEAGUE',
       scheduledAt: new Date(T0).toISOString(), hall: 'Testhalle 1', city: 'Musterdorf',
       remarks: 'Corrected after the match: Set 2 times corrected (entered after the match)',
       bench_home: [{ role: 'Coach', firstName: 'Paul', lastName: 'Steiner', dob: '1987-10-10' }, { role: 'Assistant Coach 1', firstName: 'Kurt', lastName: 'Egli', dob: '1990-05-15' }],

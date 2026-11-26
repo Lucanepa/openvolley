@@ -471,7 +471,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch, a
 
     // Show reminder alert after modal closes
     setTimeout(() => {
-      showAlert(t('loadOfficialMatch.reminderAlert', 'Set teams colours and team short names'), 'info')
+      showAlert(t('loadOfficialMatch.reminderAlert', "Set the teams' shirt colours"), 'info')
     }, 100)
   }
 

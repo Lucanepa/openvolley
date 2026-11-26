@@ -58,14 +58,11 @@ async function loadScheduleGame() {
   fireEvent.click(button('Load match from schedule'))
   await waitFor(() => expect(button('pick-schedule-game')).toBeTruthy())
   fireEvent.click(button('pick-schedule-game'))
-  const homeShort = await waitFor(() => {
-    const input = document.querySelector('input[aria-label="Home Short"]')
-    expect(input).toBeTruthy()
+  // no short names to fill in (retired 26.11.2026)
+  await waitFor(() => {
     expect(document.querySelector('input[aria-label="Home Team name"]')?.value).toBe('VC Tornado Adliswil D1')
-    return input
   }, { timeout: 10000 })
-  fireEvent.change(homeShort, { target: { value: 'ADL' } })
-  fireEvent.change(document.querySelector('input[aria-label="Away Short"]'), { target: { value: 'FGZ' } })
+  expect(document.querySelector('input[aria-label="Home Short"]')).toBeNull()
   await waitFor(() => expect(button('Save')).toBeTruthy(), { timeout: 5000 })
   fireEvent.click(button('Save'))
   await waitFor(() => expect(button('Load match from schedule')).toBeTruthy(), { timeout: 10000 })

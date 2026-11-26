@@ -144,8 +144,8 @@ describe('best of 3 end to end', () => {
     const data = await importedSheetData('approved', 'match_1800000000000_bo3done01')
     const { container } = render(<App matchData={data} autoAction="preview" />)
     const result = resultBoxOf(container)?.textContent || ''
-    expect(result).toContain('FAL')
-    expect(result).toContain('OTT')
+    expect(result).toContain('Falcon Club')
+    expect(result).toContain('Otter Club')
     expect(result).toContain('2:1')
     // the decider is printed as set 3, its 15:13 in the RESULT box
     const sheet = container.querySelector('.scoresheet-container')?.textContent || ''
@@ -165,8 +165,8 @@ describe('best of 3 end to end', () => {
     expect(olderCopy.coinTossConfirmed).toBe(true)
     const { container } = render(<App matchData={{ ...data, match: olderCopy }} autoAction="preview" />)
     const result = resultBoxOf(container)?.textContent || ''
-    expect(result).toContain('FAL')
-    expect(result).toContain('OTT')
+    expect(result).toContain('Falcon Club')
+    expect(result).toContain('Otter Club')
     expect(container.querySelector('[data-testid="roster-home"]')?.textContent?.startsWith('A')).toBe(true)
   })
 
@@ -177,7 +177,7 @@ describe('best of 3 end to end', () => {
     })
     const blank = (setNumber) => ({ setNumber, teamATimeouts: null, teamASubstitutions: null, teamAWon: null, teamAPoints: null, teamBTimeouts: null, teamBSubstitutions: null, teamBWon: null, teamBPoints: null })
     const setResults = [row(1, 25, 20), row(2, 18, 25), row(3, 25, 23), blank(4), blank(5)]
-    const { container } = render(<Results setResults={setResults} bestOf={3} coinTossConfirmed teamAShortName="FAL" teamBShortName="OTT" result="2:1" />)
+    const { container } = render(<Results setResults={setResults} bestOf={3} coinTossConfirmed teamAName="Falcon Club" teamBName="Otter Club" result="2:1" />)
     const cells = [...container.querySelectorAll('.text-\\[9px\\]')].map((n) => n.textContent)
     expect(cells.filter((c) => c === '23').length).toBe(1)
 
@@ -207,7 +207,7 @@ describe('best of 3 end to end', () => {
     const { container } = render(<App matchData={matchData} autoAction="preview" />)
     const text = container.querySelector('.scoresheet-container')?.textContent || ''
     const set3 = text.slice(text.indexOf('SET3'), text.indexOf('SET4'))
-    expect(set3).toContain('FAL')
+    expect(set3).toContain('Falcon Club')
     expect(container.querySelector('[data-testid="sheet-warnings"]')?.textContent || '').toContain('Set 3 recorded in a best-of-3 match.')
   })
 })

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  shirtNumber, defaultShortName, easyLiberoNumbers, easyLiberoErrors, EASY_LIBERO_ERRORS,
+  shirtNumber, easyLiberoNumbers, easyLiberoErrors, EASY_LIBERO_ERRORS,
   easyRosterChanges, liberoSlotEditable, newPlayerMayEnter, newPlayerError, NEW_PLAYER_ERRORS,
   easyMatchPrefill, playedAsPlayer, liberoUsed, easyLiberosLocked, easyReferencedNumbers, isEasyStray
 } from '../easyMatch'
@@ -23,17 +23,6 @@ describe('shirtNumber', () => {
   })
   it('refuses 0, 100, blanks and anything else', () => {
     for (const v of ['0', '100', '', null, undefined, '4a', '-3', '1.5']) expect(shirtNumber(v)).toBe(null)
-  })
-})
-
-describe('defaultShortName', () => {
-  it('works like Match Setup', () => {
-    expect(defaultShortName('VBC Musterau')).toBe('VBC')
-    expect(defaultShortName('Musterdorf')).toBe('MUST')
-    expect(defaultShortName('')).toBe('')
-  })
-  it('never cuts an emoji in half (a lone surrogate made Save PDF fail)', () => {
-    expect(defaultShortName('A🏐🏐')).toBe('A🏐')
   })
 })
 
@@ -216,7 +205,7 @@ describe('easyMatchPrefill', () => {
   it('reads the teams, colours, format and game', () => {
     const p = easyMatchPrefill('?easy=1&home=VBC+Musterdorf&away=VC%20M%C3%BChlestadt&bestOf=3&homeColor=%23DC2626&awayColor=blue&homeShort=must&league=3L&game=406201&hall=MSH')
     expect(p).toEqual({
-      homeName: 'VBC Musterdorf', awayName: 'VC Mühlestadt', homeShort: 'MUST', awayShort: '',
+      homeName: 'VBC Musterdorf', awayName: 'VC Mühlestadt',
       homeColor: '#dc2626', awayColor: null, bestOf: 3, league: '3L', gameNumber: '406201', hall: 'MSH'
     })
   })
@@ -226,8 +215,7 @@ describe('easyMatchPrefill', () => {
   it('cuts a long name before an emoji, never through it (a lone surrogate made Save PDF fail)', () => {
     const name = 'Volleyballclub Musterhausen-Beispielau am Seeblick Damen 2 🏐'
     expect(name.length).toBe(61)
-    const p = easyMatchPrefill(`?easy=1&home=${encodeURIComponent(name)}&homeShort=${encodeURIComponent('VBCMUST🏐')}`)
+    const p = easyMatchPrefill(`?easy=1&home=${encodeURIComponent(name)}`)
     expect(p.homeName).toBe('Volleyballclub Musterhausen-Beispielau am Seeblick Damen 2 ')
-    expect(p.homeShort).toBe('VBCMUST')
   })
 })

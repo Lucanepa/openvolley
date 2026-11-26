@@ -212,7 +212,7 @@ describe('refereeEventLabel (the Last action line)', () => {
   }
   // 1st referee: B (away) on the left with 20, A (home) on the right with 16
   const ctx = {
-    homeLabel: 'A', awayLabel: 'B', homeShort: 'Volley Home', awayShort: 'Volley Away',
+    homeLabel: 'A', awayLabel: 'B', homeName: 'Volley Home', awayName: 'Volley Away',
     leftLabel: 'B', rightLabel: 'A', leftPoints: 20, rightPoints: 16, t
   }
 

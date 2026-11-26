@@ -617,12 +617,10 @@ export function buildLiveStateMatchData(match, liveState, matchId) {
 
   const homeTeam = {
     name: homeTeamName,
-    shortName: match.home_team?.short_name || match.home_short_name || 'HOM',
     color: homeColorFromLive || match.home_team?.color || '#ef4444'
   }
   const awayTeam = {
     name: awayTeamName,
-    shortName: match.away_team?.short_name || match.away_short_name || 'AWY',
     color: awayColorFromLive || match.away_team?.color || '#3b82f6'
   }
 
@@ -866,9 +864,6 @@ export function buildLiveStateMatchData(match, liveState, matchId) {
       firstServe: match.coin_toss?.first_serve || match.first_serve,
       // coin_toss_confirmed = true if we have liveState with team names (means coin toss happened)
       coin_toss_confirmed: !!(liveState?.team_a_name),
-      // Get short names from JSONB, or fallback to old columns
-      homeShortName: match.home_team?.short_name || match.home_short_name || homeTeam.shortName,
-      awayShortName: match.away_team?.short_name || match.away_short_name || awayTeam.shortName,
       homeName: homeTeam.name,
       awayName: awayTeam.name,
       homeColor: homeTeam.color,

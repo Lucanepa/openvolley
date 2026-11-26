@@ -5,12 +5,11 @@ import TeamShirt from './TeamShirt'
 import TeamColourPicker from './TeamColourPicker'
 import { Button, Field, Input, cn, FOCUS_RING, backdropDismiss } from '../ui'
 import { DEFAULT_AWAY_COLOUR, DEFAULT_HOME_COLOUR } from '../utils/teamColours'
-import { defaultShortName } from '../domain/easyMatch'
 import { cutText } from '../utils/stringUtils'
 
 /**
  * The few things an easy match needs before the coin toss: the two teams
- * (name, short name, shirt colour) and the format. No rosters, officials or
+ * (name, shirt colour) and the format. No rosters, officials or
  * signatures: shirt numbers come with the line-ups (domain/easyMatch.js).
  *
  * `prefill` (domain/easyMatch.js easyMatchPrefill) comes from the page address
@@ -21,12 +20,10 @@ export default function EasyMatchModal({ open, prefill = null, busy = false, onC
   const [teams, setTeams] = useState(() => ({
     home: {
       name: prefill?.homeName || '',
-      short: prefill?.homeShort || '',
       color: prefill?.homeColor || DEFAULT_HOME_COLOUR
     },
     away: {
       name: prefill?.awayName || '',
-      short: prefill?.awayShort || '',
       color: prefill?.awayColor || DEFAULT_AWAY_COLOUR
     }
   }))
@@ -35,7 +32,6 @@ export default function EasyMatchModal({ open, prefill = null, busy = false, onC
   const [tried, setTried] = useState(false)
 
   const set = (team, field, value) => setTeams(prev => ({ ...prev, [team]: { ...prev[team], [field]: value } }))
-  const shortOf = (team) => (teams[team].short || defaultShortName(teams[team].name)).trim()
   const missing = (team) => !teams[team].name.trim()
 
   const start = () => {
@@ -44,8 +40,6 @@ export default function EasyMatchModal({ open, prefill = null, busy = false, onC
     onStart({
       homeName: teams.home.name.trim(),
       awayName: teams.away.name.trim(),
-      homeShort: shortOf('home'),
-      awayShort: shortOf('away'),
       homeColor: teams.home.color,
       awayColor: teams.away.color,
       bestOf,
@@ -69,7 +63,7 @@ export default function EasyMatchModal({ open, prefill = null, busy = false, onC
           >
             <TeamShirt color={teams[team].color} className="h-11 w-11" />
           </button>
-          <div className="grid min-w-0 flex-1 grid-cols-[1fr_5.5rem] gap-2">
+          <div className="min-w-0 flex-1">
             <Field
               label={t('easyMatch.teamName', 'Name')}
               error={tried && missing(team) ? t('easyMatch.nameRequired', 'Required') : undefined}
@@ -80,15 +74,6 @@ export default function EasyMatchModal({ open, prefill = null, busy = false, onC
                 onChange={e => set(team, 'name', cutText(e.target.value, 60))}
                 autoComplete="off"
                 invalid={tried && missing(team)}
-              />
-            </Field>
-            <Field label={t('easyMatch.shortName', 'Short')}>
-              <Input
-                id={`easy-${team}-short`}
-                value={teams[team].short}
-                placeholder={defaultShortName(teams[team].name)}
-                onChange={e => set(team, 'short', cutText(e.target.value.toUpperCase(), 8))}
-                autoComplete="off"
               />
             </Field>
           </div>

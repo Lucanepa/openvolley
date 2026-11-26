@@ -72,10 +72,10 @@ export async function writeTeamPlayers(teamId, roster = []) {
  * on start, and refills an empty one: the test roster came back). Nothing
  * when the name is the stored team's.
  * @param {{ teamId: number|null|undefined, name: string, color?: string,
- *   shortName?: string, roster: object[], bench: object[] }} side
+ *   roster: object[], bench: object[] }} side
  * @returns {Promise<null | { teamId: number, roster: object[], bench: object[], removed: number }>}
  */
-export async function takeTestMatchTeam({ teamId, name, color, shortName, roster, bench }) {
+export async function takeTestMatchTeam({ teamId, name, color, roster, bench }) {
   const team = teamId !== null && teamId !== undefined ? await db.teams.get(teamId) : null
   if (!team || sameName(team.name, name)) return null
   const kept = withoutSeedTestRoster(roster, bench)
@@ -85,7 +85,6 @@ export async function takeTestMatchTeam({ teamId, name, color, shortName, roster
     id = await db.teams.add({
       name: String(name || '').trim(),
       color: color ?? team.color,
-      shortName: shortName || team.shortName || '',
       benchStaff: kept.bench,
       test: true,
       // removed with the other test data (App clearLocalTestData: seedKey test-*)

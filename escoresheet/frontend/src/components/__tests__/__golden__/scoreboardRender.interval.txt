@@ -52,12 +52,10 @@
       <aside class="team-controls shadow-card" data-side="left">
         <div class="team-info">
           <div>
-            <span>
+            <div class="" data-testid="column-team-left" title="VC Beispielstadt">
               "B"
-            <span>
               "-"
-            <span>
-              "BSP"
+              "VC Beispielstadt"
         <div>
           <div class="to-sub-counter" data-help-id="scoreboard-timeout-left">
             <div class="to-sub-value">
@@ -170,14 +168,14 @@
               <span>
                 "B"
                 "-"
-                "BSP"
+                "VC Beispielstadt"
             <button class="lineup-button lineup-button-right">
               <span>
                 "Line-up"
               <span>
                 "A"
                 "-"
-                "MUS"
+                "VBC Musterau"
             <div class="court-side court-side-left" data-help-id="scoreboard-court-left">
               <div class="court-team court-team-left">
                 <div class="court-row court-row-front">
@@ -320,12 +318,10 @@
       <aside class="team-controls shadow-card" data-side="right">
         <div class="team-info">
           <div>
-            <span>
+            <div class="" data-testid="column-team-right" title="VBC Musterau">
               "A"
-            <span>
               "-"
-            <span>
-              "MUS"
+              "VBC Musterau"
         <div>
           <div class="to-sub-counter" data-help-id="scoreboard-timeout-right">
             <div class="to-sub-value">
