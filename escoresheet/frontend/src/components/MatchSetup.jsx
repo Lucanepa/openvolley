@@ -3138,11 +3138,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
 
   // Every player known for a side: the roster now (unless it is replaced),
   // an Einsatzliste just read, the saved team (the one picked, else the
-  // schedule suggestion) and earlier matches of the team on this device. The
-  // walkthrough's demo account adds its club's list (domain/walkthroughDemo:
-  // players the demo saved team does not have come unticked); a real
-  // account's pool stays as it was
-  const buildPoolFor = async (side, { savedTeam = null, imported = null, includeCurrent = true } = {}) => {
+  // schedule suggestion) and earlier matches of the team on this device.
+  // `withClub` ("Choose players" only): the walkthrough's demo account adds
+  // its club's list (domain/walkthroughDemo: players the demo saved team does
+  // not have come unticked); never for a saved team picked (it would ask to
+  // choose instead of loading the team), never for a real account
+  const buildPoolFor = async (side, { savedTeam = null, imported = null, includeCurrent = true, withClub = false } = {}) => {
     const name = side === 'home' ? home : away
     // A guest match: only what is in this form or was just imported
     const saved = guestMatch ? null : (savedTeam || savedSuggestion?.[side] || null)
@@ -3159,7 +3160,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
       imported: imported || [],
       saved: saved ? savedTeamToRoster(saved).roster : [],
       earlier: earlier.map(r => r.players),
-      club: isWalkthroughDemoUser(user?.id) && clubTeams[side]
+      club: withClub && isWalkthroughDemoUser(user?.id) && clubTeams[side]
         ? addClubPlayersToRoster([], offeredClubPlayers(clubTeams[side].players, clubGender).players).roster
         : []
     })
@@ -4990,7 +4991,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                     {t('savedTeams.load')}
                   </Button>
                 )}
-                <Button variant="secondary" size="xl" icon={<ListChecks size={16} aria-hidden />} onClick={() => openPlayerPool('home')} data-testid="choose-players-home">
+                <Button variant="secondary" size="xl" icon={<ListChecks size={16} aria-hidden />} onClick={() => openPlayerPool('home', { withClub: true })} data-testid="choose-players-home">
                   {t('playerPool.open')}
                 </Button>
                 {clubTeams.home && !guestMatch && (
@@ -6066,7 +6067,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                     {t('savedTeams.load')}
                   </Button>
                 )}
-                <Button variant="secondary" size="xl" icon={<ListChecks size={16} aria-hidden />} onClick={() => openPlayerPool('away')} data-testid="choose-players-away">
+                <Button variant="secondary" size="xl" icon={<ListChecks size={16} aria-hidden />} onClick={() => openPlayerPool('away', { withClub: true })} data-testid="choose-players-away">
                   {t('playerPool.open')}
                 </Button>
                 {clubTeams.away && !guestMatch && (
