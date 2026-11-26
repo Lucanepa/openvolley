@@ -3394,7 +3394,8 @@
       "clubLicences": "Listes de licences du club",
       "clubApi": "API du club",
       "managerAccounts": "Comptes et rôles dans la gestion",
-      "rosters": "Effectifs"
+      "rosters": "Effectifs",
+      "rosterDetails": "Effectifs : détails"
     },
     "scoring": {
       "q_doubleTap": "J'ai appuyé deux fois : pourquoi un seul point ?",

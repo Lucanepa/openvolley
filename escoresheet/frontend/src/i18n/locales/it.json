@@ -3400,7 +3400,8 @@
       "clubLicences": "Elenchi di licenze della società",
       "clubApi": "API della società",
       "managerAccounts": "Account e ruoli nel manager",
-      "rosters": "Roster"
+      "rosters": "Roster",
+      "rosterDetails": "Roster: dettagli"
     },
     "scoring": {
       "q_doubleTap": "Ho toccato due volte: perché è arrivato un solo punto?",

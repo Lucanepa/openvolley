@@ -3395,7 +3395,8 @@
       "clubLicences": "Lizenzlischte vom Verein",
       "clubApi": "Vereins-API",
       "managerAccounts": "Manager-Konto und Rolle",
-      "rosters": "Kader"
+      "rosters": "Kader",
+      "rosterDetails": "Kader: Details"
     },
     "scoring": {
       "q_doubleTap": "Ich ha doppelt tippt: Werum hät s nur ein Punkt gäh?",

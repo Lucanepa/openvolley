@@ -3124,7 +3124,8 @@
       "clubLicences": "Lizenzlisten des Vereins",
       "clubApi": "Vereins-API",
       "managerAccounts": "Manager-Konten und Rollen",
-      "rosters": "Kader"
+      "rosters": "Kader",
+      "rosterDetails": "Kader: Details"
     },
     "scoring": {
       "q_doubleTap": "Ich habe doppelt getippt: Warum gab es nur einen Punkt?",

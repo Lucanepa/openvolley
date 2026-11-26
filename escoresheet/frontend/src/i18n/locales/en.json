@@ -3401,7 +3401,8 @@
       "clubLicences": "Club licence lists",
       "clubApi": "Club API",
       "managerAccounts": "Manager accounts and roles",
-      "rosters": "Rosters"
+      "rosters": "Rosters",
+      "rosterDetails": "Roster details"
     },
     "scoring": {
       "q_doubleTap": "I tapped twice: why was only one point given?",
