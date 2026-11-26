@@ -4012,7 +4012,8 @@ export default function App() {
   // restore and delete dialogs, a test or easy match being prepared
   const homeSetupDialog = !!easyMatchForm || todayGamesOpen || !!newMatchModal || !!confirmModal || !!restoreMatchModal || !!restorePreviewData ||
     !!deleteMatchModal || testMatchLoading || easyMatchLoading || !!homeWhilePreparing
-  const homeQuiet = homeQuietForCheck({ matchId, homeVisible, firstStartDialog, openingMatch: !!openingMatch, covered: simpleBoardShown || !!manageTab || sizeGateShown || homeSetupDialog })
+  // the walkthrough holds the check and its card back while it runs (Home is its first chapter)
+  const homeQuiet = homeQuietForCheck({ matchId, homeVisible, firstStartDialog, openingMatch: !!openingMatch, covered: simpleBoardShown || !!manageTab || sizeGateShown || homeSetupDialog, tour: walkthrough.active })
   useAutoDeviceCheck(homeQuiet && !homeOptionsModal, { matchOpen: matchOpenNoted, onResult: logDeviceCheck })
   // The home screen's list, each row with what the server does not have yet
   const homeDeviceMatches = deviceMatches?.filter(r => r.id !== closedMatchId)
