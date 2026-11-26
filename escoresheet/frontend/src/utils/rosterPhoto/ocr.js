@@ -11,30 +11,42 @@
  *                first use; a WebView without WebAssembly)
  *   ocr-timeout  it took longer than OCR_TIMEOUT_MS
  *   ocr-empty    it read no player row
+ *   ocr-blurry   it read the page too unsure to give a list (out of focus,
+ *                shaken): the scorer takes the photo again
  *   ocr-cancelled  the scorer closed the dialog (opts.signal)
  */
 
 import { version as TESSERACT_VERSION } from 'tesseract.js/package.json'
 import { importedRosterOf } from '../../domain/importedRoster'
 import { withTimeout, PDF_TIMEOUT_CODE } from '../parseRosterPdf'
-import { rosterFromOcr, HANDWRITTEN_MAX } from './ocrRoster'
-import { ringInRegion, ringScore } from './scan'
+import { rosterFromOcr, withHandReadings, HANDWRITTEN_MAX } from './ocrRoster'
+import { handInk, ringInRegion, ringScore, struckThrough } from './scan'
 
 // a number counts as circled when ink rings it this fully (scan.js ringScore)
 const CIRCLED_SCORE = 0.8
 
-/**
- * The page's pixels asked about circles (ocrRoster rosterFromOcr): whether a
- * word is circled, and a circle in a region; nothing for a Blob.
- */
-function circlesOn (page) {
-  if (typeof page?.getContext !== 'function') return {}
+/** The page's grey pixels (and those before its rules went: scan.js scanPage), null for a Blob. */
+function pixelsOf (page) {
+  if (typeof page?.getContext !== 'function') return null
   const { width, height } = page
   const rgba = page.getContext('2d').getImageData(0, 0, width, height).data
   const gray = new Uint8ClampedArray(width * height)
   for (let i = 0, j = 0; i < gray.length; i++, j += 4) gray[i] = rgba[j]
+  const before = page.beforeRules?.length === gray.length ? page.beforeRules : gray
+  return { gray, before, width, height }
+}
+
+/**
+ * The page's pixels asked about what the words alone do not tell
+ * (ocrRoster rosterFromOcr): whether a word is circled, a circle in a
+ * region, whether a row is struck out; nothing for a Blob.
+ */
+function circlesOn (px) {
+  if (!px) return {}
+  const { gray, before, width, height } = px
   const ringAt = (region, line) => ringInRegion(gray, width, height, region, line)
   return {
+    struck: (words) => struckThrough(before, width, height, words),
     // a ring round the number's box, or one the recognition took into the box
     circled: (w) => {
       if (ringScore(gray, width, height, w) >= CIRCLED_SCORE) return true
@@ -82,7 +94,139 @@ const LSTM_ONLY = 1
 const PSM_SINGLE_BLOCK = '6'
 // a circled number read again on its own
 const PSM_SINGLE_WORD = '8'
+// one line of text: the handwriting's sheet
+const PSM_SINGLE_LINE = '7'
 const CIRCLE_TIMEOUT_MS = 10000
+// the team's handwriting read again: digits, C or K (captain), L (libero)
+const HAND_CHARS = '0123456789CKL'
+const HAND_TIMEOUT_MS = 20000
+// at most this many groups of handwriting a row (a number, a mark, a circle)
+const HAND_GROUPS = 4
+// each scaled to letters about this high
+const HAND_HEIGHT = 36
+const HAND_GAP = 64
+// a second reading below this is left out
+const HAND_MIN_CONF = 0.3
+// below this the whole page was read unsure (out of focus, shaken): no list
+// comes of it, a "take it again" does (real photos, 2026-11-26: a blurry
+// one read at 48, sharp ones at 66 or more)
+export const BLURRY_CONFIDENCE = 55
+
+/**
+ * The team's handwriting on each player row (scan.js handInk: ink the print
+ * does not explain, left of the SV number up to the date and right of the
+ * table), cut out and stacked on one small sheet, one group a line, and read
+ * at once with digits, C, K and L only: Tesseract reads a whole page with
+ * the print's eyes and makes letters of a "99" or a "3K" between the
+ * columns (real photos, 2026-11-26). A circled group: what is inside the
+ * circle, and the captain. Each player then gets what its groups read
+ * (ocrRoster withHandReadings).
+ */
+async function readHandwriting (worker, page, px, players, debug) {
+  const items = []
+  players.forEach((p, i) => {
+    const at = p.handAt
+    if (!at) return
+    for (const g of handInk(px.gray, px.width, px.height, at, { leftOf: at.left }).slice(0, HAND_GROUPS)) {
+      const pad = 0.25 * at.line
+      const ring = ringInRegion(px.gray, px.width, px.height, { x0: g.x0 - pad, y0: g.y0 - pad, x1: g.x1 + pad, y1: g.y1 + pad }, at.line)
+      items.push({ i, box: ring ? ring.inner : g, ringed: !!ring, skip: at.skip, line: at.line })
+    }
+  })
+  if (!items.length) return players
+  const cuts = items.map((it) => {
+    const pad = Math.max(3, Math.round(0.2 * it.line))
+    const x = Math.max(0, Math.floor(it.box.x0 - pad))
+    const y = Math.max(0, Math.floor(it.box.y0 - pad))
+    const w = Math.min(page.width - x, Math.ceil(it.box.x1 - it.box.x0 + 2 * pad))
+    const h = Math.min(page.height - y, Math.ceil(it.box.y1 - it.box.y0 + 2 * pad))
+    const scale = Math.min(2, Math.max(0.5, HAND_HEIGHT / Math.max(1, it.box.y1 - it.box.y0)))
+    return { x, y, w, h, scale }
+  })
+  // laid out on one canvas first (cut, scaled, made black on white)
+  let left = HAND_GAP
+  const at = cuts.map((c) => {
+    const box = { x: left, y: Math.round(HAND_GAP / 2 + (HAND_HEIGHT * 2 - c.h * c.scale) / 2), w: Math.ceil(c.w * c.scale), h: Math.ceil(c.h * c.scale) }
+    left += box.w + HAND_GAP
+    return box
+  })
+  const sheet = document.createElement('canvas')
+  sheet.width = left
+  sheet.height = HAND_HEIGHT * 2 + HAND_GAP
+  const ctx = sheet.getContext('2d')
+  ctx.fillStyle = '#fff'
+  ctx.fillRect(0, 0, sheet.width, sheet.height)
+  cuts.forEach((c, k) => {
+    const to = at[k]
+    ctx.drawImage(page, c.x, c.y, c.w, c.h, to.x, to.y, to.w, to.h)
+    // no piece of a printed word beside it
+    for (const b of items[k].skip) {
+      const x0 = Math.max(b.x0, c.x)
+      const x1 = Math.min(b.x1, c.x + c.w)
+      const y0 = Math.max(b.y0, c.y)
+      const y1 = Math.min(b.y1, c.y + c.h)
+      if (x1 > x0 && y1 > y0) ctx.fillRect(to.x + (x0 - c.x) * c.scale, to.y + (y0 - c.y) * c.scale, (x1 - x0) * c.scale, (y1 - y0) * c.scale)
+    }
+    // black on white by its own ink (a thin pen reads pale grey, and its
+    // strokes break when cut at one grey for all), a pixel bolder: the
+    // recognition wants ink, not a hairline (real photos, 2026-11-26)
+    const img = ctx.getImageData(to.x, to.y, to.w, to.h)
+    const d = img.data
+    const dark = []
+    for (let j = 0; j < d.length; j += 4) if (d[j] < 235) dark.push(d[j])
+    dark.sort((a, b) => a - b)
+    const level = dark.length ? dark[Math.floor(dark.length * 0.2)] : 0
+    const cut = Math.min(225, Math.max(110, (level + 255) / 2))
+    const { w, h } = to
+    const on = new Uint8Array(w * h)
+    for (let i = 0; i < on.length; i++) on[i] = d[i * 4] < cut ? 1 : 0
+    for (let i = 0; i < on.length; i++) {
+      const x = i % w
+      const y = (i - x) / w
+      let v = on[i]
+      for (let dy = -1; dy <= 1 && !v; dy++) for (let dx = -1; dx <= 1 && !v; dx++) { const nx = x + dx; const ny = y + dy; if (nx >= 0 && ny >= 0 && nx < w && ny < h && on[ny * w + nx]) v = 1 }
+      d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v ? 0 : 255
+    }
+    ctx.putImageData(img, to.x, to.y)
+  })
+  // each read alone, as one line of text (one sheet read at once came out
+  // run together or dropped: tried on real photos, 2026-11-26), a few
+  // milliseconds each
+  const texts = items.map(() => ({ words: [], conf: 1 }))
+  await worker.setParameters({ tessedit_pageseg_mode: PSM_SINGLE_LINE, tessedit_char_whitelist: HAND_CHARS })
+  for (let k = 0; k < items.length; k++) {
+    const to = at[k]
+    const one = document.createElement('canvas')
+    one.width = to.w + HAND_GAP
+    one.height = to.h + HAND_GAP
+    const c1 = one.getContext('2d')
+    c1.fillStyle = '#fff'
+    c1.fillRect(0, 0, one.width, one.height)
+    c1.drawImage(sheet, to.x, to.y, to.w, to.h, HAND_GAP / 2, HAND_GAP / 2, to.w, to.h)
+    const { data } = await worker.recognize(one, {}, { blocks: true, text: false })
+    for (const b of data?.blocks || []) {
+      for (const para of b?.paragraphs || []) {
+        for (const l of para?.lines || []) {
+          for (const w of l?.words || []) {
+            if (!String(w.text || '').trim()) continue
+            texts[k].words.push({ x: w.bbox.x0, text: String(w.text).trim() })
+            texts[k].conf = Math.min(texts[k].conf, (w.confidence ?? 0) / 100)
+          }
+        }
+      }
+    }
+  }
+  if (debug) debug.sheet = sheet
+  if (debug) debug.rows = players.map((p) => ({ licence: p.licence, handAt: p.handAt && { ...p.handAt, skip: p.handAt.skip.length } }))
+  if (debug) debug.hand = items.map((it, k) => ({ ...it, skip: undefined, text: texts[k].words.map((w) => w.text).join(' '), conf: texts[k].conf, cut: cuts[k] }))
+  const reads = players.map(() => [])
+  items.forEach((it, k) => {
+    const text = texts[k].words.sort((a, b) => a.x - b.x).map((w) => w.text).join(' ')
+    // (a reading it was barely sure of is no mark: a stroke of a letter, a speck)
+    if ((text && texts[k].conf >= HAND_MIN_CONF) || it.ringed) reads[it.i].push({ text: texts[k].conf >= HAND_MIN_CONF ? text : '', conf: text ? texts[k].conf : 0.5, ringed: it.ringed })
+  })
+  return players.map((p, i) => withHandReadings(p, reads[i]))
+}
 
 const coded = (code, message, cause) => Object.assign(new Error(message), { code, cause })
 
@@ -129,8 +273,10 @@ async function loadCreateWorker () {
  * @param {HTMLCanvasElement|Blob} page
  * @param {{ onProgress?: (share: number, status: string) => void, signal?: AbortSignal, createWorker?: Function, timeoutMs?: number, startTimeoutMs?: number, dir?: string }} [opts]
  */
-export async function readRosterPhoto (page, { onProgress, signal, createWorker, timeoutMs = OCR_TIMEOUT_MS, startTimeoutMs = OCR_START_TIMEOUT_MS, dir } = {}) {
+export async function readRosterPhoto (page, { onProgress, signal, createWorker, timeoutMs = OCR_TIMEOUT_MS, startTimeoutMs = OCR_START_TIMEOUT_MS, dir, debug } = {}) {
   let worker = null
+  // the handwriting read again after the page is quick: no second progress bar for it
+  let quiet = false
   // closing the dialog ends the worker at once (its memory and the tablet's CPU back)
   const cancelled = () => coded('ocr-cancelled', 'The reading was cancelled')
   const onAbort = () => { try { worker?.terminate?.() } catch { /* gone */ } }
@@ -151,7 +297,7 @@ export async function readRosterPhoto (page, { onProgress, signal, createWorker,
         cacheMethod: 'none',
         // a worker from the app's own address, not a blob: URL
         workerBlobURL: false,
-        logger: (m) => { if (onProgress && typeof m?.progress === 'number') onProgress(m.progress, m.status || '') }
+        logger: (m) => { if (onProgress && !quiet && typeof m?.progress === 'number') onProgress(m.progress, m.status || '') }
       }), startTimeoutMs)
       await worker.setParameters({ tessedit_pageseg_mode: PSM_SINGLE_BLOCK, preserve_interword_spaces: '1' })
     } catch (err) {
@@ -167,7 +313,17 @@ export async function readRosterPhoto (page, { onProgress, signal, createWorker,
       if (err?.code === PDF_TIMEOUT_CODE) throw coded('ocr-timeout', 'The text recognition took too long', err)
       throw coded('ocr-load', `The text recognition stopped (${err?.message || err})`, err)
     }
-    const parsed = rosterFromOcr(data, circlesOn(page))
+    const confidence = Number(data?.confidence)
+    if (Number.isFinite(confidence) && confidence < BLURRY_CONFIDENCE) throw coded('ocr-blurry', 'The photo is too blurry to read')
+    const px = pixelsOf(page)
+    const parsed = rosterFromOcr(data, circlesOn(px))
+    if (px && parsed.players.some((p) => p.handAt) && !signal?.aborted) {
+      quiet = true
+      try {
+        parsed.players = await withTimeout(readHandwriting(worker, page, px, parsed.players, debug), HAND_TIMEOUT_MS)
+      } catch { /* the first reading's marks stay (all of them to check) */ }
+      quiet = false
+    }
     const ringed = parsed.players.filter((p) => p.ringAt)
     if (ringed.length && !signal?.aborted) {
       try {
@@ -183,7 +339,10 @@ export async function readRosterPhoto (page, { onProgress, signal, createWorker,
     }
     if (signal?.aborted) throw cancelled()
     const roster = importedRosterOf(parsed, 'ocr')
-    if (!roster.players.length) throw coded('ocr-empty', 'No player row was read in the photo')
+    if (!roster.players.length && !roster.struck?.length) {
+      // a page read without much certainty and no row: the photo, not the list
+      throw Number.isFinite(confidence) && confidence < 70 ? coded('ocr-blurry', 'The photo is too blurry to read') : coded('ocr-empty', 'No player row was read in the photo')
+    }
     return roster
   } finally {
     signal?.removeEventListener?.('abort', onAbort)

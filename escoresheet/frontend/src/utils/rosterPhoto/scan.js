@@ -680,6 +680,107 @@ export function ringInRegion (gray, width, height, region, line, { ink = 128 } =
   return null
 }
 
+/**
+ * The handwriting on a player row: groups of ink in the row's band that no
+ * printed word explains (region.skip: the words' boxes), from left of the SV
+ * number (region.x0) up to the date (region.x1), and right of the printed
+ * table (region.beyond). A part counts when its middle is on the row (a big
+ * number reaches into the next one), when it is no speck and no rule;
+ * parts less than a line apart are one group ("3K", "99 L2"). Ink is
+ * anything darker than light grey: a thin pen reads far paler than print.
+ * @param {{ x0, x1, y, line, skip: {x0,y0,x1,y1}[], beyond: number|null }} region page pixels
+ * @returns {{ x0, y0, x1, y1, where: 'left'|'inside'|'right' }[]} left to right
+ */
+export function handInk (gray, width, height, region, { ink = 190, leftOf = Infinity } = {}) {
+  const { line } = region
+  const top = Math.max(0, Math.floor(region.y - 1.8 * line))
+  const bottom = Math.min(height, Math.ceil(region.y + 1.8 * line))
+  const spans = [[Math.max(0, Math.floor(region.x0)), Math.min(width, Math.ceil(region.x1))]]
+  if (Number.isFinite(region.beyond) && region.beyond < width - line) spans.push([Math.ceil(region.beyond), width])
+  const pad = 0.15 * line
+  const skip = (region.skip || []).map((b) => ({ x0: b.x0 - pad, y0: b.y0 - pad, x1: b.x1 + pad, y1: b.y1 + pad }))
+  const parts = []
+  for (const [x0, x1] of spans) {
+    const w = x1 - x0
+    const h = bottom - top
+    if (w < 2 || h < 2) continue
+    const seen = new Uint8Array(w * h)
+    for (let start = 0; start < seen.length; start++) {
+      if (seen[start] || gray[(top + Math.floor(start / w)) * width + x0 + (start % w)] >= ink) continue
+      const part = { n: 0, x0: Infinity, y0: Infinity, x1: -1, y1: -1 }
+      const stack = [start]
+      seen[start] = 1
+      while (stack.length) {
+        const i = stack.pop()
+        const x = i % w
+        const y = (i - x) / w
+        part.n++
+        if (x < part.x0) part.x0 = x
+        if (x > part.x1) part.x1 = x
+        if (y < part.y0) part.y0 = y
+        if (y > part.y1) part.y1 = y
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
+          const nx = x + dx
+          const ny = y + dy
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue
+          const j = ny * w + nx
+          if (!seen[j] && gray[(top + ny) * width + x0 + nx] < ink) { seen[j] = 1; stack.push(j) }
+        }
+      }
+      const box = { x0: x0 + part.x0, y0: top + part.y0, x1: x0 + part.x1 + 1, y1: top + part.y1 + 1, n: part.n }
+      const bw = box.x1 - box.x0
+      const bh = box.y1 - box.y0
+      // a speck, a rule or a pen line across the row, a part off the row
+      if (Math.max(bw, bh) < 0.3 * line || part.n < 0.04 * line * line || bw > 6 * line || bh > 3.5 * line) continue
+      if (Math.abs((box.y0 + box.y1) / 2 - region.y) > 0.9 * line) continue
+      // ink of a printed word (its letters reach a little out of its box)
+      const area = bw * bh
+      const covered = skip.reduce((m, b) => Math.max(m, Math.max(0, Math.min(b.x1, box.x1) - Math.max(b.x0, box.x0)) * Math.max(0, Math.min(b.y1, box.y1) - Math.max(b.y0, box.y0))), 0)
+      if (covered > 0.5 * area) continue
+      parts.push(box)
+    }
+  }
+  parts.sort((a, b) => a.x0 - b.x0)
+  const groups = []
+  for (const b of parts) {
+    const g = groups[groups.length - 1]
+    if (g && b.x0 - g.x1 < 0.8 * line && !skip.some((s) => s.x0 >= g.x1 - 1 && s.x1 <= b.x0 + 1 && s.y0 < g.y1 && s.y1 > g.y0)) {
+      g.x0 = Math.min(g.x0, b.x0); g.y0 = Math.min(g.y0, b.y0); g.x1 = Math.max(g.x1, b.x1); g.y1 = Math.max(g.y1, b.y1)
+    } else groups.push({ x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 })
+  }
+  return groups.map((g) => ({ ...g, where: g.x1 <= leftOf ? 'left' : Number.isFinite(region.beyond) && g.x0 >= region.beyond ? 'right' : 'inside' }))
+}
+
+/**
+ * Whether a printed row is struck out by hand (owner: that player does not
+ * play): ink across most of the gaps between its words at the height of
+ * their middle, where print leaves paper. A team's number between two names
+ * fills one gap; a pen line through the row fills them all.
+ * @param {{x0,y0,x1,y1}[]} words the row's printed words, SV number to date
+ */
+export function struckThrough (gray, width, height, words, { ink = 140 } = {}) {
+  const ws = [...words].sort((a, b) => a.x0 - b.x0)
+  if (ws.length < 3) return false
+  const mid = [...ws.map((w) => (w.y0 + w.y1) / 2)].sort((a, b) => a - b)[ws.length >> 1]
+  const h = [...ws.map((w) => w.y1 - w.y0)].sort((a, b) => a - b)[ws.length >> 1]
+  const y0 = Math.max(0, Math.round(mid - 0.6 * h))
+  const y1 = Math.min(height - 1, Math.round(mid + 0.6 * h))
+  let gaps = 0
+  let crossed = 0
+  for (let i = 1; i < ws.length; i++) {
+    const a = Math.max(0, Math.ceil(ws[i - 1].x1 + 2))
+    const b = Math.min(width - 1, Math.floor(ws[i].x0 - 2))
+    if (b - a < 0.4 * h) continue
+    gaps++
+    let inked = 0
+    for (let x = a; x <= b; x++) {
+      for (let y = y0; y <= y1; y++) if (gray[y * width + x] < ink) { inked++; break }
+    }
+    if (inked >= 0.85 * (b - a + 1)) crossed++
+  }
+  return gaps >= 2 && crossed >= Math.max(2, Math.ceil(0.6 * gaps))
+}
+
 /** The default corners: the photo less a 4 % margin. */
 export function insetCorners (width, height, margin = 0.04) {
   const mx = width * margin
@@ -776,8 +877,13 @@ export function plausiblePage (corners, width, height) {
 export function scanPage (canvas, corners, { maxSide = PAGE_MAX_SIDE } = {}) {
   const { width, height } = pageSize(corners, maxSide)
   const src = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height)
-  const gray = removeRules(stretchContrast(evenLight(warpGray(src.data, canvas.width, canvas.height, corners, width, height), width, height)), width, height)
+  const even = stretchContrast(evenLight(warpGray(src.data, canvas.width, canvas.height, corners, width, height), width, height))
+  // the page before its rules go: a pen line through a row (ocr.js
+  // struckThrough) may be straight enough to be taken for one
+  const beforeRules = even.slice()
+  const gray = removeRules(even, width, height)
   const out = canvasOf(width, height)
+  out.beforeRules = beforeRules
   const ctx = out.getContext('2d')
   const img = ctx.createImageData(width, height)
   for (let i = 0, j = 0; i < gray.length; i++, j += 4) {
