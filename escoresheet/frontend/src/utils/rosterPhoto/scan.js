@@ -781,6 +781,22 @@ export function struckThrough (gray, width, height, words, { ink = 140 } = {}) {
   return gaps >= 2 && crossed >= Math.max(2, Math.ceil(0.6 * gaps))
 }
 
+/** A grey page (width x height) turned a quarter clockwise per step: { gray, width, height }. */
+export function turnGray (gray, width, height, turns) {
+  const n = ((turns % 4) + 4) % 4
+  if (!n) return { gray, width, height }
+  const w2 = n % 2 ? height : width
+  const h2 = n % 2 ? width : height
+  const out = new Uint8ClampedArray(gray.length)
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const [nx, ny] = n === 1 ? [height - 1 - y, x] : n === 2 ? [width - 1 - x, height - 1 - y] : [y, width - 1 - x]
+      out[ny * w2 + nx] = gray[y * width + x]
+    }
+  }
+  return { gray: out, width: w2, height: h2 }
+}
+
 /** The default corners: the photo less a 4 % margin. */
 export function insetCorners (width, height, margin = 0.04) {
   const mx = width * margin

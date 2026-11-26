@@ -87,7 +87,7 @@ const LEAD_REACH = 7
 const MARK = /^[([]?([CKL])\1?[)\].]?$/i
 const BARE_MARK = /^[CKL]$/
 // a date with a dot lost ("11.122000", "14032004")
-const LOOSE_DATE = /^(\d{2})[./]?(\d{2})[./]?(\d{4})$/
+const LOOSE_DATE = /^(\d{2})[./-]?(\d{2})[./-]?(\d{4})$/
 // a table rule or a speck read as a character of its own
 const RULE = /^[|¦!I[\]{}_~•·,;'"`‘’“”„✓✔√/\\]+$/
 // characters read for digits, in a word that is mostly digits
@@ -120,6 +120,81 @@ export function ocrLines (data) {
     for (const b of data.blocks) for (const p of b?.paragraphs || []) for (const l of p?.lines || []) take(l)
   } else if (Array.isArray(data?.lines)) {
     for (const l of data.lines) take(l)
+  }
+  // A page a little askew (a photo's corners not quite right, the page
+  // bent) slopes its rows, the lower ones often more: across a wide table
+  // the end of one row lies as low as the start of the next, and Tesseract
+  // puts words of two rows in one line (real photos, 2026-11-26). The slope
+  // of the lines it read well (four words or more, wide), as it changes
+  // down the page; when it tilts a row by a third of a line or more across
+  // the page, the words are regrouped by their height along it.
+  const slopes = [] // { y, slope }
+  for (const l of found) {
+    // (print only: a handwritten number sits higher or lower than its row)
+    const ws = l.words.filter((w) => w.text.trim().length >= 3 && w.conf >= 60 && !RULE.test(w.text.trim()))
+    if (ws.length < 4) continue
+    const xs = ws.map((w) => (w.x0 + w.x1) / 2)
+    const ys = ws.map((w) => (w.y0 + w.y1) / 2)
+    const mx = xs.reduce((a, b) => a + b, 0) / xs.length
+    const my = ys.reduce((a, b) => a + b, 0) / ys.length
+    let sxx = 0
+    let sxy = 0
+    xs.forEach((x, i) => { sxx += (x - mx) ** 2; sxy += (x - mx) * (ys[i] - my) })
+    if (Math.max(...xs) - Math.min(...xs) > 10 * l.h && sxx > 0) slopes.push({ y: l.mid, slope: sxy / sxx })
+  }
+  const skew = slopes.length >= 3 ? median(slopes.map((v) => v.slope)) : 0
+  // the slope down the page: a straight line through the lines' slopes, the
+  // odd ones (a line of two rows) left out
+  const spread = median(slopes.map((v) => Math.abs(v.slope - skew)))
+  const fit = slopes.filter((v) => Math.abs(v.slope - skew) <= 3 * spread + 1e-4)
+  let slopeAt = () => skew
+  if (fit.length >= 4) {
+    const my = fit.reduce((a, v) => a + v.y, 0) / fit.length
+    const ms = fit.reduce((a, v) => a + v.slope, 0) / fit.length
+    let syy = 0
+    let sys = 0
+    for (const v of fit) { syy += (v.y - my) ** 2; sys += (v.y - my) * (v.slope - ms) }
+    const b = syy > 0 ? sys / syy : 0
+    slopeAt = (y) => ms + b * (y - my)
+  }
+  const allWords = found.flatMap((l) => l.words)
+  const left = allWords.length ? Math.min(...allWords.map((w) => w.x0)) : 0
+  const across = allWords.length ? Math.max(...allWords.map((w) => w.x1)) - left : 0
+  const textHeight = median(found.map((l) => l.h)) || 1
+  const ys = found.map((l) => l.mid)
+  if (Math.max(Math.abs(skew), Math.abs(slopeAt(Math.min(...ys))), Math.abs(slopeAt(Math.max(...ys)))) * across > textHeight / 3) {
+    const level = (w) => {
+      const y = (w.y0 + w.y1) / 2
+      return y - slopeAt(y) * ((w.x0 + w.x1) / 2 - left)
+    }
+    const sorted = [...allWords].sort((a, b) => level(a) - level(b))
+    found.length = 0
+    let group = []
+    for (const w of sorted) {
+      if (group.length && level(w) - median(group.map(level)) > 0.5 * textHeight) {
+        found.push(group)
+        group = []
+      }
+      group.push(w)
+    }
+    if (group.length) found.push(group)
+    // a short word alone (a handwritten number, a mark: it sits off its
+    // row's middle) goes to the row nearest it
+    const middle = (ws) => median(ws.map(level))
+    for (let i = found.length - 1; i >= 0; i--) {
+      const ws = found[i]
+      if (ws.length > 2 || !ws.every((w) => w.text.trim().length <= 3) || found.length < 2) continue
+      const m = middle(ws)
+      const near = [i - 1, i + 1].filter((k) => k >= 0 && k < found.length).sort((a, b) => Math.abs(middle(found[a]) - m) - Math.abs(middle(found[b]) - m))[0]
+      if (near !== undefined && Math.abs(middle(found[near]) - m) < 1.1 * textHeight) {
+        found[near].push(...ws)
+        found.splice(i, 1)
+      }
+    }
+    found.forEach((ws, i) => {
+      ws.sort((a, b) => a.x0 - b.x0)
+      found[i] = { words: ws, top: Math.min(...ws.map((w) => w.y0)), bottom: Math.max(...ws.map((w) => w.y1)), ...middleOf(ws) }
+    })
   }
   found.sort((a, b) => a.mid - b.mid)
   const span = (l) => [Math.min(...l.words.map((w) => w.x0)), Math.max(...l.words.map((w) => w.x1))]
@@ -165,7 +240,18 @@ export function cleanWord (text) {
   s = s.replace(/^([MFH])\1+$/, '$1')
   s = s.replace(/[.,]$/, (m) => (DATE.test(s.slice(0, -1)) || /^\d{5,6}$/.test(s.slice(0, -1)) ? '' : m))
   const loose = !DATE.test(s) && LOOSE_DATE.exec(s)
-  return loose ? `${loose[1]}.${loose[2]}.${loose[3]}` : s
+  if (loose) return `${loose[1]}.${loose[2]}.${loose[3]}`
+  // a date with a handwritten digit run into it ("1171220078"): the one
+  // date of birth inside, if exactly one is
+  if (/^\d{9,10}$/.test(s)) {
+    const found = []
+    for (let i = 0; i + 8 <= s.length; i++) {
+      const d = `${s.slice(i, i + 2)}.${s.slice(i + 2, i + 4)}.${s.slice(i + 4, i + 8)}`
+      if (birthDateLike(d)) found.push(d)
+    }
+    if (found.length === 1) return found[0]
+  }
+  return s
 }
 
 /**
@@ -333,6 +419,8 @@ export function rosterFromOcr (data, { circled, ringAt, struck } = {}) {
     const nameBit = (w) => nameLike(w) && !BARE_MARK.test(w.text)
     const markBit = (w) => SHIRT.test(w.text) || BARE_MARK.test(w.text)
     if (lastRow && words.length && words.length <= 4 && words.some(nameBit) && words.every((w) => nameBit(w) || markBit(w)) &&
+        // (in the name columns, read with some certainty: not a scrap at the page's edge)
+        words.filter(nameBit).every((w) => w.conf >= 40 && w.x0 > lastRow.words[0].x1) &&
         line.top - lastRow.bottom < 0.8 * height) {
       const names = words.filter(nameBit)
       const under = lastRow.words.reduce((best, w) => (Math.abs(w.x0 - names[0].x0) < Math.abs(best.x0 - names[0].x0) ? w : best))
@@ -475,6 +563,7 @@ export function rosterFromOcr (data, { circled, ringAt, struck } = {}) {
         lfp: !!column?.lfp,
         licenceConf: licenceWord.conf / 100,
         licenceX: licenceWord.x0,
+        licenceBox: { x0: licenceWord.x0, y0: licenceWord.y0, x1: licenceWord.x1, y1: licenceWord.y1 },
         nameConf: nameWords.length ? Math.min(...nameWords.map((w) => w.conf)) / 100 : 0,
         number: marks.number,
         numberConf: Math.min(marks.numberConf, HANDWRITTEN_MAX),
@@ -505,7 +594,11 @@ export function rosterFromOcr (data, { circled, ringAt, struck } = {}) {
   for (const row of rows.values()) {
     const { y, line } = row.hand
     row.hand.skip = printedBoxes.filter((b) => b.y1 > y - 2.5 * line && b.y0 < y + 2.5 * line)
-    if (rows.size >= 3 && row.licenceX - column > 0.4 * height) row.licenceConf = Math.min(row.licenceConf, 0.4)
+    if (rows.size >= 3 && row.licenceX - column > 0.4 * height) {
+      row.licenceConf = Math.min(row.licenceConf, 0.4)
+      // read again from where the column starts (ocr.js): the lost digit may be there
+      row.licenceAt = { ...row.licenceBox, x0: column - 0.2 * height, lost: true }
+    }
   }
 
   const result = parseRosterContent(textLines.map((l) => l.text).join('\n'), items)
@@ -514,7 +607,9 @@ export function rosterFromOcr (data, { circled, ringAt, struck } = {}) {
     if (!row) return { ...p, confidence: { licence: 0.5, firstName: 0.5, lastName: 0.5 } }
     // the rest of a name from the line below goes to the name it stood under
     // (a stand-in for a lost name out again, also beside a real word)
-    const real = (name) => String(name || '').split(/\s+/).filter((w) => w && w !== NO_NAME).join(' ')
+    // (a name read with a small first letter, "anna", gets its capital back)
+    const real = (name) => String(name || '').split(/\s+/).filter((w) => w && w !== NO_NAME)
+      .map((w) => (/^\p{Ll}\p{L}{2,}/u.test(w) && !PARTICLE.test(w) ? w.charAt(0).toLocaleUpperCase() + w.slice(1) : w)).join(' ')
     const names = { firstName: real(p.firstName), lastName: real(p.lastName) }
     for (const m of row.more) {
       const key = String(p.firstName).split(/\s+/).includes(m.under) ? 'firstName' : 'lastName'
@@ -537,6 +632,7 @@ export function rosterFromOcr (data, { circled, ringAt, struck } = {}) {
       ...(row.ring && row.number === null ? { ringAt: row.ring } : {}),
       // where the team's handwriting is read again (ocr.js); struck out by hand
       handAt: row.hand,
+      ...(row.licenceAt ? { licenceAt: row.licenceAt } : {}),
       ...(row.struck ? { struck: true } : {}),
       confidence: {
         licence: Math.min(row.rawLicence !== null ? Math.min(row.licenceConf, 0.3) : row.licenceConf, cap),

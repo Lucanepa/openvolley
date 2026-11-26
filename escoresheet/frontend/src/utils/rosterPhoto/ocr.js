@@ -20,7 +20,7 @@ import { version as TESSERACT_VERSION } from 'tesseract.js/package.json'
 import { importedRosterOf } from '../../domain/importedRoster'
 import { withTimeout, PDF_TIMEOUT_CODE } from '../parseRosterPdf'
 import { rosterFromOcr, withHandReadings, HANDWRITTEN_MAX } from './ocrRoster'
-import { handInk, ringInRegion, ringScore, struckThrough } from './scan'
+import { handInk, ringInRegion, ringScore, struckThrough, turnGray } from './scan'
 
 // a number counts as circled when ink rings it this fully (scan.js ringScore)
 const CIRCLED_SCORE = 0.8
@@ -111,6 +111,91 @@ const HAND_MIN_CONF = 0.3
 // comes of it, a "take it again" does (real photos, 2026-11-26: a blurry
 // one read at 48, sharp ones at 66 or more)
 export const BLURRY_CONFIDENCE = 55
+// the page looked at small, to see which way up it is
+const UPRIGHT_SIDE = 1100
+// this many words read sure the way it lies: no need to try it turned
+const UPRIGHT_ENOUGH = 12
+
+/** The page (a canvas) turned a quarter clockwise per step and scaled, as a new canvas. */
+function turnedCanvas (page, turns, scale = 1) {
+  const n = ((turns % 4) + 4) % 4
+  const w = Math.max(1, Math.round(page.width * scale))
+  const h = Math.max(1, Math.round(page.height * scale))
+  const out = document.createElement('canvas')
+  out.width = n % 2 ? h : w
+  out.height = n % 2 ? w : h
+  const ctx = out.getContext('2d')
+  ctx.translate(out.width / 2, out.height / 2)
+  ctx.rotate((n * Math.PI) / 2)
+  ctx.drawImage(page, -w / 2, -h / 2, w, h)
+  return out
+}
+
+/** How many words of a reading came out sure (a word of three letters or four digits, 80 % or more). */
+function sureWords (data) {
+  let n = 0
+  for (const b of data?.blocks || []) for (const para of b?.paragraphs || []) for (const l of para?.lines || []) {
+    for (const w of l?.words || []) if ((w.confidence ?? 0) >= 80 && /\p{L}{3,}|\d{4,}/u.test(String(w.text || ''))) n++
+  }
+  return n
+}
+
+/**
+ * How many quarter turns put the page's text the right way up, when the
+ * page read as it lies gave few sure words (asIs): a small copy turned a
+ * quarter either way, then upside down, until one reads well. The scorer
+ * need not press Turn for a page photographed on its side (real photos,
+ * 2026-11-26: four of thirteen); unsure, it stays as it is. A page the
+ * right way up costs nothing: it is read once.
+ */
+async function uprightTurns (worker, page, asIs) {
+  const scale = Math.min(1, UPRIGHT_SIDE / Math.max(page.width, page.height))
+  const sure = async (turns) => sureWords((await worker.recognize(turnedCanvas(page, turns, scale), {}, { blocks: true, text: false })).data)
+  let best = { turns: 0, n: asIs }
+  for (const turns of [1, 3, 2]) {
+    const n = await sure(turns)
+    if (n > best.n) best = { turns, n }
+    if (n >= UPRIGHT_ENOUGH) break
+  }
+  return best.n >= 2 * asIs + 3 ? best.turns : 0
+}
+
+/**
+ * SV numbers read again, digits only, where the first reading was unsure of
+ * them (ocrRoster licenceAt): one that starts right of its column, a digit
+ * lost at the page's edge or under a pen ("23456" for 123456), read from the
+ * column's start, taken only as the same number with one digit more in
+ * front (read again as a whole, a handwritten SV number came out worse:
+ * real photos, 2026-11-26). It stays to check.
+ */
+async function readLicencesAgain (worker, page, players) {
+  await worker.setParameters({ tessedit_pageseg_mode: PSM_SINGLE_LINE, tessedit_char_whitelist: '0123456789' })
+  const out = []
+  for (const p of players) {
+    const at = p.licenceAt
+    if (!at) { out.push(p); continue }
+    const pad = Math.max(3, Math.round((at.y1 - at.y0) * 0.25))
+    const x = Math.max(0, Math.floor(at.x0))
+    const y = Math.max(0, Math.floor(at.y0 - pad))
+    const w = Math.min(page.width - x, Math.ceil(at.x1 - at.x0 + pad))
+    const h = Math.min(page.height - y, Math.ceil(at.y1 - at.y0 + 2 * pad))
+    if (w < 4 || h < 4) { out.push(p); continue }
+    const cut = document.createElement('canvas')
+    cut.width = w + 2 * pad
+    cut.height = h + 2 * pad
+    const ctx = cut.getContext('2d')
+    ctx.fillStyle = '#fff'
+    ctx.fillRect(0, 0, cut.width, cut.height)
+    ctx.drawImage(page, x, y, w, h, pad, pad, w, h)
+    const { data } = await worker.recognize(cut, {}, { text: true })
+    const digits = String(data?.text || '').replace(/\D/g, '')
+    const conf = Math.min((data?.confidence ?? 0) / 100, 0.6)
+    const now = String(p.licence || '')
+    const take = digits.length === now.length + 1 && digits.endsWith(now) && /^\d{6}$/.test(digits)
+    out.push(take ? { ...p, licence: digits, confidence: { ...p.confidence, licence: Math.min(p.confidence?.licence ?? conf, conf) } } : p)
+  }
+  return out
+}
 
 /**
  * The team's handwriting on each player row (scan.js handInk: ink the print
@@ -308,8 +393,25 @@ export async function readRosterPhoto (page, { onProgress, signal, createWorker,
     let data
     try {
       ;({ data } = await withTimeout(worker.recognize(page, {}, { blocks: true, text: false }), timeoutMs))
+      // few words read sure: the page on its side or upside down? (a canvas
+      // only: a Blob is read as it is)
+      const asIs = sureWords(data)
+      if (asIs < UPRIGHT_ENOUGH && typeof page?.getContext === 'function' && !signal?.aborted) {
+        quiet = true
+        const turns = await withTimeout(uprightTurns(worker, page, asIs), timeoutMs)
+        quiet = false
+        if (debug) debug.turned = turns
+        if (turns) {
+          const before = page.beforeRules
+          const turned = turnedCanvas(page, turns)
+          if (before?.length === page.width * page.height) turned.beforeRules = turnGray(before, page.width, page.height, turns).gray
+          page = turned
+          if (signal?.aborted) throw cancelled()
+          ;({ data } = await withTimeout(worker.recognize(page, {}, { blocks: true, text: false }), timeoutMs))
+        }
+      }
     } catch (err) {
-      if (signal?.aborted) throw cancelled()
+      if (signal?.aborted || err?.code === 'ocr-cancelled') throw cancelled()
       if (err?.code === PDF_TIMEOUT_CODE) throw coded('ocr-timeout', 'The text recognition took too long', err)
       throw coded('ocr-load', `The text recognition stopped (${err?.message || err})`, err)
     }
@@ -317,6 +419,13 @@ export async function readRosterPhoto (page, { onProgress, signal, createWorker,
     if (Number.isFinite(confidence) && confidence < BLURRY_CONFIDENCE) throw coded('ocr-blurry', 'The photo is too blurry to read')
     const px = pixelsOf(page)
     const parsed = rosterFromOcr(data, circlesOn(px))
+    if (parsed.players.some((p) => p.licenceAt) && typeof page?.getContext === 'function' && !signal?.aborted) {
+      quiet = true
+      try {
+        parsed.players = await withTimeout(readLicencesAgain(worker, page, parsed.players), HAND_TIMEOUT_MS)
+      } catch { /* the SV numbers as first read (to check) */ }
+      quiet = false
+    }
     if (px && parsed.players.some((p) => p.handAt) && !signal?.aborted) {
       quiet = true
       try {
