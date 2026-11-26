@@ -16,6 +16,7 @@ import { db } from './db'
 import { savedTeamsApi } from '../lib/accountApi'
 import { accessFromRoles } from '../lib/access'
 import { bundleForSport, normalizeName, sportOf } from '../domain/savedTeams'
+import { demoSavedTeamRows, isWalkthroughDemoUser } from '../domain/walkthroughDemo'
 
 export const SAVED_TEAMS_MAX_AGE_MS = 10 * 60 * 1000
 export const SAVED_TEAMS_CHANGED_EVENT = 'ov-saved-teams-changed'
@@ -108,6 +109,9 @@ export async function getSavedTeamsMeta() {
  * to another account (or there is none).
  */
 export async function getSavedTeams({ userId = currentUserId() } = {}) {
+  // the walkthrough's demo account (components/walkthrough/DemoAuthScope):
+  // its saved team, never this device's cache of a real account
+  if (isWalkthroughDemoUser(userId)) return demoSavedTeamRows()
   try {
     const meta = await db.saved_teams_meta.get(META_KEY)
     if (!meta || !userId || meta.userId !== userId) return []
@@ -162,6 +166,8 @@ export async function storeSavedTeamsBundle(bundle, userId) {
  */
 export async function refreshSavedTeams({ force = false, access, userId, online } = {}) {
   const uid = userId === undefined ? currentUserId() : userId
+  // the walkthrough's demo account asks no server (and never clears the cache)
+  if (isWalkthroughDemoUser(uid)) return { status: 'fresh', teams: demoSavedTeamRows() }
   const acc = access || currentAccess()
   if (!uid || !acc.canReadTeams) return { status: 'skipped', teams: await getSavedTeams({ userId: uid }) }
   if (!(online ?? isOnline())) return { status: 'offline', teams: await getSavedTeams({ userId: uid }) }
