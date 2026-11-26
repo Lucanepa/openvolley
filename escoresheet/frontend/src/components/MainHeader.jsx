@@ -652,6 +652,7 @@ export default function MainHeader({
         aria-pressed={helpPanelOpen}
         className={cn(HEADER_BTN, 'w-9 px-0 text-sm font-bold', helpPanelOpen && HEADER_BTN_ON)}
         title={t('contextHelp.helpButton', 'Help')}
+        data-testid="header-help"
       >
         ?
       </button>

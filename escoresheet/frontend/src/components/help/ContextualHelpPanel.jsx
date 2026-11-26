@@ -1,6 +1,6 @@
 import { useContext, useEffect, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, CircleHelp, ExternalLink, LifeBuoy, VideoOff, X } from 'lucide-react'
+import { ChevronDown, CircleHelp, ExternalLink, LifeBuoy, Route, VideoOff, X } from 'lucide-react'
 import FAQItem from './FAQItem'
 import { HELP_SCREENS, sectionsForScreen, sectionVideo, supportPageUrl, videoLanguage } from './helpSections'
 import { useToolMode } from '../../utils/toolMode'
@@ -11,6 +11,7 @@ import { Button, FOCUS_RING } from '../../ui/Button.jsx'
 import { IconButton } from '../../ui/IconButton.jsx'
 import { cn } from '../../ui/cn.js'
 import { backdropDismiss } from '../../ui/backdropDismiss.js'
+import { CHAPTERS } from '../walkthrough/walkthroughChapters'
 
 // Above the dialogs a help button opens it over (ScorerMovedModal and
 // ClosedOnServerModal are at 3000), and the support form above the panel
@@ -73,6 +74,54 @@ function SupportPageLink({ id, children, className }) {
     >
       {children}
     </a>
+  )
+}
+
+/**
+ * "Your first match" (the walkthrough, components/walkthrough): the whole
+ * tour, or one of its chapters, from any screen's help. A control of the
+ * panel, not a question of a section.
+ */
+function WalkthroughEntry({ onStart }) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const listId = useId()
+  return (
+    <div data-testid="help-walkthrough" className="mx-2 mb-2 rounded-xl border border-stone-200/70 bg-stone-50/60 p-3">
+      <div className="flex items-start gap-2.5">
+        <Route size={18} aria-hidden="true" className="mt-0.5 shrink-0 text-stone-400" />
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-stone-900">{t('walkthrough.panel.title')}</div>
+          <p className="mt-0.5 text-xs leading-relaxed text-stone-600">{t('walkthrough.panel.text')}</p>
+        </div>
+      </div>
+      <div className="mt-2.5 flex flex-wrap gap-2">
+        <Button variant="dark" size="sm" onClick={() => onStart(0)} data-testid="help-walkthrough-start">
+          {t('walkthrough.panel.start')}
+        </Button>
+        <Button variant="ghost" size="sm" className="bg-white" aria-expanded={open} aria-controls={listId} onClick={() => setOpen(o => !o)} data-testid="help-walkthrough-chapters">
+          {t('walkthrough.panel.chapters')}
+          <ChevronDown size={14} aria-hidden="true" className={cn('shrink-0 text-stone-400 transition-transform', open && 'rotate-180')} />
+        </Button>
+      </div>
+      {open && (
+        <ol id={listId} className="mt-2 divide-y divide-stone-100 rounded-lg bg-white">
+          {CHAPTERS.map((c, i) => (
+            <li key={c.id}>
+              <button
+                type="button"
+                onClick={() => onStart(i)}
+                data-testid={`help-walkthrough-chapter-${c.id}`}
+                className={cn('flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm text-stone-700 transition-colors hover:bg-stone-50', FOCUS_RING)}
+              >
+                <span className="w-4 shrink-0 tabular-nums text-stone-400">{i + 1}</span>
+                <span className="min-w-0">{t(`walkthrough.chapters.${c.id}`)}</span>
+              </button>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
   )
 }
 
@@ -164,7 +213,7 @@ function HelpVideo({ id, video, online, lang }) {
 // opened over leaves it the keyboard. openSection: the section open first
 // when it is one of the screen's (the tablets' Connect to server screen opens
 // on Connecting tablets), else the main one.
-export default function ContextualHelpPanel({ open, onClose, screen, currentPage, onShowMe, openSection }) {
+export default function ContextualHelpPanel({ open, onClose, screen, currentPage, onShowMe, openSection, onStartWalkthrough }) {
   const { t, i18n } = useTranslation()
   const titleId = useId()
   const panelRef = useRef(null)
@@ -259,6 +308,7 @@ export default function ContextualHelpPanel({ open, onClose, screen, currentPage
 
         {/* The screen's sections */}
         <div className="flex-1 overflow-y-auto px-2 py-2">
+          {onStartWalkthrough && <WalkthroughEntry onStart={onStartWalkthrough} />}
           {sections.length > 0 ? (
             <div className="space-y-1">
               {sections.map(section => {

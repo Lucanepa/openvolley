@@ -604,10 +604,12 @@ export function useDeviceCheckRunning() {
  * you use...", "Connecting..."), no match being opened, nothing covering
  * Home (the Scoreboard, the Manage console, the size gate, Home's own match
  * set-up dialogs: the Easy match form, today's games, the confirms, restore,
- * a test match being prepared).
+ * a test match being prepared), and no "Your first match" walkthrough
+ * running (`tour`: its spotlight and card stay alone on Home; the check and
+ * its card come once it ends, owner follow-up 26.11.2026).
  */
-export function homeQuietForCheck({ matchId = null, homeVisible = false, firstStartDialog = false, openingMatch = false, covered = false } = {}) {
-  return matchId == null && !!homeVisible && !firstStartDialog && !openingMatch && !covered
+export function homeQuietForCheck({ matchId = null, homeVisible = false, firstStartDialog = false, openingMatch = false, covered = false, tour = false } = {}) {
+  return matchId == null && !!homeVisible && !firstStartDialog && !openingMatch && !covered && !tour
 }
 
 /** Home waits this long after it shows, then for an idle moment, before the automatic check. */

@@ -79,7 +79,9 @@ export default function HomePage({
   // the device check's recommendation (App, DeviceCheckCard)
   deviceCheckCard = null,
   // the match Continue resumes (App): { home, away, score, stage, lastSaved, state, unsent }
-  continueInfo = null
+  continueInfo = null,
+  // "New here? Take the tour" (App, components/walkthrough/HomeTourCard)
+  tourCard = null
 }) {
   const { t, i18n } = useTranslation()
   const [supportFeedbackOpen, setSupportFeedbackOpen] = useState(false)
@@ -113,6 +115,7 @@ export default function HomePage({
         <div className="home-wide:col-start-2 home-wide:row-span-4 home-wide:row-start-1 home-wide:self-center">
         {!globalMode && <PendingApprovalBanner className="mb-4" />}
         {selfCheckNotice}
+        {tourCard}
 
         <Card className="w-full space-y-3">
           {/* Continue: the match in progress on this device, first and in one
@@ -328,7 +331,7 @@ export default function HomePage({
         {/* One above the other on a phone: side by side, "Support & feedback"
             broke onto two lines beside its icon */}
         <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
-          <Button variant="secondary" size="xl" block onClick={onOpenSettings} icon={Settings}>
+          <Button variant="secondary" size="xl" block onClick={onOpenSettings} icon={Settings} data-testid="home-options">
             {t('home.options')}
           </Button>
           <Button variant="ghost" size="xl" block onClick={() => setSupportFeedbackOpen(true)} icon={LifeBuoy} className="bg-white">

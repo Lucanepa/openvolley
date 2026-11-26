@@ -10,7 +10,8 @@ import { displayOrder, readRosterSort, saveRosterSort } from '../utils/rosterOrd
 /**
  * "Choose the players": every player MatchSetup knows for a team
  * (domain/playerPool: the roster now, an Einsatzliste, the saved team, earlier
- * matches on this device), ticked from a sensible default; "Use N players"
+ * matches on this device; in the walkthrough, the demo club's list), ticked
+ * from a sensible default; "Use N players"
  * hands the ticked ones back. Warnings only (more than 14, two liberos above
  * 12, a third libero, fewer than 6): the setup's own checks decide at the
  * coin toss. One scroller (the list), the footer stays.
@@ -23,7 +24,7 @@ export default function PlayerPoolModal({ open, onClose, onApply, pool, teamLabe
   return <PoolBody {...{ onClose, onApply, pool: Array.isArray(pool) ? pool : [], teamLabel }} />
 }
 
-const SOURCE_KEY = { current: 'playerPool.sourceCurrent', imported: 'playerPool.sourceImported', saved: 'playerPool.sourceSaved', earlier: 'playerPool.sourceEarlier' }
+const SOURCE_KEY = { current: 'playerPool.sourceCurrent', imported: 'playerPool.sourceImported', saved: 'playerPool.sourceSaved', earlier: 'playerPool.sourceEarlier', club: 'playerPool.sourceClub' }
 
 function PoolBody({ onClose, onApply, pool, teamLabel }) {
   const { t } = useTranslation()

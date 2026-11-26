@@ -137,3 +137,29 @@ describe('poolToRoster', () => {
     expect(roster[0].libero).toBe('libero1')
   })
 })
+
+// The walkthrough's demo club (owner follow-up 26.11.2026): its list joins the
+// pool after every other source; a club player already on the roster is the
+// same player (by licence), the others come last and unticked
+describe('buildPlayerPool: the club source', () => {
+  const club = [
+    p(null, 'Lauener', 'Ruben', { dob: '904120' }),
+    p(null, 'Tanner', 'Remo', { dob: '904101' })
+  ]
+  it('merges a club player with the roster by licence, the others last without a number', () => {
+    const pool = buildPlayerPool({ current: [p(1, 'Tanner', 'Remo', { dob: '904101' }), p(3, 'Bärtschi', 'Nico', { dob: '904103' })], club })
+    expect(pool.map(e => [e.number, e.lastName, e.sources])).toEqual([
+      [1, 'Tanner', ['current', 'club']],
+      [3, 'Bärtschi', ['current']],
+      [null, 'Lauener', ['club']]
+    ])
+  })
+  it('never ticks someone only on the club list from the start', () => {
+    const withRoster = buildPlayerPool({ current: [p(1, 'Tanner', 'Remo', { dob: '904101' })], club })
+    expect([...preselectedKeys(withRoster)].map(k => withRoster.find(e => e.key === k).lastName)).toEqual(['Tanner'])
+    const clubOnly = buildPlayerPool({ club })
+    expect(preselectedKeys(clubOnly).size).toBe(0)
+    const savedAndClub = buildPlayerPool({ saved: [p(7, 'Kälin', 'Dario', { dob: '904108' })], club })
+    expect([...preselectedKeys(savedAndClub)].map(k => savedAndClub.find(e => e.key === k).lastName)).toEqual(['Kälin'])
+  })
+})

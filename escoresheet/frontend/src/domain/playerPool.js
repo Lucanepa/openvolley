@@ -12,6 +12,9 @@
  *   saved     the saved team (domain/savedTeams savedTeamToRoster, active players)
  *   earlier   rosters of earlier matches of the team on this device, newest
  *             first (db/rememberedPlayers)
+ *   club      players of the club's licence list for the team (without a
+ *             number; MatchSetup gives it only to the walkthrough's demo
+ *             account, components/walkthrough)
  * Every source is a list of MatchSetup roster entries
  * ({ number, firstName, lastName, dob, libero, isCaptain, isLfp }).
  */
@@ -24,7 +27,7 @@ import { licenceOf } from './idMode'
 export const ROSTER_MAX = 14
 export const ROSTER_MIN = 6
 export const TWO_LIBEROS_ABOVE = 12
-export const POOL_SOURCES = ['current', 'imported', 'saved', 'earlier']
+export const POOL_SOURCES = ['current', 'imported', 'saved', 'earlier', 'club']
 
 const isLibero = (p) => p?.libero === 'libero1' || p?.libero === 'libero2' || p?.libero === true
 
@@ -52,14 +55,15 @@ const hasName = (p) => !!(String(p?.lastName || '').trim() || String(p?.firstNam
 /**
  * Merge the sources into one list, sorted by number (players without a
  * number last, then by name).
- * @param {{current?: object[], imported?: object[], saved?: object[], earlier?: object[][]}} sources
+ * @param {{current?: object[], imported?: object[], saved?: object[], earlier?: object[][], club?: object[]}} sources
  *   `earlier`: one roster per earlier match, newest first; the first one is
- *   "the team's last match" (lastMatch on its players)
+ *   "the team's last match" (lastMatch on its players); `club`: the club's
+ *   list, last (it has no numbers)
  * @returns {{ key: string, number: number|null, firstName: string, lastName: string, dob: string,
  *   isLibero: boolean, liberoSlot: ''|'libero1'|'libero2', isCaptain: boolean, isLfp: boolean,
  *   sources: string[], lastMatch: boolean }[]}
  */
-export function buildPlayerPool({ current = [], imported = [], saved = [], earlier = [] } = {}) {
+export function buildPlayerPool({ current = [], imported = [], saved = [], earlier = [], club = [] } = {}) {
   const byKey = new Map()
   // licence -> the key of its player: the same licence is the same player,
   // whatever the spelling of the name (a date of birth is never compared)
@@ -109,6 +113,7 @@ export function buildPlayerPool({ current = [], imported = [], saved = [], earli
   for (const p of imported) add(p, 'imported')
   for (const p of saved) add(p, 'saved')
   earlier.forEach((roster, i) => { for (const p of roster || []) add(p, 'earlier', i === 0) })
+  for (const p of club) add(p, 'club')
 
   return [...byKey.values()].sort((a, b) =>
     (a.number ?? 1000) - (b.number ?? 1000) ||
@@ -119,7 +124,8 @@ export function buildPlayerPool({ current = [], imported = [], saved = [], earli
 /**
  * The players ticked when the dialog opens: the roster in the setup now; else
  * those of the Einsatzliste (or, without one, of the whole pool) who played
- * the team's last match; else all of them.
+ * the team's last match; else all of them. Someone only on the club's list is
+ * never ticked from the start (the list is the club's, not the team's).
  * @returns {Set<string>}
  */
 export function preselectedKeys(pool) {
@@ -127,7 +133,7 @@ export function preselectedKeys(pool) {
   const current = list.filter(e => e.sources.includes('current'))
   if (current.length) return new Set(current.map(e => e.key))
   const imported = list.filter(e => e.sources.includes('imported'))
-  const base = imported.length ? imported : list
+  const base = imported.length ? imported : list.filter(e => e.sources.some(s => s !== 'club'))
   const played = base.filter(e => e.lastMatch)
   return new Set((played.length ? played : base).map(e => e.key))
 }

@@ -302,6 +302,15 @@ describe('the Home card\'s rule', () => {
     expect(homeQuietForCheck({ ...quiet, openingMatch: true })).toBe(false)
     expect(homeQuietForCheck({ ...quiet, covered: true })).toBe(false)
   })
+
+  // Owner follow-up 26.11.2026: the device check and its card wait while the
+  // "Your first match" walkthrough runs (Home is its first chapter), and come
+  // as usual once it has ended
+  it('Home is not quiet while the walkthrough runs', () => {
+    const quiet = { matchId: null, homeVisible: true, firstStartDialog: false, openingMatch: false, covered: false }
+    expect(homeQuietForCheck({ ...quiet, tour: true })).toBe(false)
+    expect(homeQuietForCheck({ ...quiet, tour: false })).toBe(true)
+  })
 })
 
 describe('checkDeviceNow', () => {
