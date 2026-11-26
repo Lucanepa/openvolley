@@ -24,7 +24,7 @@ const placeholders = (s) => [...String(s).matchAll(/\{\{\s*(\w+)\s*\}\}/g)].map(
 
 // The ids the website, the support form (area) and the videos share
 const IDS = [
-  'home', 'setup', 'rosters', 'coin-toss', 'scoring', 'subs-timeouts', 'sanctions', 'set-end', 'match-end',
+  'home', 'setup', 'rosters', 'roster-details', 'coin-toss', 'scoring', 'subs-timeouts', 'sanctions', 'set-end', 'match-end',
   'corrections', 'connections', 'referee', 'bench', 'livescore', 'handover', 'sync-offline', 'install-updates',
   'global', 'club-manager', 'team-links', 'requests', 'team-manager', 'club-licences', 'club-api', 'manager-accounts'
 ]

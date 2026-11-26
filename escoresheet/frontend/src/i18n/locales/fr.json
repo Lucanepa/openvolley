@@ -3179,6 +3179,9 @@
       "q_importPdf": "Comment importer une composition à partir d'un PDF ?",
       "a_importPdf": "Dans « Modifier l'effectif », laisse « Local » choisi et appuie sur « Importer PDF ». Choisis le PDF de l'effectif de l'équipe ou l'Einsatzliste, puis appuie sur « Importer PDF ». Il remplace les joueurs et les officiels du banc. Avec plus de 14 joueurs, coche ceux qui jouent. Vérifie ensuite les dates de naissance, saisis les numéros de maillot manquants, et désigne le capitaine et les libéros. Une date de naissance au 1er janvier est souvent une date par défaut (01.01.1900 quand la date n'est pas connue) ou une erreur d'import : l'effectif liste ces personnes au-dessus des joueurs. Corrige les dates que tu connais. Le tirage au sort ne les demande pas.",
       "tip_importPdf": "Appuie ici pour importer les joueurs depuis le PDF d'un effectif.",
+      "q_importPhoto": "Puis-je importer l'Einsatzliste depuis une photo ?",
+      "a_importPhoto": "Oui. Dans « Modifier l'effectif », laisse « Local » choisi et appuie sur « Photo de la liste ». Prends en photo la liste imprimée ou choisis une image de la liste (une capture d'écran fonctionne aussi ; zoome jusqu'à ce que le tableau la remplisse). Glisse les quatre coins sur la page, puis appuie sur « Lire la liste » : la photo est lue sur cet appareil, ni envoyée ni gardée. Vérifie les lignes : un champ rouge doit être corrigé, un champ orange vérifié. Les numéros de maillot, le capitaine (C, K ou un numéro entouré) et les libéros (L) inscrits sur la liste valent pour ce match ; les numéros laissés vides viennent de l'équipe enregistrée. Rien ne change avant « Utiliser ». Le PDF de la liste est lu de façon plus fiable qu'une photo.",
+      "tip_importPhoto": "Appuie ici pour lire l'Einsatzliste depuis une photo.",
       "q_liberos": "Comment désigner les libéros ?",
       "a_liberos": "Dans l'effectif, choisis « Libéro 1 » ou « Libéro 2 » dans la colonne libéro. Une équipe a 2 libéros au plus. Avec plus de 12 joueurs, il lui en faut 2.",
       "tip_liberos": "Choisis ici « Libéro 1 » ou « Libéro 2 » pour faire de ce joueur un libéro.",
@@ -3389,7 +3392,8 @@
       "clubLicences": "Listes de licences du club",
       "clubApi": "API du club",
       "managerAccounts": "Comptes et rôles dans la gestion",
-      "rosters": "Effectifs"
+      "rosters": "Effectifs",
+      "rosterDetails": "Effectifs : détails"
     },
     "scoring": {
       "q_doubleTap": "J'ai appuyé deux fois : pourquoi un seul point ?",
@@ -7320,5 +7324,89 @@
     "scorerOffline": "Marqueur hors ligne",
     "fullscreen": "Plein écran",
     "exitFullscreen": "Quitter le plein écran"
+  },
+  "rosterPhoto": {
+    "button": "Photo de la liste",
+    "title": "Einsatzliste depuis une photo · {{team}}",
+    "loading": "Ouverture de la photo…",
+    "source": {
+      "description": "Prends en photo la liste imprimée, ou choisis une image de la liste sur cet appareil.",
+      "tipFlat": "Pose la liste à plat et tiens l’appareil bien au-dessus.",
+      "tipLight": "Bonne lumière, pas d’ombre sur les noms.",
+      "tipWhole": "Toute la page dans l’image, nette.",
+      "take": "Prendre une photo",
+      "choose": "Choisir une image",
+      "private": "Lue sur cet appareil : la photo n’est ni envoyée ni gardée."
+    },
+    "crop": {
+      "description": "Glisse les quatre coins sur les coins de la page. Le bord épais est le haut : « Tourner » le déplace.",
+      "top": "Haut",
+      "turn": "Tourner",
+      "another": "Autre photo",
+      "read": "Lire la liste",
+      "cornerTopLeft": "Coin en haut à gauche",
+      "cornerTopRight": "Coin en haut à droite",
+      "cornerBottomRight": "Coin en bas à droite",
+      "cornerBottomLeft": "Coin en bas à gauche"
+    },
+    "reading": {
+      "prepare": "Préparation de la reconnaissance de texte…",
+      "read": "Lecture de la liste… {{percent}} %"
+    },
+    "confirm": {
+      "description": "Vérifie chaque ligne et corrige ce qui a été mal lu. Rien ne change avant « Utiliser ».",
+      "method": "Lue sur cet appareil (reconnaissance de texte)",
+      "fromSaved_one": "{{count}} nom de l’équipe enregistrée",
+      "fromSaved_other": "{{count}} noms de l’équipe enregistrée",
+      "toFix_one": "{{count}} champ à corriger (rouge)",
+      "toFix_other": "{{count}} champs à corriger (rouge)",
+      "toCheck_one": "{{count}} champ à vérifier (orange)",
+      "toCheck_other": "{{count}} champs à vérifier (orange)",
+      "players_one": "{{count}} joueur",
+      "players_other": "{{count}} joueurs",
+      "officials": "Entraîneur et assistants",
+      "empty": "Plus aucune ligne de joueur.",
+      "add": "Ajouter une ligne",
+      "remove": "Retirer",
+      "apply_one": "Utiliser {{count}} joueur",
+      "apply_other": "Utiliser {{count}} joueurs",
+      "struck_one": "Laissé de côté, barré sur la liste : {{names}}",
+      "struck_other": "Laissés de côté, barrés sur la liste ({{count}}) : {{names}}"
+    },
+    "col": {
+      "number": "N°",
+      "lastName": "Nom",
+      "firstName": "Prénom",
+      "licence": "Licence",
+      "captain": "C",
+      "captainLong": "Capitaine",
+      "libero": "L",
+      "liberoLong": "Libéro"
+    },
+    "role": {
+      "coach": "Entraîneur",
+      "ac1": "Assistant 1",
+      "ac2": "Assistant 2"
+    },
+    "issue": {
+      "number": "Un numéro de maillot va de 1 à 99.",
+      "duplicateNumber": "Ce numéro figure deux fois sur la liste.",
+      "licence": "Vérifie le numéro de licence : des chiffres seulement, comme sur la liste.",
+      "missingLicence": "Aucun numéro de licence lu.",
+      "missingName": "Un nom est nécessaire.",
+      "odd": "Semble mal lu : vérifie.",
+      "unsure": "Difficile à lire sur la photo : vérifie.",
+      "twoCaptains": "Un seul capitaine.",
+      "tooManyLiberos": "Deux libéros au plus.",
+      "captainLibero": "Un libéro ne peut pas être capitaine."
+    },
+    "error": {
+      "photo-unreadable": "La photo n’a pas pu être ouverte. Essaie une autre.",
+      "ocr-load": "La reconnaissance de texte n’a pas pu démarrer. Sur le web, elle a besoin d’une connexion la première fois (environ 12 Mo). Réessaie, importe le PDF ou saisis les joueurs à la main.",
+      "ocr-timeout": "La lecture a pris trop de temps sur cet appareil. Essaie une photo nette avec seulement la liste, importe le PDF ou saisis les joueurs à la main.",
+      "ocr-empty": "Aucune ligne de joueur trouvée. Vérifie que toute la liste est nette sur la photo, puis réessaie.",
+      "retry": "Réessayer",
+      "ocr-blurry": "La photo est trop floue pour être lue. Reprends-la : tiens la tablette immobile, avec une bonne lumière, toute la liste nette."
+    }
   }
 }

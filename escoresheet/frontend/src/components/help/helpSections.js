@@ -72,13 +72,18 @@ export const HELP_SECTIONS = [
     q('matchSetup', 'numbers'),
     q('matchSetup', 'choosePlayers'),
     q('matchSetup', 'importPdf', 'setup-pdf-import'),
+    q('matchSetup', 'importPhoto', 'setup-photo-import'),
     q('matchSetup', 'rosterUpload'),
     q('matchSetup', 'sentRoster'),
+    q('matchSetup', 'clubPlayers')
+  ]),
+  // The rest of "Edit roster" (liberos, captain, bench, signatures): own section since the
+  // photo import, rosters had 13 questions
+  section('roster-details', [
     q('matchSetup', 'liberos', 'setup-libero-toggle'),
     q('matchSetup', 'captain', 'setup-captain-toggle'),
     q('matchSetup', 'benchOfficials', 'setup-bench-officials'),
-    q('matchSetup', 'rosterSignatures'),
-    q('matchSetup', 'clubPlayers')
+    q('matchSetup', 'rosterSignatures')
   ]),
   section('coin-toss', [
     q('coinToss', 'record', 'cointoss-team-selector'),
@@ -356,7 +361,7 @@ export const SECTION_IDS = HELP_SECTIONS.map(s => s.id)
  */
 export const HELP_SCREENS = {
   home: { app: 'scorer', nameKey: 'contextHelp.pageNames.home', sections: ['home', 'global', 'handover', 'sync-offline', 'install-updates', 'livescore', 'bench'] },
-  matchSetup: { app: 'scorer', nameKey: 'contextHelp.pageNames.matchSetup', sections: ['setup', 'rosters', 'global', 'connections', 'handover'] },
+  matchSetup: { app: 'scorer', nameKey: 'contextHelp.pageNames.matchSetup', sections: ['setup', 'rosters', 'roster-details', 'global', 'connections', 'handover'] },
   coinToss: { app: 'scorer', nameKey: 'contextHelp.pageNames.coinToss', sections: ['coin-toss'] },
   scoreboard: { app: 'scorer', nameKey: 'contextHelp.pageNames.scoreboard', sections: ['scoring', 'subs-timeouts', 'sanctions', 'set-end', 'corrections', 'sync-offline', 'coin-toss', 'install-updates', 'livescore'] },
   matchEnd: { app: 'scorer', nameKey: 'contextHelp.pageNames.matchEnd', sections: ['match-end', 'corrections', 'set-end', 'handover'] },

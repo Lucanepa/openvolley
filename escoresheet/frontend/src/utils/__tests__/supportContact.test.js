@@ -15,7 +15,7 @@ const win = (href = 'https://app.openvolley.app/referee?pin=123456#set2') => {
 describe('support form: areas', () => {
   it('are every help section, as the backend has them, and "other"', () => {
     expect(SUPPORT_SECTIONS).toEqual(SECTION_IDS)
-    expect(SUPPORT_SECTIONS).toHaveLength(25)
+    expect(SUPPORT_SECTIONS).toHaveLength(26)
     expect(CONTACT_AREAS).toEqual([...SUPPORT_SECTIONS, 'other'])
   })
 
