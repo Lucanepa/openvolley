@@ -2,7 +2,8 @@
 // Scoreboard codes end to end (docs/scoreboard-code-spec.md): a scorer
 // (1005x600, a Galaxy Tab A7 Lite) scores a test match on the dev server's
 // own relay, opens Match ▸ Show on a scoreboard, and two board pages
-// (1920x1080 and 1280x720) follow the match by the code alone. Needs a
+// (1920x1080 and 1280x720) follow the match by the code alone, and so does
+// the stream overlay (/board?overlay, 1920x1080, a see-through page). Needs a
 // running dev server with a dead cloud (the relay is the dev server's own):
 //
 //   VITE_CLOUD_API_URL=http://127.0.0.1:9 WS_PORT=18741 VITE_WS_PORT=18741 \
@@ -13,7 +14,8 @@
 // the board page with the code in the fragment; both boards show the names
 // and the score as the scorer's database has it, the serve, a time-out, the
 // set interval, the match end; a wrong code and "New code" on the scorer end
-// the boards; the board page without a code shows its form.
+// the boards; the board page without a code shows its form; the panel's stream
+// link is the overlay page, which is see-through and follows the same score.
 // --quick stops after the time-out (no full match). --shots DIR saves the
 // screenshots at device scale 2. Environment: PLAYWRIGHT_CORE, CHROME_PATH.
 import fs from 'node:fs'
@@ -48,7 +50,7 @@ async function rallyFor (page, team) {
     return
   }
   if (await clickTopButton(page, /^End set interval$/)) { await sleep(700); return }
-  if (await page.locator('button:visible').filter({ hasText: /^(Lineup\s*[AB]\s*[-·]|Confirm set \d setup$)/ }).count()) { await enterLineups(page); return }
+  if (await page.locator('button:visible').filter({ hasText: /^(Line-?up\s*[AB]\s*[-·]|Confirm set \d setup$)/ }).count()) { await enterLineups(page); return }
   const start = help(page, 'scoreboard-start-rally')
   if (await visible(start)) {
     if (!(await start.isEnabled({ timeout: 1000 }).catch(() => false))) { await sleep(200); return }
@@ -78,11 +80,13 @@ async function boardView (page) {
     const state = document.querySelector('[data-testid="board-state"]')?.getAttribute('data-state') ?? text('board-state')
     return {
       state,
-      left: text('board-points-left'),
-      right: text('board-points-right'),
-      leftName: text('board-name-left'),
-      rightName: text('board-name-right'),
-      phase: document.querySelector('[data-testid="board-banner"]')?.getAttribute('data-phase') ?? null,
+      // the board's test ids, else the stream overlay's (BoardOverlay)
+      left: text('board-points-left') ?? text('overlay-points-left'),
+      right: text('board-points-right') ?? text('overlay-points-right'),
+      leftName: text('board-name-left') ?? text('overlay-name-left'),
+      rightName: text('board-name-right') ?? text('overlay-name-right'),
+      phase: document.querySelector('[data-testid="board-banner"]')?.getAttribute('data-phase') ??
+        document.querySelector('[data-testid="board-overlay"]')?.getAttribute('data-phase') ?? null,
       body: document.body.innerText.replace(/\s+/g, ' ').slice(0, 400)
     }
   })
@@ -119,7 +123,8 @@ async function main () {
   const scorer = await launch({ width: 1005, height: 600, dpr: SHOTS ? 2 : 1, touch: true })
   const big = await launch({ width: 1920, height: 1080, dpr: SHOTS ? 2 : 1, touch: false })
   const small = await launch({ width: 1280, height: 720, dpr: SHOTS ? 2 : 1, touch: false })
-  const boards = [{ name: '1920x1080', ...big }, { name: '1280x720', ...small }]
+  const stream = await launch({ width: 1920, height: 1080, dpr: SHOTS ? 2 : 1, touch: false })
+  const boards = [{ name: '1920x1080', ...big }, { name: '1280x720', ...small }, { name: 'stream overlay', query: '?overlay', ...stream }]
   const boardUrl = (hash = '') => `${BASE_URL.replace(/\/+$/, '')}/livescore/board${hash}`
   try {
     // --- the board page without a code: its form -----------------------------
@@ -150,12 +155,14 @@ async function main () {
     const code = shown.replace('-', '')
     record('the scorer panel shows a code the relay took', /^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/.test(shown), shown)
     record('the QR link is the board page with the code in the fragment', link.endsWith(`/livescore/board#${code}`) && !link.includes('?'), link)
+    const streamLink = (await page.locator('[data-testid="scoreboard-code-stream-link"]').textContent()).trim()
+    record('the stream link is the same board with ?overlay', streamLink === link.replace('#', '?overlay#'), streamLink)
     await shot(page, 'scorer-1005x600-show-on-scoreboard')
     await page.locator('[data-testid="scoreboard-code-done"]').click()
     await sleep(400)
 
     // --- both boards follow by the code ---------------------------------------
-    for (const b of boards) await b.page.goto(boardUrl(`#${shown}`), { waitUntil: 'domcontentloaded', timeout: 60000 })
+    for (const b of boards) await b.page.goto(boardUrl(`${b.query || ''}#${shown}`), { waitUntil: 'domcontentloaded', timeout: 60000 })
     let want = await scorerSides(page)
     for (const b of boards) {
       const ok = await waitBoardScore(b.page, want, `board ${b.name} score`)
@@ -163,6 +170,19 @@ async function main () {
       record(`board ${b.name} shows the score ${want.left}:${want.right}`, ok, `${v.left}:${v.right} ${v.leftName ?? ''} / ${v.rightName ?? ''}`)
       record(`board ${b.name} has the team names`, /Home|Away|VBC|Volley|\w{3}/.test(`${v.leftName}${v.rightName}`), `${v.leftName} / ${v.rightName}`)
       await shot(b.page, `board-${b.name}-live`)
+    }
+    // the overlay: a see-through page, the score bug only (no footer, no team bands)
+    {
+      const o = await stream.page.evaluate(() => ({
+        html: getComputedStyle(document.documentElement).backgroundColor,
+        body: getComputedStyle(document.body).backgroundColor,
+        root: getComputedStyle(document.querySelector('[data-testid="board-state"]')).backgroundImage,
+        bug: !!document.querySelector('[data-testid="board-overlay"]'),
+        footer: !!document.querySelector('[data-testid="board-footer"]'),
+        bands: !!document.querySelector('[data-testid="board-team-left"]')
+      }))
+      const clear = (c) => c === 'rgba(0, 0, 0, 0)' || c === 'transparent'
+      record('the stream overlay is see-through with the bug only', clear(o.html) && clear(o.body) && o.root === 'none' && o.bug && !o.footer && !o.bands, JSON.stringify(o))
     }
     // the code is gone from the address bar's query (fragment only) and never in a request
     record('the board keeps the code out of the query', !(await big.page.url()).includes('?code'), big.page.url())
@@ -179,7 +199,7 @@ async function main () {
     // --- a time-out -------------------------------------------------------------
     await help(page, 'scoreboard-timeout-left').click()
     await sleep(600)
-    if (!(await clickTopButton(page, /^Confirm time-out$/))) throw new Error('no time-out confirmation')
+    if (!(await clickTopButton(page, /^Confirm( time-out)?$/))) throw new Error('no time-out confirmation')
     await sleep(500)
     for (const b of boards) {
       let ok = false
@@ -237,7 +257,7 @@ async function main () {
       await sleep(400)
       // the new code follows again, on both boards
       for (const b of boards) {
-        await b.page.goto(boardUrl(`#${fresh}`), { waitUntil: 'domcontentloaded', timeout: 60000 })
+        await b.page.goto(boardUrl(`${b.query || ''}#${fresh}`), { waitUntil: 'domcontentloaded', timeout: 60000 })
         const ok = await waitBoardScore(b.page, await scorerSides(page), `board ${b.name} new code`)
         record(`board ${b.name} follows the match again with the new code`, ok, (await boardView(b.page)).state)
       }
@@ -276,7 +296,7 @@ async function main () {
           const ds = await dialogs(page)
           if (ds.length) { await answerDialogs(page, { prefer: /^(Continue|Confirm|OK|Yes|Confirm .+|Switch courts|Not now)$/ }); continue }
           if (await clickTopButton(page, /^End set interval$/)) { await sleep(700); continue }
-          if (await page.locator('button:visible').filter({ hasText: /^(Lineup\s*[AB]\s*[-·]|Confirm set \d setup$)/ }).count()) { await enterLineups(page); continue }
+          if (await page.locator('button:visible').filter({ hasText: /^(Line-?up\s*[AB]\s*[-·]|Confirm set \d setup$)/ }).count()) { await enterLineups(page); continue }
           if (await visible(help(page, 'scoreboard-start-rally'))) break
           await sleep(200)
         }
@@ -309,14 +329,14 @@ async function main () {
       await shot(page, 'scorer-1005x600-match-end')
     }
 
-    const errs = [...scorer.errors, ...big.errors, ...small.errors]
+    const errs = [...scorer.errors, ...big.errors, ...small.errors, ...stream.errors]
     record('no page errors', errs.length === 0, errs[0] || '')
   } catch (err) {
     record('run', false, err.message)
     await shot(scorer.page, 'error-scorer')
     for (const b of boards) await shot(b.page, `error-board-${b.name}`)
   } finally {
-    for (const env of [scorer, big, small]) await env.browser.close().catch(() => {})
+    for (const env of [scorer, big, small, stream]) await env.browser.close().catch(() => {})
   }
   const failed = results.filter((r) => !r.ok)
   console.log(`\n${results.length - failed.length}/${results.length} checks passed${SHOTS ? `, screenshots in ${SHOTS}` : ''}`)
