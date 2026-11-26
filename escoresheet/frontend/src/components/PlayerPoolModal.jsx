@@ -2,9 +2,10 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ListChecks } from 'lucide-react'
 import KitModal from './manage/KitModal'
-import { Button, Banner, Mark, MarkRow, EmptyInset } from '../ui'
+import { Button, Banner, Mark, MarkRow, EmptyInset, SegmentedControl } from '../ui'
 import { cn } from '../ui/cn.js'
 import { preselectedKeys, selectionIssues } from '../domain/playerPool'
+import { displayOrder, readRosterSort, saveRosterSort } from '../utils/rosterOrder'
 
 /**
  * "Choose the players": every player MatchSetup knows for a team
@@ -27,6 +28,10 @@ const SOURCE_KEY = { current: 'playerPool.sourceCurrent', imported: 'playerPool.
 function PoolBody({ onClose, onApply, pool, teamLabel }) {
   const { t } = useTranslation()
   const [ticked, setTicked] = useState(() => preselectedKeys(pool))
+  // # / A–Z, the same choice as Match setup's roster (utils/rosterOrder); the
+  // pool comes by number (domain/playerPool)
+  const [sortMode, setSortMode] = useState(readRosterSort)
+  const shown = useMemo(() => displayOrder(pool, sortMode).map(i => pool[i]), [pool, sortMode])
   const selected = useMemo(() => pool.filter(e => ticked.has(e.key)), [pool, ticked])
   const issues = selectionIssues(selected)
 
@@ -67,7 +72,15 @@ function PoolBody({ onClose, onApply, pool, teamLabel }) {
         <span className="text-sm font-semibold tabular-nums text-stone-700" data-testid="player-pool-count">
           {t('playerPool.ticked', { count: selected.length, total: pool.length })}
         </span>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {pool.length > 1 && (
+            <SegmentedControl
+              ariaLabel={t('matchSetup.sortPlayers', 'Sort')}
+              options={[{ value: 'number', label: '#' }, { value: 'name', label: 'A–Z' }]}
+              value={sortMode}
+              onChange={(v) => { setSortMode(v); saveRosterSort(v) }}
+            />
+          )}
           <Button variant="secondary" size="md" onClick={() => setTicked(new Set(pool.map(e => e.key)))} data-testid="player-pool-all">
             {t('playerPool.selectAll')}
           </Button>
@@ -87,7 +100,7 @@ function PoolBody({ onClose, onApply, pool, teamLabel }) {
         // data-sensitive: a tap on a row keeps no name or date of birth in the
         // interaction log (utils/eventCapture), often a minor's
         <ul className="-mx-1 divide-y divide-stone-100 border-y border-stone-200" data-testid="player-pool-list" data-sensitive="">
-          {pool.map(e => {
+          {shown.map(e => {
             const on = ticked.has(e.key)
             const name = [e.lastName.toUpperCase(), e.firstName].filter(Boolean).join(' ')
             return (

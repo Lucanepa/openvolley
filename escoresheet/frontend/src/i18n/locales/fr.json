@@ -572,7 +572,8 @@
     "refereeEmail": "E-mail (facultatif)",
     "refereeEmailHint": "Pour la feuille de match finale. Seuls les marqueurs de ce match la voient.",
     "teamContactEmail": "E-mail du contact de l'équipe (facultatif)",
-    "teamContactEmailHint": "Reçoit la feuille de match finale par e-mail. Seuls les marqueurs de ce match la voient."
+    "teamContactEmailHint": "Reçoit la feuille de match finale par e-mail. Seuls les marqueurs de ce match la voient.",
+    "sortPlayers": "Trier"
   },
   "scoreboard": {
     "playerOfficials": {
@@ -751,7 +752,8 @@
       "liberoOut": "Libéro SORT",
       "liberoIn": "Libéro ENTRE",
       "playerReturns": "Retour du joueur",
-      "forfait": "Forfait"
+      "forfait": "Forfait",
+      "liberoInQuestion": "Libéro ENTRE ?"
     },
     "sanctions": {
       "teamSanctions": "Sanctions d'équipe",
@@ -784,7 +786,8 @@
       "sanctionFor": "Sanction pour {{who}}",
       "actionsFor": "Actions pour {{who}}",
       "teamHasWarning": "Équipe déjà avertie",
-      "alreadySanctioned": "Déjà sanctionné"
+      "alreadySanctioned": "Déjà sanctionné",
+      "afterFinishedRally": "Après un échange terminé"
     },
     "actions": {
       "libero": "Libéro",
@@ -1328,7 +1331,9 @@
       "titleExceptional": "Remplacé exceptionnellement — ne peut plus jouer de tout le match",
       "titleExpelled": "Expulsé — ne peut pas jouer ce set",
       "titleCannotReenter": "Ne peut pas revenir"
-    }
+    },
+    "liberoMove": {"in": "ENTRE", "out": "SORT"},
+    "dropRefused": {"player": "#{{number}} : {{why}}", "notThisPair": "#{{in}} ne peut pas entrer pour #{{out}}", "liberoServer": "Le libéro ne remplace pas le serveur"}
   },
   "settings": {
     "title": "Paramètres",
@@ -1457,7 +1462,7 @@
   },
   "restoreGlobal": {"title": "Restaurer depuis la sauvegarde en ligne", "desc": "Saisis le code de sauvegarde du match (Préparation du match, Sauvegardes). L'application demande ensuite son PIN arbitre.", "titleCode": "Restaurer avec le code de sauvegarde", "descGuest": "Un match sans compte (Nouveau match sans connexion) : saisis son code de sauvegarde (Préparation du match, Sauvegardes). L'application demande ensuite son PIN arbitre.", "code": "Code de sauvegarde", "notFound": "Aucune sauvegarde trouvée pour ce code.", "notGlobal": "Ce code ne contient ni match Global ni match sans compte.", "button": "Chercher la sauvegarde"},
   "toolChooser": {"title": "Comment utilises-tu OpenVolley ?", "swissBody": "Matchs de ligue suisses : connexion, liste des matchs, Einsatzliste, effectifs de club et cloud.", "globalBody": "Tout tournoi ou match amical : sans connexion, effectifs et matchs depuis Excel. Les équipes et les joueurs restent sur cet appareil.", "later": "Tu pourras changer plus tard dans Options, tant qu’aucun match n’est sur cet appareil."},
-  "idMode": {"title": "À côté de chaque nom", "dob": "Utiliser les dates de naissance", "number": "Utiliser un numéro d’identification", "text": "Utiliser du texte", "label": {"dob": "Date de naissance", "number": "N° d’identification", "text": "Info", "licence": "Licence"}, "hint": {"licence": "ou date de naissance (jj.mm.aaaa)"}, "placeholder": {"licence": "Licence/naiss."}},
+  "idMode": {"title": "À côté de chaque nom", "dob": "Utiliser les dates de naissance", "number": "Utiliser un numéro d’identification", "text": "Utiliser du texte", "label": {"dob": "Date de naissance", "number": "N° d’identification", "text": "Info", "licence": "Licence"}, "hint": {"licence": "ou date de naissance (jj.mm.aaaa)"}, "placeholder": {"licence": "Licence/naiss."}, "info": {"label": "Que mettre dans la colonne licence", "licence": "Le numéro de licence Swiss Volley identifie la personne sur la feuille de match. Les dates de naissance ne sont plus utilisées (protection des données). Pour quelqu'un sans licence, tape la date de naissance avec des points (jj.mm.aaaa)."}},
   "globalImport": {"templateGames": "Modèle des matchs (Excel)", "templateRosters": "Modèle des effectifs (Excel)", "gamesTitle": "Importer les matchs", "rostersTitle": "Importer les effectifs", "gamesHint": "Un fichier Excel ou CSV avec une ligne par match : match, date, heure, salle, ville, ligue, domicile, visiteur, best of, arbitres. Rien n’est enregistré : le fichier est lu sur cet appareil.", "rostersHint": "Un fichier Excel ou CSV avec une ligne par personne : équipe, numéro, prénom, nom, rôle (joueur, libero, capitaine, entraîneur...), date de naissance. Rien n’est enregistré : le fichier est lu sur cet appareil.", "choose": "Choisir un fichier", "template": "Modèle", "errFile": "Le fichier n’a pas pu être lu.", "errEmpty": "Le fichier est vide.", "errColumns": "Les colonnes sont introuvables. Utilise le modèle.", "noTeamName": "(sans nom d’équipe)", "counts": "{{players}} joueurs, {{staff}} encadrants", "warnings": "{{count}} lignes incorrectes : {{list}}", "applied": "{{count}} joueurs ajoutés", "gamesButton": "Importer les matchs (Excel)", "rostersButton": "Importer les effectifs (Excel)"},
   "home": {
     "deviceCheck": {
@@ -3268,7 +3273,7 @@
       "a_libero": "Appuie sur un joueur de la ligne arrière (I, V ou VI) et choisis « Libéro », ou fais glisser le libéro du banc sur ce joueur. Pas sur le joueur qui va servir. Un échange doit être joué entre deux remplacements de libéro. Un remplacement fait avant le coup de sifflet peut encore être saisi après « Lancer l'échange » : appuie sur le joueur, le menu ne propose alors que « Libéro ».",
       "tip_libero": "Fais glisser le libéro du banc sur un joueur de la ligne arrière (I, V, VI).",
       "q_undo": "Comment annuler une action ?",
-      "a_undo": "Appuie sur « Annuler » et confirme. Cela annule la dernière action du set en cours : un point, un temps mort, un remplacement ou une sanction. Appuie encore pour remonter plus loin.",
+      "a_undo": "Appuie sur « Annuler » et confirme. Cela annule la dernière action du set en cours : un point, un temps mort, un remplacement ou une sanction. Pendant un échange, cela annule le début de l'échange avec le dernier point. Appuie encore pour remonter plus loin.",
       "tip_undo": "Appuie sur « Annuler » pour reprendre la dernière action. Appuie encore pour remonter plus loin.",
       "q_sanction": "Comment enregistrer une sanction ?",
       "a_sanction": "Appuie sur le joueur sur le terrain et ouvre les sanctions : avertissement (jaune), pénalité (rouge), expulsion (rouge et jaune ensemble) ou disqualification (rouge et jaune séparés). Pour un joueur du banc ou un officiel du banc, appuie sur lui dans la liste du banc. Confirme ensuite.",
@@ -3408,7 +3413,7 @@
       "q_injury": "Un joueur est blessé : que faire ?",
       "a_injury": "Appuie sur le joueur sur le terrain, choisis la blessure puis un remplaçant. Si aucun remplacement régulier n'est possible, l'app propose un remplacement exceptionnel. Après un remplacement exceptionnel, ce joueur ne peut plus jouer dans ce match.",
       "q_liberoOut": "Comment le libéro quitte-t-il le terrain ?",
-      "a_liberoOut": "Appuie sur le libéro sur le terrain et fais-le sortir : le joueur remplacé revient. Quand le libéro tourne en ligne avant, l'app le fait sortir et te demande de confirmer. L'échange de libéros fait permuter les deux libéros.",
+      "a_liberoOut": "Appuie sur le libéro sur le terrain et fais-le sortir : le joueur remplacé revient. Un échange doit d'abord être terminé (« Après un échange terminé »). Quand le libéro tourne en ligne avant, l'app le fait sortir et affiche « Libéro SORT » : appuie sur « OK ». Plus tard, elle demande « Libéro ENTRE ? » pour le joueur de la ligne arrière ; « Pas maintenant » arrête cette question pour l'équipe jusqu'à la fin du set. L'échange de libéros fait permuter les deux libéros.",
       "q_liberoUnable": "Le libéro ne peut plus jouer ?",
       "a_liberoUnable": "Appuie sur le libéro et indique qu'il ne peut plus jouer : déclaré inapte, ou blessure ou maladie. Si l'équipe n'a pas d'autre libéro, l'app te laisse désigner un autre joueur comme nouveau libéro. Un libéro blessé peut rejouer (appuie sur lui : « De nouveau apte à jouer ») tant qu'aucun nouveau libéro n'a été désigné à sa place.",
       "q_captainRing": "Pourquoi un numéro est-il entouré sur le banc ?",

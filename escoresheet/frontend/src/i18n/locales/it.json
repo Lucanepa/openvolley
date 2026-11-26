@@ -573,7 +573,8 @@
     "refereeEmail": "E-mail (facoltativa)",
     "refereeEmailHint": "Per il referto finale. La vedono solo i segnapunti di questa partita.",
     "teamContactEmail": "E-mail del contatto della squadra (facoltativa)",
-    "teamContactEmailHint": "Riceve il referto finale per e-mail. La vedono solo i segnapunti di questa partita."
+    "teamContactEmailHint": "Riceve il referto finale per e-mail. La vedono solo i segnapunti di questa partita.",
+    "sortPlayers": "Ordina"
   },
   "scoreboard": {
     "playerOfficials": {
@@ -752,7 +753,8 @@
       "liberoOut": "Libero ESCE",
       "liberoIn": "Libero ENTRA",
       "playerReturns": "Ritorno giocatore",
-      "forfait": "Forfait"
+      "forfait": "Forfait",
+      "liberoInQuestion": "Libero ENTRA?"
     },
     "sanctions": {
       "teamSanctions": "Sanzioni di squadra",
@@ -785,7 +787,8 @@
       "sanctionFor": "Sanzione per {{who}}",
       "actionsFor": "Azioni per {{who}}",
       "teamHasWarning": "Squadra già avvertita",
-      "alreadySanctioned": "Già sanzionato"
+      "alreadySanctioned": "Già sanzionato",
+      "afterFinishedRally": "Dopo uno scambio concluso"
     },
     "actions": {
       "libero": "Libero",
@@ -1329,7 +1332,9 @@
       "titleExceptional": "Sostituito in modo eccezionale — non può giocare il resto della partita",
       "titleExpelled": "Espulso — non può giocare questo set",
       "titleCannotReenter": "Non può rientrare"
-    }
+    },
+    "liberoMove": {"in": "ENTRA", "out": "ESCE"},
+    "dropRefused": {"player": "#{{number}}: {{why}}", "notThisPair": "#{{in}} non può entrare per #{{out}}", "liberoServer": "Il libero non sostituisce il battitore"}
   },
   "settings": {
     "title": "Impostazioni",
@@ -1458,7 +1463,7 @@
   },
   "restoreGlobal": {"title": "Ripristina dal backup online", "desc": "Inserisci il codice di backup della partita (Preparazione partita, Backup). L'app chiede poi il suo PIN arbitro.", "titleCode": "Ripristina con il codice di backup", "descGuest": "Una partita senza account (Nuova partita senza accesso): inserisci il suo codice di backup (Preparazione partita, Backup). L'app chiede poi il suo PIN arbitro.", "code": "Codice di backup", "notFound": "Nessun backup trovato per questo codice.", "notGlobal": "Questo codice non contiene né una partita Global né una partita senza account.", "button": "Cerca backup"},
   "toolChooser": {"title": "Come usi OpenVolley?", "swissBody": "Partite di lega svizzere: accesso, elenco partite, Einsatzliste, rose di club e cloud.", "globalBody": "Qualsiasi torneo o amichevole: senza accesso, rose e partite da Excel. Squadre e giocatori restano su questo dispositivo.", "later": "Puoi cambiarlo più tardi in Opzioni, finché non c’è una partita su questo dispositivo."},
-  "idMode": {"title": "Accanto a ogni nome", "dob": "Usa le date di nascita", "number": "Usa un numero di identificazione", "text": "Usa del testo", "label": {"dob": "Data di nascita", "number": "Numero di identificazione", "text": "Info", "licence": "Licenza"}, "hint": {"licence": "o data di nascita (gg.mm.aaaa)"}, "placeholder": {"licence": "Licenza/DDN"}},
+  "idMode": {"title": "Accanto a ogni nome", "dob": "Usa le date di nascita", "number": "Usa un numero di identificazione", "text": "Usa del testo", "label": {"dob": "Data di nascita", "number": "Numero di identificazione", "text": "Info", "licence": "Licenza"}, "hint": {"licence": "o data di nascita (gg.mm.aaaa)"}, "placeholder": {"licence": "Licenza/DDN"}, "info": {"label": "Cosa va nella colonna licenza", "licence": "Il numero di licenza Swiss Volley identifica la persona sul referto. Le date di nascita non si usano più (protezione dei dati). Per chi non ha una licenza, scrivi la data di nascita con i punti (gg.mm.aaaa)."}},
   "globalImport": {"templateGames": "Modello partite (Excel)", "templateRosters": "Modello rose (Excel)", "gamesTitle": "Importa partite", "rostersTitle": "Importa rose", "gamesHint": "Un file Excel o CSV con una riga per partita: partita, data, ora, palestra, città, lega, casa, ospite, best of, arbitri. Nulla viene salvato: il file è letto su questo dispositivo.", "rostersHint": "Un file Excel o CSV con una riga per persona: squadra, numero, nome, cognome, ruolo (giocatore, libero, capitano, allenatore...), data di nascita. Nulla viene salvato: il file è letto su questo dispositivo.", "choose": "Scegli file", "template": "Modello", "errFile": "Impossibile leggere il file.", "errEmpty": "Il file è vuoto.", "errColumns": "Colonne non trovate. Usa il modello.", "noTeamName": "(senza nome squadra)", "counts": "{{players}} giocatori, {{staff}} staff", "warnings": "{{count}} righe non pulite: {{list}}", "applied": "{{count}} giocatori aggiunti", "gamesButton": "Importa partite (Excel)", "rostersButton": "Importa rose (Excel)"},
   "home": {
     "deviceCheck": {
@@ -3274,7 +3279,7 @@
       "a_libero": "Tocca un giocatore della seconda linea (I, V o VI) e scegli «Libero», oppure trascina il libero dalla panchina su quel giocatore. Non sul giocatore che sta per servire. Tra due sostituzioni del libero deve essere giocato uno scambio. Una sostituzione fatta prima del fischio si può ancora inserire dopo «Inizia scambio»: tocca il giocatore, il menu mostra allora solo «Libero».",
       "tip_libero": "Trascina il libero dalla panchina su un giocatore della seconda linea (I, V, VI).",
       "q_undo": "Come annullo un'azione?",
-      "a_undo": "Tocca «Annulla» e conferma. Annulla l'ultima azione del set in corso: un punto, un timeout, una sostituzione o una sanzione. Tocca di nuovo per tornare più indietro.",
+      "a_undo": "Tocca «Annulla» e conferma. Annulla l'ultima azione del set in corso: un punto, un timeout, una sostituzione o una sanzione. Durante uno scambio annulla l'inizio dello scambio insieme all'ultimo punto. Tocca di nuovo per tornare più indietro.",
       "tip_undo": "Tocca «Annulla» per togliere l'ultima azione. Ripeti per tornare più indietro.",
       "q_sanction": "Come registro una sanzione?",
       "a_sanction": "Tocca il giocatore in campo e apri le sanzioni: avvertimento (giallo), penalità (rosso), espulsione (rosso e giallo insieme) o squalifica (rosso e giallo separati). Per un giocatore in panchina o un ufficiale di panchina, toccalo nell'elenco della panchina. Poi conferma.",
@@ -3414,7 +3419,7 @@
       "q_injury": "Un giocatore si è infortunato: cosa faccio?",
       "a_injury": "Tocca il giocatore in campo, scegli l'infortunio e poi un sostituto. Se nessuna sostituzione regolare è possibile, l'app propone una sostituzione eccezionale. Dopo una sostituzione eccezionale, quel giocatore non può più giocare in questa partita.",
       "q_liberoOut": "Come esce il libero dal campo?",
-      "a_liberoOut": "Tocca il libero in campo e fallo uscire: rientra il giocatore sostituito. Quando il libero ruota in prima linea, l'app lo fa uscire e ti chiede di confermare. Lo scambio dei libero fa cambiare posto ai due libero.",
+      "a_liberoOut": "Tocca il libero in campo e fallo uscire: rientra il giocatore sostituito. Prima deve essere concluso uno scambio («Dopo uno scambio concluso»). Quando il libero ruota in prima linea, l'app lo fa uscire e mostra «Libero ESCE»: tocca «OK». Più tardi chiede «Libero ENTRA?» per il giocatore della seconda linea; «Non ora» ferma questa domanda per la squadra fino alla fine del set. Lo scambio dei libero fa cambiare posto ai due libero.",
       "q_liberoUnable": "Il libero non può più giocare?",
       "a_liberoUnable": "Tocca il libero e indica che non può più giocare: dichiarato inabile, oppure infortunio o malattia. Se la squadra non ha un altro libero, l'app ti fa designare un altro giocatore come nuovo libero. Un libero infortunato può tornare a giocare (toccalo: «Di nuovo in grado di giocare») finché non è stato designato un nuovo libero al suo posto.",
       "q_captainRing": "Perché un numero è cerchiato in panchina?",

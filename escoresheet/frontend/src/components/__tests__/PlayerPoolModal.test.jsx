@@ -23,6 +23,21 @@ describe('PlayerPoolModal', () => {
     expect(onApply.mock.calls[0][0].map(e => e.number)).toEqual([1, 2, 3])
   })
 
+  // owner 2026-11-25 (tester): A–Z as well as by number, remembered on the device
+  it('# / A–Z: the list by number, or by last name; the choice is kept', () => {
+    localStorage.removeItem('ov.rosterSort')
+    const pool = buildPlayerPool({ saved: [p(1, 'Zeller'), p(2, 'Arnold'), p(3, 'Meier')] })
+    const { unmount } = render(<PlayerPoolModal open pool={pool} onApply={() => {}} onClose={() => {}} />)
+    const names = () => screen.getAllByTestId('player-pool-name').map(n => n.textContent.split(' ')[0])
+    expect(names()).toEqual(['ZELLER', 'ARNOLD', 'MEIER'])
+    fireEvent.click(screen.getByRole('radio', { name: 'A–Z' }))
+    expect(names()).toEqual(['ARNOLD', 'MEIER', 'ZELLER'])
+    unmount()
+    render(<PlayerPoolModal open pool={pool} onApply={() => {}} onClose={() => {}} />)
+    expect(names()).toEqual(['ARNOLD', 'MEIER', 'ZELLER'])
+    localStorage.removeItem('ov.rosterSort')
+  })
+
   it('selects all or none, disables "Use" with none and warns above 14', () => {
     const pool = buildPlayerPool({ imported: Array.from({ length: 16 }, (_, i) => p(i + 1, `P${i + 1}`)) })
     render(<PlayerPoolModal open pool={pool} onApply={() => {}} onClose={() => {}} />)

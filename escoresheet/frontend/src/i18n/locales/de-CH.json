@@ -573,7 +573,8 @@
     "refereeEmail": "E-Mail (freiwillig)",
     "refereeEmailHint": "Für s fertige Matchblatt. Nur d Schriiber vo däm Spiil gsehnd si.",
     "teamContactEmail": "E-Mail Teamkontakt (freiwillig)",
-    "teamContactEmailHint": "Überchunnt s fertige Matchblatt per E-Mail. Nur d Schriiber vo däm Spiil gsehnd si."
+    "teamContactEmailHint": "Überchunnt s fertige Matchblatt per E-Mail. Nur d Schriiber vo däm Spiil gsehnd si.",
+    "sortPlayers": "Sortiere"
   },
   "scoreboard": {
     "playerOfficials": {
@@ -752,7 +753,8 @@
       "liberoOut": "Libero USE",
       "liberoIn": "Libero INE",
       "playerReturns": "Spieler chunnt zrugg",
-      "forfait": "Forfait"
+      "forfait": "Forfait",
+      "liberoInQuestion": "Libero INE?"
     },
     "sanctions": {
       "teamSanctions": "Teamsanktione",
@@ -785,7 +787,8 @@
       "sanctionFor": "Sanktion für {{who}}",
       "actionsFor": "Aktione für {{who}}",
       "teamHasWarning": "Team hät Warnig",
-      "alreadySanctioned": "Scho sanktioniert"
+      "alreadySanctioned": "Scho sanktioniert",
+      "afterFinishedRally": "Nach em beändete Ballwächsel"
     },
     "actions": {
       "libero": "Libero",
@@ -1329,7 +1332,9 @@
       "titleExceptional": "Usserordentlich gwächslet – darf im Rest vom Spiil nöd spiile",
       "titleExpelled": "Usgschlosse – darf i däm Satz nöd spiile",
       "titleCannotReenter": "Cha nöd wieder ine"
-    }
+    },
+    "liberoMove": {"in": "INE", "out": "USE"},
+    "dropRefused": {"player": "#{{number}}: {{why}}", "notThisPair": "#{{in}} dörf nöd für #{{out}} inechoo", "liberoServer": "De Libero ersetzt nöd de Ufschläger"}
   },
   "settings": {
     "title": "Iistellige",
@@ -1458,7 +1463,7 @@
   },
   "restoreGlobal": {"title": "Aus der Online-Sicherung wiederherstellen", "desc": "Gib den Sicherungscode des Spiels ein (Spiel einrichten, Sicherungen). Danach fragt die App nach seiner Schiedsrichter-PIN.", "titleCode": "Mit em Sicherigscode widerherstelle", "descGuest": "Es Spiil ohni Konto (Neus Spiil ohni Aamäldig): Gib sin Sicherigscode ii (Spiil iirichte, Sicherige). Dänn fragt d App nach sinere Schiedsrichter-PIN.", "code": "Sicherungscode", "notFound": "Zu diesem Code wurde keine Sicherung gefunden.", "notGlobal": "Under däm Code isch weder es Global-Spiil no es Spiil ohni Konto.", "button": "Sicherung suchen"},
   "toolChooser": {"title": "Wie nutzt du OpenVolley?", "swissBody": "Schweizer Ligaspiele: Anmeldung, Spielliste, Einsatzliste, Club-Kader und die Cloud.", "globalBody": "Jedes Turnier oder Freundschaftsspiel: ohne Anmeldung, Kader und Spiele aus Excel. Mannschaften und Spieler bleiben auf diesem Gerät.", "later": "Du kannst das später in den Optionen ändern, solange kein Spiel auf diesem Gerät ist."},
-  "idMode": {"title": "Neben jedem Namen", "dob": "Geburtsdaten verwenden", "number": "ID-Nummer verwenden", "text": "Text verwenden", "label": {"dob": "Geburtsdatum", "number": "ID-Nummer", "text": "Info", "licence": "Lizenz"}, "hint": {"licence": "oder Geburtsdatum (tt.mm.jjjj)"}, "placeholder": {"licence": "Lizenz/Geb."}},
+  "idMode": {"title": "Neben jedem Namen", "dob": "Geburtsdaten verwenden", "number": "ID-Nummer verwenden", "text": "Text verwenden", "label": {"dob": "Geburtsdatum", "number": "ID-Nummer", "text": "Info", "licence": "Lizenz"}, "hint": {"licence": "oder Geburtsdatum (tt.mm.jjjj)"}, "placeholder": {"licence": "Lizenz/Geb."}, "info": {"label": "Was ghört i d Spalte Lizenz", "licence": "D Lizenznummere vo Swiss Volley bezeichnet d Person uf em Matchblatt. Geburtsdate wärded nüme brucht (Dateschutz). Hät öpper kei Lizenz, gib s Geburtsdatum mit Pünkt ii (tt.mm.jjjj)."}},
   "globalImport": {"templateGames": "Spiele-Vorlage (Excel)", "templateRosters": "Kader-Vorlage (Excel)", "gamesTitle": "Spiele importieren", "rostersTitle": "Kader importieren", "gamesHint": "Eine Excel- oder CSV-Datei mit einer Zeile pro Spiel: Spiel, Datum, Zeit, Halle, Ort, Liga, Heim, Gast, Best of, Schiedsrichter. Nichts wird gespeichert: Die Datei wird auf diesem Gerät gelesen.", "rostersHint": "Eine Excel- oder CSV-Datei mit einer Zeile pro Person: Mannschaft, Nummer, Vorname, Nachname, Rolle (Spieler, Libero, Kapitän, Trainer ...), Geburtsdatum. Nichts wird gespeichert: Die Datei wird auf diesem Gerät gelesen.", "choose": "Datei wählen", "template": "Vorlage", "errFile": "Die Datei konnte nicht gelesen werden.", "errEmpty": "Die Datei enthält keine Zeilen.", "errColumns": "Die Spalten wurden nicht gefunden. Nimm die Vorlage.", "noTeamName": "(ohne Mannschaftsname)", "counts": "{{players}} Spieler, {{staff}} Betreuer", "warnings": "{{count}} Zeilen waren nicht sauber: {{list}}", "applied": "{{count}} Spieler hinzugefügt", "gamesButton": "Spiele importieren (Excel)", "rostersButton": "Kader importieren (Excel)"},
   "home": {
     "deviceCheck": {
@@ -3269,7 +3274,7 @@
       "a_libero": "Tipp uf en Spieler vo de hindere Reihe (I, V oder VI) und wähl «Libero», oder zieh de Libero vo de Bank uf dä Spieler. Nöd uf de Spieler, wo grad ufschlaat. Zwüsche zwei Libero-Wächsel muess en Ballwächsel gspilt werde. En Wächsel, wo vor em Pfiff gmacht worde isch, chasch au nach «Ballwächsel starte» no iitrage: Tipp uf de Spieler, s Menü zeigt dänn nur «Libero».",
       "tip_libero": "Zieh de Libero vo de Bank uf en Spieler vo de hindere Reihe (I, V, VI).",
       "q_undo": "Wie mach ich e Aktion rückgängig?",
-      "a_undo": "Tipp uf «Rückgängig» und bestätig. Das nimmt di letscht Aktion vom laufende Satz zrugg: en Punkt, es Timeout, en Wächsel oder e Sanktion. Tipp nomal, zum wiiter zrugg gah.",
+      "a_undo": "Tipp uf «Rückgängig» und bestätig. Das nimmt di letscht Aktion vom laufende Satz zrugg: en Punkt, es Timeout, en Wächsel oder e Sanktion. Während emne Ballwächsel nimmt s de Start vom Ballwächsel zäme mit em letschte Punkt zrugg. Tipp nomal, zum wiiter zrugg gah.",
       "tip_undo": "Tipp uf «Rückgängig», zum di letscht Aktion zruggnäh. Mehrmals tippe gaht wiiter zrugg.",
       "q_sanction": "Wie erfass ich e Sanktion?",
       "a_sanction": "Tipp uf de Spieler uf em Fäld und wähl «Sanktion»: «Warnig» (gääl), «Straaf» (rot), «Usschluss» (rot und gääl zäme) oder «Disqualifikation» (rot und gääl trennt). Für en Bankspieler oder en Bankoffizielle tippsch ihn i de Banklischte aa. Dänn bestätige.",
@@ -3409,7 +3414,7 @@
       "q_injury": "En Spieler isch verletzt: Was mach ich?",
       "a_injury": "Tipp uf de Spieler uf em Fäld, wähl «Verletzig» und dänn en Ersatz. Isch kein reguläre Wächsel möglich, büütet d App en Usnahmewächsel aa. Nach emne Usnahmewächsel darf dä Spieler i däm Spiil nüme spiile.",
       "q_liberoOut": "Wie verlaat de Libero s Fäld?",
-      "a_liberoOut": "Tipp uf de Libero uf em Fäld und wähl «Libero use»: De ersetzt Spieler chunnt zrugg. Rotiert de Libero i di vorder Reihe, nimmt ihn d App use und fröget dich zur Bestätigung. «Libero-Tuusch» tuuscht di zwei Liberos.",
+      "a_liberoOut": "Tipp uf de Libero uf em Fäld und wähl «Libero use»: De ersetzt Spieler chunnt zrugg. Zersch muess en Ballwächsel fertig sii («Nach em beändete Ballwächsel»). Rotiert de Libero i di vorder Reihe, nimmt ihn d App use und zeigt «Libero USE»: Tipp uf «OK». Spöter fröget si «Libero INE?» für de Spieler vo de hindere Reihe; «Jetzt nöd» stoppt die Frag für das Team bis zum Satzänd. «Libero-Tuusch» tuuscht di zwei Liberos.",
       "q_liberoUnable": "De Libero cha nüme spiile?",
       "a_liberoUnable": "Tipp uf de Libero und wähl «Spiilunfähig»: spiilunfähig erklärt, Verletzig oder Chrankheit. Hät s Team kein andere Libero, laat dich d App en andere Spieler zum neue Libero bestimme. En verletzte Libero cha wieder spiile (uf ihn tippe: «Wieder spiilfähig»), solang a sinere Stell kein neue Libero bezeichnet worde isch.",
       "q_captainRing": "Werum isch uf de Bank e Nummere iikreiset?",

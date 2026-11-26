@@ -129,7 +129,9 @@ describe('Scoreboard: the undo key', () => {
     await waitFor(() => expect(undoDialog()).toBeFalsy(), { timeout: 5000 })
   }, 60000)
 
-  it('during a rally, Backspace asks too and Enter takes the rally start back', async () => {
+  // Undo takes back the whole rally (owner 2026-11-25): the rally start in
+  // play goes with the point before it (and that point's own rally start)
+  it('during a rally, Backspace asks too and Enter takes back the rally start with the point before it', async () => {
     setViewport(1280, 800)
     mount(await setUpMatch())
     await waitFor(() => expect(button('Start rally')).toBeTruthy(), { timeout: 10000 })
@@ -142,8 +144,8 @@ describe('Scoreboard: the undo key', () => {
     await waitFor(() => expect(undoDialog()).toBeTruthy(), { timeout: 5000 })
     await settle()
     press('Enter')
-    await waitFor(async () => expect((await ofType('rally_start')).length).toBe(2), { timeout: 5000 })
-    expect(await score()).toEqual([1, 1])
+    await waitFor(async () => expect((await ofType('rally_start')).length).toBe(1), { timeout: 5000 })
+    expect(await score()).toEqual([1, 0])
     await waitFor(() => expect(button('Start rally')).toBeTruthy(), { timeout: 5000 })
   }, 60000)
 })

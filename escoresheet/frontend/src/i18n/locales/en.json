@@ -574,7 +574,8 @@
     "refereeEmail": "Email (optional)",
     "refereeEmailHint": "For the final scoresheet. Only this match's scorers see it.",
     "teamContactEmail": "Team contact email (optional)",
-    "teamContactEmailHint": "Gets the final scoresheet by email. Only this match's scorers see it."
+    "teamContactEmailHint": "Gets the final scoresheet by email. Only this match's scorers see it.",
+    "sortPlayers": "Sort"
   },
   "scoreboard": {
     "playerOfficials": {
@@ -753,7 +754,8 @@
       "liberoOut": "Libero OUT",
       "liberoIn": "Libero IN",
       "playerReturns": "Player returns",
-      "forfait": "Forfait"
+      "forfait": "Forfait",
+      "liberoInQuestion": "Libero IN?"
     },
     "sanctions": {
       "teamSanctions": "Team sanctions",
@@ -786,7 +788,8 @@
       "sanctionFor": "Sanction for {{who}}",
       "actionsFor": "Actions for {{who}}",
       "teamHasWarning": "Team has warning",
-      "alreadySanctioned": "Already sanctioned"
+      "alreadySanctioned": "Already sanctioned",
+      "afterFinishedRally": "After finished rally"
     },
     "actions": {
       "libero": "Libero",
@@ -1330,7 +1333,9 @@
       "titleExceptional": "Exceptionally substituted - cannot play rest of match",
       "titleExpelled": "Expelled - cannot play this set",
       "titleCannotReenter": "Cannot re-enter"
-    }
+    },
+    "liberoMove": {"in": "IN", "out": "OUT"},
+    "dropRefused": {"player": "#{{number}}: {{why}}", "notThisPair": "#{{in}} may not come in for #{{out}}", "liberoServer": "The libero does not replace the server"}
   },
   "settings": {
     "title": "Settings",
@@ -1459,7 +1464,7 @@
   },
   "restoreGlobal": {"title": "Restore from the online backup", "desc": "Enter the backup code of the match (Match Setup, Backups). The app then asks for its referee PIN.", "titleCode": "Restore with the backup code", "descGuest": "A match without an account (New match while signed out): enter its backup code (Match Setup, Backups). The app then asks for its referee PIN.", "code": "Backup code", "notFound": "No backup found for this code.", "notGlobal": "This code holds no Global match and no match without an account.", "button": "Find backup"},
   "toolChooser": {"title": "How do you use OpenVolley?", "swissBody": "Swiss league games: sign-in, game list, Einsatzliste, club rosters and the cloud.", "globalBody": "Any tournament or friendly: no sign-in, rosters and games from Excel. Teams and players stay on this device.", "later": "You can change this later in Options, as long as no match is on this device."},
-  "idMode": {"title": "Next to each name", "dob": "Use birthdates", "number": "Use an ID number", "text": "Use text", "label": {"dob": "Date of birth", "number": "ID number", "text": "Info", "licence": "Licence"}, "hint": {"licence": "or date of birth (dd.mm.yyyy)"}, "placeholder": {"licence": "Licence/DoB"}},
+  "idMode": {"title": "Next to each name", "dob": "Use birthdates", "number": "Use an ID number", "text": "Use text", "label": {"dob": "Date of birth", "number": "ID number", "text": "Info", "licence": "Licence"}, "hint": {"licence": "or date of birth (dd.mm.yyyy)"}, "placeholder": {"licence": "Licence/DoB"}, "info": {"label": "What goes in the licence column", "licence": "The Swiss Volley licence number identifies the player on the scoresheet. Dates of birth are no longer used (data protection). For someone without a licence, type the date of birth with dots (dd.mm.yyyy)."}},
   "globalImport": {"templateGames": "Games template (Excel)", "templateRosters": "Rosters template (Excel)", "gamesTitle": "Import games", "rostersTitle": "Import rosters", "gamesHint": "An Excel or CSV file with one row per game: game, date, time, hall, city, league, home, away, best of, referees. Nothing is stored: the file is read on this device.", "rostersHint": "An Excel or CSV file with one row per person: team, number, first name, last name, role (player, libero, captain, coach...), date of birth. Nothing is stored: the file is read on this device.", "choose": "Choose file", "template": "Template", "errFile": "The file could not be read.", "errEmpty": "The file has no rows.", "errColumns": "The columns were not found. Use the template.", "noTeamName": "(no team name)", "counts": "{{players}} players, {{staff}} staff", "warnings": "{{count}} rows were not clean: {{list}}", "applied": "{{count}} players added", "gamesButton": "Import games (Excel)", "rostersButton": "Import rosters (Excel)"},
   "home": {
     "deviceCheck": {
@@ -3275,7 +3280,7 @@
       "a_libero": "Tap a back-row player (I, V or VI) and choose “Libero”, or drag the libero from the bench onto that player. Not the player who is about to serve. A rally must be played between two libero replacements. A replacement made before the whistle can still be entered after “Start rally”: tap the player, the menu then shows only “Libero”.",
       "tip_libero": "Drag the libero from the bench onto a back-row player (I, V, VI).",
       "q_undo": "How do I undo an action?",
-      "a_undo": "Tap “Undo” and confirm. It takes back the last action of the current set: a point, a time-out, a substitution or a sanction. Tap it again to go further back.",
+      "a_undo": "Tap “Undo” and confirm. It takes back the last action of the current set: a point, a time-out, a substitution or a sanction. During a rally it takes back the rally start together with the last point. Tap it again to go further back.",
       "tip_undo": "Tap “Undo” to take back the last action. Repeat to go further back.",
       "q_sanction": "How do I record a sanction?",
       "a_sanction": "Tap the player on court and choose “Sanction”: “Warning” (yellow), “Penalty” (red), “Expulsion” (red and yellow together) or “Disqualification” (red and yellow apart). For a bench player or a bench official, tap them in the bench list. Then confirm.",
@@ -3415,7 +3420,7 @@
       "q_injury": "A player is injured: what do I do?",
       "a_injury": "Tap the player on court and choose “Injury”, then a substitute. If no legal substitution is possible, the app offers an exceptional substitution. After an exceptional substitution, that player cannot play again in this match.",
       "q_liberoOut": "How does the libero leave the court?",
-      "a_liberoOut": "Tap the libero on court and choose “Libero out”: the replaced player comes back. When the libero rotates to the front row, the app takes the libero out and asks you to confirm. “Exchange libero” swaps the two liberos.",
+      "a_liberoOut": "Tap the libero on court and choose “Libero out”: the replaced player comes back. A rally must be finished first (“After finished rally”). When the libero rotates to the front row, the app takes the libero out and shows “Libero OUT”: tap “OK”. Later it asks “Libero IN?” for the back-row player; “Not now” stops this question for that team until the end of the set. “Exchange libero” swaps the two liberos.",
       "q_liberoUnable": "The libero cannot play any more?",
       "a_liberoUnable": "Tap the libero and choose “Unable to play”: declared unable, or injury or illness. If the team has no other libero, the app lets you designate another player as the new libero. An injured libero may play again (tap him: “Able to play again”) as long as no new libero was re-designated in his place.",
       "q_captainRing": "Why is a number circled on the bench?",

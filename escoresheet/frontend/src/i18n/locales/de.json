@@ -566,7 +566,8 @@
     "refereeEmail": "E-Mail (freiwillig)",
     "refereeEmailHint": "Für das fertige Matchblatt. Nur die Schreiber dieses Spiels sehen sie.",
     "teamContactEmail": "E-Mail Teamkontakt (freiwillig)",
-    "teamContactEmailHint": "Erhält das fertige Matchblatt per E-Mail. Nur die Schreiber dieses Spiels sehen sie."
+    "teamContactEmailHint": "Erhält das fertige Matchblatt per E-Mail. Nur die Schreiber dieses Spiels sehen sie.",
+    "sortPlayers": "Sortieren"
   },
   "scoreboard": {
     "playerOfficials": {
@@ -745,7 +746,8 @@
       "liberoOut": "Libero RAUS",
       "liberoIn": "Libero REIN",
       "playerReturns": "Spieler kehrt zurück",
-      "forfait": "Forfait"
+      "forfait": "Forfait",
+      "liberoInQuestion": "Libero REIN?"
     },
     "sanctions": {
       "teamSanctions": "Mannschaftssanktionen",
@@ -778,7 +780,8 @@
       "sanctionFor": "Sanktion für {{who}}",
       "actionsFor": "Aktionen für {{who}}",
       "teamHasWarning": "Team hat Warnung",
-      "alreadySanctioned": "Bereits sanktioniert"
+      "alreadySanctioned": "Bereits sanktioniert",
+      "afterFinishedRally": "Nach beendetem Ballwechsel"
     },
     "actions": {
       "libero": "Libero",
@@ -1322,7 +1325,9 @@
       "titleExceptional": "Ausserordentlich ausgewechselt – darf im Rest des Spiels nicht spielen",
       "titleExpelled": "Ausgeschlossen – darf in diesem Satz nicht spielen",
       "titleCannotReenter": "Kann nicht wieder eintreten"
-    }
+    },
+    "liberoMove": {"in": "REIN", "out": "RAUS"},
+    "dropRefused": {"player": "#{{number}}: {{why}}", "notThisPair": "#{{in}} darf nicht für #{{out}} hereinkommen", "liberoServer": "Der Libero ersetzt nicht den Aufschläger"}
   },
   "settings": {
     "title": "Einstellungen",
@@ -1451,7 +1456,7 @@
   },
   "restoreGlobal": {"title": "Aus der Online-Sicherung wiederherstellen", "desc": "Gib den Sicherungscode des Spiels ein (Spiel einrichten, Sicherungen). Danach fragt die App nach seiner Schiedsrichter-PIN.", "titleCode": "Mit dem Sicherungscode wiederherstellen", "descGuest": "Ein Spiel ohne Konto (Neues Spiel ohne Anmeldung): Gib seinen Sicherungscode ein (Spiel einrichten, Sicherungen). Danach fragt die App nach seiner Schiedsrichter-PIN.", "code": "Sicherungscode", "notFound": "Zu diesem Code wurde keine Sicherung gefunden.", "notGlobal": "Unter diesem Code liegt weder ein Global-Spiel noch ein Spiel ohne Konto.", "button": "Sicherung suchen"},
   "toolChooser": {"title": "Wie nutzt du OpenVolley?", "swissBody": "Schweizer Ligaspiele: Anmeldung, Spielliste, Einsatzliste, Club-Kader und die Cloud.", "globalBody": "Jedes Turnier oder Freundschaftsspiel: ohne Anmeldung, Kader und Spiele aus Excel. Mannschaften und Spieler bleiben auf diesem Gerät.", "later": "Du kannst das später in den Optionen ändern, solange kein Spiel auf diesem Gerät ist."},
-  "idMode": {"title": "Neben jedem Namen", "dob": "Geburtsdaten verwenden", "number": "ID-Nummer verwenden", "text": "Text verwenden", "label": {"dob": "Geburtsdatum", "number": "ID-Nummer", "text": "Info", "licence": "Lizenz"}, "hint": {"licence": "oder Geburtsdatum (tt.mm.jjjj)"}, "placeholder": {"licence": "Lizenz/Geb."}},
+  "idMode": {"title": "Neben jedem Namen", "dob": "Geburtsdaten verwenden", "number": "ID-Nummer verwenden", "text": "Text verwenden", "label": {"dob": "Geburtsdatum", "number": "ID-Nummer", "text": "Info", "licence": "Lizenz"}, "hint": {"licence": "oder Geburtsdatum (tt.mm.jjjj)"}, "placeholder": {"licence": "Lizenz/Geb."}, "info": {"label": "Was gehört in die Spalte Lizenz", "licence": "Die Lizenznummer von Swiss Volley bezeichnet die Person auf dem Matchblatt. Geburtsdaten werden nicht mehr verwendet (Datenschutz). Hat jemand keine Lizenz, gib das Geburtsdatum mit Punkten ein (tt.mm.jjjj)."}},
   "globalImport": {"templateGames": "Spiele-Vorlage (Excel)", "templateRosters": "Kader-Vorlage (Excel)", "gamesTitle": "Spiele importieren", "rostersTitle": "Kader importieren", "gamesHint": "Eine Excel- oder CSV-Datei mit einer Zeile pro Spiel: Spiel, Datum, Zeit, Halle, Ort, Liga, Heim, Gast, Best of, Schiedsrichter. Nichts wird gespeichert: Die Datei wird auf diesem Gerät gelesen.", "rostersHint": "Eine Excel- oder CSV-Datei mit einer Zeile pro Person: Mannschaft, Nummer, Vorname, Nachname, Rolle (Spieler, Libero, Kapitän, Trainer ...), Geburtsdatum. Nichts wird gespeichert: Die Datei wird auf diesem Gerät gelesen.", "choose": "Datei wählen", "template": "Vorlage", "errFile": "Die Datei konnte nicht gelesen werden.", "errEmpty": "Die Datei enthält keine Zeilen.", "errColumns": "Die Spalten wurden nicht gefunden. Nimm die Vorlage.", "noTeamName": "(ohne Mannschaftsname)", "counts": "{{players}} Spieler, {{staff}} Betreuer", "warnings": "{{count}} Zeilen waren nicht sauber: {{list}}", "applied": "{{count}} Spieler hinzugefügt", "gamesButton": "Spiele importieren (Excel)", "rostersButton": "Kader importieren (Excel)"},
   "home": {
     "deviceCheck": {
@@ -2998,7 +3003,7 @@
       "a_libero": "Tippe auf einen Spieler der hinteren Reihe (I, V oder VI) und wähle «Libero», oder ziehe den Libero von der Bank auf diesen Spieler. Nicht auf den Spieler, der gleich aufschlägt. Zwischen zwei Libero-Wechseln muss ein Ballwechsel gespielt werden. Ein Wechsel vor dem Pfiff lässt sich auch nach «Ballwechsel starten» noch eingeben: Tippe auf den Spieler, das Menü zeigt dann nur «Libero».",
       "tip_libero": "Ziehe den Libero von der Bank auf einen Spieler der hinteren Reihe (I, V, VI).",
       "q_undo": "Wie mache ich eine Aktion rückgängig?",
-      "a_undo": "Tippe auf «Rückgängig» und bestätige. Das nimmt die letzte Aktion des laufenden Satzes zurück: einen Punkt, ein Timeout, einen Wechsel oder eine Sanktion. Tippe nochmals, um weiter zurückzugehen.",
+      "a_undo": "Tippe auf «Rückgängig» und bestätige. Das nimmt die letzte Aktion des laufenden Satzes zurück: einen Punkt, ein Timeout, einen Wechsel oder eine Sanktion. Während eines Ballwechsels nimmt es den Start des Ballwechsels zusammen mit dem letzten Punkt zurück. Tippe nochmals, um weiter zurückzugehen.",
       "tip_undo": "Tippe auf «Rückgängig», um die letzte Aktion zurückzunehmen. Mehrmals tippen geht weiter zurück.",
       "q_sanction": "Wie zeichne ich eine Sanktion auf?",
       "a_sanction": "Tippe auf den Spieler auf dem Feld und öffne die Sanktionen: Warnung (gelb), Strafe (rot), Ausschluss (rot und gelb zusammen) oder Disqualifikation (rot und gelb getrennt). Für einen Bankspieler oder einen Bankoffiziellen tippe ihn in der Bankliste an. Dann bestätigen.",
@@ -3138,7 +3143,7 @@
       "q_injury": "Ein Spieler ist verletzt: Was tun?",
       "a_injury": "Tippe auf den Spieler auf dem Feld, wähle die Verletzung und dann einen Ersatz. Ist kein regulärer Wechsel möglich, bietet die App einen Ausnahmewechsel an. Nach einem Ausnahmewechsel darf dieser Spieler im Spiel nicht mehr spielen.",
       "q_liberoOut": "Wie verlässt der Libero das Feld?",
-      "a_liberoOut": "Tippe auf den Libero auf dem Feld und nimm ihn heraus: Der ersetzte Spieler kommt zurück. Rotiert der Libero in die vordere Reihe, nimmt ihn die App heraus und fragt dich zur Bestätigung. Mit dem Libero-Tausch wechseln die beiden Liberos.",
+      "a_liberoOut": "Tippe auf den Libero auf dem Feld und nimm ihn heraus: Der ersetzte Spieler kommt zurück. Zuerst muss ein Ballwechsel beendet sein („Nach beendetem Ballwechsel“). Rotiert der Libero in die vordere Reihe, nimmt ihn die App heraus und zeigt „Libero RAUS“: Tippe auf „OK“. Später fragt sie „Libero REIN?“ für den Spieler der hinteren Reihe; „Nicht jetzt“ stoppt diese Frage für das Team bis zum Satzende. Mit dem Libero-Tausch wechseln die beiden Liberos.",
       "q_liberoUnable": "Der Libero kann nicht mehr spielen?",
       "a_liberoUnable": "Tippe auf den Libero und wähle, dass er nicht mehr spielen kann: für spielunfähig erklärt oder Verletzung bzw. Krankheit. Hat das Team keinen anderen Libero, lässt dich die App einen anderen Spieler zum neuen Libero bestimmen. Ein verletzter Libero kann wieder spielen (auf ihn tippen: «Wieder spielfähig»), solange an seiner Stelle kein neuer Libero bezeichnet wurde.",
       "q_captainRing": "Warum ist auf der Bank eine Nummer eingekreist?",

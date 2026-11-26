@@ -285,10 +285,12 @@ describe('mouse drag and drop on the court libero (FIVB 19.3.1.3)', () => {
     return accepted
   }
 
-  it('a bench player other than the one the libero replaced: the disc refuses the drop, nothing is recorded', async () => {
+  it('a bench player other than the one the libero replaced: the drop says why, nothing is recorded', async () => {
     const matchId = await setUp('libero')
     await openScreen(matchId, 12)
-    expect(await drag(9, 12)).toBe(false)
+    // accepted so that it can say why (tester 24.11.2026: it did nothing)
+    expect(await drag(9, 12)).toBe(true)
+    await waitFor(() => expect(document.body.textContent).toContain('#9: a libero is never substituted, he goes off only by a libero replacement'), { timeout: 3000 })
     await settle()
     expect(confirmDialog()).toBeFalsy()
     expect(await ofType('substitution')).toHaveLength(0)

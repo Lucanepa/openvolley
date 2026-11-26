@@ -7,6 +7,7 @@ import { Input } from '../../ui/Input.jsx'
 import { Select } from '../../ui/Select.jsx'
 import IdField from '../IdField'
 import { idLabelOf, idPlaceholderOf } from '../../domain/idMode'
+import { LicenceInfo } from './LicenceInfo.jsx'
 import { SectionHeader } from '../../ui/SectionHeader.jsx'
 import { cn } from '../../ui/cn.js'
 import { playsChoice, withPlays } from '../../domain/playerOfficials'
@@ -151,9 +152,15 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
             title={t('scoreboard.reopenRoster.players', 'Players')}
             count={editingPlayers.length}
             action={(
-              <Button variant="ghost" size="sm" className="h-11 px-4 font-medium" onClick={addPlayer}>
-                {t('scoreboard.reopenRoster.addPlayer', '+ Add player')}
-              </Button>
+              <span className="flex items-center gap-2">
+                {/* what the Licence column holds: here, as the column heads are hidden from screen readers */}
+                {idMode === 'licence' && (
+                  <span className="inline-flex items-center text-xs font-medium text-stone-500">{dobLabel}<LicenceInfo /></span>
+                )}
+                <Button variant="ghost" size="sm" className="h-11 px-4 font-medium" onClick={addPlayer}>
+                  {t('scoreboard.reopenRoster.addPlayer', '+ Add player')}
+                </Button>
+              </span>
             )}
           />
           <div role="list" className={cn(LIST, 'mt-2 mb-6')}>
