@@ -16,7 +16,7 @@
  *   ocr-cancelled  the scorer closed the dialog (opts.signal)
  */
 
-import { version as TESSERACT_VERSION } from 'tesseract.js/package.json'
+import { OCR_LANGS, ocrDir, ocrPaths, simdSupported } from './ocrFiles'
 import { importedRosterOf } from '../../domain/importedRoster'
 import { withTimeout, PDF_TIMEOUT_CODE } from '../parseRosterPdf'
 import { rosterFromOcr, withHandReadings, HANDWRITTEN_MAX } from './ocrRoster'
@@ -82,7 +82,7 @@ async function readCircledNumber (worker, page, box) {
   return m && Number(m[1]) >= 1 ? { number: Number(m[1]), conf: (data.confidence ?? 0) / 100 } : null
 }
 
-export const OCR_LANGS = ['deu', 'fra', 'ita']
+export { OCR_LANGS, ocrDir }
 // A page in a few seconds on a desktop; a slow tablet takes far longer
 // (Galaxy Tab A7 Lite). Past this the scorer gets a message, not a spinner.
 export const OCR_TIMEOUT_MS = 120000
@@ -148,16 +148,16 @@ function sureWords (data) {
  * 2026-11-26: four of thirteen); unsure, it stays as it is. A page the
  * right way up costs nothing: it is read once.
  */
-async function uprightTurns (worker, page, asIs) {
+async function uprightTurns (worker, page, asIs, order = [1, 3, 2]) {
   const scale = Math.min(1, UPRIGHT_SIDE / Math.max(page.width, page.height))
   const sure = async (turns) => sureWords((await worker.recognize(turnedCanvas(page, turns, scale), {}, { blocks: true, text: false })).data)
-  let best = { turns: 0, n: asIs }
-  for (const turns of [1, 3, 2]) {
+  let best = { turns: 0, n: asIs ?? 0 }
+  for (const turns of order) {
     const n = await sure(turns)
     if (n > best.n) best = { turns, n }
     if (n >= UPRIGHT_ENOUGH) break
   }
-  return best.n >= 2 * asIs + 3 ? best.turns : 0
+  return best.n >= 2 * (asIs ?? 0) + 3 ? best.turns : 0
 }
 
 /**
@@ -315,12 +315,6 @@ async function readHandwriting (worker, page, px, players, debug) {
 
 const coded = (code, message, cause) => Object.assign(new Error(message), { code, cause })
 
-/** Where the recognition's files are: ocr/<tesseract.js version>/ beside the app's pages. */
-export function ocrDir (base = typeof document !== 'undefined' ? document.baseURI : 'http://localhost/') {
-  const root = (import.meta.env?.BASE_URL || '/').replace(/^\.\//, '')
-  return new URL(`${root.replace(/\/?$/, '/')}ocr/${TESSERACT_VERSION}/`, base).href
-}
-
 /**
  * Whether this page may run WebAssembly at all: an empty module compiled
  * here (8 bytes). A page whose Content-Security-Policy forbids it, or an
@@ -337,14 +331,6 @@ export function wasmAllowed () {
   }
 }
 
-async function simdSupported () {
-  try {
-    const { simd } = await import('wasm-feature-detect')
-    return await simd()
-  } catch {
-    return false
-  }
-}
 
 /** Tesseract's createWorker (tests hand in their own). */
 async function loadCreateWorker () {
@@ -371,12 +357,12 @@ export async function readRosterPhoto (page, { onProgress, signal, createWorker,
     if (!wasmAllowed()) throw coded('ocr-load', 'This page may not run WebAssembly (its Content-Security-Policy, or the engine)')
     try {
       const create = createWorker || await loadCreateWorker()
-      const at = dir || ocrDir()
-      const core = (await simdSupported()) ? 'tesseract-core-simd-lstm.wasm.js' : 'tesseract-core-lstm.wasm.js'
+      // (ocrFiles.js: the same addresses the web loads ahead, ocrWarmup.js)
+      const { workerPath, corePath, langPath } = ocrPaths(dir || ocrDir(), await simdSupported())
       worker = await withTimeout(create(OCR_LANGS, LSTM_ONLY, {
-        workerPath: `${at}worker.min.js`,
-        corePath: `${at}${core}`,
-        langPath: `${at}lang`,
+        workerPath,
+        corePath,
+        langPath,
         gzip: false,
         // the files are the app's own (or the service worker's on the web): no second copy in IndexedDB
         cacheMethod: 'none',
@@ -392,11 +378,29 @@ export async function readRosterPhoto (page, { onProgress, signal, createWorker,
     if (signal?.aborted) throw cancelled()
     let data
     try {
+      // a page wider than high is an A4 list photographed on its side, most
+      // likely: the small copy's quarter turns first (and as it lies), not a
+      // whole reading of sideways text first (seconds on a tablet)
+      let turnedFirst = false
+      if (typeof page?.getContext === 'function' && page.width > 1.15 * page.height) {
+        quiet = true
+        const turns = await withTimeout(uprightTurns(worker, page, null, [1, 3, 0]), timeoutMs)
+        quiet = false
+        turnedFirst = true
+        if (debug) debug.turned = turns
+        if (turns) {
+          const before = page.beforeRules
+          const turned = turnedCanvas(page, turns)
+          if (before?.length === page.width * page.height) turned.beforeRules = turnGray(before, page.width, page.height, turns).gray
+          page = turned
+        }
+        if (signal?.aborted) throw cancelled()
+      }
       ;({ data } = await withTimeout(worker.recognize(page, {}, { blocks: true, text: false }), timeoutMs))
       // few words read sure: the page on its side or upside down? (a canvas
       // only: a Blob is read as it is)
       const asIs = sureWords(data)
-      if (asIs < UPRIGHT_ENOUGH && typeof page?.getContext === 'function' && !signal?.aborted) {
+      if (!turnedFirst && asIs < UPRIGHT_ENOUGH && typeof page?.getContext === 'function' && !signal?.aborted) {
         quiet = true
         const turns = await withTimeout(uprightTurns(worker, page, asIs), timeoutMs)
         quiet = false

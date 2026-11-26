@@ -63,6 +63,7 @@ import { playersWithoutNumber } from '../domain/coinTossChecks'
 import { checkUploadedRoster, takesUploadedRoster, uploadedSignaturesKept, uploadedSignaturesToTake } from '../domain/uploadedRoster'
 import PlayerPoolModal from './PlayerPoolModal'
 import RosterPhotoImport from './rosterPhoto/RosterPhotoImport'
+import { scheduleOcrWarmUp } from '../utils/rosterPhoto/ocrWarmup'
 import { buildPlayerPool, poolToRoster, ROSTER_MAX } from '../domain/playerPool'
 import { officialsFromSchedule, teamContactEmail, withTeamContacts } from '../domain/officials'
 import { rememberedRosters } from '../db/rememberedPlayers'
@@ -652,6 +653,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
   const { showAlert } = useAlert()
   const { user, profile, getCachedProfile, access } = useAuth()
   const { scaleFactor: baseScaleFactor } = useScaledLayout()
+  // the web: the photo import's recognition files loaded while the page is
+  // idle, so a later photo import works offline (ocrWarmup.js; the apps carry them)
+  useEffect(() => scheduleOcrWarmUp(), [])
   // Portrait: the libero select's empty option has a text (its column head is
   // hidden there): "Libero", small and grey while nothing is chosen
   // (.libero-unset; it was "None": the owner, 2026-10-21); landscape keeps

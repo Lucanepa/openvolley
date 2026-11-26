@@ -125,8 +125,15 @@ in the interaction log).
 
 ### 3.5 Platforms
 
-- **Web / PWA**: `ocr/**` is not precached (about 12 MB); `OCR_FILES_ROUTE` keeps the files after
-  the first photo import, so later ones work offline.
+- **Web / PWA**: `ocr/**` is not precached (about 12 MB, not on every install); `OCR_FILES_ROUTE`
+  keeps what is loaded. Since 2026-11-26 (owner) the files are loaded ahead at the **first Match
+  setup** (`ocrWarmup.js`), not at the first photo import, so a photo import works offline even if
+  the scorer never tried one online: once the page is idle, one file after another at low priority,
+  exactly the files `ocr.js` loads on that device (`ocrFiles.js`: the worker, the engine with or
+  without SIMD, deu / fra / ita). Only with a service worker in charge, online, the page visible,
+  Data Saver off, and once per tesseract.js version (a flag after all files came, or the files
+  already in the cache); a failure is only logged and tried again at the next Match setup. Not in
+  the apps (Capacitor, Tauri), whose build carries the files.
 - **Android** (Capacitor): the file field with `capture` asks the camera app for a picture
   (`<queries>` for `IMAGE_CAPTURE`, Android 11+; no CAMERA permission). The camera app writes the
   photo into the app's own Pictures folder and nothing deleted it: `MainActivity` deletes those
@@ -223,7 +230,7 @@ privacy policy needs no new processor. Candidates, in order:
 
 ## 5. Files
 
-`src/domain/importedRoster.js`, `src/utils/rosterPhoto/{scan,ocr,ocrRoster,savedTeamNames}.js`,
+`src/domain/importedRoster.js`, `src/utils/rosterPhoto/{scan,ocr,ocrFiles,ocrWarmup,ocrRoster,savedTeamNames}.js`,
 `src/components/rosterPhoto/{RosterPhotoImport,PhotoCropStep,RosterConfirmStep}.jsx`,
 `src/components/MatchSetup.jsx` (`applyImportedRoster`, the button), `vite-plugin-ocr-assets.js`,
 `pwa-workbox.js` (`ocr/**`, `OCR_FILES_ROUTE`), `scripts/build-subdomains.js`, the Android manifest
