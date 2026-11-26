@@ -91,6 +91,22 @@ describe('roster upload: the roster rules', () => {
     expect(pendingHomeRoster.bench).toEqual([{ role: 'Coach', firstName: 'Tom', lastName: 'Trainer', dob: '7654' }])
   })
 
+  // tester bug 2026-11-24: one team's signatures stayed in the form and went up
+  // with the other team's roster. The coach and the captain sign at the coin toss.
+  it('no signatures: the page has no signature part and sends none', async () => {
+    await openImportedRoster()
+    expect(screen.queryByText('Signatures')).toBeNull()
+    expect(screen.queryByText('Tap to sign')).toBeNull()
+    expect(screen.queryByText('Coach signature')).toBeNull()
+    fireEvent.click(captains()[0])
+    fireEvent.click(screen.getByRole('button', { name: 'common.confirm' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'common.yes' }))
+    await waitFor(() => expect(sync.updateMatchData).toHaveBeenCalled())
+    const [, { pendingHomeRoster }] = sync.updateMatchData.mock.calls[0]
+    expect('coachSignature' in pendingHomeRoster).toBe(false)
+    expect('captainSignature' in pendingHomeRoster).toBe(false)
+  })
+
   it('the value field takes a licence or a date of birth (a text field); a licence of 3 digits is not sent', async () => {
     await openImportedRoster()
     const values = screen.getAllByLabelText('Licence')

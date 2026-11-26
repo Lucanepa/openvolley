@@ -425,7 +425,8 @@ describe('Phase 7: ownership, PIN-gated data, backups, PINs at rest', { skip: SK
     const { rows: [row] } = await sql.query('SELECT connections, signatures, status FROM matches WHERE id = $1', [matchUuid])
     assert.deepEqual(row.connections.pending_home_roster.players, [{ number: 12, firstName: '', lastName: 'Neu', dob: '', libero: '', isCaptain: false, isLfp: false }])
     assert.equal(row.connections.referee_enabled, true, 'the other connection keys stay')
-    assert.equal(row.signatures.home_coach, 'data:image/png;base64,COACH')
+    // an upload never signs (24.11.2026): the body's signature is ignored
+    assert.equal(row.signatures?.home_coach, undefined)
     await sql.query("UPDATE matches SET status = 'live' WHERE id = $1", [matchUuid])
     const locked = await api(srv.base, '/api/match/upload-roster', { proto: null, body })
     assert.equal(locked.status, 409)
@@ -558,6 +559,8 @@ describe('Phase 7: ownership, PIN-gated data, backups, PINs at rest', { skip: SK
   })
 
   it('signed-in non-owners read other people\'s matches like anonymous readers', async () => {
+    // a signature on the match (since 24.11.2026 an upload no longer writes one)
+    await sql.query('UPDATE matches SET signatures = $2::json WHERE external_id = $1', [ext, JSON.stringify({ home_coach: 'data:image/png;base64,COACH' })])
     const erin = await account('erin')
     const sel = (u, params) => dbCall(u, 'matches', 'select', { columns: '*', filters: [{ type: 'eq', column: 'external_id', value: ext }], ...params })
     const owner = await sel(users.alice)
