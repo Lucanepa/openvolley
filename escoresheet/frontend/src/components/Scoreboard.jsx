@@ -16126,7 +16126,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 style={{ marginBottom: '2.5cqw', fontSize: (isCompactMode || isShortHeight) ? 'calc(4.4cqw * var(--cqf, 1))' : 'max(12px, calc(5.6cqw * var(--cqf, 1)))' }}
               />
             )}
-            <div style={{ display: 'flex', gap: '1.25cqw', marginBottom: '2.5cqw' }}>
+            {/* Time-out and substitution boxes: the substitution box as wide as its label on one
+                line when that fits, the time-out box the rest; with a large system font the
+                substitution label breaks at its soft hyphen instead of leaving the panel */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(min-content, 1fr) minmax(min-content, max-content)', gap: '1.25cqw', marginBottom: '2.5cqw' }}>
               <div
                 data-help-id="scoreboard-timeout-left"
                 onClick={() => {
@@ -19629,7 +19632,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 style={{ marginBottom: '2.5cqw', fontSize: (isCompactMode || isShortHeight) ? 'calc(4.4cqw * var(--cqf, 1))' : 'max(12px, calc(5.6cqw * var(--cqf, 1)))' }}
               />
             )}
-            <div style={{ display: 'flex', gap: '1.25cqw', marginBottom: (isCompactMode || isShortHeight) ? '1.25cqw' : '2.5cqw' }}>
+            {/* Time-out and substitution boxes: the substitution box as wide as its label on one
+                line when that fits, the time-out box the rest; with a large system font the
+                substitution label breaks at its soft hyphen instead of leaving the panel */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(min-content, 1fr) minmax(min-content, max-content)', gap: '1.25cqw', marginBottom: (isCompactMode || isShortHeight) ? '1.25cqw' : '2.5cqw' }}>
               <div
                 data-help-id="scoreboard-timeout-right"
                 onClick={() => {
