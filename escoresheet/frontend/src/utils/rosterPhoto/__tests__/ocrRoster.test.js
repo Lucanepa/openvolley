@@ -392,6 +392,21 @@ describe('rosterFromOcr: the officials above the table, in every list language',
     expect(pick(lost)[0]).toBe('coach:310009|Lea|Muster')
   })
 
+  it('a role word blurred past reading ("SOAEN" for "Coach:"): the line\'s shape keeps the official, in the first free slot, its names to check', () => {
+    const r = rosterFromOcr(page(
+      words(20, 'SOAEN #310012 | Petra Exempel (1980)'),
+      words(50, '1. Assistant Coach: #310013 | Hans Beispiel (1975)'),
+      ...table(120, de)))
+    expect(pick(r)).toEqual(['coach:310012|Petra|Exempel', 'ac1:310013|Hans|Beispiel', 'ac2:-'])
+    expect(r.coach.confidence.firstName).toBeLessThan(0.8)
+    expect(r.coach.confidence.lastName).toBeLessThan(0.8)
+    expect(r.ac1.confidence.firstName).toBeGreaterThanOrEqual(0.8)
+    // without that shape (no year, a short number, words before the "#") it is no official
+    for (const text of ['SOAEN #310014 | Petra Exempel', 'SOAEN #3100 | Petra Exempel (1980)', 'Halle Seewiese Nord #310015 | Petra Exempel (1980)']) {
+      expect(pick(rosterFromOcr(page(words(20, text), ...table(120, de))))[0]).toBe('coach:-')
+    }
+  })
+
   it('first name first, the year is no name; a particle starts the last name; a guessed split is to check', () => {
     const r = rosterFromOcr(page(
       words(20, 'Coach: #310010 | Ruedi von Beispiel (1988)'),

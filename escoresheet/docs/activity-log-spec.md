@@ -133,16 +133,22 @@ The bus (`bus.js`, no database import) carries the rest:
   (the approved view makes it again). No personal data.
 - `photo.read` (`utils/rosterPhoto/photoReadLog.js`, written by
   `RosterPhotoImport` when a reading ends; a cancelled one is not logged;
-  owner 27.11, privacy 1.31): `ms` from the tap on "Read the list" to the
+  owner 27.11, privacy 1.32): `ms` from the tap on "Read the list" to the
   check screen or the error, `outcome` (`ok`, `ocr-load`, `ocr-timeout`,
   `ocr-empty`, `ocr-blurry`, `other`; a failure is a warning), on success
   `rows`, `toCheck` (fields shown amber or red) and `struck`, the device's
   `cores` and `memory` (`navigator.hardwareConcurrency`, `deviceMemory` or
   null), `workers` (recognition workers used) and `turned` (the reading
-  turned the page). Counts and timings only: the keys are typed
-  (`ACTIVITY_TYPES`: numbers clamped, the outcome from a fixed list,
-  booleans), so no name, number or text read from the photo passes. Not tied
-  to a match (90 days on the server).
+  turned the page); since 27.11.2026 where the time went (owner: "check why
+  it took 42 secs"): `msEngine` (waiting for the recognition to start, and for
+  the handwriting reader), `msPage` (the page read, turns included), `msHand`
+  (the handwriting read again), `msRest` (the rest: the photo made flat, SV
+  numbers, struck rows and circles read again), `marksBy` (`onnx`, the
+  handwriting reader, or `tesseract`) and `lang` (the list's language the
+  scorer picked: `de`, `fr`, `it`, `other`). Counts and timings only: the
+  keys are typed (`ACTIVITY_TYPES`: numbers clamped, the outcome, reader and
+  language from fixed lists, booleans), so no name, number or text read from
+  the photo passes. Not tied to a match (90 days on the server).
 - `auth.sign_in/out`.
 
 The activity uploads themselves are never logged.

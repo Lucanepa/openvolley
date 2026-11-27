@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.31 · État au 27 novembre 2026
+**OpenVolley et OpenBeach** · Version 1.32 · État au 27 novembre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version anglaise fait foi.
@@ -184,9 +184,10 @@ le fait qu'elles ont eu lieu), remarques (seulement leur longueur),
 modifications des listes d'équipe (seulement le numéro de maillot), résultats
 des envois au serveur, erreurs de l'application (message et endroit dans le
 programme), durée et résultat de la lecture de la photo d'une Einsatzliste
-(avec le nombre de lignes, de champs à vérifier et de lignes barrées, ainsi
-que le nombre de cœurs de processeur et la mémoire de l'appareil ; jamais la
-photo ni ce qui y a été lu), démarrage, mise à jour et fermeture de
+(avec le nombre de lignes, de champs à vérifier et de lignes barrées, la
+langue choisie pour la liste, le lecteur qui a lu les inscriptions
+manuscrites, ainsi que le nombre de cœurs de processeur et la mémoire de
+l'appareil ; jamais la photo ni ce qui y a été lu), démarrage, mise à jour et fermeture de
 l'application ainsi que
 connexion et déconnexion. Chaque entrée porte un identifiant aléatoire de
 l'appareil (créé par l'application, sans lien avec le matériel), la version

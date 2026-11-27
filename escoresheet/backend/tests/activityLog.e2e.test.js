@@ -41,6 +41,9 @@ describe('activity log (unit)', () => {
       // a photo reading: typed counts only (a name in outcome, strings for numbers, extra keys: dropped)
       ['photo.read', { ms: 11384.4, outcome: 'ok', rows: 13, toCheck: 9, struck: 1, cores: 8, memory: 4, workers: 3, turned: true, names: ['Muster Anna'] }],
       ['photo.read', { ms: '900', outcome: 'Muster Anna', rows: -2, toCheck: 1e9, cores: null, memory: 0.256, workers: '3', turned: 'yes' }],
+      // where the time went (27.11.2026), the reader of the marks, the list's language: typed too
+      ['photo.read', { ms: 11384, outcome: 'ok', msEngine: 412.4, msPage: 9e12, msHand: -1, msRest: '1881', marksBy: 'onnx', lang: 'fr' }],
+      ['photo.read', { ms: 900, outcome: 'ok', marksBy: 'Muster', lang: 'deu', msEngine: null }],
       ['match.manual_change', { category: 'player', field: 'dob', before: '1.1.2000', after: '2.1.2000' }],
       ['sync.error', { resource: 'event', code: { gamePin: '1234', ok: 1 }, status: 409 }],
       ['app.error', { message: 'x'.repeat(400), frames: Array.from({ length: 30 }, (_, i) => `f${i}.js:${i}`) }],
@@ -91,8 +94,15 @@ describe('activity log (unit)', () => {
     const clean = (data) => serverSide.sanitizeActivityData('photo.read', data)
     // made-up values
     const ok = { ms: 11384, outcome: 'ok', rows: 13, toCheck: 9, struck: 1, cores: 8, memory: 4, workers: 3, turned: false }
-    assert.deepEqual(serverSide.ACTIVITY_KINDS['photo.read'].keys, ['ms', 'outcome', 'rows', 'toCheck', 'struck', 'cores', 'memory', 'workers', 'turned'])
+    assert.deepEqual(serverSide.ACTIVITY_KINDS['photo.read'].keys, ['ms', 'outcome', 'rows', 'toCheck', 'struck', 'cores', 'memory', 'workers', 'turned', 'msEngine', 'msPage', 'msHand', 'msRest', 'marksBy', 'lang'])
     assert.deepEqual(clean(ok), ok)
+    // where the time went (27.11.2026): whole ms, 0 to an hour; the reader of the marks and the list's language from fixed lists
+    const staged = { ...ok, msEngine: 412, msPage: 7903, msHand: 1188, msRest: 1881, marksBy: 'onnx', lang: 'fr' }
+    assert.deepEqual(clean(staged), staged)
+    assert.deepEqual(clean({ msEngine: -3, msPage: 9e12, msHand: 12.6, msRest: '5' }), { msEngine: 0, msPage: 3600000, msHand: 13 })
+    for (const bad of ['Muster', 'deu', 'ONNX', 1]) assert.deepEqual(clean({ marksBy: bad, lang: bad }), {}, String(bad))
+    for (const by of serverSide.PHOTO_READ_MARKS_BY) assert.deepEqual(clean({ marksBy: by }), { marksBy: by })
+    for (const lang of serverSide.PHOTO_READ_LANGS) assert.deepEqual(clean({ lang }), { lang })
     // extra keys dropped, whatever they hold
     assert.deepEqual(clean({ ...ok, lastName: 'Muster', licence: '123451', text: 'Exempel Luca 7', photo: 'data:image/jpeg;base64,AAAA', players: [{ n: 7 }] }), ok)
     // numbers rounded and clamped to sane ranges

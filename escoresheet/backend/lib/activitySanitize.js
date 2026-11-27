@@ -57,7 +57,7 @@ export const ACTIVITY_KINDS = Object.freeze({
   'scoresheet.pdf': { cat: 'match', keys: ['step', 'purpose', 'attempt', 'reason', 'bytes', 'ms'] },
   // a photo of an Einsatzliste read in Match Setup (utils/rosterPhoto/photoReadLog): counts
   // and timings only, typed (ACTIVITY_TYPES)
-  'photo.read': { cat: 'match', keys: ['ms', 'outcome', 'rows', 'toCheck', 'struck', 'cores', 'memory', 'workers', 'turned'] },
+  'photo.read': { cat: 'match', keys: ['ms', 'outcome', 'rows', 'toCheck', 'struck', 'cores', 'memory', 'workers', 'turned', 'msEngine', 'msPage', 'msHand', 'msRest', 'marksBy', 'lang'] },
   'auth.sign_in': { cat: 'app', keys: [] },
   'auth.sign_out': { cat: 'app', keys: [] },
   'activity.overflow': { cat: 'app', keys: ['dropped'] }
@@ -66,6 +66,10 @@ export const ACTIVITY_KINDS = Object.freeze({
 // How a photo reading ended: 'ok' (the check screen) or the error the scorer saw
 // (utils/rosterPhoto/ocr.js codes; 'other' for any other)
 export const PHOTO_READ_OUTCOMES = Object.freeze(['ok', 'ocr-load', 'ocr-timeout', 'ocr-empty', 'ocr-blurry', 'other'])
+// Which reader read the handwritten marks: the handwriting reader (ONNX) or Tesseract
+export const PHOTO_READ_MARKS_BY = Object.freeze(['onnx', 'tesseract'])
+// The list's language the scorer picked before the photo
+export const PHOTO_READ_LANGS = Object.freeze(['de', 'fr', 'it', 'other'])
 
 // Kinds whose keys are typed: 'int' (rounded) and 'num' (2 decimals) are numbers
 // clamped to min..max, 'bool' a boolean, 'oneOf' one of `values`; a null only where
@@ -82,7 +86,14 @@ export const ACTIVITY_TYPES = Object.freeze({
     cores: countType(256, true),
     memory: Object.freeze({ type: 'num', min: 0, max: 1024, nullable: true }),
     workers: countType(16),
-    turned: Object.freeze({ type: 'bool' })
+    turned: Object.freeze({ type: 'bool' }),
+    // where the time went: waiting for the recognition, the page, the handwriting, the rest
+    msEngine: countType(3600000),
+    msPage: countType(3600000),
+    msHand: countType(3600000),
+    msRest: countType(3600000),
+    marksBy: Object.freeze({ type: 'oneOf', values: PHOTO_READ_MARKS_BY }),
+    lang: Object.freeze({ type: 'oneOf', values: PHOTO_READ_LANGS })
   })
 })
 

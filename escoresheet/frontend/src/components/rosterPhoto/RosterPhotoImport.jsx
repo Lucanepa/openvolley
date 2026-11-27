@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Camera, Image as ImageIcon, RotateCw, ScanText } from 'lucide-react'
 import KitModal from '../manage/KitModal'
-import { Button, Banner, ProgressBar } from '../../ui'
+import { Button, Banner, ProgressBar, SegmentedControl } from '../../ui'
 import { importedRosterOf } from '../../domain/importedRoster'
 import { canvasBlob, guessCorners, loadPhoto, rotateCorners, scanPage } from '../../utils/rosterPhoto/scan'
 import { withSavedTeamNames } from '../../utils/rosterPhoto/savedTeamNames'
 import { logPhotoRead } from '../../utils/rosterPhoto/photoReadLog'
+import { LIST_LANGUAGES, ocrLangsFor } from '../../utils/rosterPhoto/ocrFiles'
 import PhotoCropStep from './PhotoCropStep'
 
 /**
@@ -35,6 +36,34 @@ export function readingTime (elapsedMs, share, t) {
   return t('rosterPhoto.reading.elapsedLeft', { elapsed, left })
 }
 
+// The list's languages by their own names (they fit four in a row on a phone), "other" in the app's
+const LANGUAGE_NAMES = { de: 'Deutsch', fr: 'Français', it: 'Italiano' }
+
+/**
+ * The list's language, picked before the photo (owner 27.11.2026): nothing
+ * chosen at first, never from the device's or the app's language, never
+ * remembered (a conscious pick each time); the reading uses its languages
+ * only (ocrFiles.js ocrLangsFor), fewer and faster. Until one is picked, the
+ * hint says why the photo buttons wait.
+ */
+export function ListLanguageChoice ({ value, onChange, side }) {
+  const { t } = useTranslation()
+  const label = t('rosterPhoto.lang.label')
+  return (
+    <div className="flex flex-col gap-1.5" data-testid={`roster-photo-lang-${side}`}>
+      <span className="text-xs font-medium text-stone-600">{label}</span>
+      <SegmentedControl
+        ariaLabel={label}
+        className="[&_button]:px-1.5"
+        value={value}
+        onChange={onChange}
+        options={LIST_LANGUAGES.map((l) => ({ value: l, label: LANGUAGE_NAMES[l] || t('rosterPhoto.lang.other'), testId: `roster-photo-lang-${side}-${l}` }))}
+      />
+      {!value && <p className="m-0 text-xs text-stone-500" data-testid={`roster-photo-lang-hint-${side}`}>{t('rosterPhoto.lang.hint')}</p>}
+    </div>
+  )
+}
+
 // The bar's top while reading: 100 % only together with the check screen (owner 27.11:
 // "100 % = finished"); ocr.js reports at most OCR_LAST_SHARE (0.98) itself.
 const READ_CAP = 0.98
@@ -55,22 +84,30 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
   const cameraRef = useRef(null)
   const fileRef = useRef(null)
   const readingRef = useRef(null) // the AbortController of the reading under way
-  // the recognition started ahead (ocr.js startOcrEngine): a promise of it
+  // the list's language (ListLanguageChoice): none until the scorer picks one
+  const [lang, setLang] = useState(null)
+  // the recognition started ahead (ocr.js startOcrEngine) with the list's languages: a promise of it
   const engineRef = useRef(null)
+  const engineLangRef = useRef(null)
 
   // The recognition starts while the scorer takes the photo and drags its
   // corners: "Read the list" then does not wait for it (seconds on a slow
   // tablet). Ended when the dialog closes or the list is read, and while the
   // page is hidden (the camera app in front: its memory back, so the phone
   // does not end the page meanwhile); started again when the photo comes.
-  const startEngine = () => {
-    if (engineRef.current) return
-    engineRef.current = import('../../utils/rosterPhoto/ocr').then(({ startOcrEngine }) => startOcrEngine())
+  const startEngine = (forLang = lang) => {
+    // (no language yet: nothing to start; another language: the one started goes)
+    if (!forLang) return
+    if (engineRef.current && engineLangRef.current === forLang) return
+    endEngine()
+    engineLangRef.current = forLang
+    engineRef.current = import('../../utils/rosterPhoto/ocr').then(({ startOcrEngine }) => startOcrEngine({ langs: ocrLangsFor(forLang) }))
     engineRef.current.catch(() => { engineRef.current = null })
   }
-  const endEngine = () => {
+  function endEngine () {
     const was = engineRef.current
     engineRef.current = null
+    engineLangRef.current = null
     was?.then((engine) => engine.terminate(), () => {})
   }
   const dropPhoto = () => setPhoto((prev) => { if (prev?.url) URL.revokeObjectURL(prev.url); return null })
@@ -81,18 +118,20 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
     dropPhoto()
     setError(null)
     setStep(null)
+    // the next photo import starts with no language (owner: a conscious pick each time)
+    setLang(null)
   }
   useEffect(() => () => { readingRef.current?.abort(); endEngine() }, [])
   useEffect(() => {
     if (step !== 'source' && step !== 'loading' && step !== 'crop') return undefined
-    if (typeof document === 'undefined' || document.visibilityState !== 'hidden') startEngine()
+    if (typeof document === 'undefined' || document.visibilityState !== 'hidden') startEngine(lang)
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') endEngine()
-      else startEngine()
+      else startEngine(lang)
     }
     document.addEventListener('visibilitychange', onVisibility)
     return () => document.removeEventListener('visibilitychange', onVisibility)
-  }, [step])
+  }, [step, lang])
   useEffect(() => () => { if (photo?.url) URL.revokeObjectURL(photo.url) }, [photo])
 
   const onFile = async (e) => {
@@ -129,14 +168,16 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
     const enginePromise = engineRef.current
     engineRef.current = null
     let engine = null
-    // what the reading notes for the activity log (counts only: photoReadLog)
+    // what the reading notes for the activity log (counts and times only: photoReadLog)
     const stats = { workers: 0, turned: false }
+    const readLang = lang
     try {
       const page = scanPage(photo.canvas, corners)
       const { readRosterPhoto } = await import('../../utils/rosterPhoto/ocr')
-      engine = await enginePromise.catch(() => null)
+      engine = await enginePromise?.catch(() => null)
       const result = await readRosterPhoto(page, {
         engine,
+        langs: ocrLangsFor(readLang),
         signal: controller.signal,
         stats,
         // one bar for the whole reading (shares in ocr.js): the page, then each step after it;
@@ -152,7 +193,7 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
       const took = Math.round(performance.now() - readStartRef.current)
       console.info('[RosterPhoto] read in', took, 'ms')
       // the time and counts in the activity log (owner 27.11), never what was read
-      logPhotoRead({ ms: took, outcome: 'ok', roster: shown, stats })
+      logPhotoRead({ ms: took, outcome: 'ok', roster: shown, stats, lang: readLang })
       // straight into the roster: checked and fixed there (no check screen)
       const roster = importedRosterOf(shown, 'ocr')
       readingRef.current = null
@@ -162,7 +203,7 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
       if (controller.signal.aborted || err?.code === 'ocr-cancelled') return
       console.warn('[RosterPhoto] reading failed:', err?.code || err?.message)
       const code = err?.code || 'ocr-load'
-      logPhotoRead({ ms: performance.now() - readStartRef.current, outcome: code, stats })
+      logPhotoRead({ ms: performance.now() - readStartRef.current, outcome: code, stats, lang: readLang })
       setError(code)
       setStep('error')
     } finally {
@@ -179,8 +220,8 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
     return () => clearInterval(id)
   }, [step])
 
-  const takePhoto = () => cameraRef.current?.click()
-  const choosePicture = () => fileRef.current?.click()
+  const takePhoto = () => { if (lang) cameraRef.current?.click() }
+  const choosePicture = () => { if (lang) fileRef.current?.click() }
 
   const footer = {
     source: <Button variant="secondary" size="lg" onClick={close}>{t('common.cancel', 'Cancel')}</Button>,
@@ -212,9 +253,12 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
       <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={onFile} className="hidden" data-testid={`roster-photo-camera-${side}`} />
       <input ref={fileRef} type="file" accept="image/*" onChange={onFile} className="hidden" data-testid={`roster-photo-file-${side}`} />
       {entry === 'sources' ? (
-        <div className="flex flex-wrap gap-2 [&>*]:flex-[1_1_11rem]" data-help-id="setup-photo-import">
-          <Button variant="secondary" size="xl" icon={<Camera size={16} aria-hidden />} onClick={takePhoto} disabled={disabled} data-testid={`roster-photo-take-${side}`}>{t('rosterPhoto.source.take')}</Button>
-          <Button variant="secondary" size="xl" icon={<ImageIcon size={16} aria-hidden />} onClick={choosePicture} disabled={disabled} data-testid={`roster-photo-choose-${side}`}>{t('rosterPhoto.source.choose')}</Button>
+        <div className="flex flex-col gap-2" data-help-id="setup-photo-import">
+          <ListLanguageChoice value={lang} onChange={setLang} side={side} />
+          <div className="flex flex-wrap gap-2 [&>*]:flex-[1_1_11rem]">
+            <Button variant="secondary" size="xl" icon={<Camera size={16} aria-hidden />} onClick={takePhoto} disabled={disabled || !lang} data-testid={`roster-photo-take-${side}`}>{t('rosterPhoto.source.take')}</Button>
+            <Button variant="secondary" size="xl" icon={<ImageIcon size={16} aria-hidden />} onClick={choosePicture} disabled={disabled || !lang} data-testid={`roster-photo-choose-${side}`}>{t('rosterPhoto.source.choose')}</Button>
+          </div>
         </div>
       ) : (
         <Button
@@ -251,9 +295,10 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
               <li>{t('rosterPhoto.source.tipLight')}</li>
               <li>{t('rosterPhoto.source.tipWhole')}</li>
             </ul>
+            <ListLanguageChoice value={lang} onChange={setLang} side="dialog" />
             <div className="grid gap-2 sm:grid-cols-2">
-              <Button variant="primary" size="xl" icon={Camera} onClick={takePhoto} data-testid="roster-photo-take">{t('rosterPhoto.source.take')}</Button>
-              <Button variant="secondary" size="xl" icon={ImageIcon} onClick={choosePicture} data-testid="roster-photo-choose">{t('rosterPhoto.source.choose')}</Button>
+              <Button variant="primary" size="xl" icon={Camera} onClick={takePhoto} disabled={!lang} data-testid="roster-photo-take">{t('rosterPhoto.source.take')}</Button>
+              <Button variant="secondary" size="xl" icon={ImageIcon} onClick={choosePicture} disabled={!lang} data-testid="roster-photo-choose">{t('rosterPhoto.source.choose')}</Button>
             </div>
           </div>
         )}

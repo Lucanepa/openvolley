@@ -56,7 +56,7 @@ export const ACTIVITY_KINDS = Object.freeze({
   'scoresheet.pdf': { cat: 'match', keys: ['step', 'purpose', 'attempt', 'reason', 'bytes', 'ms'] },
   // a photo of an Einsatzliste read in Match Setup (utils/rosterPhoto/photoReadLog): counts
   // and timings only, typed (ACTIVITY_TYPES)
-  'photo.read': { cat: 'match', keys: ['ms', 'outcome', 'rows', 'toCheck', 'struck', 'cores', 'memory', 'workers', 'turned'] },
+  'photo.read': { cat: 'match', keys: ['ms', 'outcome', 'rows', 'toCheck', 'struck', 'cores', 'memory', 'workers', 'turned', 'msEngine', 'msPage', 'msHand', 'msRest', 'marksBy', 'lang'] },
   'auth.sign_in': { cat: 'app', keys: [] },
   'auth.sign_out': { cat: 'app', keys: [] },
   'activity.overflow': { cat: 'app', keys: ['dropped'] }
@@ -65,6 +65,10 @@ export const ACTIVITY_KINDS = Object.freeze({
 // How a photo reading ended: 'ok' (the roster read) or the error the scorer saw
 // (utils/rosterPhoto/ocr.js codes; 'other' for any other)
 export const PHOTO_READ_OUTCOMES = Object.freeze(['ok', 'ocr-load', 'ocr-timeout', 'ocr-empty', 'ocr-blurry', 'other'])
+// Which reader read the handwritten marks: the handwriting reader (ONNX) or Tesseract
+export const PHOTO_READ_MARKS_BY = Object.freeze(['onnx', 'tesseract'])
+// The list's language the scorer picked before the photo
+export const PHOTO_READ_LANGS = Object.freeze(['de', 'fr', 'it', 'other'])
 
 // Kinds whose keys are typed: 'int' (rounded) and 'num' (2 decimals) are numbers
 // clamped to min..max, 'bool' a boolean, 'oneOf' one of `values`; a null only where
@@ -81,7 +85,14 @@ export const ACTIVITY_TYPES = Object.freeze({
     cores: countType(256, true),
     memory: Object.freeze({ type: 'num', min: 0, max: 1024, nullable: true }),
     workers: countType(16),
-    turned: Object.freeze({ type: 'bool' })
+    turned: Object.freeze({ type: 'bool' }),
+    // where the time went: waiting for the recognition, the page, the handwriting, the rest
+    msEngine: countType(3600000),
+    msPage: countType(3600000),
+    msHand: countType(3600000),
+    msRest: countType(3600000),
+    marksBy: Object.freeze({ type: 'oneOf', values: PHOTO_READ_MARKS_BY }),
+    lang: Object.freeze({ type: 'oneOf', values: PHOTO_READ_LANGS })
   })
 })
 
@@ -444,14 +455,24 @@ export function activityLine(entry) {
     case 'activity.overflow': return `${d.dropped} entries dropped`
     case 'scoresheet.pdf': return [d.step, d.purpose, d.reason, d.attempt > 1 ? `attempt ${d.attempt}` : null, d.bytes != null ? `${d.bytes} bytes` : null, d.ms != null ? `${d.ms} ms` : null].filter(v => v != null && v !== '').join(' · ')
     case 'photo.read': {
-      // "read in 11.4 s: 13 rows, 9 to check · 8 cores, 4 GB, 3 workers"
+      // "read in 11.4 s: 13 rows, 9 to check · engine 0.4 s, page 7.9 s, marks 1.2 s (onnx), rest 1.9 s · de · 8 cores, 4 GB, 3 workers"
       const n = (count, one, many) => `${count ?? 0} ${count === 1 ? one : many}`
-      const took = Number.isFinite(d.ms) ? `${(d.ms / 1000).toFixed(1)} s` : '? s'
+      const s = (ms) => `${(ms / 1000).toFixed(1)} s`
+      const took = Number.isFinite(d.ms) ? s(d.ms) : '? s'
       const head = d.outcome === 'ok'
         ? `read in ${took}: ${n(d.rows, 'row', 'rows')}, ${d.toCheck ?? 0} to check${d.struck ? `, ${d.struck} struck` : ''}${d.turned ? ', turned' : ''}`
         : `not read (${d.outcome || '?'}) after ${took}`
+      // (entries before 27.11.2026 have no stages)
+      const stages = ['msEngine', 'msPage', 'msHand', 'msRest'].some((k) => Number.isFinite(d[k]))
+        ? [
+            Number.isFinite(d.msEngine) ? `engine ${s(d.msEngine)}` : null,
+            Number.isFinite(d.msPage) ? `page ${s(d.msPage)}` : null,
+            Number.isFinite(d.msHand) ? `marks ${s(d.msHand)}${d.marksBy ? ` (${d.marksBy})` : ''}` : null,
+            Number.isFinite(d.msRest) ? `rest ${s(d.msRest)}` : null
+          ].filter(Boolean).join(', ')
+        : ''
       const device = [d.cores != null ? n(d.cores, 'core', 'cores') : null, d.memory != null ? `${d.memory} GB` : null, d.workers ? n(d.workers, 'worker', 'workers') : null].filter(Boolean).join(', ')
-      return device ? `${head} · ${device}` : head
+      return [head, stages, d.lang || '', device].filter(Boolean).join(' · ')
     }
     default: return ''
   }

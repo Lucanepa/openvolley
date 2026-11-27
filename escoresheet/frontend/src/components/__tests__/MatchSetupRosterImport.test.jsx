@@ -219,13 +219,16 @@ describe('Roster import: Remote · PDF · Photo', () => {
     expect(once('setup-pdf-import')).toBe(radio('matchSetup.rosterImport.pdf'))
   })
 
-  it('Photo: "Take a photo" opens the camera at once, no source step first', async () => {
+  it('Photo: the list\'s language first (none picked), then "Take a photo" opens the camera at once, no source step first', async () => {
     seed()
     render(<Setup matchId={1} />)
     await openEditor()
     fireEvent.click(radio('matchSetup.rosterImport.photo'))
     const camera = screen.getByTestId('roster-photo-camera-home')
     const opened = vi.spyOn(camera, 'click').mockImplementation(() => {})
+    expect(screen.getByTestId('roster-photo-take-home')).toBeDisabled()
+    expect(screen.getByTestId('roster-photo-lang-hint-home')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('roster-photo-lang-home-fr'))
     fireEvent.click(screen.getByTestId('roster-photo-take-home'))
     expect(opened).toHaveBeenCalledTimes(1)
     expect(screen.queryByTestId('roster-photo-source')).toBeNull()

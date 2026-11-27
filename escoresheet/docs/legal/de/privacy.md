@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.31 · Stand: 27. November 2026
+**OpenVolley und OpenBeach** · Version 1.32 · Stand: 27. November 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
 Massgebend ist die englische Fassung.
@@ -174,8 +174,10 @@ Bemerkungen (nur ihre Länge), Änderungen an Kaderlisten (nur die
 Rückennummer), Ergebnisse der Übertragung zum Server, App-Fehler (Meldung und
 Programmstelle), Dauer und Ergebnis des Lesens eines Fotos einer
 Einsatzliste (mit der Zahl der Zeilen, der zu prüfenden Felder und der
-durchgestrichenen Zeilen sowie der Zahl der Prozessorkerne und der Grösse des
-Arbeitsspeichers des Geräts; nie das Foto oder was darauf gelesen wurde),
+durchgestrichenen Zeilen, der gewählten Sprache der Liste, der Angabe, welcher
+Leser die handschriftlichen Einträge gelesen hat, sowie der Zahl der
+Prozessorkerne und der Grösse des Arbeitsspeichers des Geräts; nie das Foto
+oder was darauf gelesen wurde),
 Start, Update und Beenden der App sowie An- und Abmeldung.
 Jeder Eintrag enthält eine zufällige Kennung des Geräts (von der App erzeugt,
 nicht mit der Hardware verknüpft), die App-Version, die Plattform und, wenn

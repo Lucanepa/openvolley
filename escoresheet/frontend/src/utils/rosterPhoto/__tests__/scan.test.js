@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   cornersFromGray, evenLight, homography, insetCorners, orderCorners, otsuThreshold, pageSize, plausiblePage, project,
-  removeRules, ringInRegion, ringScore, rotateCorners, stretchContrast, warpGray, struckThrough, handInk, turnGray
+  removeRules, ringInRegion, ringScore, rotateCorners, stretchContrast, warpGray, struckThrough, handInk, turnGray,
+  columnLine, marginBand
 } from '../scan'
 
 // a grey page (255) of w x h with draw(x, y) -> value | undefined
@@ -243,5 +244,41 @@ describe('a row struck out, the team\'s handwriting, a page turned', () => {
     let back = { gray: g, width: 3, height: 2 }
     for (let i = 0; i < 4; i++) back = turnGray(back.gray, back.width, back.height, 1)
     expect([...back.gray]).toEqual([...g])
+  })
+})
+
+describe('the left margin as one crop (the handwriting reader)', () => {
+  it('columnLine: the SV column down a sloping page, a row whose number lost or gained a digit left out', () => {
+    // x = 100 + 0.05 y, one row 40 px right of it (its first digit lost), one 35 px left (a digit written into it)
+    const rows = [0, 1, 2, 3, 4, 5, 6].map((k) => ({ y: 200 + 60 * k, left: 100 + 0.05 * (200 + 60 * k) }))
+    rows[2].left += 40
+    rows[5].left -= 35
+    const col = columnLine(rows)
+    expect(col(200)).toBeCloseTo(110, 5)
+    expect(col(1000)).toBeCloseTo(150, 5)
+    expect(columnLine(rows.slice(0, 2))).toBeNull()
+    expect(columnLine([{ y: 5, left: 3 }, { y: null, left: 1 }, { y: 9, left: 2 }])).toBeNull()
+  })
+
+  it('marginBand: the ink of the row in the margin, with a quarter of its height round it; nothing of the rows above and under, no speck, no printed digit at the edge', () => {
+    // a row at y = 100, a line 20 px high; the band from x 0 to 120
+    const g = page(200, 200, (x, y) => {
+      if (x >= 30 && x <= 40 && y >= 90 && y <= 110) return 60 // the number (on the row)
+      if (x >= 50 && x <= 56 && y >= 92 && y <= 104) return 150 // a pale C beside it
+      if (x >= 30 && x <= 40 && y >= 66 && y <= 72) return 30 // the row above's number (its middle 31 px up)
+      if (x === 80 && y === 100) return 20 // a speck
+      if (x >= 112 && x <= 119 && y >= 92 && y <= 108) return 20 // the SV number's first digit, at the band's edge
+      return undefined
+    })
+    const box = marginBand(g, 200, 200, { x0: 0, x1: 120, y: 100, line: 20 })
+    // the number and the C: x 30..56, y 90..110 (21 px high: 5 px round it)
+    expect(box).toEqual({ x0: 25, y0: 85, w: 37, h: 31 })
+    expect(marginBand(page(200, 200), 200, 200, { x0: 0, x1: 120, y: 100, line: 20 })).toBeNull()
+    expect(marginBand(g, 200, 200, { x0: 50, x1: 52, y: 100, line: 20 })).toBeNull()
+  })
+
+  it('marginBand stays inside the band and the page', () => {
+    const g = page(60, 60, (x, y) => (x >= 1 && x <= 8 && y >= 22 && y <= 38 ? 0 : undefined))
+    expect(marginBand(g, 60, 60, { x0: -30, x1: 40, y: 30, line: 20 })).toEqual({ x0: 0, y0: 18, w: 13, h: 25 })
   })
 })

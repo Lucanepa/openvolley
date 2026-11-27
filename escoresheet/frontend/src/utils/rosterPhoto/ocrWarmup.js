@@ -4,11 +4,13 @@
  * photo import works offline even when the scorer never tried one online.
  * The service worker's OCR_FILES_ROUTE (pwa-workbox.js) keeps what is loaded
  * here, from the very addresses ocr.js starts Tesseract with (ocrFiles.js):
- * the worker, the engine this device runs and the three languages, ~12 MB.
+ * the worker, the engine this device runs and the three languages, ~12 MB;
+ * and the handwriting reader's (handReader.js: its engine and model, ~25 MB),
+ * on a device that can run it (WebAssembly SIMD).
  *
  * Only on the web with a service worker in charge (the Android, iOS and
  * desktop apps carry the files in their build), online, the page visible,
- * Data Saver off, and once per tesseract.js version: a flag after all files
+ * Data Saver off, and once per tesseract.js and onnxruntime-web version: a flag after all files
  * came, or the files already in the cache. One file after another, at low
  * priority, once the page is idle; a failure is only logged, and tried again
  * at the next Match Setup.
@@ -16,9 +18,9 @@
 
 import { isNativeApp } from '../backendConfig'
 import { isDesktopApp } from '../../diagnostics/popupForward'
-import { TESSERACT_VERSION, ocrDir, ocrPaths, simdSupported } from './ocrFiles'
+import { HAND_ORT_VERSION, TESSERACT_VERSION, handPaths, ocrDir, ocrPaths, simdSupported } from './ocrFiles'
 
-export const WARM_FLAG = `ov-ocr-files-${TESSERACT_VERSION}`
+export const WARM_FLAG = `ov-ocr-files-${TESSERACT_VERSION}-hand-${HAND_ORT_VERSION}`
 // after Match Setup is on screen: its own work first
 const WARM_DELAY_MS = 4000
 const IDLE_TIMEOUT_MS = 10000
@@ -47,9 +49,10 @@ export function warmUpBlocker ({
   return null
 }
 
-/** The addresses ocr.js will load on this device. */
-export async function warmUpUrls ({ dir = ocrDir(), simd } = {}) {
-  return ocrPaths(dir, simd ?? await simdSupported()).urls
+/** The addresses ocr.js will load on this device (the handwriting reader's only with SIMD: it needs it). */
+export async function warmUpUrls ({ dir = ocrDir(), handDir, simd } = {}) {
+  const withSimd = simd ?? await simdSupported()
+  return [...ocrPaths(dir, withSimd).urls, ...(withSimd ? handPaths(handDir).urls : [])]
 }
 
 let running = null

@@ -31,7 +31,7 @@ import { buildChannelPlugin, buildChannel, devHeadersFile } from '../build-chann
 import { securityHeaderLines } from '../csp.js'
 import { buildCommit } from '../build-commit.js'
 import { htmlToImageFontSize } from '../vite-plugin-html-to-image-font-size.js'
-import { ocrAssets } from '../vite-plugin-ocr-assets.js'
+import { ocrAssets, ORT_WASM_ALIAS } from '../vite-plugin-ocr-assets.js'
 import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, PRECACHE_MAX_FILE_BYTES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, API_NETWORK_ONLY_ROUTE, STATIC_ASSETS_ROUTE, OCR_FILES_ROUTE, PWA_INCLUDE_ASSETS, PWA_ICONS } from '../pwa-workbox.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -364,9 +364,11 @@ async function buildSubdomain(subdomain, basePath = '/') {
       },
       resolve: {
         dedupe: ['react', 'react-dom', 'dexie'],
-        alias: {
-          '@': resolve(frontendDir, 'src')
-        }
+        alias: [
+          { find: '@', replacement: resolve(frontendDir, 'src') },
+          // the handwriting reader's onnxruntime-web, as in vite.config.js
+          ORT_WASM_ALIAS
+        ]
       },
       plugins: [
         react(),
