@@ -406,13 +406,6 @@ file tar). The policy must say so (F8).
 | **Desktop log** | `desktop.log` in the same folder (tauri-plugin-log): app start, updates, popups (URLs without query), tablet count changes; never PINs, tokens or hotspot credentials. 5 MB × 5 files |
 | **Basis** | (f) integrity of the official match record and troubleshooting; (b) for the scorer's own account |
 
-**`photo.read` in privacy 1.32 (27.11.2026).** Since openvolley#379 the entry also
-holds the time per stage (`msEngine`, `msPage`, `msHand`, `msRest`), which reader
-read the handwritten marks (`marksBy`: `onnx` / `tesseract`) and the list language
-the scorer picked (`lang`: `de` / `fr` / `it` / `other`). Privacy 1.32 names the
-language and the reader in the "Activity log" list; the stage times are part of
-how long the reading took (1.31). Typed keys like the rest of the entry.
-
 ### 4.18 Error reports (db/050, privacy 1.22, owner 2026-11-19)
 
 | | |
