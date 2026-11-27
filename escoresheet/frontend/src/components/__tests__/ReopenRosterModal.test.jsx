@@ -196,14 +196,19 @@ describe('ReopenRosterModal: the libero select', () => {
     expect(options(within(rows()[3]).getByLabelText('Libero'))).toEqual([['', 'No libero']])
   })
 
-  it('the none option is blank under the Libero column head (the list 560 px and wider)', () => {
+  it('the none option by the list width: blank under the column head (560 px and wider), "No libero" without it, "–" in the narrow phone column', () => {
     const saved = { RO: globalThis.ResizeObserver, rect: HTMLElement.prototype.getBoundingClientRect }
+    let listWidth = 700
     globalThis.ResizeObserver = class { observe () {} disconnect () {} }
-    HTMLElement.prototype.getBoundingClientRect = function () { return { width: this.getAttribute('role') === 'list' ? 700 : 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 } }
+    HTMLElement.prototype.getBoundingClientRect = function () { return { width: this.getAttribute('role') === 'list' ? listWidth : 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 } }
     try {
-      openTeam()
-      expect(options(liberoOf(1))).toEqual([['', '']])
-      expect(options(liberoOf(9))).toEqual([['', ''], ['libero1', 'L1']])
+      for (const [width, none] of [[700, ''], [560, ''], [520, 'No libero'], [400, '–']]) {
+        listWidth = width
+        openTeam()
+        expect(options(liberoOf(1))).toEqual([['', none]])
+        expect(options(liberoOf(9))).toEqual([['', none], ['libero1', 'L1']])
+        cleanup()
+      }
     } finally {
       globalThis.ResizeObserver = saved.RO
       HTMLElement.prototype.getBoundingClientRect = saved.rect

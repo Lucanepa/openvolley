@@ -82,9 +82,11 @@ const NAME = 'px-2'
 
 // The libero select: none, L1, L2 (domain/liberoChoices: L2 once another
 // player is L1), a re-designated or unable libero keeping that state. Its
-// none option is blank under the Libero column head and "No libero" where
-// the head is hidden (the list under 560 px): it read "Libero", which made
-// "Libero / L1 / L2" look like three kinds (the owner, 27.11.2026).
+// none option is blank under the Libero column head (the list 560 px and
+// wider), "No libero" where the head is hidden, and "–" in the phone's
+// narrow column (a list under 480 px: "Nessun libero" was cut to "Ne…" at
+// 393 px), as Match setup: it read "Libero", which made "Libero / L1 / L2"
+// look like three kinds (the owner, 27.11.2026).
 // A team's only libero is Libero 1 (owner 27.11.2026): with the L1 removed
 // or set to none, the L2 left becomes L1, but only while the match record
 // does not refer to the team's liberos (liberosInRecord, from
@@ -93,19 +95,19 @@ const NAME = 'px-2'
 // not given: nothing is renumbered.
 const LIBERO_SHORT = { libero1: 'L1', libero2: 'L2', redesignated: 'LR' }
 
-// The list is at least `min` px wide (the container query of its rows); false
-// without ResizeObserver (tests)
-function useMinWidth(el, min) {
-  const [wide, setWide] = useState(false)
+// The list's width, which its rows' container query follows; null without
+// ResizeObserver (tests)
+function useWidth(el) {
+  const [width, setWidth] = useState(null)
   useEffect(() => {
     if (!el || typeof ResizeObserver === 'undefined') return undefined
-    const check = () => setWide(el.getBoundingClientRect().width >= min)
+    const check = () => setWidth(Math.round(el.getBoundingClientRect().width))
     check()
     const ro = new ResizeObserver(check)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [el, min])
-  return wide
+  }, [el])
+  return width
 }
 
 // idMode: what the column beside a name holds (domain/idMode): 'licence' in a
@@ -125,7 +127,10 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
     bench.filter(b => b.firstName || b.lastName || b.role).map(b => ({ ...b }))
   )
   const [listEl, setListEl] = useState(null)
-  const headShown = useMinWidth(listEl, 560)
+  const listWidth = useWidth(listEl)
+  const liberoNone = listWidth == null || (listWidth >= 480 && listWidth < 560)
+    ? { key: 'stack', text: t('matchSetup.noLibero', 'No libero') }
+    : (listWidth >= 560 ? { key: 'blank', text: '' } : { key: 'tight', text: '–' })
 
   const settleLiberos = (list) => (liberosInRecord ? list : withLoneLiberoAsL1(list))
   const isL1 = (p) => liberoValueOf(p) === 'libero1'
@@ -269,7 +274,7 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
                   {liberoChoices(editingPlayers, idx).map(value => (
                     value
                       ? <option key={value} value={value} className="text-base text-stone-800">{value === 'unable' ? t('scoreboard.reopenRoster.liberoUnable', 'Unable') : (LIBERO_SHORT[value] || value)}</option>
-                      : <option key={headShown ? 'blank' : 'none'} value="" className="text-stone-500">{headShown ? '' : t('matchSetup.noLibero', 'No libero')}</option>
+                      : <option key={liberoNone.key} value="" className="text-stone-500">{liberoNone.text}</option>
                   ))}
                 </Select>
                 <span className={CAPTAIN_CELL}>
