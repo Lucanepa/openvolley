@@ -74,9 +74,9 @@
             <div class="to-sub-label">
               "Substitution"
         <div>
-          <button class="tap-hint tap-hint-sm">
+          <button aria-label="Improper request" class="tap-hint tap-hint-sm" title="Improper request">
             "Improper request"
-          <button class="tap-hint tap-hint-sm">
+          <button aria-label="Delay warning" class="tap-hint tap-hint-sm" title="Delay warning">
             "Delay warning"
         <div>
           <div>
@@ -433,9 +433,9 @@
             <div class="to-sub-label">
               "Substitution"
         <div>
-          <button class="tap-hint tap-hint-sm">
+          <button aria-label="Improper request" class="tap-hint tap-hint-sm" title="Improper request">
             "Improper request"
-          <button class="tap-hint tap-hint-sm">
+          <button aria-label="Delay warning" class="tap-hint tap-hint-sm" title="Delay warning">
             "Delay warning"
         <div>
           <div>

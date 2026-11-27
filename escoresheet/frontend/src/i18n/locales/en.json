@@ -770,7 +770,10 @@
       "penalty": "Penalty",
       "expulsion": "Expulsion",
       "disqualification": "Disqualification",
-      "wholeTeam": "The team"
+      "wholeTeam": "The team",
+      "improperRequestShort": "Improper request",
+      "delayWarningShort": "Delay warning",
+      "delayPenaltyShort": "Delay penalty"
     },
     "playerMenu": {
       "liberoOut": "Libero out",

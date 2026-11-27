@@ -762,7 +762,10 @@
       "penalty": "Bestrafung",
       "expulsion": "Hinausstellung",
       "disqualification": "Disqualifikation",
-      "wholeTeam": "Das Team"
+      "wholeTeam": "Das Team",
+      "improperRequestShort": "Nicht ordn. Anträge",
+      "delayWarningShort": "Verw. weg. Verz.",
+      "delayPenaltyShort": "Bestr. weg. Verz."
     },
     "playerMenu": {
       "liberoOut": "Libero raus",
@@ -803,7 +806,7 @@
       "to": "TO",
       "sub": "AUS",
       "timeoutFull": "Auszeit",
-      "substitutionFull": "Auswechslung",
+      "substitutionFull": "Aus\u00adwechslung",
       "last": "Letzte",
       "rallyStatus": "Spielzugstatus",
       "lastAction": "Letzte Aktion",
@@ -1553,7 +1556,7 @@
         "scheduled": "Nicht gestartet",
         "live": "Läuft",
         "ended": "Beendet",
-        "approved": "Genehmigt"
+        "approved": "Bestätigt"
       }
     },
     "selfCheck": {
@@ -2491,8 +2494,8 @@
     "status": {
       "live": "Live",
       "final": "Beendet",
-      "approved": "Genehmigt",
-      "ended": "Genehmigung ausstehend",
+      "approved": "Bestätigt",
+      "ended": "Bestätigung ausstehend",
       "setup": "Vorbereitung"
     }
   },
@@ -2875,7 +2878,7 @@
       "q_backgroundHome": "Warum ist die App wieder auf der Startseite?",
       "a_backgroundHome": "Nach 15 Minuten oder mehr im Hintergrund (andere App, Bildschirm aus) zeigt die App die Startseite. Nichts wird geschlossen oder gelöscht: Tippe auf «Spiel fortsetzen». Zeit mit eingeschaltetem Bildschirm, etwa eine lange Satzpause, zählt nicht.",
       "q_matchStates": "Was bedeuten die Hinweise bei einem Spiel?",
-      "a_matchStates": "«Wird hier geführt»: Dieses Gerät führt das Spiel. «Auf anderem Gerät»: Ein anderes Gerät hat das Spiel übernommen. «Auf dem Server abgeschlossen»: Das Spiel ist genehmigt oder abgeschlossen. «Nicht geprüft»: Die App konnte den Server nicht fragen (offline, abgemeldet oder keine Antwort). «Nicht gesendete Änderungen»: Einige Änderungen sind noch nicht auf dem Server. Eine abgeschlossene oder übernommene Kopie öffnet nur zum Lesen.",
+      "a_matchStates": "«Wird hier geführt»: Dieses Gerät führt das Spiel. «Auf anderem Gerät»: Ein anderes Gerät hat das Spiel übernommen. «Auf dem Server abgeschlossen»: Das Spiel ist bestätigt oder abgeschlossen. «Nicht geprüft»: Die App konnte den Server nicht fragen (offline, abgemeldet oder keine Antwort). «Nicht gesendete Änderungen»: Einige Änderungen sind noch nicht auf dem Server. Eine abgeschlossene oder übernommene Kopie öffnet nur zum Lesen.",
       "q_cleanUp": "Was macht «Aufräumen»?",
       "a_cleanUp": "Ist dasselbe Spiel mehrmals auf diesem Gerät, sagt es dir die Startseite. «Aufräumen» entfernt nur die weiteren Kopien, die nichts Eigenes enthalten. Es fragt vorher, und auf dem Server ändert sich nichts.",
       "q_tool": "Schweiz oder Global?",
@@ -3038,24 +3041,24 @@
       "a_signatures": "Zuerst unterschreiben die beiden Kapitäne unter «Mannschaftskapitäne». Dann unterschreiben die Offiziellen in dieser Reihenfolge: Schreiberassistent (falls vorhanden), Schreiber, 2. Schiedsrichter (falls vorhanden), 1. Schiedsrichter. Tippe in jedem Feld auf «Zum Unterschreiben tippen».",
       "tip_signatures": "Tippe auf ein Unterschriftenfeld, um das Unterschriftenpad zu öffnen und die Unterschrift zu sammeln.",
       "q_exportPdf": "Wie exportiere ich das Matchblatt als PDF?",
-      "a_exportPdf": "Tippe auf «eScoresheet» und wähle «Vorschau», «Drucken» oder «PDF speichern». Das geht vor und nach der Genehmigung.",
+      "a_exportPdf": "Tippe auf «eScoresheet» und wähle «Vorschau», «Drucken» oder «PDF speichern». Das geht vor und nach der Bestätigung.",
       "tip_exportPdf": "Tippe hier, um das Matchblatt anzusehen, zu drucken oder zu speichern.",
       "q_downloadJson": "Wie lade ich die Spieldaten herunter?",
-      "a_downloadJson": "«Bestätigen und genehmigen» lädt ein ZIP mit den Spieldaten (JSON) und dem PDF herunter. Während des Spiels speichert Spiel › «Spieldaten herunterladen (JSON)» die Backup-Datei dieses Spiels, verschlüsselt mit der Spiel-PIN und der Schiedsrichter-PIN. Mit beiden lässt sich das Spiel wiederherstellen («Spiel wiederherstellen» auf der Startseite).",
-      "tip_downloadJson": "«Bestätigen und genehmigen» speichert die Spieldaten und erstellt das Matchblatt.",
+      "a_downloadJson": "«Matchblatt bestätigen» lädt ein ZIP mit den Spieldaten (JSON) und dem PDF herunter. Während des Spiels speichert Spiel › «Spieldaten herunterladen (JSON)» die Backup-Datei dieses Spiels, verschlüsselt mit der Spiel-PIN und der Schiedsrichter-PIN. Mit beiden lässt sich das Spiel wiederherstellen («Spiel wiederherstellen» auf der Startseite).",
+      "tip_downloadJson": "«Matchblatt bestätigen» speichert die Spieldaten und erstellt das Matchblatt.",
       "q_reopenSet": "Wie öffne ich einen Satz zur Korrektur wieder?",
-      "a_reopenSet": "Tippe auf «Letzten Satz wieder öffnen», um zum Erfassungsbildschirm zurückzukehren. Alle Unterschriften werden gelöscht und müssen neu gesammelt werden. Nach der Genehmigung öffnet «Spiel wieder öffnen» ein Testspiel wieder, oder ein Spiel, dessen Genehmigung den Server noch nicht erreicht hat. Hat der Server es abgeschlossen, kann nur noch ein Admin es wieder öffnen.",
+      "a_reopenSet": "Tippe auf «Letzten Satz wieder öffnen», um zum Erfassungsbildschirm zurückzukehren. Alle Unterschriften werden gelöscht und müssen neu gesammelt werden. Nach der Bestätigung öffnet «Spiel wieder öffnen» ein Testspiel wieder, oder ein Spiel, dessen Bestätigung den Server noch nicht erreicht hat. Hat der Server es abgeschlossen, kann nur noch ein Admin es wieder öffnen.",
       "tip_reopenSet": "Tippe hier, um den letzten Satz wieder zu öffnen. Alle Unterschriften werden gelöscht.",
       "q_signOnPhone": "Kann jemand auf dem eigenen Handy unterschreiben?",
       "a_signOnPhone": "Ja. Tippe auf das Unterschriftenfeld, dann auf «Auf dem Handy unterschreiben», und lass den Code scannen. Lass dieses Fenster offen, bis die Unterschrift ankommt, und tippe dann auf «Unterschrift übernehmen». Dafür braucht es Internet oder das Hallennetz.",
-      "q_approve": "Was macht «Bestätigen und genehmigen»?",
-      "a_approve": "Wenn alle Unterschriften da sind, tippe auf «Bestätigen und genehmigen». Ist auf dem Matchblatt etwas ungewöhnlich, listet die App es zuerst auf: Korrigiere es oder tippe auf «Trotzdem genehmigen». Die App lädt ein ZIP mit den Spieldaten und dem Matchblatt als PDF herunter: Lass das Matchblatt-Fenster offen, bis das PDF fertig ist. Danach ist das Spiel genehmigt und auf dem Server abgeschlossen.",
+      "q_approve": "Was macht «Matchblatt bestätigen»?",
+      "a_approve": "Wenn alle Unterschriften da sind, tippe auf «Matchblatt bestätigen». Ist auf dem Matchblatt etwas ungewöhnlich, listet die App es zuerst auf: Korrigiere es oder tippe auf «Trotzdem bestätigen». Die App lädt ein ZIP mit den Spieldaten und dem Matchblatt als PDF herunter: Lass das Matchblatt-Fenster offen, bis das PDF fertig ist. Danach ist das Spiel bestätigt und auf dem Server abgeschlossen.",
       "q_pdfFailed": "Es heisst, das PDF sei nicht fertig: Was nun?",
-      "a_pdfFailed": "«Erneut versuchen» erstellt das PDF nochmals. «Ohne PDF genehmigen» genehmigt das Spiel jetzt: Erstelle danach das PDF mit «PDF erstellen», bevor du das Spiel abschliesst, damit es den Server erreicht. «Abbrechen» lässt das Spiel ungenehmigt.",
+      "a_pdfFailed": "«Erneut versuchen» erstellt das PDF nochmals. «Ohne PDF bestätigen» bestätigt das Spiel jetzt: Erstelle danach das PDF mit «PDF erstellen», bevor du das Spiel abschliesst, damit es den Server erreicht. «Abbrechen» lässt das Spiel unbestätigt.",
       "q_closeMatch": "Was macht «Spiel abschliessen»?",
-      "a_closeMatch": "Nach der Genehmigung markiert «Spiel abschliessen» das Spiel auf dem Server als final und entfernt es von diesem Gerät. Speichere oder drucke das PDF vorher, wenn du eine Kopie auf diesem Gerät brauchst.",
+      "a_closeMatch": "Nach der Bestätigung markiert «Spiel abschliessen» das Spiel auf dem Server als final und entfernt es von diesem Gerät. Speichere oder drucke das PDF vorher, wenn du eine Kopie auf diesem Gerät brauchst.",
       "q_finalMail": "Wer erhält das endgültige Matchblatt per E-Mail?",
-      "a_finalMail": "Wo der Verband endgültige Matchblätter verschickt, geht das PDF einige Minuten nach der Genehmigung per E-Mail an den Schreiber, die Schiedsrichter (an die für sie in der Spieleinrichtung eingetippte E-Mail) und den Kontakt jedes Teams. Den Kontakt eines Teams trägst du in der Spieleinrichtung ein («E-Mail Teamkontakt (freiwillig)») oder später unter Spiel › «Spielinfo bearbeiten» › «Teamkontakte».",
+      "a_finalMail": "Wo der Verband endgültige Matchblätter verschickt, geht das PDF einige Minuten nach der Bestätigung per E-Mail an den Schreiber, die Schiedsrichter (an die für sie in der Spieleinrichtung eingetippte E-Mail) und den Kontakt jedes Teams. Den Kontakt eines Teams trägst du in der Spieleinrichtung ein («E-Mail Teamkontakt (freiwillig)») oder später unter Spiel › «Spielinfo bearbeiten» › «Teamkontakte».",
       "q_remarksSignature": "Muss auch ein Schiedsrichter-Coach unterschreiben?",
       "a_remarksSignature": "Tippe auf «Unterschrift in den Bemerkungen hinzufügen», gib Rolle und Namen ein und unterschreibe dann. Die Unterschrift wird in den Bemerkungen gedruckt.",
       "q_technicalRemarks": "Was ist eine technische Bemerkung?",
@@ -3083,7 +3086,7 @@
       "q_serveSidesLineup": "Wie korrigiere ich Aufschlag, Seiten oder Aufstellung?",
       "a_serveSidesLineup": "In den Korrekturen: «Ersten Aufschlag ändern», «Seiten wechseln» und «Satz wieder öffnen» sowie die Karte «Auslosung». «Aufstellung korrigieren» ändert eine Startaufstellung, auch nach gespielten Spielzügen; «Vorwärts» und «Zurück» rotieren ein Team, das eine Position verschoben steht. Die Rotationen danach werden neu berechnet.",
       "q_signaturesCleared": "Warum wurden die Unterschriften gelöscht?",
-      "a_signaturesCleared": "Eine Korrektur, die das Matchblatt ändert, löscht die am Spielende gesammelten Unterschriften. Sammle sie neu. Ein genehmigtes Spiel ist schreibgeschützt: Öffne es zuerst wieder.",
+      "a_signaturesCleared": "Eine Korrektur, die das Matchblatt ändert, löscht die am Spielende gesammelten Unterschriften. Sammle sie neu. Ein bestätigtes Spiel ist schreibgeschützt: Öffne es zuerst wieder.",
       "q_editRoster": "Kann ich einen Kader während des Spiels ändern?",
       "a_editRoster": "Ja: Spiel › Heim-Aufstellung bearbeiten oder Gast-Aufstellung bearbeiten. Änderungen nach der Auslosung werden in den Korrekturen und in den Bemerkungen protokolliert. Eine dort oder unter Korrekturen › Spielernummern geänderte Nummer gilt für das ganze Spiel: jeder Eintrag davor und danach zeigt die neue Nummer.",
       "q_goBack": "Die Schiedsrichter nehmen das Spiel zurück (falscher Aufschlagspieler, falsche Positionen, irreguläre Auswechslung)?",
@@ -3187,7 +3190,7 @@
       "q_syncAtSetEnd": "Das Satzende meldet «Offline. Daten lokal gespeichert.» oder «Synchronisierung fehlgeschlagen»?",
       "a_syncAtSetEnd": "Der Satz ist auf diesem Gerät sicher. Die Meldung schliesst sich von selbst, und der Satz geht auf den Server, sobald die Verbindung zurück ist. Steht «Synchronisierung fehlgeschlagen», tippe auf «Trotzdem fortfahren» (nach 5 Sekunden geht es auch von selbst weiter). Im Browser kann die App am Satzende zusätzlich ein Backup herunterladen («Daten am Satzende automatisch herunterladen» in den Optionen).",
       "q_matchEnd": "Was passiert nach dem letzten Satz?",
-      "a_matchEnd": "Die App zeigt das Spielende mit dem Ergebnis. Bestätige die Endzeit: Die Seite Spielende öffnet sich für die Unterschriften und die Genehmigung."
+      "a_matchEnd": "Die App zeigt das Spielende mit dem Ergebnis. Bestätige die Endzeit: Die Seite Spielende öffnet sich für die Unterschriften und die Bestätigung."
     },
     "connections": {
       "q_how": "Wie verbinde ich die Tablets von Schiedsrichter und Bänken?",
@@ -3307,7 +3310,7 @@
       "q_signIn": "Es steht «Nicht angemeldet: Dieses Spiel ist nur auf diesem Gerät gespeichert»?",
       "a_signIn": "Das Erfassen läuft weiter. Melde dich an, um das Spiel in der Cloud zu speichern (Schiedsrichter, Livescore, Backup); die wartenden Änderungen werden danach sofort gesendet.",
       "q_closedServer": "Was bedeutet «Auf dem Server abgeschlossen»?",
-      "a_closedServer": "Das Spiel ist auf dem Server genehmigt oder abgeschlossen. Diese Kopie lässt sich nicht mehr erfassen oder synchronisieren. Öffne sie zum Lesen, lade die offizielle Version oder entferne sie von diesem Gerät. Nur ein Admin kann das Spiel wieder öffnen.",
+      "a_closedServer": "Das Spiel ist auf dem Server bestätigt oder abgeschlossen. Diese Kopie lässt sich nicht mehr erfassen oder synchronisieren. Öffne sie zum Lesen, lade die offizielle Version oder entferne sie von diesem Gerät. Nur ein Admin kann das Spiel wieder öffnen.",
       "q_movedDevice": "Was bedeutet «Auf anderem Gerät»?",
       "a_movedDevice": "Ein anderes Gerät hat das Spiel übernommen und führt es jetzt. Diese Kopie öffnet nur zum Lesen. Tippe nur auf «Hier wieder übernehmen», wenn du wieder auf diesem Gerät erfasst.",
       "q_refused": "Es steht «Nicht synchronisiert» mit einem Grund?",
@@ -3568,25 +3571,25 @@
     "globalNotStored": "Das Matchblatt konnte nicht online gespeichert werden. Es bleibt auf diesem Gerät: Lade jetzt das PDF herunter.",
     "errorClosing": "Fehler beim Abschliessen des Spiels: ",
     "noWinner": "Kein Sieger (Spiel abgebrochen)",
-    "pdfGenerationFailed": "Spiel ohne PDF genehmigt. Erstelle es mit «PDF erstellen», bevor du das Spiel abschliesst: Der Server braucht es.",
-    "pdfGenerationFailedTest": "Spiel genehmigt, aber das PDF konnte nicht erstellt werden. Du kannst es über die Schaltfläche eScoresheet erstellen.",
+    "pdfGenerationFailed": "Spiel ohne PDF bestätigt. Erstelle es mit «PDF erstellen», bevor du das Spiel abschliesst: Der Server braucht es.",
+    "pdfGenerationFailedTest": "Spiel bestätigt, aber das PDF konnte nicht erstellt werden. Du kannst es über die Schaltfläche eScoresheet erstellen.",
     "pdfMissing": {
-      "notice": "Das offizielle PDF dieser Genehmigung ist noch nicht zum Server unterwegs. Erstelle es, bevor du das Spiel abschliesst.",
+      "notice": "Das offizielle PDF dieser Bestätigung ist noch nicht zum Server unterwegs. Erstelle es, bevor du das Spiel abschliesst.",
       "create": "PDF erstellen",
       "queued": "Das PDF geht mit der nächsten Synchronisierung an den Server.",
-      "cancelKeepsMissing": "Abbrechen lässt das Spiel ohne PDF genehmigt: Erstelle es, bevor du das Spiel abschliesst.",
+      "cancelKeepsMissing": "Abbrechen lässt das Spiel ohne PDF bestätigt: Erstelle es, bevor du das Spiel abschliesst.",
       "closeTitle": "Ohne offizielles PDF abschliessen?",
-      "closeBody": "Kein PDF dieser Genehmigung ist zum Server unterwegs: Der Verband und das Schlussmail hätten keines. Ist das Spiel abgeschlossen, kann dieses Gerät es nicht mehr erstellen.",
+      "closeBody": "Kein PDF dieser Bestätigung ist zum Server unterwegs: Der Verband und das Schlussmail hätten keines. Ist das Spiel abgeschlossen, kann dieses Gerät es nicht mehr erstellen.",
       "closeAnyway": "Trotzdem abschliessen"
     },
     "sheetWarnings": {
-      "title": "Prüfe das Spiel vor der Genehmigung:",
-      "confirmTitle": "Trotz dieser Hinweise genehmigen?",
-      "confirm": "Trotzdem genehmigen"
+      "title": "Prüfe das Spiel vor der Bestätigung:",
+      "confirmTitle": "Trotz dieser Hinweise bestätigen?",
+      "confirm": "Trotzdem bestätigen"
     },
     "resultIssues": {
-      "title": "Dieses Ergebnis kann nicht genehmigt werden:",
-      "hint": "Korrigiere es unter «Korrekturen» und genehmige dann.",
+      "title": "Dieses Ergebnis kann nicht bestätigt werden:",
+      "hint": "Korrigiere es unter «Korrekturen» und bestätige dann.",
       "blocked": "Das Ergebnis enthält einen Satz oder ein Spielende, das nicht möglich ist. Korrigiere es zuerst unter «Korrekturen»."
     },
     "signedSheetChange": {
@@ -3608,7 +3611,7 @@
     "reopenAdminOnlyBody": "Spiel {{game}} ist auf dem Server abgeschlossen. Bitte einen Admin, es wieder zu öffnen, und tippe dann nochmals auf «Spiel wieder öffnen».",
     "reopenNeedsConnection": "Zum Wiederöffnen eines abgeschlossenen Spiels braucht es eine Verbindung zum Server.",
     "reopenAdminTitle": "Dieses abgeschlossene Spiel wieder öffnen?",
-    "reopenAdminBody": "Es geht auf dem Server zurück auf «beendet» und kann nochmals genehmigt werden. Dies wird im Protokoll festgehalten.",
+    "reopenAdminBody": "Es geht auf dem Server zurück auf «beendet» und kann nochmals bestätigt werden. Dies wird im Protokoll festgehalten.",
     "reopenReason": "Grund",
     "reopenCheckFailed": "Das Spiel konnte auf dem Server nicht geprüft werden – bitte versuche es nochmals.",
     "set": "Satz",
@@ -3631,7 +3634,7 @@
     },
     "sanctionsOverflow": "Sanktionen (Fortsetzung):",
     "noRemarks": "Keine Bemerkungen",
-    "matchDataNotApproved": "Die Spieldaten wurden noch nicht genehmigt. Möchtest du die Seite wirklich verlassen?",
+    "matchDataNotApproved": "Die Spieldaten wurden noch nicht bestätigt. Möchtest du die Seite wirklich verlassen?",
     "captainA": "Kapitän A - {{team}}",
     "captainB": "Kapitän B - {{team}}",
     "assistantScorer": "Schreiberassistent",
@@ -3642,8 +3645,8 @@
     "tapToSign": "Zum Unterschreiben tippen",
     "logsDownloaded": "Interaktionsprotokolle erfolgreich heruntergeladen",
     "logsDownloadFailed": "Die Protokolle konnten nicht heruntergeladen werden",
-    "pleaseCompleteSignatures": "Bitte alle Unterschriften vervollständigen, bevor du das Spiel genehmigst.",
-    "errorApproving": "Fehler beim Genehmigen des Spiels: {{error}}",
+    "pleaseCompleteSignatures": "Bitte alle Unterschriften vervollständigen, bevor du das Spiel bestätigst.",
+    "errorApproving": "Fehler beim Bestätigen des Spiels: {{error}}",
     "errorReopening": "Fehler beim Wiederöffnen des letzten Satzes: {{error}}",
     "noSetsReopen": "Keine Sätze zum Wiederöffnen gefunden",
     "setReopened": "Satz {{index}} für Korrekturen wieder geöffnet",
@@ -3666,7 +3669,7 @@
     "allSignaturesCollected": "Alle Unterschriften gesammelt",
     "closeMatch": "Spiel abschliessen",
     "downloading": "Wird heruntergeladen...",
-    "approveParams": "Bestätigen und genehmigen",
+    "approveParams": "Matchblatt bestätigen",
     "reopenLastSet": "Letzten Satz wieder öffnen",
     "manualAdjustments": "Manuelle Anpassungen",
     "scoresheet": "eScoresheet",
@@ -3675,7 +3678,7 @@
     "savePdf": "PDF speichern",
     "sharePdf": "PDF teilen",
     "shareAllFiles": "Alle Dateien teilen (ZIP)",
-    "approvedShareHint": "Genehmigt. Um das Matchblatt zu senden oder in «Dateien» zu sichern, nutze eScoresheet › PDF teilen.",
+    "approvedShareHint": "Bestätigt. Um das Matchblatt zu senden oder in «Dateien» zu sichern, nutze eScoresheet › PDF teilen.",
     "shareFailed": "Die Datei konnte nicht geteilt werden: {{error}}",
     "downloadLogs": "Protokolle herunterladen",
     "preparingExport": "Spielexport wird vorbereitet...",
@@ -3684,18 +3687,18 @@
     "waitCheck": "Bitte warte, die Dateien werden vorbereitet...",
     "reopenSetConfirmTitle": "Letzten Satz wieder öffnen?",
     "reopenSetConfirmBody": "Der letzte Satz wird für Korrekturen wieder geöffnet, und du kannst weiter Punkte erfassen.",
-    "reopenSetWarning": "Achtung: Alle gesammelten Unterschriften werden gelöscht und müssen nach der Genehmigung neu eingeholt werden.",
+    "reopenSetWarning": "Achtung: Alle gesammelten Unterschriften werden gelöscht und müssen nach der Bestätigung neu eingeholt werden.",
     "cancel": "Abbrechen",
     "yesReopen": "Ja, Satz wieder öffnen",
     "remarksPlaceholder": "Bemerkungen zum Spiel erfassen...",
     "resign": "Neu unterschreiben",
     "clearSignature": "Löschen",
-    "signatureLocked": "Spiel genehmigt oder abgeschlossen: die Unterschriften sind fix",
+    "signatureLocked": "Spiel bestätigt oder abgeschlossen: die Unterschriften sind fix",
     "signatureSaveFailed": "Die Unterschrift konnte nicht gespeichert werden. Versuche es noch einmal.",
     "export": {
       "cancel": "Abbrechen",
       "retry": "Erneut versuchen",
-      "approveWithoutPdf": "Ohne PDF genehmigen",
+      "approveWithoutPdf": "Ohne PDF bestätigen",
       "noPdfTitle": "Das PDF ist nicht fertig",
       "reason": {
         "closed": "Das eScoresheet-Fenster wurde geschlossen, bevor das PDF fertig war.",
@@ -3704,7 +3707,7 @@
         "blocked": "Das eScoresheet-Fenster konnte nicht geöffnet werden.",
         "failed": "Das eScoresheet konnte das PDF nicht erstellen."
       },
-      "cancelKeepsUnapproved": "Abbrechen lässt das Spiel ungenehmigt. Ohne PDF genehmigen genehmigt es jetzt: Erstelle danach das PDF mit «PDF erstellen», bevor du das Spiel abschliesst.",
+      "cancelKeepsUnapproved": "Abbrechen lässt das Spiel unbestätigt. Ohne PDF bestätigen bestätigt es jetzt: Erstelle danach das PDF mit «PDF erstellen», bevor du das Spiel abschliesst.",
       "keepWindowOpen": "Lass das eScoresheet-Fenster offen, bis das PDF fertig ist."
     },
     "testMailSent": "Matchblatt an {{to}} gesendet"
@@ -3791,7 +3794,7 @@
     "load": {
       "signin": {
         "title": "Anmeldung nötig",
-        "message": "Genehmigte Matchblätter kann nur das Schreiberkonto öffnen, das sie hochgeladen hat. Melde dich in der Schreiber-App mit diesem Konto an und öffne das Spiel unter «Meine Spiele»."
+        "message": "Bestätigte Matchblätter kann nur das Schreiberkonto öffnen, das sie hochgeladen hat. Melde dich in der Schreiber-App mit diesem Konto an und öffne das Spiel unter «Meine Spiele»."
       },
       "forbidden": {
         "title": "Nicht dein Matchblatt",
@@ -3799,7 +3802,7 @@
       },
       "notfound": {
         "title": "Matchblatt nicht gefunden",
-        "message": "Kein Matchblatt gefunden, das dieses Konto hochgeladen hat: {{path}}. Nur das Schreiberkonto, das das Spiel genehmigt hat, kann es öffnen."
+        "message": "Kein Matchblatt gefunden, das dieses Konto hochgeladen hat: {{path}}. Nur das Schreiberkonto, das das Spiel bestätigt hat, kann es öffnen."
       },
       "offline": {
         "title": "Server nicht erreichbar",
@@ -4128,7 +4131,7 @@
       "setup": "Vorbereitung",
       "live": "Live",
       "ended": "Beendet",
-      "approved": "Genehmigt",
+      "approved": "Bestätigt",
       "final": "Abgeschlossen"
     },
     "errors": {
@@ -4159,7 +4162,7 @@
       "deleteWhatGoesTitle": "Vom Server gelöscht",
       "deleteWhatGoes": "Das Konto und Profil (E-Mail-Adresse, Passwort, Name, Lizenznummer), seine Anmeldungen, Rollen, Vereine und Rechte als Vereinsverantwortliche/r, die Liste «Meine Spiele», Bearbeitungsrechte an Spielen, die Cloud-Backups und Protokolle sowie der Zugriff auf die hochgeladenen Matchblätter. Verschlüsselte Server-Backups behalten eine Kopie, bis sie ablaufen, spätestens nach etwa 6 Monaten.",
       "deleteWhatStaysTitle": "Bleibt erhalten, ohne das Konto",
-      "deleteWhatStays": "Die offiziellen Spiele, die es geschrieben hat, und ihre Matchblätter, mit dem Namen des Schreibers, wie er darauf steht; seine Genehmigungen; die gespeicherten Teams, Turniere, Vereine und Einladungscodes, die es erstellt hat; und das Protokoll, das diese Löschung ohne die E-Mail-Adresse festhält.",
+      "deleteWhatStays": "Die offiziellen Spiele, die es geschrieben hat, und ihre Matchblätter, mit dem Namen des Schreibers, wie er darauf steht; seine Bestätigungen; die gespeicherten Teams, Turniere, Vereine und Einladungscodes, die es erstellt hat; und das Protokoll, das diese Löschung ohne die E-Mail-Adresse festhält.",
       "deleteTypeEmail": "Zur Bestätigung {{email}} eingeben",
       "deleteConfirm": "Konto löschen",
       "deleted": "Das Konto von {{name}} wurde gelöscht.",
@@ -4288,7 +4291,7 @@
       "closedBy": "von {{name}}",
       "reopen": "Wieder öffnen",
       "reopenTitle": "Spiel {{game}} wieder öffnen?",
-      "reopenBody": "Das Spiel geht zurück auf «beendet»: Der Schreiber kann es korrigieren und nochmals genehmigen. Dies wird im Protokoll festgehalten.",
+      "reopenBody": "Das Spiel geht zurück auf «beendet»: Der Schreiber kann es korrigieren und nochmals bestätigen. Dies wird im Protokoll festgehalten.",
       "reopenReason": "Grund",
       "reopened": "Spiel wieder geöffnet.",
       "empty": "Keine Spiele gefunden.",
@@ -4372,7 +4375,7 @@
           "results": "Resultate",
           "sanctions": "Sanktionen",
           "remarks": "Bemerkungen",
-          "approval": "Genehmigung",
+          "approval": "Bestätigung",
           "signatures": "Unterschriften",
           "manual_changes": "Manuelle Anpassungen",
           "officials": "Offizielle",
@@ -4401,13 +4404,13 @@
       "rows_one": "{{count}} Eintrag",
       "rows_other": "{{count}} Einträge",
       "actions": {
-        "approval_pin_set": "Genehmigungs-PIN gesetzt",
-        "approval_pin_remove": "Genehmigungs-PIN entfernt",
-        "approval_pin_locked": "Genehmigungs-PIN gesperrt",
-        "approval_pin_failed": "Falsche Genehmigungs-PIN",
-        "match_approve": "Resultat mit Konto genehmigt",
-        "match_approval_revoke": "Konto-Genehmigung rückgängig gemacht",
-        "match_approval_void": "Konto-Genehmigungen ungültig",
+        "approval_pin_set": "Bestätigungs-PIN gesetzt",
+        "approval_pin_remove": "Bestätigungs-PIN entfernt",
+        "approval_pin_locked": "Bestätigungs-PIN gesperrt",
+        "approval_pin_failed": "Falsche Bestätigungs-PIN",
+        "match_approve": "Resultat mit Konto bestätigt",
+        "match_approval_revoke": "Konto-Bestätigung rückgängig gemacht",
+        "match_approval_void": "Konto-Bestätigungen ungültig",
         "sql_read": "SQL: Abfrage",
         "sql_write": "SQL: Schreiben",
         "data_insert": "Daten: Zeile hinzugefügt",
@@ -6161,7 +6164,7 @@
       "lighterSanction": "Diese Person hat bereits eine schwerere Sanktion: Jede weitere Sanktion muss schwerer sein.",
       "teamAlreadyWarned": "Die Mannschaft wurde bereits verwarnt: nur eine Verwarnung pro Mannschaft und Spiel.",
       "chooseTarget": "Wähle, wer sanktioniert wurde.",
-      "readOnlyApproved": "Das Spiel ist genehmigt. Öffne es zuerst für Korrekturen.",
+      "readOnlyApproved": "Das Spiel ist bestätigt. Öffne es zuerst für Korrekturen.",
       "notFound": "Dieser Eintrag existiert nicht mehr.",
       "useUndo": "Dieser Eintrag wird mit Rückgängig, Satz wieder öffnen oder dem Aufstellungs-Werkzeug korrigiert, nicht hier entfernt.",
       "subEvent": "Diese Zeile gehört zu einem anderen Eintrag; entferne stattdessen diesen.",
@@ -6442,7 +6445,7 @@
     },
     "banner": {
       "signaturesCleared": "Die Unterschriften wurden gelöscht, weil sich das Matchblatt geändert hat. Hole sie am Spielende neu ein.",
-      "readOnly": "Das Spiel ist genehmigt: Korrekturen sind schreibgeschützt."
+      "readOnly": "Das Spiel ist bestätigt: Korrekturen sind schreibgeschützt."
     },
     "coinToss": {
       "summary": "Team A: {{teamA}} · Erster Aufschlag in Satz 1: {{serve}}",
@@ -6617,7 +6620,7 @@
       "match_coin_toss": "Auslosung",
       "match_manual_change": "Manuelle Änderung",
       "match_signature": "Unterschrift",
-      "match_approval": "Genehmigung",
+      "match_approval": "Bestätigung",
       "match_remarks": "Bemerkungen",
       "match_forfeit": "Forfait",
       "match_roster": "Aufstellung geändert",

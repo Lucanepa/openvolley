@@ -769,7 +769,10 @@
       "penalty": "Bestrafung",
       "expulsion": "Hinausstellung",
       "disqualification": "Disqualifikation",
-      "wholeTeam": "S Team"
+      "wholeTeam": "S Team",
+      "improperRequestShort": "Nicht ordn. Anträge",
+      "delayWarningShort": "Verw. weg. Verz.",
+      "delayPenaltyShort": "Bestr. weg. Verz."
     },
     "playerMenu": {
       "liberoOut": "Libero use",
@@ -810,7 +813,7 @@
       "to": "TO",
       "sub": "US",
       "timeoutFull": "Auszeit",
-      "substitutionFull": "Auswechslung",
+      "substitutionFull": "Aus\u00adwechslung",
       "last": "Letschti",
       "rallyStatus": "Spielzugstatus",
       "lastAction": "Letschti Aktion",
@@ -1560,7 +1563,7 @@
         "scheduled": "Nonig gstartet",
         "live": "Lauft",
         "ended": "Fertig",
-        "approved": "Genehmigt"
+        "approved": "Bestätigt"
       }
     },
     "selfCheck": {
@@ -1985,10 +1988,10 @@
     "savePdf": "PDF speichere",
     "sharePdf": "PDF teile",
     "shareAllFiles": "Alli Dateie teile (ZIP)",
-    "approvedShareHint": "Genehmigt. Zum s Matchblatt schicke oder i de «Dateie» speichere, bruuch eScoresheet › PDF teile.",
+    "approvedShareHint": "Bestätigt. Zum s Matchblatt schicke oder i de «Dateie» speichere, bruuch eScoresheet › PDF teile.",
     "shareFailed": "D Datei het nöd chöne gteilt wärde: {{error}}",
     "downloadLogs": "Logs abelade",
-    "approveParams": "Bestätige und genehmige",
+    "approveParams": "Matchblatt bestätige",
     "downloading": "Abelade...",
     "reopenLastSet": "Letschte Satz wieder öffne",
     "closeMatch": "Spiil abschliesse",
@@ -1997,7 +2000,7 @@
     "closeMatchConfirmBody": "D Spiildate sind abeglade worde. Wetsch s Spiil abschliesse?",
     "reopenSetConfirmTitle": "Letschte Satz wieder öffne?",
     "reopenSetConfirmBody": "Das macht de letschte Satz für Korrekture wieder uf, und du chasch wiiter Pünkt erfasse.",
-    "reopenSetWarning": "Warnig: Alli gsammlete Underschrifte werded glöscht und müend nach de Genehmigung neu gsammlet werde.",
+    "reopenSetWarning": "Warnig: Alli gsammlete Underschrifte werded glöscht und müend nach de Bestätigung neu gsammlet werde.",
     "yesReopen": "Ja, Satz wieder öffne",
     "cancel": "Abbräche",
     "preparingExport": "Spiilexport vorbereite...",
@@ -2030,9 +2033,9 @@
     "end": "End",
     "duration": "Duur",
     "sanctionsOverflow": "Sanktione (Fortsetzig):",
-    "matchDataNotApproved": "D Spiildate sind no nöd genehmigt worde. Bisch sicher, dass du gah wetsch?",
-    "pleaseCompleteSignatures": "Bitte alli Underschrifte vor em Genehmige vervollständige.",
-    "errorApproving": "Fähler bim Genehmige: {{error}}",
+    "matchDataNotApproved": "D Spiildate sind no nöd bestätigt worde. Bisch sicher, dass du gah wetsch?",
+    "pleaseCompleteSignatures": "Bitte alli Underschrifte vor em Bestätige vervollständige.",
+    "errorApproving": "Fähler bim Bestätige: {{error}}",
     "noSetsReopen": "Kei Sätz zum Wiederöffne gfunde",
     "setReopened": "Satz {{index}} für Korrekture wieder geöffnet",
     "errorReopening": "Fähler bim Wiederöffne vom letschte Satz: {{error}}",
@@ -2046,25 +2049,25 @@
     },
     "errorClosing": "Fähler bim Abschliesse vom Spiil: ",
     "noWinner": "Kei Gwünner (Spiil abbroche)",
-    "pdfGenerationFailed": "Spiil ohni PDF genehmigt. Erstell s mit «PDF erstelle», bevor du s Spiil abschliessisch: De Server bruucht s.",
-    "pdfGenerationFailedTest": "Spiil genehmigt, aber s PDF hät nöd chönne erstellt werde. Du chasch s über de Chnopf «eScoresheet» erstelle.",
+    "pdfGenerationFailed": "Spiil ohni PDF bestätigt. Erstell s mit «PDF erstelle», bevor du s Spiil abschliessisch: De Server bruucht s.",
+    "pdfGenerationFailedTest": "Spiil bestätigt, aber s PDF hät nöd chönne erstellt werde. Du chasch s über de Chnopf «eScoresheet» erstelle.",
     "pdfMissing": {
-      "notice": "S offizielle PDF vo dere Genehmigung isch no nöd zum Server unterwägs. Erstell s, bevor du s Spiil abschliessisch.",
+      "notice": "S offizielle PDF vo dere Bestätigung isch no nöd zum Server unterwägs. Erstell s, bevor du s Spiil abschliessisch.",
       "create": "PDF erstelle",
       "queued": "S PDF gaht mit de nächschte Synchronisierig an Server.",
-      "cancelKeepsMissing": "«Abbräche» laht s Spiil ohni PDF genehmigt: Erstell s, bevor du s Spiil abschliessisch.",
+      "cancelKeepsMissing": "«Abbräche» laht s Spiil ohni PDF bestätigt: Erstell s, bevor du s Spiil abschliessisch.",
       "closeTitle": "Ohni offiziells PDF abschliesse?",
-      "closeBody": "Kei PDF vo dere Genehmigung isch zum Server unterwägs: De Verband und s Schlussmail hettid keis. Isch s Spiil abgschlosse, cha das Grät s nüme erstelle.",
+      "closeBody": "Kei PDF vo dere Bestätigung isch zum Server unterwägs: De Verband und s Schlussmail hettid keis. Isch s Spiil abgschlosse, cha das Grät s nüme erstelle.",
       "closeAnyway": "Trotzdem abschliesse"
     },
     "sheetWarnings": {
-      "title": "Prüef s Spiil vor em Genehmige:",
-      "confirmTitle": "Trotz dene Hiiwiis genehmige?",
-      "confirm": "Trotzdem genehmige"
+      "title": "Prüef s Spiil vor em Bestätige:",
+      "confirmTitle": "Trotz dene Hiiwiis bestätige?",
+      "confirm": "Trotzdem bestätige"
     },
     "resultIssues": {
-      "title": "Das Resultat cha nöd genehmigt werde:",
-      "hint": "Korrigier s under «Korrekture» und genehmig s dänn.",
+      "title": "Das Resultat cha nöd bestätigt werde:",
+      "hint": "Korrigier s under «Korrekture» und bestätig s dänn.",
       "blocked": "S Resultat hät en Satz oder es Spiilend, wo nöd möglich isch. Korrigier s zerscht under «Korrekture»."
     },
     "signedSheetChange": {
@@ -2086,17 +2089,17 @@
     "reopenAdminOnlyBody": "Spiil {{game}} isch uf em Server abgschlosse. Bitt en Admin, s wieder ufzmache, und tipp dänn nomal uf «Spiil wieder ufmache».",
     "reopenNeedsConnection": "Für s Wiederufmache vo emne abgschlossene Spiil bruucht s e Verbindig zum Server.",
     "reopenAdminTitle": "Das abgschlossene Spiil wieder ufmache?",
-    "reopenAdminBody": "Es gaht uf em Server zrugg uf «Beendet» und cha nomal genehmigt werde. Das wird im Protokoll feschtghalte.",
+    "reopenAdminBody": "Es gaht uf em Server zrugg uf «Beendet» und cha nomal bestätigt werde. Das wird im Protokoll feschtghalte.",
     "reopenReason": "Grund",
     "reopenCheckFailed": "S Spiil hät uf em Server nöd chönne prüeft werde – bitte probier s nomal.",
     "resign": "Neu underschriibe",
     "clearSignature": "Lösche",
-    "signatureLocked": "Spiil genehmigt oder abgschlosse: d Underschrifte sind fix",
+    "signatureLocked": "Spiil bestätigt oder abgschlosse: d Underschrifte sind fix",
     "signatureSaveFailed": "D Underschrift hät nöd chönne gspeicheret werde. Probier s nomal.",
     "export": {
       "cancel": "Abbräche",
       "retry": "Nomal probiere",
-      "approveWithoutPdf": "Ohni PDF genehmige",
+      "approveWithoutPdf": "Ohni PDF bestätige",
       "noPdfTitle": "S PDF isch nöd fertig",
       "reason": {
         "closed": "S eScoresheet-Fänschter isch zuegmacht worde, bevor s PDF fertig gsi isch.",
@@ -2105,7 +2108,7 @@
         "blocked": "S eScoresheet-Fänschter hät nöd chönne ufgah.",
         "failed": "S eScoresheet hät s PDF nöd chönne erstelle."
       },
-      "cancelKeepsUnapproved": "«Abbräche» laht s Spiil ungenehmigt. «Ohni PDF genehmige» genehmigt s jetzt: Erstell nachher s PDF mit «PDF erstelle», bevor du s Spiil abschliessisch.",
+      "cancelKeepsUnapproved": "«Abbräche» laht s Spiil unbestätigt. «Ohni PDF bestätige» bestätigt s jetzt: Erstell nachher s PDF mit «PDF erstelle», bevor du s Spiil abschliessisch.",
       "keepWindowOpen": "Bitte s eScoresheet-Fänschter offe la, bis s PDF fertig isch."
     },
     "testMailSent": "Matchblatt a {{to}} gschickt"
@@ -2144,7 +2147,7 @@
     "showInFolder": "Im Ordner zeige",
     "dismiss": "Schliesse",
     "fileActionFailed": "D Datei hät vo da us nöd chönne ufgmacht werde. Si isch in: {{path}}",
-    "checkTheMatch": "Spiil vor em Genehmige prüefe:",
+    "checkTheMatch": "Spiil vor em Bestätige prüefe:",
     "remarksClipped": "BEMERKIGE: De Text passt nöd is Fäld; s PDF druckt en vollständig uf Siite 2."
   },
   "setPreview": {
@@ -2197,7 +2200,7 @@
     "load": {
       "signin": {
         "title": "Aamäldig nötig",
-        "message": "Genehmigti Matchblätter cha nur s Schriiber-Konto ufmache, wo sie ufeglade hät. Mäld dich i de Schriiber-App mit dem Konto aa und mach s Spiil under «Mini Spiil» uf."
+        "message": "Bestätigti Matchblätter cha nur s Schriiber-Konto ufmache, wo sie ufeglade hät. Mäld dich i de Schriiber-App mit dem Konto aa und mach s Spiil under «Mini Spiil» uf."
       },
       "forbidden": {
         "title": "Nöd dis Matchblatt",
@@ -2205,7 +2208,7 @@
       },
       "notfound": {
         "title": "Matchblatt nöd gfunde",
-        "message": "Kei Matchblatt gfunde, wo das Konto ufeglade hät: {{path}}. Nur s Schriiber-Konto, wo s Spiil genehmigt hät, cha s ufmache."
+        "message": "Kei Matchblatt gfunde, wo das Konto ufeglade hät: {{path}}. Nur s Schriiber-Konto, wo s Spiil bestätigt hät, cha s ufmache."
       },
       "offline": {
         "title": "Server nöd erreichbar",
@@ -2762,8 +2765,8 @@
     "status": {
       "live": "Live",
       "final": "Beendet",
-      "approved": "Genehmigt",
-      "ended": "Genehmigung usstehend",
+      "approved": "Bestätigt",
+      "ended": "Bestätigung usstehend",
       "setup": "Vorbereitig"
     }
   },
@@ -3146,7 +3149,7 @@
       "q_backgroundHome": "Werum isch d App wieder uf de Startsiite?",
       "a_backgroundHome": "Nach 15 Minute oder meh im Hintergrund (e anderi App, Bildschirm us) zeigt d App d Startsiite. Nüüt wird gschlosse oder glöscht: Tipp uf «Spiil wiiterfüehre». Ziit mit iigschaltetem Bildschirm, zum Biispiel e langi Satzpause, zellt nöd.",
       "q_matchStates": "Was bedüüted d Hiiwiis bi emne Spiil?",
-      "a_matchStates": "«Wird da gfüehrt»: Das Grät füehrt s Spiil. «Uf emne andere Grät»: Es anders Grät hät s Spiil übernoh. «Uf em Server abgschlosse»: S Spiil isch genehmigt oder abgschlosse. «Nöd prüeft»: D App hät de Server nöd chöne frööge (offline, abgmäldet oder kei Antwort). «Nöd gschickti Änderige»: Es paar Änderige sind no nöd uf em Server. E abgschlossni oder übernohni Kopie gaht nur zum Läse uf.",
+      "a_matchStates": "«Wird da gfüehrt»: Das Grät füehrt s Spiil. «Uf emne andere Grät»: Es anders Grät hät s Spiil übernoh. «Uf em Server abgschlosse»: S Spiil isch bestätigt oder abgschlosse. «Nöd prüeft»: D App hät de Server nöd chöne frööge (offline, abgmäldet oder kei Antwort). «Nöd gschickti Änderige»: Es paar Änderige sind no nöd uf em Server. E abgschlossni oder übernohni Kopie gaht nur zum Läse uf.",
       "q_cleanUp": "Was macht «Ufruume»?",
       "a_cleanUp": "Isch s gliich Spiil mehrmals uf däm Grät, seit s dir d Startsiite. «Ufruume» entfernt nur d wiitere Kopie, wo nüüt Eigets händ. Es fröget vorher, und uf em Server ändert sich nüüt.",
       "q_tool": "Schweiz oder Global?",
@@ -3309,24 +3312,24 @@
       "a_signatures": "Zersch underschriibed di zwei Kapitäne under «Kapitäne». Dänn underschriibed d Offizielle i dere Reihefolg: Schreiberassistent (falls vorhande), Schriiber, 2. Schiri (falls vorhande), 1. Schiri. Tipp i jedem Fäld uf «Tipp zum Underschriibe».",
       "tip_signatures": "Tipp uf es Underschriftefäld, zum s Underschriftepad ufmache und d Underschrift sammle.",
       "q_exportPdf": "Wie exportier ich s Matchblatt als PDF?",
-      "a_exportPdf": "Tipp uf «eScoresheet» und wähl «Vorschau», «Drucke» oder «PDF speichere». Das gaht vor und nach de Genehmigung.",
+      "a_exportPdf": "Tipp uf «eScoresheet» und wähl «Vorschau», «Drucke» oder «PDF speichere». Das gaht vor und nach de Bestätigung.",
       "tip_exportPdf": "Tipp da, zum s Matchblatt aaluege, drucke oder speichere.",
       "q_downloadJson": "Wie lad ich d Spiildate abe?",
-      "a_downloadJson": "«Bestätige und genehmige» ladt es ZIP mit de Spiildate (JSON) und em PDF abe. Während em Spiil speicheret Spiil › «Spiildate abelade (JSON)» d Backup-Datei vo däm Spiil, verschlüsselt mit de Spiil-PIN und de Schiri-PIN. Mit beidne chasch s Spiil widerherstelle («Spiil widerherstelle» uf de Startsiite).",
-      "tip_downloadJson": "«Bestätige und genehmige» speicheret d Spiildate und macht s Matchblatt.",
+      "a_downloadJson": "«Matchblatt bestätige» ladt es ZIP mit de Spiildate (JSON) und em PDF abe. Während em Spiil speicheret Spiil › «Spiildate abelade (JSON)» d Backup-Datei vo däm Spiil, verschlüsselt mit de Spiil-PIN und de Schiri-PIN. Mit beidne chasch s Spiil widerherstelle («Spiil widerherstelle» uf de Startsiite).",
+      "tip_downloadJson": "«Matchblatt bestätige» speicheret d Spiildate und macht s Matchblatt.",
       "q_reopenSet": "Wie mach ich en Satz für Korrekture wieder uf?",
-      "a_reopenSet": "Tipp uf «Letschte Satz wieder öffne», zum zrugg zum Erfassigsbildschirm gah. Alli Underschrifte werded glöscht und müend neu gsammlet werde. Nach de Genehmigung macht «Spiil wieder ufmache» es Testspiil wieder uf, oder es Spiil, wo sini Genehmigung no nöd uf em Server aacho isch. Hät s de Server abgschlosse, cha s nur no en Admin wieder ufmache.",
+      "a_reopenSet": "Tipp uf «Letschte Satz wieder öffne», zum zrugg zum Erfassigsbildschirm gah. Alli Underschrifte werded glöscht und müend neu gsammlet werde. Nach de Bestätigung macht «Spiil wieder ufmache» es Testspiil wieder uf, oder es Spiil, wo sini Bestätigung no nöd uf em Server aacho isch. Hät s de Server abgschlosse, cha s nur no en Admin wieder ufmache.",
       "tip_reopenSet": "Tipp da, zum de letscht Satz wieder ufmache. Alli Underschrifte werded glöscht.",
       "q_signOnPhone": "Chan öpper uf em eigete Handy underschriibe?",
       "a_signOnPhone": "Ja. Tipp ufs Underschriftefäld, dänn uf «Uf em Handy underschriibe», und lah de Code scanne. Lah das Fänschter offe, bis d Underschrift aachunnt, und tipp dänn uf «Underschrift übernäh». Das bruucht Internet oder s Hallenetz.",
-      "q_approve": "Was macht «Bestätige und genehmige»?",
-      "a_approve": "Wänn alli Underschrifte da sind, tipp uf «Bestätige und genehmige». Hät s Matchblatt öppis Komischs, lischtet d App das zersch uf: Korrigier s oder tipp uf «Trotzdem genehmige». D App ladt es ZIP mit de Spiildate und em Matchblatt-PDF abe: Lah s Matchblatt-Fänschter offe, bis s PDF fertig isch. Nachher isch s Spiil genehmigt und uf em Server abgschlosse.",
+      "q_approve": "Was macht «Matchblatt bestätige»?",
+      "a_approve": "Wänn alli Underschrifte da sind, tipp uf «Matchblatt bestätige». Hät s Matchblatt öppis Komischs, lischtet d App das zersch uf: Korrigier s oder tipp uf «Trotzdem bestätige». D App ladt es ZIP mit de Spiildate und em Matchblatt-PDF abe: Lah s Matchblatt-Fänschter offe, bis s PDF fertig isch. Nachher isch s Spiil bestätigt und uf em Server abgschlosse.",
       "q_pdfFailed": "Es heisst, s PDF seig nöd fertig: Was jetzt?",
-      "a_pdfFailed": "«Nomal probiere» macht s PDF nomal. «Ohni PDF genehmige» genehmigt s Spiil jetzt: Erstell nachher s PDF mit «PDF erstelle», bevor du s Spiil abschliessisch, damit s zum Server chunnt. «Abbräche» laat s Spiil nöd genehmigt.",
+      "a_pdfFailed": "«Nomal probiere» macht s PDF nomal. «Ohni PDF bestätige» bestätigt s Spiil jetzt: Erstell nachher s PDF mit «PDF erstelle», bevor du s Spiil abschliessisch, damit s zum Server chunnt. «Abbräche» laat s Spiil nöd bestätigt.",
       "q_closeMatch": "Was macht «Spiil abschliesse»?",
-      "a_closeMatch": "Nach de Genehmigung markiert «Spiil abschliesse» s Spiil uf em Server als final und entfernt s vo däm Grät. Speicher oder druck s PDF vorher, wänn du e Kopie uf däm Grät bruuchsch.",
+      "a_closeMatch": "Nach de Bestätigung markiert «Spiil abschliesse» s Spiil uf em Server als final und entfernt s vo däm Grät. Speicher oder druck s PDF vorher, wänn du e Kopie uf däm Grät bruuchsch.",
       "q_finalMail": "Wer überchunnt s fertig Matchblatt per E-Mail?",
-      "a_finalMail": "Wo d Liga d Matchblätter verschickt, gaht s PDF es paar Minute nach de Genehmigung per Mail a de Schriiber, a d Schiris (a d E-Mail, wo i de Spiiliirichtig für si iitreit isch) und a de Kontakt vo jedem Team. Trag de Kontakt vo emne Team i de Spiiliirichtig ii («E-Mail Teamkontakt (freiwillig)») oder spöter i Spiil › «Spiilinfo bearbeite» › «Teamkontäkt».",
+      "a_finalMail": "Wo d Liga d Matchblätter verschickt, gaht s PDF es paar Minute nach de Bestätigung per Mail a de Schriiber, a d Schiris (a d E-Mail, wo i de Spiiliirichtig für si iitreit isch) und a de Kontakt vo jedem Team. Trag de Kontakt vo emne Team i de Spiiliirichtig ii («E-Mail Teamkontakt (freiwillig)») oder spöter i Spiil › «Spiilinfo bearbeite» › «Teamkontäkt».",
       "q_remarksSignature": "En Schiri-Coach muess au underschriibe?",
       "a_remarksSignature": "Tipp uf «Unterschrift i de Bemerkige dezuefüege», gib d Rolle und de Name ii und underschriib dänn. D Underschrift wird i de Bemerkige druckt.",
       "q_technicalRemarks": "Was isch e technischi Bemerkig?",
@@ -3354,7 +3357,7 @@
       "q_serveSidesLineup": "Wie korrigier ich Ufschlag, Siite oder Ufstellig?",
       "a_serveSidesLineup": "I de Korrekture: «Erschte Ufschlag ändere», «Siite wächsle» und «Satz wieder öffne» und d Charte «Usloosig». «Ufstellig korrigiere» änderet e Startufstellig, au nach gspilte Spielzüge; «Vorwärts» und «Zrugg» rotiered es Team, wo ei Position verschobe staht. D Rotatione dänach werded neu berächnet.",
       "q_signaturesCleared": "Werum sind d Underschrifte glöscht worde?",
-      "a_signaturesCleared": "E Korrektur, wo s Matchblatt änderet, löscht d Underschrifte vom Spiilend. Sammle si neu. Es genehmigts Spiil isch schriibgschützt: Mach s zersch wieder uf.",
+      "a_signaturesCleared": "E Korrektur, wo s Matchblatt änderet, löscht d Underschrifte vom Spiilend. Sammle si neu. Es bestätigts Spiil isch schriibgschützt: Mach s zersch wieder uf.",
       "q_editRoster": "Chan ich es Kader während em Spiil ändere?",
       "a_editRoster": "Ja: Spiil › Hei-Ufschtelig bearbeite oder Gascht-Ufschtelig bearbeite. Änderige nach de Usloosig werded i de Korrekture und i de Bemerkige protokolliert. E Nummere, wo du det oder under Korrekture › Spielernummere änderisch, gilt für s ganz Spiil: jede Iitrag vorher und nachher zeigt di neu Nummere.",
       "q_goBack": "D Schiris nämed s Spiil zrugg (falsche Ufschläger, falschi Positione, irreguläre Auswechslung)?",
@@ -3458,7 +3461,7 @@
       "q_syncAtSetEnd": "S Satzend meldet «Offline. Date lokal gspeicheret.» oder «Synchronisierig fählgschlage»?",
       "a_syncAtSetEnd": "De Satz isch uf däm Grät sicher. D Meldig gaht sälber zue, und de Satz gaht uf de Server, sobald d Verbindig zrugg isch. Staht «Synchronisierig fählgschlage», tipp uf «Glich wiitermache» (es gaht au nach 5 Sekunde sälber wiiter). Im Browser cha d App am Satzend zuesätzlich es Backup abelade («Auto-Download bim Satzend» i de Optione).",
       "q_matchEnd": "Was passiert nach em letschte Satz?",
-      "a_matchEnd": "D App zeigt s Spiilend mit em Resultat. Bestätig d Ändziit: D Spiilend-Siite gaht uf für d Underschrifte und d Genehmigung."
+      "a_matchEnd": "D App zeigt s Spiilend mit em Resultat. Bestätig d Ändziit: D Spiilend-Siite gaht uf für d Underschrifte und d Bestätigung."
     },
     "connections": {
       "q_how": "Wie verbind ich d Tablets vom Schiri und vo de Bänk?",
@@ -3578,7 +3581,7 @@
       "q_signIn": "Es staht «Nöd aagmäldet: Das Spiil isch nur uf däm Grät gspeicheret»?",
       "a_signIn": "S Erfasse lauft wiiter. Mäld dich aa, zum s Spiil i de Cloud speichere (Schiri, Livescore, Backup); di wartende Änderige werded dänn sofort gschickt.",
       "q_closedServer": "Was bedüütet «Uf em Server abgschlosse»?",
-      "a_closedServer": "S Spiil isch uf em Server genehmigt oder abgschlosse. Die Kopie chasch nüme erfasse oder synchronisiere. Mach si zum Läse uf, lad di offiziell Version oder entfern si vo däm Grät. Nur en Admin cha s Spiil wieder ufmache.",
+      "a_closedServer": "S Spiil isch uf em Server bestätigt oder abgschlosse. Die Kopie chasch nüme erfasse oder synchronisiere. Mach si zum Läse uf, lad di offiziell Version oder entfern si vo däm Grät. Nur en Admin cha s Spiil wieder ufmache.",
       "q_movedDevice": "Was bedüütet «Uf emne andere Grät»?",
       "a_movedDevice": "Es anders Grät hät s Spiil übernoh und füehrt s jetzt. Die Kopie gaht nur zum Läse uf. Tipp nur uf «Da wieder übernäh», wänn du wieder uf däm Grät erfassisch.",
       "q_refused": "Es staht «Nöd synchronisiert» mit emne Grund?",
@@ -4144,7 +4147,7 @@
       "setup": "Vorbereitung",
       "live": "Live",
       "ended": "Beendet",
-      "approved": "Genehmigt",
+      "approved": "Bestätigt",
       "final": "Abgeschlossen"
     },
     "errors": {
@@ -4175,7 +4178,7 @@
       "deleteWhatGoesTitle": "Vom Server gelöscht",
       "deleteWhatGoes": "Das Konto und Profil (E-Mail-Adresse, Passwort, Name, Lizenznummer), seine Anmeldungen, Rollen, Vereine und Rechte als Vereinsverantwortliche/r, die Liste «Meine Spiele», Bearbeitungsrechte an Spielen, die Cloud-Backups und Protokolle sowie der Zugriff auf die hochgeladenen Matchblätter. Verschlüsselte Server-Backups behalten eine Kopie, bis sie ablaufen, spätestens nach etwa 6 Monaten.",
       "deleteWhatStaysTitle": "Bleibt erhalten, ohne das Konto",
-      "deleteWhatStays": "Die offiziellen Spiele, die es geschrieben hat, und ihre Matchblätter, mit dem Namen des Schreibers, wie er darauf steht; seine Genehmigungen; die gespeicherten Teams, Turniere, Vereine und Einladungscodes, die es erstellt hat; und das Protokoll, das diese Löschung ohne die E-Mail-Adresse festhält.",
+      "deleteWhatStays": "Die offiziellen Spiele, die es geschrieben hat, und ihre Matchblätter, mit dem Namen des Schreibers, wie er darauf steht; seine Bestätigungen; die gespeicherten Teams, Turniere, Vereine und Einladungscodes, die es erstellt hat; und das Protokoll, das diese Löschung ohne die E-Mail-Adresse festhält.",
       "deleteTypeEmail": "Zur Bestätigung {{email}} eingeben",
       "deleteConfirm": "Konto löschen",
       "deleted": "Das Konto von {{name}} wurde gelöscht.",
@@ -4304,7 +4307,7 @@
       "closedBy": "von {{name}}",
       "reopen": "Wieder öffnen",
       "reopenTitle": "Spiel {{game}} wieder öffnen?",
-      "reopenBody": "Das Spiel geht zurück auf «Beendet»: Der Schreiber kann es korrigieren und nochmals genehmigen. Dies wird im Protokoll festgehalten.",
+      "reopenBody": "Das Spiel geht zurück auf «Beendet»: Der Schreiber kann es korrigieren und nochmals bestätigen. Dies wird im Protokoll festgehalten.",
       "reopenReason": "Grund",
       "reopened": "Spiel wieder geöffnet.",
       "empty": "Keine Spiele gefunden.",
@@ -4388,7 +4391,7 @@
           "results": "Resultate",
           "sanctions": "Sanktionen",
           "remarks": "Bemerkungen",
-          "approval": "Genehmigung",
+          "approval": "Bestätigung",
           "signatures": "Unterschriften",
           "manual_changes": "Manuelle Anpassungen",
           "officials": "Offizielle",
@@ -4417,13 +4420,13 @@
       "rows_one": "{{count}} Eintrag",
       "rows_other": "{{count}} Einträge",
       "actions": {
-        "approval_pin_set": "Genehmigungs-PIN gesetzt",
-        "approval_pin_remove": "Genehmigungs-PIN entfernt",
-        "approval_pin_locked": "Genehmigungs-PIN gesperrt",
-        "approval_pin_failed": "Falschi Genehmigungs-PIN",
-        "match_approve": "Resultat mit Konto genehmigt",
-        "match_approval_revoke": "Konto-Genehmigung rückgängig gemacht",
-        "match_approval_void": "Konto-Genehmigungen ungültig",
+        "approval_pin_set": "Bestätigungs-PIN gesetzt",
+        "approval_pin_remove": "Bestätigungs-PIN entfernt",
+        "approval_pin_locked": "Bestätigungs-PIN gesperrt",
+        "approval_pin_failed": "Falschi Bestätigungs-PIN",
+        "match_approve": "Resultat mit Konto bestätigt",
+        "match_approval_revoke": "Konto-Bestätigung rückgängig gemacht",
+        "match_approval_void": "Konto-Bestätigungen ungültig",
         "sql_read": "SQL: Abfrage",
         "sql_write": "SQL: Schreiben",
         "data_insert": "Daten: Zeile hinzugefügt",
@@ -6173,7 +6176,7 @@
       "lighterSanction": "Die Person hät scho e schwereri Sanktion: Jedi witeri Sanktion mues schwerer si.",
       "teamAlreadyWarned": "S Team isch scho verwarnt worde: nur ei Verwarnung pro Team und Spiil.",
       "chooseTarget": "Wähl, wer sanktioniert worde isch.",
-      "readOnlyApproved": "S Spiil isch genehmigt. Mach s zersch für Korrekture uf.",
+      "readOnlyApproved": "S Spiil isch bestätigt. Mach s zersch für Korrekture uf.",
       "notFound": "De Iitrag gits nüme.",
       "useUndo": "De Iitrag wird mit Rückgängig, Satz wieder öffne oder em Ufstelligs-Werkzüüg korrigiert, nöd da entfernt.",
       "subEvent": "Die Ziile ghört zu emne andere Iitrag; entfern stattdesse dä.",
@@ -6454,7 +6457,7 @@
     },
     "banner": {
       "signaturesCleared": "D Underschrifte sind glöscht worde, will sich s Matchblatt gänderet hät. Hol si am Spiilend neu ii.",
-      "readOnly": "S Spiil isch genehmigt: Korrekture sind schriibgschützt."
+      "readOnly": "S Spiil isch bestätigt: Korrekture sind schriibgschützt."
     },
     "coinToss": {
       "summary": "Team A: {{teamA}} · Erschte Ufschlag in Satz 1: {{serve}}",
@@ -6629,7 +6632,7 @@
       "match_coin_toss": "Usloosig",
       "match_manual_change": "Manuelli Änderig",
       "match_signature": "Underschrift",
-      "match_approval": "Genehmigung",
+      "match_approval": "Bestätigung",
       "match_remarks": "Bemerkige",
       "match_forfeit": "Forfait",
       "match_roster": "Kader gänderet",

@@ -48,8 +48,8 @@
       cancelled: 'S Underschriibe isch am Schriibergrät abbroche worde.', invalid: 'De Link isch nöd gültig.', full: 'S Fäld isch voll. Uf Fertig tippe oder Lösche, zum neu afange.'
     },
     fr: {
-      title: 'Signer comme {role}', captainOf: 'capitaine de {team}', coachOf: 'entraîneur de {team}', scorer: 'marqueur',
-      asstScorer: 'marqueur adjoint', ref1: '1er arbitre', ref2: '2e arbitre', team: 'l’équipe {l}', match: 'Match n° {n}',
+      title: 'Signer comme {role}', captainOf: 'capitaine de {team}', coachOf: 'coach de {team}', scorer: 'marqueur',
+      asstScorer: 'marqueur adjoint', ref1: 'premier arbitre', ref2: 'second arbitre', team: 'l’équipe {l}', match: 'Match n° {n}',
       hint: 'Signer ici', clear: 'Effacer', done: 'Terminé', pad: 'Zone de signature', loading: 'Ouverture…', sending: 'Envoi…',
       sent: 'Signature envoyée. Tu peux fermer cette page.', sendFailed: 'Échec de l’envoi. Vérifie la connexion et touche Terminé à nouveau.',
       openFailed: 'Appareil du marqueur injoignable. Vérifie la connexion ; nouvel essai…',
