@@ -1,9 +1,10 @@
 /**
- * Approval with an account, end to end through server.js
- * (docs/account-approval-spec.md 6.1): the HTTP flow with its rate limits,
- * the /api/approvals prefix next to the relay's GET /api/match/:id, no
- * /api/db or live-socket access to match_approvals, secret hygiene of the
- * server output and the audit log, and the server without OV_PIN_SECRET.
+ * Approval with an account is OFF (owner 27.11.2026: signatures only, the
+ * approval PIN is being removed). server.js builds lib/approvals.js without a
+ * secret even when OV_PIN_SECRET is set, so every approval endpoint answers
+ * 503 OV_APPROVAL_UNAVAILABLE and the PIN status says unavailable; apps
+ * already installed then show "feature off on the server" next to the
+ * signature. The server still needs OV_PIN_SECRET (game PINs, match tokens).
  *
  * Needs PG_TEST_URL (a throwaway Postgres, see tests/helpers/pgTestDb.js) or
  * OV_E2E_DOCKER=1.
@@ -15,7 +16,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import pg from 'pg'
-import { SKIP, bootServer, api, provisionDatabase, sleep, openSocket } from './helpers/e2eServer.js'
+import { SKIP, bootServer, api, provisionDatabase, sleep } from './helpers/e2eServer.js'
 import { grantRoles } from './helpers/pgTestDb.js'
 
 const PIN_SECRET = 'x'.repeat(40)
@@ -25,7 +26,7 @@ const MARKER_PIN = '804613'
 const MARKER_PASSWORD = 'Pw-marker-7c1e'
 const SETS = [[1, 25, 20], [2, 23, 25], [3, 25, 18]]
 
-describe('account approvals end to end', { skip: SKIP }, () => {
+describe('account approvals are off end to end', { skip: SKIP }, () => {
   let db, srv, sql, storageRoot, statusDir
   let ipSeq = 10
   const nextIp = () => `203.0.113.${ipSeq++}`
@@ -116,221 +117,21 @@ describe('account approvals end to end', { skip: SKIP }, () => {
     if (statusDir) rmSync(statusDir, { recursive: true, force: true })
   })
 
-  it('sets a PIN, approves, lists and undoes over HTTP (no-store, the relay does not swallow the GET)', async () => {
-    const { owner, ref1, ref2 } = users
+  it('the PIN status says unavailable and every approval endpoint answers 503, although OV_PIN_SECRET is set', async () => {
+    const { owner, ref1 } = users
     const st = await call(ref1, 'GET', '/api/account/approval-pin')
     assert.equal(st.status, 200, st.text)
-    assert.equal(st.headers.get('cache-control'), 'no-store')
-    assert.deepEqual(st.json.data, { available: true, eligible: true, set: false, set_at: null, locked_until: null, locked_scope: null, disabled: false })
-    expectCode(await call(ref1, 'POST', '/api/account/approval-pin', { password: 'wrong-one', pin: MARKER_PIN }), 403, 'OV_PASSWORD_INVALID')
-    const set = await call(ref1, 'POST', '/api/account/approval-pin', { password: MARKER_PASSWORD, pin: MARKER_PIN })
-    assert.equal(set.status, 200, set.text)
-    assert.equal((await call(ref2, 'POST', '/api/account/approval-pin', { password: PASSWORD, pin: '730164' })).status, 200)
-    expectCode(await call(owner, 'GET', '/api/account/approval-pin/remove'), 405, 'OV_METHOD_NOT_ALLOWED')
-    // no session: 401
-    assert.equal((await api(srv.base, '/api/account/approval-pin', { method: 'GET', proto: null })).status, 401)
-
+    assert.equal(st.json.data.available, false)
+    expectCode(await call(ref1, 'POST', '/api/account/approval-pin', { password: MARKER_PASSWORD, pin: MARKER_PIN }), 503, 'OV_APPROVAL_UNAVAILABLE')
     const m = await endedMatch(owner)
-    // a wrong PIN (the marker, but for another official) and the right one
-    expectCode(await call(owner, 'POST', '/api/approvals', approveBody(m, 'referee2', ref2, MARKER_PIN)), 403, 'OV_APPROVAL_PIN_INVALID')
-    const ok = await call(owner, 'POST', '/api/approvals', { ...approveBody(m, 'referee1', ref1, MARKER_PIN), device_id: '6f1c2a9b-0000-4000-8000-000000000001' })
-    assert.equal(ok.status, 200, ok.text)
-    assert.equal(ok.headers.get('cache-control'), 'no-store')
-    const rec = ok.json.data.approval
-    assert.equal(rec.name, 'Muster Anna')
-    assert.equal(rec.slot, 'referee1')
-
-    const list = await call(owner, 'GET', `/api/approvals?external_id=${encodeURIComponent(m.ext)}`)
-    assert.equal(list.status, 200, list.text)
-    assert.deepEqual(list.json.data.approvals.map((a) => a.id), [rec.id])
-    assert.equal(list.json.data.match.status, 'ended')
-    const own = await call(ref1, 'GET', `/api/approvals?external_id=${encodeURIComponent(m.ext)}`)
-    assert.equal(own.json.data.approvals[0].mine, true)
-
-    // the admin search finds it by the short id on the PDF
-    const adm = await call(users.admin, 'GET', `/api/admin/approvals?q=${rec.short_id}`)
-    assert.equal(adm.status, 200, adm.text)
-    assert.equal(adm.json.data.approvals[0].email, ref1.email)
-    expectCode(await call(owner, 'GET', `/api/admin/approvals?q=${rec.short_id}`), 403, 'OV_FORBIDDEN')
-    // the admin match list carries it
-    const ml = await call(users.admin, 'GET', '/api/admin/matches?state=open')
-    assert.deepEqual(ml.json.data.matches.find((x) => x.external_id === m.ext).approvals.map((a) => a.short_id), [rec.short_id])
-
-    const undo = await call(owner, 'DELETE', `/api/approvals/${rec.id}`)
-    assert.equal(undo.status, 200, undo.text)
-    assert.equal(undo.json.data.approval.revoked_reason, 'undo')
-    expectCode(await call(owner, 'DELETE', '/api/approvals/not-an-id'), 404, 'OV_NOT_FOUND')
+    expectCode(await call(owner, 'POST', '/api/approvals', approveBody(m, 'referee1', ref1, MARKER_PIN)), 503, 'OV_APPROVAL_UNAVAILABLE')
+    const b = await endedBeachMatch(owner)
+    expectCode(await call(owner, 'POST', '/api/approvals', approveBody(b, 'referee1', ref1, MARKER_PIN)), 503, 'OV_APPROVAL_UNAVAILABLE')
+    const { rows: [n] } = await sql.query('SELECT count(*)::int AS n FROM public.match_approvals')
+    assert.equal(n.n, 0)
   })
 
-  it('review fix: a scorer with the referee role cannot approve a referee slot under a borrowed name; the official lists their approvals', async () => {
-    const dual = await account('dualE2e', { first: 'Dora', last: 'Doppel', roles: ['scorer', 'referee'] })
-    assert.equal((await call(dual, 'POST', '/api/account/approval-pin', { password: PASSWORD, pin: '583027' })).status, 200)
-    const m = await endedMatch(dual)
-    const rename = await api(srv.base, '/api/db', {
-      token: dual.token,
-      headers: { 'cf-connecting-ip': dual.ip },
-      body: { table: 'profiles', action: 'update', params: { data: { first_name: 'Anna', last_name: 'Muster' }, filters: [{ type: 'eq', column: 'user_id', value: dual.id }] } }
-    })
-    assert.equal(rename.status, 200, rename.text)
-    // the match names the appointed referee's address: the renamed account is not that official
-    expectCode(await call(dual, 'POST', '/api/approvals', approveBody(m, 'referee1', dual, '583027')), 403, 'OV_APPROVAL_NOT_MATCH_OFFICIAL')
-    // nor when the scorer types its own address for the referee in the setup
-    await nameOfficials(m, dual, users.ref2)
-    expectCode(await call(dual, 'POST', '/api/approvals', approveBody(m, 'referee1', dual, '583027')), 403, 'OV_APPROVAL_SCORER_NOT_REFEREE')
-    await nameOfficials(m, users.ref1, users.ref2)
-    assert.equal((await sql.query('SELECT count(*)::int AS n FROM public.match_approvals WHERE match_id = $1', [m.id])).rows[0].n, 0)
-    // a malformed PIN is a 400, not a counted failure
-    expectCode(await call(dual, 'POST', '/api/approvals', approveBody(m, 'referee1', users.ref1, '123')), 400, 'OV_APPROVAL_PIN_FORMAT')
-    // the real referee approves; the referee sees it in their own list
-    const ok = await call(dual, 'POST', '/api/approvals', approveBody(m, 'referee1', users.ref1, MARKER_PIN))
-    assert.equal(ok.status, 200, ok.text)
-    const mine = await call(users.ref1, 'GET', '/api/account/approvals')
-    assert.equal(mine.status, 200, mine.text)
-    assert.equal(mine.headers.get('cache-control'), 'no-store')
-    const rec = mine.json.data.approvals.find((a) => a.id === ok.json.data.approval.id)
-    assert.ok(rec, mine.text)
-    assert.equal(rec.requested_by_name, 'Anna Muster', 'the sender as their profile says now')
-    assert.equal(rec.match.external_id, m.ext)
-    expectCode(await call(users.ref1, 'POST', '/api/account/approvals', {}), 405, 'OV_METHOD_NOT_ALLOWED')
-  })
-
-  it('OpenBeach: beach accounts hold a PIN and approve a beach match; the roles never cross sports', async () => {
-    const bea = await account('beaE2e', { first: 'Bea', last: 'Strand', roles: ['beach:scorer'] })
-    const bref = await account('brefE2e', { first: 'Rita', last: 'Sand', roles: ['beach:referee'] })
-    // a beach role makes the account eligible for an approval PIN
-    const st = await call(bref, 'GET', '/api/account/approval-pin')
-    assert.equal(st.json.data.eligible, true, st.text)
-    assert.equal((await call(bref, 'POST', '/api/account/approval-pin', { password: PASSWORD, pin: '307519' })).status, 200)
-    assert.equal((await call(bea, 'POST', '/api/account/approval-pin', { password: PASSWORD, pin: '640281' })).status, 200)
-    const beach = await endedBeachMatch(bea)
-    const body = (slot, official, pin) => ({ external_id: beach.ext, slot, email: official.email, pin, result: { sets: BEACH_SETS } })
-
-    // an indoor referee cannot approve a beach match (after a correct PIN: the role)
-    await nameOfficials(beach, users.ref1)
-    const indoorRef = await call(bea, 'POST', '/api/approvals', body('referee1', users.ref1, MARKER_PIN))
-    expectCode(indoorRef, 403, 'OV_APPROVAL_ROLE_REQUIRED')
-    assert.deepEqual(indoorRef.json.error.details, { role: 'beach:referee' })
-    // the beach referee and the beach scorer approve, bound to team 1 / team 2's points
-    await nameOfficials(beach, bref)
-    const ok = await call(bea, 'POST', '/api/approvals', body('referee1', bref, '307519'))
-    assert.equal(ok.status, 200, ok.text)
-    assert.equal(ok.json.data.approval.result_key, 'ov-result-v1|1:21:19,2:18:21,3:15:12')
-    assert.equal(ok.json.data.approval.result_matches, true)
-    assert.equal((await call(bea, 'POST', '/api/approvals', body('scorer', bea, '640281'))).status, 200)
-    const list = await call(bea, 'GET', `/api/approvals?external_id=${encodeURIComponent(beach.ext)}`)
-    assert.deepEqual(list.json.data.approvals.map((a) => [a.slot, a.result_matches]), [['referee1', true], ['scorer', true]])
-    const { rows: audit } = await sql.query("SELECT app FROM public.audit_log WHERE action = 'match.approve' AND match_id = $1", [beach.id])
-    assert.deepEqual(audit.map((r) => r.app), ['beach', 'beach'])
-
-    // the beach referee cannot approve an indoor match ...
-    const indoor = await endedMatch(users.owner, { ref1: bref })
-    const beachRefIndoor = await call(users.owner, 'POST', '/api/approvals', approveBody(indoor, 'referee1', bref, '307519'))
-    expectCode(beachRefIndoor, 403, 'OV_APPROVAL_ROLE_REQUIRED')
-    assert.deepEqual(beachRefIndoor.json.error.details, { role: 'referee' })
-    // ... and a beach-only scorer is not a scoring table for an indoor match
-    const beasIndoor = await endedMatch(bea)
-    const table = await call(bea, 'POST', '/api/approvals', approveBody(beasIndoor, 'referee1', users.ref1, MARKER_PIN))
-    expectCode(table, 403, 'OV_APPROVAL_CALLER_ROLE')
-    assert.deepEqual(table.json.error.details, { roles: ['scorer', 'referee'] })
-    // nor an indoor scorer (made an editor) one for a beach match
-    await sql.query('INSERT INTO public.match_editors (match_id, user_id) VALUES ($1, $2)', [beach.id, users.owner.id])
-    const indoorTable = await call(users.owner, 'POST', '/api/approvals', body('referee2', bref, '307519'))
-    expectCode(indoorTable, 403, 'OV_APPROVAL_CALLER_ROLE')
-    assert.deepEqual(indoorTable.json.error.details, { roles: ['beach:scorer', 'beach:referee'] })
-  })
-
-  it('/api/db cannot read match_approvals and live sockets never carry it', async () => {
-    const { owner, ref1 } = users
-    const m = await endedMatch(owner)
-    const live = await openSocket(`${srv.wsUrl}/?purpose=live`)
-    try {
-      live.send({ type: 'subscribe-db', id: 'appr', subs: [{ table: 'match_approvals', event: '*' }] })
-      const ack = await live.waitFor((x) => x.id === 'appr', 5000, 'subscribe ack')
-      assert.equal(ack.type, 'subscribe-db-error', JSON.stringify(ack))
-      live.send({ type: 'subscribe-db', id: 'm', subs: [{ table: 'matches', event: '*', column: 'external_id', value: m.ext }] })
-      await live.waitFor((x) => x.id === 'm' && x.type === 'subscribe-db-ack', 5000, 'matches ack')
-
-      const ok = await call(owner, 'POST', '/api/approvals', approveBody(m, 'referee1', ref1, MARKER_PIN))
-      assert.equal(ok.status, 200, ok.text)
-      for (const who of [owner, null]) {
-        const r = await api(srv.base, '/api/db', { token: who?.token, proto: null, body: { table: 'match_approvals', action: 'select', params: { columns: '*' } } })
-        assert.equal(r.status, 400, r.text)
-        assert.equal(r.json.data, null)
-        assert.ok(['OV_TABLE_NOT_ALLOWED', 'OV_INVALID_REQUEST'].includes(r.json.error.code), r.text)
-        assert.equal(r.text.includes('Muster'), false)
-      }
-      await sleep(300)
-      assert.equal(live.raw.some((t) => t.includes('match_approvals') && !t.includes('subscribe-db-error')), false)
-      assert.equal(live.raw.some((t) => t.includes('Muster Anna')), false)
-    } finally {
-      live.ws.close()
-    }
-  })
-
-  it('limits: the 11th wrong PIN of a caller is 429; a success is refunded', async () => {
-    const caller = await account('limitOwner', { first: 'Lim', last: 'Owner', roles: ['scorer'] })
-    const m = await endedMatch(caller, { ref2: { email: 'ghost@example.ch' } })
-    const m2 = await endedMatch(caller)
-    const ghost = (match) => ({ ...approveBody(match, 'referee2', { email: 'ghost@example.ch' }, '111112') })
-    for (let i = 0; i < 9; i++) expectCode(await call(caller, 'POST', '/api/approvals', ghost(m)), 403, 'OV_APPROVAL_PIN_INVALID')
-    // a success and other refusals are refunded
-    assert.equal((await call(caller, 'POST', '/api/approvals', approveBody(m2, 'referee1', users.ref1, MARKER_PIN))).status, 200)
-    expectCode(await call(caller, 'POST', '/api/approvals', { ...ghost(m), slot: 'nope' }), 400, 'OV_INVALID_REQUEST')
-    expectCode(await call(caller, 'POST', '/api/approvals', ghost(m)), 403, 'OV_APPROVAL_PIN_INVALID') // the 10th failure
-    const limited = await call(caller, 'POST', '/api/approvals', ghost(m))
-    expectCode(limited, 429, 'OV_TOO_MANY_ATTEMPTS')
-    assert.equal(limited.headers.get('retry-after'), '600')
-    // the GET of the same family is not part of this budget
-    assert.equal((await call(caller, 'GET', `/api/approvals?external_id=${encodeURIComponent(m2.ext)}`)).status, 200)
-
-    // wrong passwords on set PIN: 5 per 15 minutes
-    const pw = await account('pwRef', { roles: ['referee'] })
-    for (let i = 0; i < 5; i++) expectCode(await call(pw, 'POST', '/api/account/approval-pin', { password: `bad-${i}`, pin: '518203' }), 403, 'OV_PASSWORD_INVALID')
-    const pwLimited = await call(pw, 'POST', '/api/account/approval-pin', { password: PASSWORD, pin: '518203' })
-    expectCode(pwLimited, 429, 'OV_TOO_MANY_ATTEMPTS')
-    assert.equal(pwLimited.headers.get('retry-after'), '900')
-  })
-
-  it('secret hygiene: no marker PIN or password in the server output or the audit log', async () => {
-    const out = srv.output.join('')
-    assert.ok(out.length > 0)
-    for (const marker of [MARKER_PIN, MARKER_PASSWORD]) {
-      assert.equal(out.includes(marker), false, `server output contains ${marker}`)
-    }
-    const { rows } = await sql.query('SELECT action, details::text AS d FROM public.audit_log')
-    assert.ok(rows.some((r) => r.action === 'match.approve'))
-    assert.ok(rows.some((r) => r.action === 'approval_pin.set'))
-    for (const r of rows) {
-      for (const marker of [MARKER_PIN, MARKER_PASSWORD]) assert.equal(r.d.includes(marker), false, `${r.action} details contain ${marker}`)
-      assert.equal(r.d.includes(users.ref1.email), false)
-    }
-  })
-
-  it('OV_BEACH_REFEREE_ADDRESS=required: a beach referee slot needs its stored address; the default keeps the older rule (PERM08-NO-SWITCH)', async () => {
-    const bea = await account('beaSwitch', { first: 'Bea', last: 'Switch', roles: ['beach:scorer'] })
-    const bref = await account('brefSwitch', { first: 'Rita', last: 'Switch', roles: ['beach:referee'] })
-    assert.equal((await call(bref, 'POST', '/api/account/approval-pin', { password: PASSWORD, pin: '418265' })).status, 200)
-    const body = (m) => ({ external_id: m.ext, slot: 'referee1', email: bref.email, pin: '418265', result: { sets: BEACH_SETS } })
-    // the default backend (no switch): a beach slot without a stored address keeps the older rule
-    const older = await endedBeachMatch(bea)
-    assert.equal((await call(bea, 'POST', '/api/approvals', body(older))).status, 200)
-    // a backend with the switch on (the same database and sessions)
-    const strict = await bootServer({ ...env(), OV_PIN_SECRET: PIN_SECRET, OV_BEACH_REFEREE_ADDRESS: 'required' })
-    try {
-      const callStrict = (user, b) => api(strict.base, '/api/approvals', { method: 'POST', token: user.token, body: b, proto: null, headers: { 'cf-connecting-ip': user.ip } })
-      const m = await endedBeachMatch(bea)
-      expectCode(await callStrict(bea, body(m)), 409, 'OV_APPROVAL_OFFICIAL_EMAIL_MISSING')
-      // with the address the match setup stored, the appointed referee approves
-      await nameOfficials(m, bref)
-      const ok = await callStrict(bea, body(m))
-      assert.equal(ok.status, 200, ok.text)
-      assert.match(strict.output.join(''), /\[Config\] OV_BEACH_REFEREE_ADDRESS=required/)
-    } finally {
-      await strict.stop()
-    }
-  })
-
-  it('without OV_PIN_SECRET the database backend does not start (no plaintext PINs, no approvals off)', async () => {
+  it('without OV_PIN_SECRET the database backend still does not start (game PINs are never plaintext)', async () => {
     await assert.rejects(bootServer({ ...env(), OV_PIN_SECRET: '' }), /OV_PIN_SECRET is required/)
   })
 })
