@@ -16,6 +16,11 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+// App always passes every status (App.jsx connectionStatuses); the dialog's
+// heading and countdown wait for every row (StartupConnectivityModal
+// allAnswered), so each test gives the fallback services an answer too
+const full = (statuses, fallback = 'connected') => ({ api: fallback, server: fallback, scoreboard: fallback, match: 'no_match', ...statuses })
+
 describe('StartupConnectivityModal while offline', () => {
   it('a reload without network resumes silently: no blocking modal, no persistent offline mode', () => {
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
@@ -45,7 +50,7 @@ describe('StartupConnectivityModal while offline', () => {
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
     const onDismiss = vi.fn()
     const onGoOffline = vi.fn()
-    render(<StartupConnectivityModal open connectionStatuses={{ db: 'connected', supabase: 'offline', websocket: 'disconnected' }} onDismiss={onDismiss} onGoOffline={onGoOffline} />)
+    render(<StartupConnectivityModal open connectionStatuses={full({ db: 'connected', supabase: 'offline', websocket: 'disconnected' }, 'disconnected')} onDismiss={onDismiss} onGoOffline={onGoOffline} />)
     expect(screen.getByText(/Scoring still works offline/)).toBeInTheDocument()
     fireEvent.click(screen.getByText('Dismiss'))
     expect(onDismiss).toHaveBeenCalledTimes(1)
@@ -58,7 +63,7 @@ describe('StartupConnectivityModal while offline', () => {
 
   it('desktop app at a venue without internet: local server connected, cloud sync reads Offline (neutral) with a note', () => {
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
-    render(<StartupConnectivityModal open connectionStatuses={{ db: 'connected', supabase: 'offline', websocket: 'connected' }} onDismiss={() => {}} onGoOffline={() => {}} />)
+    render(<StartupConnectivityModal open connectionStatuses={full({ db: 'connected', supabase: 'offline', websocket: 'connected' }, 'disconnected')} onDismiss={() => {}} onGoOffline={() => {}} />)
     expect(screen.getByText('Connected via local server')).toBeInTheDocument()
     expect(screen.getByText(/cloud sync starts as soon as this device is online/)).toBeInTheDocument()
     const offline = screen.getByText('Offline')
@@ -69,7 +74,7 @@ describe('StartupConnectivityModal while offline', () => {
 
   it('desktop app online: cloud sync Connected, no offline note', () => {
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
-    render(<StartupConnectivityModal open connectionStatuses={{ db: 'connected', supabase: 'connected', websocket: 'connected' }} onDismiss={() => {}} onGoOffline={() => {}} />)
+    render(<StartupConnectivityModal open connectionStatuses={full({ db: 'connected', supabase: 'connected', websocket: 'connected' })} onDismiss={() => {}} onGoOffline={() => {}} />)
     expect(screen.getByText('All services connected!')).toBeInTheDocument()
     expect(screen.getByText('Cloud sync').parentElement).toHaveTextContent(/Connected/)
     expect(screen.queryByText(/cloud sync starts as soon/)).toBeNull()
@@ -79,7 +84,7 @@ describe('StartupConnectivityModal while offline', () => {
     vi.useFakeTimers()
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
     const onDismiss = vi.fn()
-    render(<StartupConnectivityModal open connectionStatuses={{ db: 'connected', supabase: 'connected', websocket: 'disconnected' }} onDismiss={onDismiss} onGoOffline={() => {}} />)
+    render(<StartupConnectivityModal open connectionStatuses={full({ db: 'connected', supabase: 'connected', websocket: 'disconnected' })} onDismiss={onDismiss} onGoOffline={() => {}} />)
     expect(screen.getByText('(5s)')).toBeInTheDocument()
     act(() => { vi.advanceTimersByTime(6000) })
     expect(onDismiss).toHaveBeenCalledTimes(1)
@@ -94,7 +99,7 @@ describe('StartupConnectivityModal while offline', () => {
       return (
         <>
           <span>{open ? 'modal open' : 'modal closed'}</span>
-          <StartupConnectivityModal open={open} connectionStatuses={{ db: 'connected', supabase: 'connected', websocket: 'disconnected' }} onDismiss={() => setOpen(false)} onGoOffline={() => {}} />
+          <StartupConnectivityModal open={open} connectionStatuses={full({ db: 'connected', supabase: 'connected', websocket: 'disconnected' })} onDismiss={() => setOpen(false)} onGoOffline={() => {}} />
         </>
       )
     }
@@ -115,7 +120,7 @@ describe('StartupConnectivityModal while offline', () => {
       return (
         <>
           <span>{open ? 'modal open' : 'modal closed'}</span>
-          <StartupConnectivityModal open={open} connectionStatuses={{ db: 'connected', supabase: 'connected', websocket: 'disconnected' }} onDismiss={() => setOpen(false)} onGoOffline={() => {}} />
+          <StartupConnectivityModal open={open} connectionStatuses={full({ db: 'connected', supabase: 'connected', websocket: 'disconnected' })} onDismiss={() => setOpen(false)} onGoOffline={() => {}} />
         </>
       )
     }
@@ -136,7 +141,7 @@ describe('StartupConnectivityModal while offline', () => {
     vi.useFakeTimers()
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
     let reopen, setStatuses
-    const SYNCED = { db: 'connected', supabase: 'connected', websocket: 'disconnected' }
+    const SYNCED = full({ db: 'connected', supabase: 'connected', websocket: 'disconnected' })
     function Parent() {
       const [open, setOpen] = useState(true)
       const [statuses, setS] = useState(SYNCED)

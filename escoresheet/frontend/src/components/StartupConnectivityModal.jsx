@@ -72,6 +72,15 @@ export default function StartupConnectivityModal({
   // scorer chooses (Dismiss or Go Offline), as before.
   const canContinue = primaryOk || (hasErrors && dbOk)
 
+  // Every row has answered. Until then the heading reads 'Connecting...' and
+  // no countdown runs: the heading said 'All services connected!' (and the
+  // 5 s countdown ran) as soon as the database and the cloud answered, over
+  // rows still reading 'Connecting'. Dismiss is offered as soon as the sync
+  // works (canContinue), only the countdown waits.
+  const allAnswered = DISPLAY_KEYS.every(key => !isPending(connectionStatuses[key]))
+  const allFine = DISPLAY_KEYS.every(key => isStatusOk(connectionStatuses[key]))
+  const settledOk = primaryOk && allAnswered
+
   // Reloaded without network: nothing to wait for, resume silently. The header's
   // connection indicator shows 'Offline'; offline mode is NOT switched on (that
   // would persist and hide this check and the sign-in banner on later loads).
@@ -93,11 +102,11 @@ export default function StartupConnectivityModal({
     }
   }, [open, browserOffline, onDismiss])
 
-  // Countdown once the sync works. The updater only counts down: calling
+  // Countdown once the sync works and every row has answered. The updater only counts down: calling
   // onDismiss (a parent setState) from inside it would update App while this
   // component renders. The effect below dismisses when it reaches 0.
   useEffect(() => {
-    if (!open || !primaryOk || hasAutoDismissed.current) return
+    if (!open || !settledOk || hasAutoDismissed.current) return
 
     setCountdown(AUTO_DISMISS_SECONDS)
 
@@ -110,15 +119,15 @@ export default function StartupConnectivityModal({
       counting.current = false
       clearInterval(interval)
     }
-  }, [open, primaryOk])
+  }, [open, settledOk])
 
   // Auto-dismiss when the countdown reaches 0 (once per opening)
   useEffect(() => {
-    if (open && primaryOk && counting.current && countdown === 0 && !hasAutoDismissed.current) {
+    if (open && settledOk && counting.current && countdown === 0 && !hasAutoDismissed.current) {
       hasAutoDismissed.current = true
       onDismiss?.()
     }
-  }, [open, primaryOk, countdown, onDismiss])
+  }, [open, settledOk, countdown, onDismiss])
 
   if (!open || browserOffline) return null
 
@@ -180,11 +189,19 @@ export default function StartupConnectivityModal({
           sideways (390 px high) still reaches the buttons */}
       <div role="dialog" aria-modal="true" aria-labelledby="startup-connectivity-title" className="max-h-[85vh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
         <h3 id="startup-connectivity-title" className="mb-3 text-center text-lg font-bold text-stone-900">
-          {primaryOk
-            ? (supabaseOk
+          {/* From the rows: 'Connecting...' while one has not answered; then
+              'All services connected!' only when every row is fine, 'Connected
+              via local server' when the relay carries the sync without the
+              cloud, and the plain 'Connection status' for any other result (a
+              fallback service not reached, no sync path: the note below says
+              which) */}
+          {!allAnswered
+            ? t('startupConnectivity.connecting', 'Connecting...')
+            : primaryOk && allFine
               ? t('startupConnectivity.allConnected', 'All services connected!')
-              : t('startupConnectivity.connectedViaServer', 'Connected via local server'))
-            : t('startupConnectivity.connecting', 'Connecting...')}
+              : primaryOk && !supabaseOk
+                ? t('startupConnectivity.connectedViaServer', 'Connected via local server')
+                : t('connectionStatus.title', 'Connection status')}
         </h3>
 
         <div className="divide-y divide-stone-100">
@@ -239,7 +256,7 @@ export default function StartupConnectivityModal({
               className={cn('inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-slate-800', FOCUS_RING)}
             >
               {t('startupConnectivity.dismiss', 'Dismiss')}
-              {primaryOk && (
+              {settledOk && (
                 <span className="text-xs font-normal tabular-nums text-white/70">
                   ({countdown}s)
                 </span>
