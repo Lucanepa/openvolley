@@ -215,9 +215,12 @@ describe('option labels', () => {
   });
 
   it('"Best of 5" / "Best of 3" in sentence case', () => {
-    for (const [, dict] of LOCALES) {
-      expect(dict.matchSetup.bestOf5).toBe('Best of 5');
-      expect(dict.matchSetup.bestOf3).toBe('Best of 3');
+    // French spells the format out; the other locales keep "Best of"
+    const BEST_OF = { fr: ['Au meilleur des 5 sets', 'Au meilleur des 3 sets'] };
+    for (const [l, dict] of LOCALES) {
+      const [five, three] = BEST_OF[l] || ['Best of 5', 'Best of 3'];
+      expect(dict.matchSetup.bestOf5).toBe(five);
+      expect(dict.matchSetup.bestOf3).toBe(three);
     }
   });
 });
