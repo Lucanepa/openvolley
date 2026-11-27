@@ -4173,7 +4173,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
     return (
       <section className="min-w-0 flex-1 rounded-xl border border-stone-200 bg-stone-50/60 p-3" aria-labelledby={`roster-import-title-${side}`} data-testid={`roster-import-${side}`} data-mode={mode}>
         <div className="flex flex-col gap-3">
-          <h3 id={`roster-import-title-${side}`} className="m-0 text-sm font-bold text-stone-900">{t('matchSetup.rosterImport.title')}</h3>
+          {/* the owner: "write in bold 'Roster import'": a section heading, one step under the page's "Roster" */}
+          <h3 id={`roster-import-title-${side}`} className="m-0 text-lg sm:text-xl font-bold tracking-tight text-stone-900">{t('matchSetup.rosterImport.title')}</h3>
           <SegmentedControl
             ariaLabel={t('matchSetup.rosterImport.title')}
             className="[&_button]:h-11 [&_button]:min-w-0 [&_button]:px-2 [&_button]:text-sm"
