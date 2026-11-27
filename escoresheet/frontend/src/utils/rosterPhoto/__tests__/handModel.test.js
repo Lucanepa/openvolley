@@ -33,13 +33,14 @@ describe('handModel: what the handwriting reader is handed', () => {
 
   it('batchesOf: the same padded width together, HAND_BATCH at most; batchTensor: three channels, 0 to the right', () => {
     expect(HAND_BATCH).toBe(8)
-    expect(paddedWidth(20)).toBe(320)
+    expect(paddedWidth(20)).toBe(128)
     expect(paddedWidth(400)).toBe(400)
     const inputs = [{ w: 20 }, { w: 400 }, { w: 300 }, ...Array.from({ length: 8 }, () => ({ w: 50 }))]
     expect(batchesOf(inputs)).toEqual([
-      { width: 320, items: [0, 2, 3, 4, 5, 6, 7, 8] },
-      { width: 320, items: [9, 10] },
-      { width: 400, items: [1] }
+      { width: 128, items: [0, 3, 4, 5, 6, 7, 8, 9] },
+      { width: 128, items: [10] },
+      { width: 400, items: [1] },
+      { width: 300, items: [2] }
     ])
     const two = [{ w: 2, data: Float32Array.from({ length: 2 * 48 }, () => 0.5) }, { w: 3, data: Float32Array.from({ length: 3 * 48 }, () => -0.5) }]
     const t = batchTensor(two, [0, 1], 4)

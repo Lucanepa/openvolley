@@ -8,7 +8,7 @@
  *   ort-wasm-simd-threaded.mjs       onnxruntime-web's loader of its engine
  *   ort-wasm-simd-threaded.wasm.js   its engine: the WebAssembly inside a script
  *                                    (F-Droid's scanner refuses .wasm files)
- *   PP-OCRv6_rec_tiny.onnx           the model (Apache-2.0), pinned below
+ *   PP-OCRv6_rec_tiny.onnx           the model (Apache-2.0, vendor/ppocr/), pinned below
  *   NOTICE.txt                       the model's attribution and licence
  *
  * Plain constants (no import): the Vite plugin reads them in Node too.
@@ -23,7 +23,8 @@ export const HAND_NOTICE_FILE = 'NOTICE.txt'
 
 // The model as RapidOCR 3.10.0 records it (rapidocr/default_models.yaml in its
 // PyPI wheel, multi_PP-OCRv6_rec_tiny: the release record of the URL and the
-// SHA-256): the build downloads it from there and refuses any other bytes
+// SHA-256), committed as vendor/ppocr/PP-OCRv6_rec_tiny.onnx (no build needs a
+// network): the build refuses any other bytes
 export const HAND_MODEL = Object.freeze({
   file: 'PP-OCRv6_rec_tiny.onnx',
   url: 'https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv6/rec/PP-OCRv6_rec_tiny.onnx',

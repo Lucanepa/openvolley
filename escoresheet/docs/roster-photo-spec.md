@@ -193,7 +193,9 @@ fit those sizes, are where the photo's rows are fixed now.
   extension): Tesseract's engine ships as `.wasm.js` and the languages decompressed
   (`.traineddata`); the handwriting reader's engine as `ort-wasm-simd-threaded.wasm.js` (the
   build writes onnxruntime-web's WebAssembly into it as base64, `export default "…"`, the worker
-  hands the bytes to onnxruntime-web as `env.wasm.wasmBinary`) and its model as `.onnx` (passes);
+  hands the bytes to onnxruntime-web as `env.wasm.wasmBinary`) and its model as `.onnx` (passes;
+  committed in `vendor/ppocr/` with its `NOTICE.txt`, so no build needs a network, checked by its
+  SHA-256 at build time, `OV_HAND_MODEL` only overrides the file);
   the worker imports onnxruntime-web's `ort.wasm.min.mjs` (alias `onnxruntime-web/wasm`), not its
   default build, which would have Vite copy the `.wasm` into `assets/`.
 - **iOS**: the camera text names the photo of the Einsatzliste (`NSCameraUsageDescription`).
@@ -321,15 +323,18 @@ fitted down the page) in place of the margin's groups of ink. Owner: "ok B. just
   ink parts whose middle is on the row, no speck, no rule, nothing touching the column) in grey;
   every other group (inside the table, right of it, a circled number's inside) as Tesseract is
   handed it (black on white). Each crop scaled to 48 px high (antialiased bilinear, as Pillow:
-  `handModel.js`), padded to 320 wide, the answer decoded greedily (CTC) with only blank, 0-9, C, K,
+  `handModel.js`), padded to 128 wide (RapidOCR pads to 320: on the real photos 128 read one mark
+  fewer right, 63 against 64, with fewer wrong, and the marks a quarter faster), the answer decoded
+  greedily (CTC) with only blank, 0-9, C, K,
   L allowed; a reading below 0.3 is no mark. `withHandReadings` merges them unchanged: **every
   handwritten mark stays amber**.
 - Measured in the app's own path (Chromium, the 14 photos, counts only; PR body): 12 readable
-  photos 64 of 77 marks right (Tesseract 34), 8 wrong, 5 missing, 8 extra, photo 14 13 of 16 (5),
+  photos 63 of 77 marks right (Tesseract 34), 7 wrong, 7 missing, 8 extra, photo 14 12 of 16 (5),
   no wrong field without amber or red; rows, SV numbers, names, dates and officials as before.
   Time (the renderer slowed 5 times, 8 cores, Chrome's 2 GB: one worker, the calibration of
-  section 3.8; the engine started 5 s ahead): the marks 1.0 s a photo on average (Tesseract's
-  second reading 0.7 s), the owner's photo 2.4 s; the reader had always loaded by then. Its files
+  section 3.8; the engine started 5 s ahead): the marks 0.7 to 0.8 s a photo on average
+  (Tesseract's second reading 0.7 s), the owner's photo 1.3 to 2.3 s; the reader had always loaded
+  by then. Its files
   add about 25 MB to the build (the engine 19.8 MB as base64, 5.9 MB compressed; the model 4.5 MB).
 
 ### 3.10 The list's language (2026-11-27)

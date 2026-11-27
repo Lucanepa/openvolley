@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from 'fs'
+import { readFileSync } from 'fs'
 import { gunzipSync } from 'zlib'
 import { createHash } from 'crypto'
 import { createRequire } from 'module'
@@ -21,9 +21,10 @@ import { HAND_GLUE_FILE, HAND_MODEL, HAND_NOTICE_FILE, HAND_ORT_VERSION, HAND_WA
  *
  *   ort-wasm-simd-threaded.mjs          onnxruntime-web's loader of its engine
  *   ort-wasm-simd-threaded.wasm.js      its engine, the WebAssembly as base64 in a script
- *   PP-OCRv6_rec_tiny.onnx              the model, downloaded once from RapidOCR's
- *                                       release record and checked by its SHA-256
- *   NOTICE.txt                          the model's attribution, its licence and the engine's
+ *   PP-OCRv6_rec_tiny.onnx              the model, committed in vendor/ppocr/ (no network
+ *                                       at build time), checked by its SHA-256
+ *   NOTICE.txt                          vendor/ppocr/NOTICE.txt: the model's attribution,
+ *                                       its licence and the engine's
  *
  * Bundled with the app, never from a CDN: the import works offline, on a
  * LAN-only venue box, and under the pages' script-src 'self'. Only the LSTM
@@ -37,11 +38,9 @@ import { HAND_GLUE_FILE, HAND_MODEL, HAND_NOTICE_FILE, HAND_ORT_VERSION, HAND_WA
  * OCR_FILES_ROUTE): the web loads them at the first Match setup
  * (ocrWarmup.js). The Android and desktop apps carry them in their files.
  *
- * The model: from OV_HAND_MODEL (a copy on disk, for a build without
- * network) when its SHA-256 is right, else from the cache in
- * node_modules/.cache/ov-hand-model, else downloaded (and cached). Other
- * bytes fail the build. OV_HAND_MODEL=skip builds without it (an emergency:
- * the handwriting reader then cannot load and Tesseract reads the marks).
+ * The model: vendor/ppocr/PP-OCRv6_rec_tiny.onnx, or the file OV_HAND_MODEL
+ * names (an override); bytes other than handFiles.js HAND_MODEL.sha256 fail
+ * the build. Nothing is downloaded.
  */
 
 const require = createRequire(import.meta.url)
@@ -80,107 +79,30 @@ export function wasmScript (wasm, version = HAND_ORT_VERSION) {
   return Buffer.from(`/*! onnxruntime-web ${version} (MIT, Microsoft Corporation): ort-wasm-simd-threaded.wasm, base64 (vite-plugin-ocr-assets.js) */\nexport default "${Buffer.from(wasm).toString('base64')}"\n`)
 }
 
-const MIT_ORT = `MIT License
+// the model and its notice, committed (vendor/ppocr/: the model as RapidOCR 3.10.0 distributes it)
+export const HAND_MODEL_PATH = join(HERE, 'vendor', 'ppocr', HAND_MODEL.file)
+export const HAND_NOTICE_PATH = join(HERE, 'vendor', 'ppocr', HAND_NOTICE_FILE)
 
-Copyright (c) Microsoft Corporation
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-`
-
-/** The notice beside the model: where it comes from, its licence (Apache-2.0) and the engine's (MIT). */
+/** The notice beside the model (vendor/ppocr/NOTICE.txt): where it comes from, its licence (Apache-2.0) and the engine's (MIT). */
 export function handNotice () {
-  const apache = readFileSync(require.resolve('tesseract.js-core/LICENSE'), 'utf8')
-  return Buffer.from(`${HAND_MODEL.file}
-
-PP-OCRv6 rec tiny, the text recognition model of PaddleOCR
-(https://github.com/PaddlePaddle/PaddleOCR), converted to ONNX by RapidOCR
-(https://github.com/RapidAI/RapidOCR) and distributed by it (release 3.10.0,
-${HAND_MODEL.url},
-SHA-256 ${HAND_MODEL.sha256}), unchanged.
-
-Converted from an official PaddleOCR model to the indicated inference format
-and packaged for use with RapidOCR. The upstream model weights are copyright
-Baidu and/or the applicable PaddleOCR rights holders and are licensed under
-the Apache License, Version 2.0 (below).
-
-${HAND_GLUE_FILE}, ${HAND_WASM_JS_FILE}
-
-ONNX Runtime Web ${HAND_ORT_VERSION} (https://github.com/microsoft/onnxruntime),
-its WebAssembly engine (written into a script as base64, unchanged otherwise),
-under the MIT License (below).
-
--------------------------------------------------------------------------------
-
-${apache}
--------------------------------------------------------------------------------
-
-${MIT_ORT}`)
+  return readFileSync(HAND_NOTICE_PATH)
 }
 
 /**
- * The model's bytes (see above): checked against its SHA-256; null with
- * OV_HAND_MODEL=skip.
- * @param {{ cacheDir?: string, local?: string, fetchFn?: typeof fetch, log?: (msg: string) => void, model?: { file: string, url: string, sha256: string, bytes: number } }} [opts]
+ * The model's bytes: vendor/ppocr/'s, or OV_HAND_MODEL's file (an override),
+ * checked against the pinned SHA-256 (another file fails the build).
+ * @param {{ path?: string, model?: { file: string, sha256: string } }} [opts]
  */
-export async function handModelBytes ({
-  cacheDir = process.env.OV_HAND_MODEL_CACHE || join(HERE, 'node_modules', '.cache', 'ov-hand-model'),
-  local = process.env.OV_HAND_MODEL,
-  fetchFn = globalThis.fetch,
-  log = (msg) => console.log(msg),
-  model = HAND_MODEL
-} = {}) {
-  if (local === 'skip') {
-    log(`[ocr-assets] OV_HAND_MODEL=skip: built WITHOUT ${model.file}, the marks are read by Tesseract`)
-    return null
-  }
-  const cached = join(cacheDir, `${model.sha256}.onnx`)
-  for (const p of [local, cached].filter(Boolean)) {
-    if (!existsSync(p)) continue
-    const buf = readFileSync(p)
-    if (sha256(buf) === model.sha256) return buf
-    if (p === local) throw new Error(`OV_HAND_MODEL (${p}) is not ${model.file} (SHA-256 ${model.sha256})`)
-  }
-  let lastErr = null
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      log(`[ocr-assets] downloading ${model.file} (${(model.bytes / 1e6).toFixed(1)} MB, attempt ${attempt})`)
-      const res = await fetchFn(model.url, { redirect: 'follow' })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const buf = Buffer.from(await res.arrayBuffer())
-      const got = sha256(buf)
-      if (got !== model.sha256) throw new Error(`SHA-256 ${got}, not ${model.sha256}`)
-      mkdirSync(cacheDir, { recursive: true })
-      writeFileSync(`${cached}.part`, buf)
-      renameSync(`${cached}.part`, cached)
-      return buf
-    } catch (err) {
-      lastErr = err
-    }
-  }
-  throw new Error(`The handwriting model ${model.file} could not be downloaded from ${model.url} (${lastErr?.message || lastErr}); put a copy on disk and set OV_HAND_MODEL to its path`)
+export function handModelBytes ({ path = process.env.OV_HAND_MODEL || HAND_MODEL_PATH, model = HAND_MODEL } = {}) {
+  let buf
+  try { buf = readFileSync(path) } catch (err) { throw new Error(`The handwriting model ${model.file} is missing (${path}): ${err.message}`) }
+  const got = sha256(buf)
+  if (got !== model.sha256) throw new Error(`${path} is not ${model.file}: SHA-256 ${got}, not ${model.sha256}`)
+  return buf
 }
 
-/**
- * [{ fileName, read() }] of every file, fileName relative to the build's root.
- * @param {{ model?: Buffer }} [opts] the handwriting model's bytes (handModelBytes); without, no model file
- */
-export function ocrFiles ({ model = null } = {}) {
+/** [{ fileName, read() }] of every file, fileName relative to the build's root. */
+export function ocrFiles () {
   const dir = `ocr/${ocrVersion()}`
   const hand = `ocr/hand-${ortVersion()}`
   return [
@@ -192,7 +114,7 @@ export function ocrFiles ({ model = null } = {}) {
     })),
     { fileName: `${hand}/${HAND_GLUE_FILE}`, read: () => readFileSync(join(ortDist(), HAND_GLUE_FILE)) },
     { fileName: `${hand}/${HAND_WASM_JS_FILE}`, read: () => wasmScript(readFileSync(join(ortDist(), 'ort-wasm-simd-threaded.wasm'))) },
-    ...(model ? [{ fileName: `${hand}/${HAND_MODEL.file}`, read: () => model }] : []),
+    { fileName: `${hand}/${HAND_MODEL.file}`, read: () => handModelBytes() },
     { fileName: `${hand}/${HAND_NOTICE_FILE}`, read: () => handNotice() }
   ]
 }
@@ -206,10 +128,8 @@ const TYPES = { js: 'text/javascript', mjs: 'text/javascript', txt: 'text/plain;
  * @param {{ enabled?: boolean }} [opts] false: a build without the scorer's Match Setup
  */
 export function ocrAssets ({ enabled = true } = {}) {
-  let model = null
-  const loadModel = () => (model ??= handModelBytes())
   let files = null
-  const all = async () => (files ??= ocrFiles({ model: await loadModel() }))
+  const all = () => (files ??= ocrFiles())
   // (a file read once: the base64 engine is ~20 MB)
   const cache = new Map()
   const bytesOf = (f) => { if (!cache.has(f.fileName)) cache.set(f.fileName, f.read()); return cache.get(f.fileName) }
@@ -217,26 +137,24 @@ export function ocrAssets ({ enabled = true } = {}) {
     name: 'ov-ocr-assets',
     configureServer (server) {
       if (!enabled) return
-      // (fetched while the server starts; a failure shows when a photo is read)
-      loadModel().catch((err) => server.config.logger.warn(`[ocr-assets] ${err.message}`))
-      server.middlewares.use(async (req, res, next) => {
+      server.middlewares.use((req, res, next) => {
         const path = String(req.url || '').split('?')[0].replace(/^\/+/, '')
-        if (!path.startsWith('ocr/')) return next()
-        let list
-        try { list = await all() } catch (err) { res.statusCode = 503; res.end(String(err.message)); return }
-        const file = list.find((f) => f.fileName === path)
+        const file = path.startsWith('ocr/') && all().find((f) => f.fileName === path)
         if (!file) return next()
+        let body
+        try { body = bytesOf(file) } catch (err) { res.statusCode = 500; res.end(String(err.message)); return }
         res.setHeader('Content-Type', TYPES[path.split('.').pop()] || 'application/octet-stream')
-        res.end(bytesOf(file))
+        res.end(body)
       })
     },
-    async buildStart () {
+    buildStart () {
       if (!enabled) return
-      await all()
+      // the model's SHA-256 checked before anything is built
+      handModelBytes()
     },
-    async generateBundle () {
+    generateBundle () {
       if (!enabled) return
-      for (const f of await all()) this.emitFile({ type: 'asset', fileName: f.fileName, source: bytesOf(f) })
+      for (const f of all()) this.emitFile({ type: 'asset', fileName: f.fileName, source: bytesOf(f) })
     }
   }
 }

@@ -4,7 +4,8 @@
  * measured it on the real photos (2026-11-27): a crop of grey pixels scaled
  * to 48 pixels high (antialiased bilinear, as Pillow's BILINEAR), its three
  * colour channels the same grey, (v / 255 - 0.5) / 0.5, padded on the right
- * with 0 to at least 320 wide (RapidOCR's 3x48x320); the answer decoded
+ * with 0 to at least 128 wide (RapidOCR pads to 320: the same marks, slower);
+ * the answer decoded
  * greedily (CTC) with only blank, the digits, C, K and L allowed, the
  * reading's confidence its least sure letter. Pure: the worker and the tests
  * use it as it is.
@@ -12,8 +13,9 @@
 import { HAND_CLASSES } from './handFiles'
 
 export const HAND_INPUT_HEIGHT = 48
-// narrower inputs are padded to this width (the model's training shape)
-export const HAND_INPUT_MIN_WIDTH = 320
+// narrower inputs are padded to this width: 128 read the real photos' marks as
+// well as RapidOCR's 320 (its 3x48x320) and 2.5 times faster (2026-11-27)
+export const HAND_INPUT_MIN_WIDTH = 128
 // a crop is never narrower than this before the padding
 const MIN_WIDTH = 16
 // at most this many crops in one run of the model (a few MB each on a tablet)
