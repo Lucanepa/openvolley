@@ -3,8 +3,22 @@ import { useTranslation } from 'react-i18next'
 import { Check, CloudOff, Loader2, X } from 'lucide-react'
 import { cn, FOCUS_RING } from '../ui'
 
-// All services shown to the user
+// All services shown to the user, each with its row from the dialog's first
+// frame: a service whose check has not answered yet reads 'Connecting'. The
+// list used to start with Database and Cloud sync only and add API, Server,
+// WebSocket and Scoreboard as each check answered 'connected' (App's
+// checkConnectionStatuses runs after the first render), so a 2-row dialog grew
+// to 6 rows half a second to a second later and read as a second dialog
+// (owner 27.11.2026).
 const DISPLAY_KEYS = ['db', 'supabase', 'api', 'server', 'websocket', 'scoreboard']
+
+// The fallback services: the app needs the database and one sync path (cloud
+// or relay, primaryOk below), so one of these not reached is no issue of its
+// own. It reads quiet (a dash, stone text), never a red cross; before it was
+// left out of the list.
+const FALLBACK_KEYS = new Set(['api', 'server', 'websocket', 'scoreboard'])
+
+const isPending = (status) => !status || status === 'unknown' || status === 'connecting'
 
 const AUTO_DISMISS_SECONDS = 5
 
@@ -58,6 +72,15 @@ export default function StartupConnectivityModal({
   // scorer chooses (Dismiss or Go Offline), as before.
   const canContinue = primaryOk || (hasErrors && dbOk)
 
+  // Every row has answered. Until then the heading reads 'Connecting...' and
+  // no countdown runs: the heading said 'All services connected!' (and the
+  // 5 s countdown ran) as soon as the database and the cloud answered, over
+  // rows still reading 'Connecting'. Dismiss is offered as soon as the sync
+  // works (canContinue), only the countdown waits.
+  const allAnswered = DISPLAY_KEYS.every(key => !isPending(connectionStatuses[key]))
+  const allFine = DISPLAY_KEYS.every(key => isStatusOk(connectionStatuses[key]))
+  const settledOk = primaryOk && allAnswered
+
   // Reloaded without network: nothing to wait for, resume silently. The header's
   // connection indicator shows 'Offline'; offline mode is NOT switched on (that
   // would persist and hide this check and the sign-in banner on later loads).
@@ -79,11 +102,11 @@ export default function StartupConnectivityModal({
     }
   }, [open, browserOffline, onDismiss])
 
-  // Countdown once the sync works. The updater only counts down: calling
+  // Countdown once the sync works and every row has answered. The updater only counts down: calling
   // onDismiss (a parent setState) from inside it would update App while this
   // component renders. The effect below dismisses when it reaches 0.
   useEffect(() => {
-    if (!open || !primaryOk || hasAutoDismissed.current) return
+    if (!open || !settledOk || hasAutoDismissed.current) return
 
     setCountdown(AUTO_DISMISS_SECONDS)
 
@@ -96,23 +119,17 @@ export default function StartupConnectivityModal({
       counting.current = false
       clearInterval(interval)
     }
-  }, [open, primaryOk])
+  }, [open, settledOk])
 
   // Auto-dismiss when the countdown reaches 0 (once per opening)
   useEffect(() => {
-    if (open && primaryOk && counting.current && countdown === 0 && !hasAutoDismissed.current) {
+    if (open && settledOk && counting.current && countdown === 0 && !hasAutoDismissed.current) {
       hasAutoDismissed.current = true
       onDismiss?.()
     }
-  }, [open, primaryOk, countdown, onDismiss])
+  }, [open, settledOk, countdown, onDismiss])
 
   if (!open || browserOffline) return null
-
-  // Show DB + cloud always, show fallback services only when connected
-  const visibleKeys = [
-    'db', 'supabase',
-    ...['api', 'server', 'websocket', 'scoreboard'].filter(key => connectionStatuses[key] === 'connected')
-  ]
 
   const labelMap = {
     api: t('connectionStatus.api', 'API'),
@@ -124,25 +141,25 @@ export default function StartupConnectivityModal({
   }
 
 
-  const getStatusIcon = (status) => {
-    if (status === 'unknown' || status === 'connecting') {
+  const getStatusIcon = (status, key) => {
+    if (isPending(status)) {
       return <Loader2 size={18} className="animate-spin text-stone-400" aria-hidden="true" />
     }
     // Offline is a normal state in a hall without internet, not an error
     if (status === 'offline') {
       return <CloudOff size={18} className="text-stone-500" aria-hidden="true" />
     }
-    if (status === 'not_available' || status === 'not_configured') {
-      return <span className="text-base leading-none text-stone-500" aria-hidden="true">–</span>
-    }
+    const dash = <span className="text-base leading-none text-stone-500" aria-hidden="true">–</span>
+    if (status === 'not_available' || status === 'not_configured') return dash
     if (isStatusOk(status)) {
       return <Check size={18} strokeWidth={2.5} className="text-green-600" aria-hidden="true" />
     }
+    if (FALLBACK_KEYS.has(key)) return dash
     return <X size={18} strokeWidth={2.5} className="text-red-600" aria-hidden="true" />
   }
 
   const getStatusText = (status) => {
-    if (status === 'unknown' || status === 'connecting') return t('connectionStatus.connecting', 'Connecting')
+    if (isPending(status)) return t('connectionStatus.connecting', 'Connecting')
     if (status === 'connected' || status === 'synced' || status === 'syncing' || status === 'live') return t('connectionStatus.connected', 'Connected')
     if (status === 'not_available') return t('connectionStatus.naStatic', 'N/A (static)')
     if (status === 'not_configured') return t('connectionStatus.notConfigured', 'Not configured')
@@ -153,10 +170,11 @@ export default function StartupConnectivityModal({
     return t('connectionStatus.unknown', 'Unknown')
   }
 
-  const getTextClass = (status) => {
-    if (status === 'unknown' || status === 'connecting') return 'text-stone-500'
+  const getTextClass = (status, key) => {
+    if (isPending(status)) return 'text-stone-500'
     if (status === 'not_available' || status === 'not_configured' || status === 'offline') return 'text-stone-500'
     if (isStatusOk(status)) return 'text-green-700'
+    if (FALLBACK_KEYS.has(key)) return 'text-stone-500'
     return 'text-red-700'
   }
 
@@ -167,30 +185,42 @@ export default function StartupConnectivityModal({
       onClick={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
     >
-      <div role="dialog" aria-modal="true" aria-labelledby="startup-connectivity-title" className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+      {/* max-h + scroll: all six rows from the start, so a phone held
+          sideways (390 px high) still reaches the buttons */}
+      <div role="dialog" aria-modal="true" aria-labelledby="startup-connectivity-title" className="max-h-[85vh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
         <h3 id="startup-connectivity-title" className="mb-3 text-center text-lg font-bold text-stone-900">
-          {primaryOk
-            ? (supabaseOk
+          {/* From the rows: 'Connecting...' while one has not answered; then
+              'All services connected!' only when every row is fine, 'Connected
+              via local server' when the relay carries the sync without the
+              cloud, and the plain 'Connection status' for any other result (a
+              fallback service not reached, no sync path: the note below says
+              which) */}
+          {!allAnswered
+            ? t('startupConnectivity.connecting', 'Connecting...')
+            : primaryOk && allFine
               ? t('startupConnectivity.allConnected', 'All services connected!')
-              : t('startupConnectivity.connectedViaServer', 'Connected via local server'))
-            : t('startupConnectivity.connecting', 'Connecting...')}
+              : primaryOk && !supabaseOk
+                ? t('startupConnectivity.connectedViaServer', 'Connected via local server')
+                : t('connectionStatus.title', 'Connection status')}
         </h3>
 
         <div className="divide-y divide-stone-100">
-          {visibleKeys.map((key) => {
+          {DISPLAY_KEYS.map((key) => {
             const status = connectionStatuses[key] || 'unknown'
             return (
               <div
                 key={key}
+                data-service={key}
+                data-status={status}
                 className={cn('flex min-h-10 items-center gap-3 py-2 transition-opacity', status === 'unknown' && 'opacity-70')}
               >
                 <div className="flex w-6 shrink-0 justify-center">
-                  {getStatusIcon(status)}
+                  {getStatusIcon(status, key)}
                 </div>
                 <span className="min-w-[90px] text-sm font-semibold text-stone-900">
                   {labelMap[key] || key}
                 </span>
-                <span className={cn('ml-auto text-xs font-medium', getTextClass(status))}>
+                <span className={cn('ml-auto text-xs font-medium', getTextClass(status, key))}>
                   {getStatusText(status)}
                 </span>
               </div>
@@ -226,7 +256,7 @@ export default function StartupConnectivityModal({
               className={cn('inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-slate-800', FOCUS_RING)}
             >
               {t('startupConnectivity.dismiss', 'Dismiss')}
-              {primaryOk && (
+              {settledOk && (
                 <span className="text-xs font-normal tabular-nums text-white/70">
                   ({countdown}s)
                 </span>
