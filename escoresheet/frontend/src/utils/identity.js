@@ -19,6 +19,22 @@ export function appVersion() {
   }
 }
 
+/** The commit the running build was made from (vite define __BUILD_COMMIT__), or ''. */
+export function buildCommit() {
+  try {
+    // eslint-disable-next-line no-undef
+    return typeof __BUILD_COMMIT__ !== 'undefined' ? String(__BUILD_COMMIT__).slice(0, 12) : ''
+  } catch {
+    return ''
+  }
+}
+
+/** The version with its build: "26.11.7 (5592d7f)", or the version alone. */
+export function appVersionWithBuild() {
+  const commit = buildCommit()
+  return commit ? `${appVersion()} (${commit})` : appVersion()
+}
+
 /**
  * Id of the account whose (unexpired) session is stored on this device, or
  * null. Same rule as useSyncQueue's storedSessionUserId: works offline and

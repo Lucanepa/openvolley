@@ -3188,7 +3188,7 @@
       "a_importPdf": "In “Edit roster”, keep “Local” selected and tap “Upload PDF”. Choose the team's roster PDF or the Einsatzliste, then tap “Import PDF”. It replaces the players and the bench officials. With more than 14 players, tick who plays. Then check the dates of birth, enter missing shirt numbers, and set the captain and the liberos. A date of birth on 1 January is often a placeholder (01.01.1900 when the date is not known) or an import error: the roster lists these people above the players. Correct the dates you know. The coin toss does not ask about them.",
       "tip_importPdf": "Tap here to import the players from a roster PDF.",
       "q_importPhoto": "Can I import the Einsatzliste from a photo?",
-      "a_importPhoto": "Yes. In “Edit roster”, keep “Local” selected and tap “Photo of the list”. Take a photo of the printed list or choose a picture of it (a screenshot works too; zoom in so the table fills it). Drag the four corners onto the page, then tap “Read the list”: the photo is read on this device, not sent and not kept. Check the rows: a red field must be fixed, an amber one checked. Shirt numbers, the captain (C, K or a circled number) and liberos (L) written on the list are taken for this game; numbers left blank come from the saved team. Nothing changes until you tap “Use”. A PDF of the list is read more reliably than a photo.",
+      "a_importPhoto": "Yes. In “Edit roster”, keep “Local” selected and tap “Photo of the list”. Take a photo of the printed list or choose a picture of it (a screenshot works too; zoom in so the table fills it). Drag the four corners onto the page, then tap “Read the list”. Check the rows: a red field must be fixed, an amber one checked. Shirt numbers, the captain (C, K or a circled number) and liberos (L) written on the list are taken for this game; numbers left blank come from the saved team. Nothing changes until you tap “Use”. A PDF of the list is read more reliably than a photo.",
       "tip_importPhoto": "Tap here to read the Einsatzliste from a photo.",
       "q_liberos": "How do I designate liberos?",
       "a_liberos": "In the roster, choose “Libero 1” or “Libero 2” in the libero column. A team has at most 2 liberos. With more than 12 players it needs 2.",
@@ -7345,8 +7345,7 @@
       "tipLight": "Good light, no shadow across the names.",
       "tipWhole": "The whole page in the picture, sharp.",
       "take": "Take a photo",
-      "choose": "Choose a picture",
-      "private": "Read on this device: the photo is not sent or kept."
+      "choose": "Choose a picture"
     },
     "crop": {
       "description": "Drag the four corners onto the corners of the page. The thick edge is the top: Turn moves it.",
@@ -7362,11 +7361,12 @@
     "reading": {
       "prepare": "Preparing the text recognition…",
       "read": "Reading the list… {{percent}} %",
-      "marks": "Reading the handwritten numbers… {{percent}} %"
+      "marks": "Reading the handwritten numbers… {{percent}} %",
+      "elapsed": "{{elapsed}} s elapsed",
+      "elapsedLeft": "{{elapsed}} s elapsed · about {{left}} s left"
     },
     "confirm": {
       "description": "Check every row and correct what was misread. Nothing changes until you tap Use.",
-      "method": "Read on this device (text recognition)",
       "fromSaved_one": "{{count}} name from the saved team",
       "fromSaved_other": "{{count}} names from the saved team",
       "toFix_one": "{{count}} field to fix (red)",
@@ -7382,7 +7382,8 @@
       "apply_one": "Use {{count}} player",
       "apply_other": "Use {{count}} players",
       "struck_one": "Left out, struck out on the list: {{names}}",
-      "struck_other": "Left out, struck out on the list ({{count}}): {{names}}"
+      "struck_other": "Left out, struck out on the list ({{count}}): {{names}}",
+      "readIn": "Read in {{seconds}} s · version {{build}}"
     },
     "col": {
       "number": "No.",
