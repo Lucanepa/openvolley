@@ -510,15 +510,17 @@ export const MAX_WORKERS = OCR_LANGS.length
 /**
  * How many workers read a page at once on this device: one core left for
  * the page itself, at most one a language, one alone on a device with
- * little memory (Chrome's deviceMemory below 2; a Galaxy Tab A7 Lite has 8
- * cores and 3 GB, which Chrome reports as 2: three workers).
+ * little memory: Chrome's deviceMemory 2 or less. Measured on a Galaxy Tab
+ * A7 Lite (8 cores, 3 GB, reported as 2; activity log photo.read, 27.11):
+ * three workers took 36-42 s, one worker with the three languages ~20 s;
+ * three workers, each holding the three languages, are too much memory for it.
  */
 export function ocrWorkerCount ({
   cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : undefined,
   memory = typeof navigator !== 'undefined' ? navigator.deviceMemory : undefined
 } = {}) {
   let n = Number.isFinite(cores) && cores > 1 ? Math.min(MAX_WORKERS, cores - 1) : 1
-  if (Number.isFinite(memory) && memory > 0 && memory < 2) n = 1
+  if (Number.isFinite(memory) && memory > 0 && memory <= 2) n = 1
   return Math.max(1, n)
 }
 
