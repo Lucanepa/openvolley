@@ -1090,6 +1090,25 @@ runs**: an older backend's catalog still lists the columns while `deploy.sh` mig
 switch (its `*` selects fail until it reloads, its selects naming a dob column fail for good, its
 schedule sync names referee_1_dob).
 
+**League calendars instead of the login (`VM_ICAL_FEEDS`, 27.11.2026).** Since 25.11.2026
+VolleyManager refuses the servers that used the shared login, and the schedule sync reads
+VolleyManager's public league calendars instead (`/iCal/schedule/<token>`, one per league, no
+login; `lib/vmIcal.js` parses them, `lib/vmSync.js` `fetchIcalFeeds` / `icalGameToRow` /
+`mergeWithStored` write them). `VM_ICAL_FEEDS` lists the calendars (tokens or links, separated by
+spaces, commas or new lines; not in the code, so any region can bring its own). Set, it wins over
+`VM_USERNAME` / `VM_PASSWORD`: no login, no role switch. The parser reads structured fields only
+(UID `game-<n>`, `DTSTART` with `TZID`, `LOCATION`, the hall in `X-APPLE-STRUCTURED-LOCATION`
+`X-TITLE`, the teams around the em dash of the description's first line), never the labels,
+which follow the language of the account the link was made with. A calendar has no referees, line
+judges, licences, supervision marks, group letter or number of win sets: referees and line judges
+are written as NULL (a stale crew must not be pre-filled on an official sheet; scorers type them
+or pick them from the referee directory); the group letter (`3L B`), the street's number, the
+number of win sets (else the league's usual one) and the group / phase texts are kept from the
+stored row (`mergeWithStored`). A complete run removes only games of the leagues the calendars
+cover (a 1L or cup game the login sync stored stays until it is past); a calendar that fails makes
+the run partial and removes nothing. Team-name translations (`followTeamRenames`, db/059) need the
+login and do not run.
+
 **`db/051`: the referees' licence numbers.** The schedule sync (`lib/vmSync.js`) stores the first
 and second referee's licence (VolleyManager `person.associationId`, the SV number; else
 `externalId`; 4 to 7 digits, else NULL) in `svrz_games.referee_1_licence` / `referee_2_licence`.

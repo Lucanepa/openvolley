@@ -3542,7 +3542,7 @@ let vmSync = null // { lib, schedule }
 async function vmSyncStatus(layer) {
   if (!vmSync) {
     const reason = IS_LOCAL ? 'local' : process.env.VM_SYNC === 'off' ? 'disabled'
-      : (!process.env.VM_USERNAME || !process.env.VM_PASSWORD) ? 'not_configured' : 'not_started'
+      : (!process.env.VM_ICAL_FEEDS?.trim() && (!process.env.VM_USERNAME || !process.env.VM_PASSWORD)) ? 'not_configured' : 'not_started'
     return { state: 'off', reason }
   }
   const { nextRunAt, nextRetryAt, running } = vmSync.schedule.status()
@@ -9645,10 +9645,15 @@ if (DB_MODE) {
     // referee-role window (VM_SYNC_WINDOW_UTC, default 22:00-01:00; 'any' once
     // OpenVolley has a VolleyManager account of its own). /health shows the
     // last success and the next try (vmSyncStatus).
-    if (!IS_LOCAL && process.env.VM_USERNAME && process.env.VM_PASSWORD && process.env.VM_SYNC !== 'off') {
+    // VM_ICAL_FEEDS (since 27.11.2026): the public league calendars instead of
+    // the login, which VolleyManager refuses. Set, it wins over the credentials:
+    // no login, no role, and no referees in the schedule.
+    const vmIcalSet = !!process.env.VM_ICAL_FEEDS?.trim()
+    if (!IS_LOCAL && process.env.VM_SYNC !== 'off' && (vmIcalSet || (process.env.VM_USERNAME && process.env.VM_PASSWORD))) {
       import('./lib/vmSync.js').then((vm) => {
         const vmWindow = vm.windowFromEnv() // throws on a bad VM_SYNC_DAYS_* value
         const allowedWindow = vm.runWindowFromEnv() // throws on a bad VM_SYNC_WINDOW_UTC
+        const feeds = vm.icalFeedsFromEnv() // throws on an entry that is no VolleyManager calendar
         const schedule = vm.scheduleVmSync({
           hourLocal: 22,
           minuteLocal: 30,
@@ -9656,6 +9661,7 @@ if (DB_MODE) {
           run: () => vm.runVmSync({
             pool: layer.db.pool,
             window: vmWindow,
+            feeds,
             credentials: { username: process.env.VM_USERNAME, password: process.env.VM_PASSWORD },
             // the shared account's referee-delegate role (lib/vmSync.js VM_ROLE_FOR_GAMES)
             ...(process.env.VM_ROLE_ATTRIBUTE_GAMES ? { roleAttribute: process.env.VM_ROLE_ATTRIBUTE_GAMES } : {}),
@@ -9667,12 +9673,12 @@ if (DB_MODE) {
           catchUp: () => vm.readSyncRecord(layer.db.pool)
         })
         vmSync = { lib: vm, schedule }
-        console.log('[VM sync] scheduled, next run ' + (schedule.nextRunAt()?.toISOString() ?? 'n/a'))
+        console.log(`[VM sync] scheduled (${feeds.length ? `${feeds.length} league calendars, no login` : 'login'}), next run ` + (schedule.nextRunAt()?.toISOString() ?? 'n/a'))
       }).catch((err) => {
         console.error('❌ [VM sync] not started:', err.message)
       })
     } else if (!IS_LOCAL) {
-      console.warn(`[VM sync] off (${process.env.VM_SYNC === 'off' ? 'VM_SYNC=off' : 'VM_USERNAME / VM_PASSWORD not set'}): the official schedule is not refreshed`)
+      console.warn(`[VM sync] off (${process.env.VM_SYNC === 'off' ? 'VM_SYNC=off' : 'neither VM_ICAL_FEEDS nor VM_USERNAME / VM_PASSWORD set'}): the official schedule is not refreshed`)
     }
   }, (err) => {
     console.error('❌ [DB] could not initialise the data layer:', err.message)
