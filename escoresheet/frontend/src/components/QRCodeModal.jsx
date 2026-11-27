@@ -151,7 +151,7 @@ export default function QRCodeModal({ role, match, matchSeedKey, onClose }) {
         {/* Match info */}
         {match && (
           <p className="mt-1 mb-5 text-sm text-stone-500">
-            {teamNames.home || 'Home'} vs {teamNames.away || 'Away'}
+            {teamNames.home || t('common.homeTeam')} vs {teamNames.away || t('common.awayTeam')}
           </p>
         )}
 

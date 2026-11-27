@@ -847,8 +847,8 @@ export default function BenchApp() {
   // Get team names from selected match (list entries, PIN check and relay
   // bundles name them differently)
   const selectedNames = matchTeamNames(selectedMatch)
-  const homeTeamName = selectedNames.home || 'Home team'
-  const awayTeamName = selectedNames.away || 'Away team'
+  const homeTeamName = selectedNames.home || t('common.homeTeam')
+  const awayTeamName = selectedNames.away || t('common.awayTeam')
 
   // Label this tablet on the relay (scorer's tablet status). Set before the
   // match view mounts (PIN submit / restore): MatchEntry subscribes in its own

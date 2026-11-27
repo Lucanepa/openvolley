@@ -30,7 +30,7 @@ describe('team name fallback', () => {
     const users = { 'common.home': new Set(), 'common.away': new Set() }
     for (const file of listSourceFiles()) {
       for (const { key } of extractUses(fs.readFileSync(file, 'utf8')).keys) {
-        if (users[key]) users[key].add(path.relative(FRONTEND_DIR, file))
+        if (users[key]) users[key].add(path.relative(FRONTEND_DIR, file).split(path.sep).join('/'))
       }
     }
     expect([...users['common.home']]).toEqual(['src/components/MainHeader.jsx'])
