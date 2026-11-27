@@ -316,7 +316,7 @@
     "benchHome": "Panchina home",
     "benchAway": "Panchina lontana",
     "home": "Casa",
-    "away": "Via",
+    "away": "Ospite",
     "players": "Giocatori",
     "liberos": "di cui libero(i)",
     "bench": "Panchina",
@@ -1340,7 +1340,8 @@
       "titleCannotReenter": "Non può rientrare"
     },
     "liberoMove": {"in": "ENTRA", "out": "ESCE"},
-    "dropRefused": {"player": "#{{number}}: {{why}}", "notThisPair": "#{{in}} non può entrare per #{{out}}", "liberoServer": "Il libero non sostituisce il battitore"}
+    "dropRefused": {"player": "#{{number}}: {{why}}", "notThisPair": "#{{in}} non può entrare per #{{out}}", "liberoServer": "Il libero non sostituisce il battitore"},
+    "benchPinFor": "PIN panchina {{team}}"
   },
   "settings": {
     "title": "Impostazioni",

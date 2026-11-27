@@ -20886,7 +20886,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     {data?.match?.homeTeamPin && data?.match?.homeTeamConnectionEnabled === true && (
                       <div className={cn(SB_BLOCK, 'flex min-w-0 flex-1 flex-col items-start justify-between gap-1 p-4')}>
                         <div className={SB_LABEL}>
-                          {data?.homeTeam?.name || 'Home team'} bench PIN
+                          {t('scoreboard.benchPinFor', { team: data?.homeTeam?.name || t('common.homeTeam') })}
                         </div>
                         <div className="font-mono text-xl font-semibold tracking-[0.3em] tabular-nums text-stone-900 break-all">
                           {String(data.match.homeTeamPin).padStart(6, '0')}
@@ -20897,7 +20897,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     {data?.match?.awayTeamPin && data?.match?.awayTeamConnectionEnabled === true && (
                       <div className={cn(SB_BLOCK, 'flex min-w-0 flex-1 flex-col items-start justify-between gap-1 p-4')}>
                         <div className={SB_LABEL}>
-                          {data?.awayTeam?.name || 'Away team'} bench PIN
+                          {t('scoreboard.benchPinFor', { team: data?.awayTeam?.name || t('common.awayTeam') })}
                         </div>
                         <div className="font-mono text-xl font-semibold tracking-[0.3em] tabular-nums text-stone-900 break-all">
                           {String(data.match.awayTeamPin).padStart(6, '0')}

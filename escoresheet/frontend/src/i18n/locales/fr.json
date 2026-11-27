@@ -1339,7 +1339,8 @@
       "titleCannotReenter": "Ne peut pas revenir"
     },
     "liberoMove": {"in": "ENTRE", "out": "SORT"},
-    "dropRefused": {"player": "#{{number}} : {{why}}", "notThisPair": "#{{in}} ne peut pas entrer pour #{{out}}", "liberoServer": "Le libéro ne remplace pas le serveur"}
+    "dropRefused": {"player": "#{{number}} : {{why}}", "notThisPair": "#{{in}} ne peut pas entrer pour #{{out}}", "liberoServer": "Le libéro ne remplace pas le serveur"},
+    "benchPinFor": "PIN du banc {{team}}"
   },
   "settings": {
     "title": "Paramètres",
