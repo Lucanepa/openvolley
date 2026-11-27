@@ -82,7 +82,19 @@ Tesseract.js 7 with German, French and Italian (`4.0.0_best_int`), LSTM only, on
 (PSM 6). Its files are the app's own (`vite-plugin-ocr-assets.js`, `ocr/<version>/`): never a CDN,
 works offline and under `script-src 'self'` (the pages already allow `'wasm-unsafe-eval'`). Errors
 have codes: `ocr-load` (could not start: the web offline before its first use), `ocr-timeout`
-(120 s), `ocr-empty` (no player row), `ocr-cancelled` (dialog closed: the worker is ended at once).
+(120 s), `ocr-empty` (no player row), `ocr-cancelled` (dialog closed: the workers are ended at once).
+
+Since 2026-11-27 (section 3.8) the recognition **starts when the photo dialog opens**
+(`startOcrEngine`, while the scorer takes the photo and drags the corners), with as many workers as
+the device has cores and memory for (`ocrWorkerCount`: one core left for the page, at most four,
+three with Chrome's `deviceMemory` 2 or 3, one below 2); it is ended when the dialog closes, when
+the list is read, and while the page is hidden (the camera app in front: its memory back, started
+again when the photo comes). Tesseract is handed the page's **grey pixels as a PGM file**, never a
+canvas (Tesseract.js encodes a canvas as PNG on the page, which a busy page puts off, and decodes it
+again in the worker). The page itself is read by one worker; the others read the quarter turns of a
+page on its side and the handwriting, SV numbers and circles read again, side by side. One progress
+bar runs from the tap to the check screen ("Reading the list…", then "Reading the handwritten
+numbers…").
 
 `rosterFromOcr` makes Tesseract's words the **positioned items pdf.js gives** (one y per line,
 column starts snapped together, letter height scaled to the PDF reader's units) and calls
@@ -105,8 +117,18 @@ Before that, per row:
   photo lost gets a stand-in in its column, emptied after (the confirm screen shows the gap, a
   missing last name red); a misread SV number or date keeps the row (red / dropped date);
 - the X under the LAS / LFP header marks LFP (the header a mark stands under, not the PDF's narrow
-  tolerance); a name's second line joins the name it stands under; "1." / "2." before an official's
-  label is that assistant whatever became of the label's words.
+  tolerance); a name's second line joins the name it stands under;
+- the officials from their own lines above the table (2026-11-27): the colon, the "#", the "|" or
+  the year in brackets lost or misread, the role in any of the three languages or with its first
+  letter gone ("oach"); "1." / "2." before the label is that assistant whatever became of its words;
+  the name is "first last" (the year is a birth year, never a name): the player row with the same
+  SV number gives the split, else a particle ("von", "De") starts the last name, else the last word
+  is it, and a guessed split (three words or more) is amber for both names;
+- a row **struck out** (2026-11-27): a pen line through it, also pale or coloured, wavy, over part
+  of the row or run into the words by the reading (scan.js `struckThrough`: two gaps between words
+  crossed in a row, or ink along the row's middle longer than any word, across a gap); a struck
+  row the reading garbled into no player, or skipped (a gap of a row between two players with a
+  line across it, `lineAcross`, read again alone), is still named on the check screen.
 
 Each field gets the lowest confidence of its words; handwritten marks never more than 0.7, so they
 are always shown amber. `withSavedTeamNames` then gives a player whose SV number the side's saved
@@ -122,6 +144,15 @@ first name, licence, C, L, remove) and the three official rows, the method ("Rea
 how many names came from the saved team, how many fields to fix / check. "Use" is off while a red
 field is left. Cancel at any step changes nothing. Lists with names carry `data-sensitive` (no name
 in the interaction log).
+
+It fits its dialog **without scrolling sideways** (owner, 2026-11-27, Galaxy Tab A7 Lite with a
+large system font: the table scrolled and long names were cut off in their boxes): each row is a
+grid of its own (a container query on the dialog's width), one line from 42 rem, below that two
+(number and names, then SV number, C, L, remove); a name is a text box that grows a line instead of
+cutting the name off (CSS `field-sizing: content`, measured where the browser lacks it); every
+control is 44 px. `e2e-ui/photo-check-fit.mjs` checks it with made-up names at the A7 Lite's sizes
+(1005 x 600, 893 x 533, 600 x 1005, 1340 x 800, 800 x 1340) and a phone (393 x 852), at the
+default text and 1.5x (Android's system font grows the text, not px or rem lengths).
 
 ### 3.5 Platforms
 
@@ -155,7 +186,11 @@ in the interaction log).
 photo and as a phone screenshot, a ruled table in German and Italian; marks, circles, LFP, wrapped
 names; and the marks spread over the row), `scan.test.js` (homography, corners, light, rules, rings), `ocr.test.js` (files from the
 app, load error, timeout, empty, cancel), `savedTeamNames.test.js`, `RosterPhotoImport.test.jsx`
-(nothing applied before "Use", red blocks, edits applied, remove, error and retry). The fixtures and
+(nothing applied before "Use", red blocks, edits applied, remove, error and retry; the recognition
+started when the dialog opens, ended on close and while the page is hidden). Since 2026-11-27 also
+the workers (one language each, merged line by line, PGM), struck rows drawn on made-up rows, made-up
+officials in the three languages, and `e2e-ui/photo-check-fit.mjs` (the check screen at the A7
+Lite's sizes and a phone, 1x and 1.5x text). The fixtures and
 their sources: `src/utils/rosterPhoto/__tests__/fixtures/`.
 
 ### 3.7 Tuned on real photos (2026-11-26)
@@ -190,6 +225,42 @@ Result (counts only; the table is in PR #358): every printed row found on the 12
 SV numbers, names and dates of birth 94 to 95 % exact, **no wrong field without amber or red**.
 Handwritten shirt numbers are the weak part (Tesseract reads print; about half of them right),
 always amber. If that is not good enough, plan B (section 4) is the next step.
+
+### 3.8 Faster on a slow tablet (2026-11-27)
+
+The owner timed about 20 s on the Galaxy Tab A7 Lite (Chrome, main 671315fb9) from "Read the list"
+to the check screen, about 2 to 3 s on a desktop. Measured with the app's own dialog on the 14 real
+photos (crop step open 4 s, then the tap), in Chromium with every renderer thread (page and workers)
+slowed 5 times (stopped and resumed: CDP throttling does not reach workers) on 8 cores, 5 calibrated
+so that main takes ≈ 20 s on the owner's own photo. Each idea measured alone:
+
+- **kept** the recognition started when the dialog opens (the worker start: about 0.2 to 0.5 s on a
+  desktop, seconds on the tablet);
+- **kept** the grey pixels as PGM instead of a canvas: the page read a fifth faster on a desktop,
+  word for word the same, and no wait for the page to encode its PNG (about 1 s in the dialog);
+- **kept** three workers: the page read by the three side by side, one language each, merged line
+  by line from the language surest of it (`mergeLanguages`); rows, SV numbers, names and dates as
+  good or better than with the three languages in turn, the officials better; the turns of a page
+  on its side and the handwriting read side by side too;
+- **dropped** the page cut into bands read side by side (desktop 2.7 to 1.8 s): Tesseract reads a
+  band differently from the whole page (a row lost on one photo, SV numbers and dates on others);
+- **dropped** one language after reading the title: first names on the Italian lists and the
+  handwritten marks read worse; the title's language first of three: no gain;
+- **dropped** the columns after the date left out of the reading (a fixed share of the width):
+  dates cut on some photos; the page read smaller (0.8 to 0.5 of 2200 px): 20 to 35 % faster
+  reading, not needed after the above;
+- **dropped** a left-margin read of the shirt numbers alone (digits, C, K, L, twice the size,
+  bolder): fewer numbers right than the handwriting pass.
+
+Result (seconds from the tap to the check screen, average of the 14 photos): desktop 4.5 to 2.2,
+slowed 5 times (≈ the A7 Lite) 18.8 to 11.1 (the owner's photo 19.5 to 11.4; between 7.7 and 13
+for every photo but one on its side, 24 to 21: the wrong quarter turn reads slowly). The 12 readable
+photos: every row found as before (123 of 123), SV numbers / first names / last names / dates of
+birth exact 99 / 98 / 98 / 100 % before, 99 / 99 / 99 / 100 % after, no wrong field without amber
+or red, handwritten marks 32 right / 37 missing before, 34 / 34 after, the officials' fields 45 to
+48 of 48. On a real A7 Lite three workers side by side share its memory bandwidth, which the
+slowed desktop does not show: expect about 10 to 13 s there. The next step, if that is still too
+slow, is the page read smaller (20 to 35 % less reading time, its accuracy not yet measured).
 
 ## 4. Plan B: our own OCR server (planned, not built)
 
@@ -231,7 +302,7 @@ privacy policy needs no new processor. Candidates, in order:
 ## 5. Files
 
 `src/domain/importedRoster.js`, `src/utils/rosterPhoto/{scan,ocr,ocrFiles,ocrWarmup,ocrRoster,savedTeamNames}.js`,
-`src/components/rosterPhoto/{RosterPhotoImport,PhotoCropStep,RosterConfirmStep}.jsx`,
+`src/components/rosterPhoto/{RosterPhotoImport,PhotoCropStep,RosterConfirmStep}.jsx`, `e2e-ui/photo-check-fit.mjs`,
 `src/components/MatchSetup.jsx` (`applyImportedRoster`, the button), `vite-plugin-ocr-assets.js`,
 `pwa-workbox.js` (`ocr/**`, `OCR_FILES_ROUTE`), `scripts/build-subdomains.js`, the Android manifest
 and `MainActivity`, iOS `Info.plist`, locales (`rosterPhoto.*`, help `importPhoto`), legal texts

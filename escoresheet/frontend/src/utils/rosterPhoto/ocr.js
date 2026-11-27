@@ -174,158 +174,80 @@ function turnedCanvas (page, turns, scale = 1) {
 }
 
 /**
- * Each worker takes the next item until none is left: items read side by
- * side, as many at once as there are workers; the answers in the items' order.
+ * Items read side by side, as many at once as there are workers: item k by
+ * worker k mod n, always the same one (the workers may hold different
+ * languages: the same photo reads the same each time); the answers in the
+ * items' order.
  */
 async function onWorkers (workers, items, read) {
   const out = new Array(items.length)
-  let next = 0
-  await Promise.all(workers.map(async (w) => {
-    while (next < items.length) {
-      const k = next++
-      out[k] = await read(w, items[k], k)
-    }
+  await Promise.all(workers.map(async (w, j) => {
+    for (let k = j; k < items.length; k += workers.length) out[k] = await read(w, items[k], k)
   }))
   return out
 }
 
 const setAll = (workers, params) => Promise.all(workers.map((w) => w.setParameters(params)))
 
-// the page read in horizontal bands, one a worker: each band reaches this
-// share of the page's height into its neighbours, so a row on the cut is
-// whole in one of them (a row is about 2 % of the page, its handwriting a
-// little more)
-const BAND_REACH = 0.03
-// a cut is moved up to this share of the page to the row with the least ink
-const CUT_SEARCH = 0.04
-
-/** How much text each row of the page holds: its changes from paper to ink (every second pixel). */
-function textProfile (gray, width, height) {
-  const ink = new Float64Array(height)
-  for (let y = 0; y < height; y++) {
-    let n = 0
-    const row = y * width
-    let was = gray[row] < 128
-    for (let x = 2; x < width; x += 2) {
-      const dark = gray[row + x] < 128
-      if (dark !== was) { n++; was = dark }
+/**
+ * Three readings of one page, one language each (German, French, Italian:
+ * the same lines, read side by side on three workers), as one: for each
+ * line the language that read it surest (its words' confidence per letter),
+ * as Tesseract itself picks a language for each word it was unsure of when
+ * it reads with all three in turn.
+ */
+export function mergeLanguages (readings) {
+  const sets = readings.map((data) => {
+    const lines = []
+    for (const b of data?.blocks || []) for (const para of b?.paragraphs || []) for (const l of para?.lines || []) {
+      const words = (l?.words || []).filter((w) => w?.bbox && String(w.text || '').trim())
+      if (!words.length) continue
+      const y0 = Math.min(...words.map((w) => w.bbox.y0))
+      const y1 = Math.max(...words.map((w) => w.bbox.y1))
+      let n = 0
+      let sum = 0
+      for (const w of words) { const len = String(w.text).length; n += len; sum += len * (Number(w.confidence) || 0) }
+      lines.push({ line: { ...l, words }, y0, y1, mid: (y0 + y1) / 2, h: y1 - y0, score: n ? sum / n : 0, letters: n })
     }
-    ink[y] = n
-  }
-  return ink
-}
-
-/** The row with the least text from y0 to y1 (three rows together). */
-function palestRow (ink, y0, y1) {
-  const a = Math.max(1, Math.round(y0))
-  const b = Math.min(ink.length - 2, Math.round(y1))
-  let best = a
-  for (let k = a; k <= b; k++) if (ink[k - 1] + ink[k] + ink[k + 1] < ink[best - 1] + ink[best] + ink[best + 1]) best = k
-  return best
-}
-
-/**
- * Where the page is cut into `count` bands: as much text in each (a list
- * ends halfway down the page: equal heights would leave one worker the
- * blank end), each cut moved to the row with the least text near it
- * (between two rows). Text is counted as the changes from paper to ink
- * along a row: letters make many, a dark border or shadow at the page's
- * edge few.
- * @returns {number[]} y of every cut, 0 and the height included
- */
-export function bandCuts (gray, width, height, count, ink = textProfile(gray, width, height)) {
-  if (count <= 1) return [0, height]
-  const total = ink.reduce((a, b) => a + b, 0)
-  if (!total) return Array.from({ length: count + 1 }, (_, i) => Math.round((i * height) / count))
-  const cuts = [0]
-  let sum = 0
-  let y = 0
-  const search = Math.round(CUT_SEARCH * height)
-  for (let i = 1; i < count; i++) {
-    const want = (total * i) / count
-    while (y < height - 1 && sum + ink[y] < want) sum += ink[y++]
-    const prev = cuts[cuts.length - 1]
-    cuts.push(Math.min(height - 1, Math.max(prev + 1, palestRow(ink, Math.max(prev + 1, y - search), y + search))))
-  }
-  cuts.push(height)
-  return cuts
-}
-
-/**
- * The bands' readings as one reading of the page: each line where it lies on
- * the page, kept by the band whose own part (between its cuts) holds the
- * line's middle, so a line in two bands' reach is kept once; the page's
- * confidence the mean of its words' (as Tesseract's own).
- */
-export function mergeBands (readings, bands) {
-  const blocks = []
+    return lines
+  })
+  const chosen = []
+  const used = sets.map((lines) => lines.map(() => false))
+  sets.forEach((lines, a) => lines.forEach((l, i) => {
+    if (used[a][i]) return
+    // the same line in the other readings (their middles within half a line)
+    const group = [l]
+    used[a][i] = true
+    sets.forEach((other, b) => {
+      if (b === a) return
+      let best = -1
+      other.forEach((o, k) => {
+        if (used[b][k] || Math.abs(o.mid - l.mid) > 0.5 * Math.min(o.h, l.h)) return
+        if (best < 0 || Math.abs(o.mid - l.mid) < Math.abs(other[best].mid - l.mid)) best = k
+      })
+      if (best >= 0) { used[b][best] = true; group.push(other[best]) }
+    })
+    // (a reading that lost words of the line is not the surer one)
+    const most = Math.max(...group.map((g) => g.letters))
+    group.sort((x, y) => y.score * Math.min(1, y.letters / most) - x.score * Math.min(1, x.letters / most))
+    chosen.push(group[0])
+  }))
+  chosen.sort((x, y) => x.mid - y.mid)
   let sum = 0
   let n = 0
-  readings.forEach((data, i) => {
-    const { y0: dy, cut0, cut1 } = bands[i]
-    const shift = (b) => (b ? { ...b, y0: b.y0 + dy, y1: b.y1 + dy } : b)
-    for (const block of data?.blocks || []) {
-      const paragraphs = []
-      for (const para of block?.paragraphs || []) {
-        const lines = []
-        for (const line of para?.lines || []) {
-          const words = (line?.words || []).filter((w) => w?.bbox).map((w) => ({ ...w, bbox: shift(w.bbox) }))
-          if (!words.length) continue
-          const mids = words.map((w) => (w.bbox.y0 + w.bbox.y1) / 2).sort((a, b) => a - b)
-          const mid = mids[mids.length >> 1]
-          if (mid < cut0 || mid >= cut1) continue
-          lines.push({ ...line, bbox: shift(line.bbox), words })
-          for (const w of words) { sum += Number(w.confidence) || 0; n++ }
-        }
-        if (lines.length) paragraphs.push({ ...para, bbox: shift(para.bbox), lines })
-      }
-      if (paragraphs.length) blocks.push({ ...block, bbox: shift(block.bbox), paragraphs })
-    }
-  })
-  return { blocks, confidence: n ? sum / n : 0 }
+  for (const c of chosen) for (const w of c.line.words) { sum += Number(w.confidence) || 0; n++ }
+  return { blocks: [{ paragraphs: [{ lines: chosen.map((c) => c.line) }] }], confidence: n ? sum / n : 0 }
 }
 
 /**
- * The page read once: on one worker as a whole, or, with more workers and a
- * canvas, in bands side by side (bandCuts, mergeBands). onBand(share): how
- * much of the page is read.
+ * The page read once: on the three workers side by side, one language each,
+ * merged line by line (mergeLanguages), when the engine has them; else on
+ * one worker with the three languages in turn.
  */
-async function readPage (workers, page, { bands = true, bandsWhole = false, cropRight = 0, debug } = {}) {
-  if (isCanvas(page) && cropRight > 0 && cropRight < 1) {
-    // (measured: the text pass without the columns right of the date)
-    const { width, height } = page
-    const w = Math.round(width * cropRight)
-    const gray = grayOf(page)
-    const cut = new Uint8ClampedArray(w * height)
-    for (let y = 0; y < height; y++) cut.set(gray.subarray(y * width, y * width + w), y * w)
-    return (await workers[0].recognize(pgmOf(cut, w, height), {}, { blocks: true, text: false })).data
-  }
-  if (!isCanvas(page) || workers.length < 2 || !bands) {
-    return (await workers[0].recognize(imageOf(page), {}, { blocks: true, text: false })).data
-  }
-  const { width, height } = page
-  const gray = grayOf(page)
-  const ink = textProfile(gray, width, height)
-  const cuts = bandCuts(gray, width, height, workers.length, ink)
-  const reach = Math.round(BAND_REACH * height)
-  // a band's edges between two rows too (no row cut in half at its top or
-  // bottom: Tesseract reads the rest of the band differently then)
-  const parts = cuts.slice(0, -1).map((cut0, i) => ({
-    cut0,
-    cut1: cuts[i + 1],
-    y0: i === 0 ? 0 : palestRow(ink, cut0 - 2 * reach, cut0 - reach / 2),
-    y1: i === cuts.length - 2 ? height : palestRow(ink, cuts[i + 1] + reach / 2, cuts[i + 1] + 2 * reach) + 1
-  }))
-  if (debug) debug.cuts = cuts
-  const whole = bandsWhole
-  const readings = await onWorkers(workers, parts, async (w, b) => {
-    if (!whole) return (await w.recognize(pgmOf(gray.subarray(b.y0 * width, b.y1 * width), width, b.y1 - b.y0), {}, { blocks: true, text: false })).data
-    // the page as it is, paper everywhere but this band
-    const one = new Uint8ClampedArray(gray.length).fill(255)
-    one.set(gray.subarray(b.y0 * width, b.y1 * width), b.y0 * width)
-    return (await w.recognize(pgmOf(one, width, height), {}, { blocks: true, text: false })).data
-  })
-  return mergeBands(readings, whole ? parts.map((b) => ({ ...b, y0: 0 })) : parts)
+async function readPage (workers, page, { apart = false } = {}) {
+  const img = imageOf(page)
+  if (!apart) return (await workers[0].recognize(img, {}, { blocks: true, text: false })).data
+  return mergeLanguages(await Promise.all(OCR_LANGS.map((_, k) => workers[k].recognize(img, {}, { blocks: true, text: false }).then((r) => r.data))))
 }
 
 /** How many words of a reading came out sure (a word of three letters or four digits, 80 % or more). */
@@ -355,7 +277,14 @@ async function uprightTurns (workers, page, asIs, order = [1, 3, 2]) {
   search: for (const round of rounds) {
     for (let i = 0; i < round.length; i += workers.length) {
       const tried = round.slice(i, i + workers.length)
-      const found = await onWorkers(workers, tried, sure)
+      // done as soon as one reads well: the other reading goes on in its
+      // worker, unwaited for (what that worker reads next waits behind it)
+      const found = await new Promise((resolve) => {
+        const got = tried.map(() => -1)
+        let left = tried.length
+        const one = (k, n) => { got[k] = n; left--; if (n >= UPRIGHT_ENOUGH || !left) resolve(got) }
+        tried.forEach((turns, k) => sure(workers[k], turns).then((n) => one(k, n), () => one(k, -1)))
+      })
       tried.forEach((turns, k) => { if (found[k] > best.n) best = { turns, n: found[k] } })
       if (found.some((n) => n >= UPRIGHT_ENOUGH)) break search
     }
@@ -575,43 +504,45 @@ async function loadCreateWorker () {
   return (mod.default || mod).createWorker
 }
 
-// at most this many workers read at once: past four the bands get short and
-// each worker's start (the engine, three languages) costs more than it saves
-export const MAX_WORKERS = 4
+// at most this many workers: one a language (mergeLanguages)
+export const MAX_WORKERS = OCR_LANGS.length
 
 /**
  * How many workers read a page at once on this device: one core left for
- * the page itself, at most MAX_WORKERS, fewer with little memory (each
- * worker holds the engine and the three languages, ~40 MB; a Galaxy Tab A7
- * Lite: 8 cores, 3 GB, which Chrome reports as 2).
+ * the page itself, at most one a language, one alone on a device with
+ * little memory (Chrome's deviceMemory below 2; a Galaxy Tab A7 Lite has 8
+ * cores and 3 GB, which Chrome reports as 2: three workers).
  */
 export function ocrWorkerCount ({
   cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : undefined,
   memory = typeof navigator !== 'undefined' ? navigator.deviceMemory : undefined
 } = {}) {
   let n = Number.isFinite(cores) && cores > 1 ? Math.min(MAX_WORKERS, cores - 1) : 1
-  if (Number.isFinite(memory) && memory > 0) n = Math.min(n, memory < 2 ? 1 : memory < 4 ? 3 : MAX_WORKERS)
+  if (Number.isFinite(memory) && memory > 0 && memory < 2) n = 1
   return Math.max(1, n)
 }
 
 /**
  * The recognition started ahead (RosterPhotoImport: while the scorer takes
- * the photo and drags its corners, so "Read the list" does not wait for it):
- * `size` workers, each with the engine and the three languages, from the
- * app's own files. Never throws: engine.ready rejects (ocr-load) when none
- * could start; with some started it goes on with those (little memory).
- * engine.terminate() ends them at once (the dialog closed, the list read).
- * @returns {{ size: number, ready: Promise<object[]>, listeners: Set<Function>, terminate: () => Promise<void>, ended: boolean }}
+ * the photo and drags its corners, so "Read the list" does not wait for it),
+ * from the app's own files, each worker with the three languages. With
+ * three, the page is read by the three side by side, one language each
+ * (readRosterPhoto: engine.apart), everything else with all three. Never
+ * throws: engine.ready rejects (ocr-load) when none could start, and goes
+ * on with the workers that did (little memory). engine.terminate() ends
+ * them at once (the dialog closed, the list read).
+ * @returns {{ size: number, apart: boolean, ready: Promise<object[]>, listeners: Set<Function>, terminate: () => Promise<void>, ended: boolean }}
  */
 export function startOcrEngine ({ size = ocrWorkerCount(), createWorker, dir, startTimeoutMs = OCR_START_TIMEOUT_MS } = {}) {
-  const engine = { size, listeners: new Set(), workers: [], ended: false }
+  const count = Math.max(1, Math.min(MAX_WORKERS, size))
+  const engine = { size: count, apart: count === OCR_LANGS.length, listeners: new Set(), workers: [], ended: false }
   engine.ready = (async () => {
     if (!wasmAllowed()) throw coded('ocr-load', 'This page may not run WebAssembly (its Content-Security-Policy, or the engine)')
     try {
       const create = createWorker || await loadCreateWorker()
       // (ocrFiles.js: the same addresses the web loads ahead, ocrWarmup.js)
       const { workerPath, corePath, langPath } = ocrPaths(dir || ocrDir(), await simdSupported())
-      const one = async () => {
+      const one = async (k) => {
         const w = await create(OCR_LANGS, LSTM_ONLY, {
           workerPath,
           corePath,
@@ -624,13 +555,17 @@ export function startOcrEngine ({ size = ocrWorkerCount(), createWorker, dir, st
           logger: (m) => { for (const f of engine.listeners) f(m) }
         })
         // (ended while it started: its memory back at once)
-        if (engine.ended) { try { await w.terminate?.() } catch { /* gone */ } } else engine.workers.push(w)
+        if (engine.ended) { try { await w.terminate?.() } catch { /* gone */ } } else engine.workers[k] = w
         return w
       }
-      const started = await withTimeout(Promise.allSettled(Array.from({ length: Math.max(1, size) }, one)), startTimeoutMs)
+      const started = await withTimeout(Promise.allSettled(Array.from({ length: count }, (_, k) => one(k))), startTimeoutMs)
       if (engine.ended) throw coded('ocr-cancelled', 'The reading was cancelled')
-      if (!engine.workers.length) throw started.find((r) => r.status === 'rejected')?.reason || new Error('no worker')
-      return [...engine.workers]
+      const workers = engine.workers.filter(Boolean)
+      if (!workers.length) throw started.find((r) => r.status === 'rejected')?.reason || new Error('no worker')
+      // (one short: the page read by one worker with all three)
+      engine.apart = workers.length === OCR_LANGS.length
+      engine.workers = workers
+      return [...workers]
     } catch (err) {
       if (err?.code === 'ocr-cancelled' || err?.code === 'ocr-load') throw err
       throw coded('ocr-load', `The text recognition could not start (${err?.message || err})`, err)
@@ -640,29 +575,10 @@ export function startOcrEngine ({ size = ocrWorkerCount(), createWorker, dir, st
   engine.ready.catch(() => {})
   engine.terminate = async () => {
     engine.ended = true
-    const all = engine.workers.splice(0)
+    const all = engine.workers.splice(0).filter(Boolean)
     await Promise.all(all.map(async (w) => { try { await w.terminate?.() } catch { /* already gone */ } }))
   }
   return engine
-}
-
-// the list's language from its title (the first lines): one language read
-// after it instead of three
-const LANG_WORDS = {
-  deu: /einsatz|generiert|vorname|nachname|geburts/i,
-  fra: /engagement|g[ée]n[ée]r[ée]|pr[ée]nom|naissance|entra[iî]neur/i,
-  ita: /elenco|partecipant|generat|cognome|nascita|allenator/i
-}
-const TITLE_SHARE = 0.1
-
-/** The list's language, read from the top of the page with all three ('deu', 'fra', 'ita'), or null when unsure. */
-async function titleLanguage (worker, page) {
-  const { width, height } = page
-  const h = Math.max(1, Math.min(height, Math.round(height * TITLE_SHARE)))
-  const { data } = await worker.recognize(pgmOf(grayOf(page), width, h), {}, { text: true })
-  const text = String(data?.text || '')
-  const found = Object.keys(LANG_WORDS).filter((l) => LANG_WORDS[l].test(text))
-  return found.length === 1 ? found[0] : null
 }
 
 /**
@@ -671,17 +587,15 @@ async function titleLanguage (worker, page) {
  *
  * engine: the recognition started ahead (startOcrEngine), left to its owner
  * to end; without one, readRosterPhoto starts its own and ends it.
- * tuning (measurements): { bands: read the page in bands on the workers
- * (default true), titleLanguage: one language after the title (default
- * false), workers: how many of its own }.
+ * tuning (measurements): { workers: how many of its own (ocrWorkerCount) }.
  * @param {HTMLCanvasElement|Blob} page
  * @param {{ engine?: object, onProgress?: (share: number, status: string) => void, signal?: AbortSignal, createWorker?: Function, timeoutMs?: number, startTimeoutMs?: number, dir?: string, tuning?: object }} [opts]
  */
 export async function readRosterPhoto (page, { engine = null, onProgress, signal, createWorker, timeoutMs = OCR_TIMEOUT_MS, startTimeoutMs = OCR_START_TIMEOUT_MS, dir, debug, tuning = {} } = {}) {
-  // (a Blob cannot be cut into bands: one worker)
+  // (a Blob: read as it is, by one worker)
   const own = engine ? null : startOcrEngine({ size: isCanvas(page) ? (tuning.workers ?? ocrWorkerCount()) : 1, createWorker, dir, startTimeoutMs })
   const eng = engine || own
-  // progress: the page's share read (each worker's band), then the marks read again
+  // progress: the page's share read (by each language, side by side), then the marks read again
   let phase = null
   const shares = new Map()
   const report = (share, status) => { if (onProgress && !signal?.aborted) onProgress(Math.max(0, Math.min(1, share)), status) }
@@ -710,12 +624,19 @@ export async function readRosterPhoto (page, { engine = null, onProgress, signal
       throw coded('ocr-load', `The text recognition could not start (${err?.message || err})`, err)
     }
     if (signal?.aborted) throw cancelled()
-    const bands = tuning.bands === true
+    // the page by the three side by side, one language each (a few
+    // milliseconds to switch); everything else with all three, as before
+    const languages = async (apart) => {
+      await Promise.all(workers.map((w, k) => w.reinitialize(apart ? OCR_LANGS[k] : OCR_LANGS, LSTM_ONLY)))
+      await setAll(workers, { tessedit_pageseg_mode: PSM_SINGLE_BLOCK, preserve_interword_spaces: '1' })
+    }
     const read = async (p) => {
       phase = 'page'
       shares.clear()
-      phaseCount = bands && isCanvas(p) ? workers.length : 1
-      const data = await withTimeout(readPage(workers, p, { bands, bandsWhole: !!tuning.bandsWhole, cropRight: tuning.cropRight || 0, debug }), timeoutMs)
+      phaseCount = eng.apart ? OCR_LANGS.length : 1
+      if (eng.apart) await languages(true)
+      const data = await withTimeout(readPage(workers, p, { apart: eng.apart }), timeoutMs)
+      if (eng.apart) await languages(false)
       phase = null
       return data
     }
@@ -730,17 +651,6 @@ export async function readRosterPhoto (page, { engine = null, onProgress, signal
         turnedFirst = true
         if (debug) debug.turned = turns
         if (turns) page = turnedCanvas(page, turns)
-        if (signal?.aborted) throw cancelled()
-      }
-      // one language when the title tells which (measured: tuning.titleLanguage)
-      if (tuning.titleLanguage && isCanvas(page)) {
-        const lang = await withTimeout(titleLanguage(workers[0], page), timeoutMs)
-        if (debug) debug.language = lang
-        if (lang) {
-          const langs = tuning.titleLanguage === 'first' ? [lang, ...OCR_LANGS.filter((l) => l !== lang)] : lang
-          await Promise.all(workers.map((w) => w.reinitialize(langs, LSTM_ONLY)))
-          await setAll(workers, { tessedit_pageseg_mode: PSM_SINGLE_BLOCK, preserve_interword_spaces: '1' })
-        }
         if (signal?.aborted) throw cancelled()
       }
       data = await read(page)
