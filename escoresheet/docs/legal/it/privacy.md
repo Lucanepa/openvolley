@@ -1,6 +1,6 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.31 · Aggiornata al 27 novembre 2026
+**OpenVolley e OpenBeach** · Versione 1.32 · Aggiornata al 27 novembre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
 la versione inglese.
@@ -174,8 +174,9 @@ avvenute), osservazioni (solo la loro lunghezza), modifiche alle liste
 squadra (solo il numero di maglia), esiti degli invii al server, errori
 dell'app (messaggio e punto del programma), durata ed esito della lettura
 della foto di un'Einsatzliste (con il numero di righe, di campi da controllare
-e di righe barrate, nonché il numero di core del processore e la memoria del
-dispositivo; mai la foto né ciò che vi è stato letto), avvio, aggiornamento e
+e di righe barrate, la lingua scelta per la lista, il lettore che ha letto le
+annotazioni scritte a mano, nonché il numero di core del processore e la
+memoria del dispositivo; mai la foto né ciò che vi è stato letto), avvio, aggiornamento e
 chiusura dell'app, nonché accesso e uscita. Ogni voce contiene un identificativo
 casuale del dispositivo (creato dall'app, non legato all'hardware), la
 versione dell'app, la piattaforma e, se hai effettuato l'accesso, il tuo
