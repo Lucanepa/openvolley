@@ -7354,7 +7354,8 @@
     },
     "reading": {
       "prepare": "Préparation de la reconnaissance de texte…",
-      "read": "Lecture de la liste… {{percent}} %"
+      "read": "Lecture de la liste… {{percent}} %",
+      "marks": "Lecture des numéros écrits à la main… {{percent}} %"
     },
     "confirm": {
       "description": "Vérifie chaque ligne et corrige ce qui a été mal lu. Rien ne change avant « Utiliser ».",

@@ -352,3 +352,62 @@ describe('cleanWord: what real photos misread', () => {
     expect(cleanWord('345671.')).toBe('345671')
   })
 })
+
+// (owner, 2026-11-27: "did not read the coach correctly") made-up officials, as read
+describe('rosterFromOcr: the officials above the table, in every list language', () => {
+  const words = (y, text) => line(y, text.split(' ').map((t, i, all) => [t, 100 + all.slice(0, i).join(' ').length * 10 + 10 * i]))
+  const table = (y, header) => [line(y, header.map((h, i) => [h, 100 + 120 * i])), line(y + 40, [['123456', 100], ['Anna', 220], ['Muster', 340], ['F', 460], ['14.03.2004', 580]])]
+  const de = ['SV-Nr.', 'Vorname', 'Nachname', 'M/F', 'Geburtsdatum', 'LAS']
+  const pick = (r) => ['coach', 'ac1', 'ac2'].map((k) => (r[k] ? `${k}:${r[k].licence}|${r[k].firstName}|${r[k].lastName}` : `${k}:-`))
+
+  it('German list: Coach and two assistants in English, "2. Assistant Coach: -" is none', () => {
+    const r = rosterFromOcr(page(
+      words(20, 'Coach: #310001 | Petra Exempel (1980)'),
+      words(50, '1. Assistant Coach: #20002 | Hans Beispiel (1975)'),
+      words(80, '2. Assistant Coach: -'),
+      ...table(120, de)))
+    expect(pick(r)).toEqual(['coach:310001|Petra|Exempel', 'ac1:20002|Hans|Beispiel', 'ac2:-'])
+  })
+
+  it('French and Italian roles ("1er coach assistant", "Allenatore", "2. Assistente allenatore")', () => {
+    const fr = rosterFromOcr(page(
+      words(20, 'Coach: #310003 | Léa Exemple (1990)'),
+      words(50, '1er coach assistant: #310004 | Jean Modèle (1985)'),
+      ...table(120, ['N° SV', 'Prénom', 'Nom', 'M/F', 'Date de naissance', 'LFP'])))
+    expect(pick(fr)).toEqual(['coach:310003|Léa|Exemple', 'ac1:310004|Jean|Modèle', 'ac2:-'])
+    const it = rosterFromOcr(page(
+      words(20, 'Allenatore: #310005 | Marco Esempio (1982)'),
+      words(80, '2. Assistente allenatore: #310006 | Giulia Prova (1999)'),
+      ...table(120, ['N. SV', 'Nome', 'Cognome', 'M/F', 'Data di nascita', 'LFP'])))
+    expect(pick(it)).toEqual(['coach:310005|Marco|Esempio', 'ac1:-', 'ac2:310006|Giulia|Prova'])
+  })
+
+  it('as a photo reads it: the colon, the "#", the "|" or the year lost, the role\'s first letter gone', () => {
+    const r = rosterFromOcr(page(
+      words(20, 'coach #310007 I Petra Exempel 1980)'),
+      words(50, '1. Assistant Coach: H20008 | Hans Beispiel'),
+      ...table(120, de)))
+    expect(pick(r)).toEqual(['coach:310007|Petra|Exempel', 'ac1:20008|Hans|Beispiel', 'ac2:-'])
+    const lost = rosterFromOcr(page(words(20, 'oach: #310009 | Lea Muster (1998)'), ...table(120, de)))
+    expect(pick(lost)[0]).toBe('coach:310009|Lea|Muster')
+  })
+
+  it('first name first, the year is no name; a particle starts the last name; a guessed split is to check', () => {
+    const r = rosterFromOcr(page(
+      words(20, 'Coach: #310010 | Ruedi von Beispiel (1988)'),
+      words(50, '1. Assistant Coach: #310011 | Anna Maria Muster (1997)'),
+      ...table(120, de)))
+    expect(pick(r)).toEqual(['coach:310010|Ruedi|von Beispiel', 'ac1:310011|Anna Maria|Muster', 'ac2:-'])
+    expect(r.ac1.confidence.firstName).toBeLessThan(0.8)
+    expect(r.ac1.confidence.lastName).toBeLessThan(0.8)
+    expect(r.coach.confidence.firstName).toBeLessThan(0.8)
+  })
+
+  it('a coach who is also on the list: the names as the player row has them', () => {
+    const r = rosterFromOcr(page(
+      words(20, 'Coach: #123456 | Anna Muster (2004)'),
+      ...table(120, de)))
+    expect(r.coach).toMatchObject({ licence: '123456', firstName: 'Anna', lastName: 'Muster' })
+    expect(r.coach.confidence.firstName).toBeGreaterThanOrEqual(0.8)
+  })
+})

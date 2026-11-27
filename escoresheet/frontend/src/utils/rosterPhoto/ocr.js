@@ -5,7 +5,10 @@
  * ocr/<version>/). Nothing leaves the device and nothing needs a network,
  * except on the web, where the files load on the first photo import.
  *
- * readRosterPhoto(page) -> the imported roster (domain/importedRoster,
+ * startOcrEngine() starts the recognition ahead (RosterPhotoImport: while the
+ * scorer takes the photo and sets its corners), a few workers at once on a
+ * device with the cores and memory for them (ocrWorkerCount);
+ * readRosterPhoto(page, { engine }) -> the imported roster (domain/importedRoster,
  * source 'ocr'), or an error with a code:
  *   ocr-load     the recognition could not start (the web offline before its
  *                first use; a WebView without WebAssembly)
@@ -20,18 +23,50 @@ import { OCR_LANGS, ocrDir, ocrPaths, simdSupported } from './ocrFiles'
 import { importedRosterOf } from '../../domain/importedRoster'
 import { withTimeout, PDF_TIMEOUT_CODE } from '../parseRosterPdf'
 import { rosterFromOcr, withHandReadings, HANDWRITTEN_MAX } from './ocrRoster'
-import { handInk, ringInRegion, ringScore, struckThrough, turnGray } from './scan'
+import { handInk, lineAcross, ringInRegion, ringScore, struckThrough, turnGray } from './scan'
 
 // a number counts as circled when ink rings it this fully (scan.js ringScore)
 const CIRCLED_SCORE = 0.8
 
-/** The page's grey pixels (and those before its rules went: scan.js scanPage), null for a Blob. */
-function pixelsOf (page) {
-  if (typeof page?.getContext !== 'function') return null
-  const { width, height } = page
-  const rgba = page.getContext('2d').getImageData(0, 0, width, height).data
+const isCanvas = (page) => typeof page?.getContext === 'function'
+
+/**
+ * A canvas's grey pixels: the ones scan.js scanPage kept beside it (page.gray),
+ * else read once from the canvas and kept.
+ */
+function grayOf (canvas) {
+  const { width, height } = canvas
+  if (canvas.gray?.length === width * height) return canvas.gray
+  const rgba = canvas.getContext('2d').getImageData(0, 0, width, height).data
   const gray = new Uint8ClampedArray(width * height)
   for (let i = 0, j = 0; i < gray.length; i++, j += 4) gray[i] = rgba[j]
+  canvas.gray = gray
+  return gray
+}
+
+/**
+ * Grey pixels as a PGM file (a few header bytes, then the pixels): what the
+ * recognition is handed instead of a canvas. Tesseract.js encodes a canvas
+ * as PNG on the page (canvas.toBlob, which a busy page puts off) and decodes
+ * it again in the worker; a PGM is the pixels as they are (2026-11-27: the
+ * page read a fifth faster on a desktop, word for word the same).
+ */
+export function pgmOf (gray, width, height) {
+  const head = new TextEncoder().encode(`P5\n${width} ${height}\n255\n`)
+  const out = new Uint8Array(head.length + width * height)
+  out.set(head)
+  out.set(gray.subarray(0, width * height), head.length)
+  return out
+}
+
+/** What the recognition reads: a canvas as PGM, anything else (a Blob) as it is. */
+const imageOf = (page) => (isCanvas(page) ? pgmOf(grayOf(page), page.width, page.height) : page)
+
+/** The page's grey pixels (and those before its rules went: scan.js scanPage), null for a Blob. */
+function pixelsOf (page) {
+  if (!isCanvas(page)) return null
+  const { width, height } = page
+  const gray = grayOf(page)
   const before = page.beforeRules?.length === gray.length ? page.beforeRules : gray
   return { gray, before, width, height }
 }
@@ -59,9 +94,7 @@ function circlesOn (px) {
 
 /**
  * The number inside a circle the first reading skipped: that box alone, cut
- * out into a small canvas (Tesseract encodes a canvas it is given as PNG on
- * the main thread: the whole page again would take seconds on a tablet),
- * digits only.
+ * out into a small canvas, digits only.
  */
 async function readCircledNumber (worker, page, box) {
   const pad = Math.max(4, Math.round((box.y1 - box.y0) * 0.25))
@@ -77,7 +110,7 @@ async function readCircledNumber (worker, page, box) {
   ctx.fillStyle = '#fff'
   ctx.fillRect(0, 0, cut.width, cut.height)
   ctx.drawImage(page, left, top, width, height, pad, pad, width, height)
-  const { data } = await worker.recognize(cut, {}, { text: true })
+  const { data } = await worker.recognize(imageOf(cut), {}, { text: true })
   const m = /^\D*(\d{1,2})\D*$/.exec(String(data?.text || '').trim())
   return m && Number(m[1]) >= 1 ? { number: Number(m[1]), conf: (data.confidence ?? 0) / 100 } : null
 }
@@ -116,7 +149,11 @@ const UPRIGHT_SIDE = 1100
 // this many words read sure the way it lies: no need to try it turned
 const UPRIGHT_ENOUGH = 12
 
-/** The page (a canvas) turned a quarter clockwise per step and scaled, as a new canvas. */
+/**
+ * The page (a canvas) turned a quarter clockwise per step and scaled, as a
+ * new canvas; at full size with its grey pixels (and those before the rules
+ * went) turned along.
+ */
 function turnedCanvas (page, turns, scale = 1) {
   const n = ((turns % 4) + 4) % 4
   const w = Math.max(1, Math.round(page.width * scale))
@@ -128,7 +165,89 @@ function turnedCanvas (page, turns, scale = 1) {
   ctx.translate(out.width / 2, out.height / 2)
   ctx.rotate((n * Math.PI) / 2)
   ctx.drawImage(page, -w / 2, -h / 2, w, h)
+  if (scale === 1) {
+    const size = page.width * page.height
+    if (page.gray?.length === size) out.gray = turnGray(page.gray, page.width, page.height, n).gray
+    if (page.beforeRules?.length === size) out.beforeRules = turnGray(page.beforeRules, page.width, page.height, n).gray
+  }
   return out
+}
+
+/**
+ * Items read side by side, as many at once as there are workers: item k by
+ * worker k mod n, always the same one (the workers may hold different
+ * languages: the same photo reads the same each time); the answers in the
+ * items' order.
+ */
+async function onWorkers (workers, items, read) {
+  const out = new Array(items.length)
+  await Promise.all(workers.map(async (w, j) => {
+    for (let k = j; k < items.length; k += workers.length) out[k] = await read(w, items[k], k)
+  }))
+  return out
+}
+
+const setAll = (workers, params) => Promise.all(workers.map((w) => w.setParameters(params)))
+
+/**
+ * Three readings of one page, one language each (German, French, Italian:
+ * the same lines, read side by side on three workers), as one: for each
+ * line the language that read it surest (its words' confidence per letter),
+ * as Tesseract itself picks a language for each word it was unsure of when
+ * it reads with all three in turn.
+ */
+export function mergeLanguages (readings) {
+  const sets = readings.map((data) => {
+    const lines = []
+    for (const b of data?.blocks || []) for (const para of b?.paragraphs || []) for (const l of para?.lines || []) {
+      const words = (l?.words || []).filter((w) => w?.bbox && String(w.text || '').trim())
+      if (!words.length) continue
+      const y0 = Math.min(...words.map((w) => w.bbox.y0))
+      const y1 = Math.max(...words.map((w) => w.bbox.y1))
+      let n = 0
+      let sum = 0
+      for (const w of words) { const len = String(w.text).length; n += len; sum += len * (Number(w.confidence) || 0) }
+      lines.push({ line: { ...l, words }, y0, y1, mid: (y0 + y1) / 2, h: y1 - y0, score: n ? sum / n : 0, letters: n })
+    }
+    return lines
+  })
+  const chosen = []
+  const used = sets.map((lines) => lines.map(() => false))
+  sets.forEach((lines, a) => lines.forEach((l, i) => {
+    if (used[a][i]) return
+    // the same line in the other readings (their middles within half a line)
+    const group = [l]
+    used[a][i] = true
+    sets.forEach((other, b) => {
+      if (b === a) return
+      let best = -1
+      other.forEach((o, k) => {
+        if (used[b][k] || Math.abs(o.mid - l.mid) > 0.5 * Math.min(o.h, l.h)) return
+        if (best < 0 || Math.abs(o.mid - l.mid) < Math.abs(other[best].mid - l.mid)) best = k
+      })
+      if (best >= 0) { used[b][best] = true; group.push(other[best]) }
+    })
+    // (a reading that lost words of the line is not the surer one)
+    const most = Math.max(...group.map((g) => g.letters))
+    group.sort((x, y) => y.score * Math.min(1, y.letters / most) - x.score * Math.min(1, x.letters / most))
+    chosen.push(group[0])
+  }))
+  chosen.sort((x, y) => x.mid - y.mid)
+  let sum = 0
+  let n = 0
+  for (const c of chosen) for (const w of c.line.words) { sum += Number(w.confidence) || 0; n++ }
+  return { blocks: [{ paragraphs: [{ lines: chosen.map((c) => c.line) }] }], confidence: n ? sum / n : 0 }
+}
+
+/**
+ * The page read once: on the three workers side by side, one language each,
+ * merged line by line (mergeLanguages), when the engine has them; else on
+ * one worker with the three languages in turn.
+ */
+async function readPage (workers, page, { apart = false } = {}) {
+  const img = imageOf(page)
+  if (!apart) return (await workers[0].recognize(img, {}, { blocks: true, text: false })).data
+  return mergeLanguages(await Promise.all(OCR_LANGS.map((_, k) => workers[k].recognize(img, {}, { blocks: true, text: false }).then((r) => r.data))))
 }
 
 /** How many words of a reading came out sure (a word of three letters or four digits, 80 % or more). */
@@ -148,14 +267,27 @@ function sureWords (data) {
  * 2026-11-26: four of thirteen); unsure, it stays as it is. A page the
  * right way up costs nothing: it is read once.
  */
-async function uprightTurns (worker, page, asIs, order = [1, 3, 2]) {
+async function uprightTurns (workers, page, asIs, order = [1, 3, 2]) {
   const scale = Math.min(1, UPRIGHT_SIDE / Math.max(page.width, page.height))
-  const sure = async (turns) => sureWords((await worker.recognize(turnedCanvas(page, turns, scale), {}, { blocks: true, text: false })).data)
+  const sure = async (worker, turns) => sureWords((await worker.recognize(imageOf(turnedCanvas(page, turns, scale)), {}, { blocks: true, text: false })).data)
   let best = { turns: 0, n: asIs ?? 0 }
-  for (const turns of order) {
-    const n = await sure(turns)
-    if (n > best.n) best = { turns, n }
-    if (n >= UPRIGHT_ENOUGH) break
+  // the two quarter turns side by side (a page on its side is one of them),
+  // then the others, until one reads well
+  const rounds = workers.length > 1 ? [order.filter((t) => t % 2), order.filter((t) => !(t % 2))].filter((r) => r.length) : order.map((t) => [t])
+  search: for (const round of rounds) {
+    for (let i = 0; i < round.length; i += workers.length) {
+      const tried = round.slice(i, i + workers.length)
+      // done as soon as one reads well: the other reading goes on in its
+      // worker, unwaited for (what that worker reads next waits behind it)
+      const found = await new Promise((resolve) => {
+        const got = tried.map(() => -1)
+        let left = tried.length
+        const one = (k, n) => { got[k] = n; left--; if (n >= UPRIGHT_ENOUGH || !left) resolve(got) }
+        tried.forEach((turns, k) => sure(workers[k], turns).then((n) => one(k, n), () => one(k, -1)))
+      })
+      tried.forEach((turns, k) => { if (found[k] > best.n) best = { turns, n: found[k] } })
+      if (found.some((n) => n >= UPRIGHT_ENOUGH)) break search
+    }
   }
   return best.n >= 2 * (asIs ?? 0) + 3 ? best.turns : 0
 }
@@ -168,18 +300,17 @@ async function uprightTurns (worker, page, asIs, order = [1, 3, 2]) {
  * front (read again as a whole, a handwritten SV number came out worse:
  * real photos, 2026-11-26). It stays to check.
  */
-async function readLicencesAgain (worker, page, players) {
-  await worker.setParameters({ tessedit_pageseg_mode: PSM_SINGLE_LINE, tessedit_char_whitelist: '0123456789' })
-  const out = []
-  for (const p of players) {
+async function readLicencesAgain (workers, page, players) {
+  await setAll(workers, { tessedit_pageseg_mode: PSM_SINGLE_LINE, tessedit_char_whitelist: '0123456789' })
+  return onWorkers(workers, players, async (worker, p) => {
     const at = p.licenceAt
-    if (!at) { out.push(p); continue }
+    if (!at) return p
     const pad = Math.max(3, Math.round((at.y1 - at.y0) * 0.25))
     const x = Math.max(0, Math.floor(at.x0))
     const y = Math.max(0, Math.floor(at.y0 - pad))
     const w = Math.min(page.width - x, Math.ceil(at.x1 - at.x0 + pad))
     const h = Math.min(page.height - y, Math.ceil(at.y1 - at.y0 + 2 * pad))
-    if (w < 4 || h < 4) { out.push(p); continue }
+    if (w < 4 || h < 4) return p
     const cut = document.createElement('canvas')
     cut.width = w + 2 * pad
     cut.height = h + 2 * pad
@@ -187,14 +318,13 @@ async function readLicencesAgain (worker, page, players) {
     ctx.fillStyle = '#fff'
     ctx.fillRect(0, 0, cut.width, cut.height)
     ctx.drawImage(page, x, y, w, h, pad, pad, w, h)
-    const { data } = await worker.recognize(cut, {}, { text: true })
+    const { data } = await worker.recognize(imageOf(cut), {}, { text: true })
     const digits = String(data?.text || '').replace(/\D/g, '')
     const conf = Math.min((data?.confidence ?? 0) / 100, 0.6)
     const now = String(p.licence || '')
     const take = digits.length === now.length + 1 && digits.endsWith(now) && /^\d{6}$/.test(digits)
-    out.push(take ? { ...p, licence: digits, confidence: { ...p.confidence, licence: Math.min(p.confidence?.licence ?? conf, conf) } } : p)
-  }
-  return out
+    return take ? { ...p, licence: digits, confidence: { ...p.confidence, licence: Math.min(p.confidence?.licence ?? conf, conf) } } : p
+  })
 }
 
 /**
@@ -207,7 +337,7 @@ async function readLicencesAgain (worker, page, players) {
  * circle, and the captain. Each player then gets what its groups read
  * (ocrRoster withHandReadings).
  */
-async function readHandwriting (worker, page, px, players, debug) {
+async function readHandwriting (workers, page, px, players, debug) {
   const items = []
   players.forEach((p, i) => {
     const at = p.handAt
@@ -277,10 +407,10 @@ async function readHandwriting (worker, page, px, players, debug) {
   // each read alone, as one line of text (one sheet read at once came out
   // run together or dropped: tried on real photos, 2026-11-26), a few
   // milliseconds each
-  const texts = items.map(() => ({ words: [], conf: 1 }))
-  await worker.setParameters({ tessedit_pageseg_mode: PSM_SINGLE_LINE, tessedit_char_whitelist: HAND_CHARS })
-  for (let k = 0; k < items.length; k++) {
-    const to = at[k]
+  // (side by side on the workers there are)
+  await setAll(workers, { tessedit_pageseg_mode: PSM_SINGLE_LINE, tessedit_char_whitelist: HAND_CHARS })
+  const texts = await onWorkers(workers, at, async (worker, to) => {
+    const text = { words: [], conf: 1 }
     const one = document.createElement('canvas')
     one.width = to.w + HAND_GAP
     one.height = to.h + HAND_GAP
@@ -288,19 +418,20 @@ async function readHandwriting (worker, page, px, players, debug) {
     c1.fillStyle = '#fff'
     c1.fillRect(0, 0, one.width, one.height)
     c1.drawImage(sheet, to.x, to.y, to.w, to.h, HAND_GAP / 2, HAND_GAP / 2, to.w, to.h)
-    const { data } = await worker.recognize(one, {}, { blocks: true, text: false })
+    const { data } = await worker.recognize(imageOf(one), {}, { blocks: true, text: false })
     for (const b of data?.blocks || []) {
       for (const para of b?.paragraphs || []) {
         for (const l of para?.lines || []) {
           for (const w of l?.words || []) {
             if (!String(w.text || '').trim()) continue
-            texts[k].words.push({ x: w.bbox.x0, text: String(w.text).trim() })
-            texts[k].conf = Math.min(texts[k].conf, (w.confidence ?? 0) / 100)
+            text.words.push({ x: w.bbox.x0, text: String(w.text).trim() })
+            text.conf = Math.min(text.conf, (w.confidence ?? 0) / 100)
           }
         }
       }
     }
-  }
+    return text
+  })
   if (debug) debug.sheet = sheet
   if (debug) debug.rows = players.map((p) => ({ licence: p.licence, handAt: p.handAt && { ...p.handAt, skip: p.handAt.skip.length } }))
   if (debug) debug.hand = items.map((it, k) => ({ ...it, skip: undefined, text: texts[k].words.map((w) => w.text).join(' '), conf: texts[k].conf, cut: cuts[k] }))
@@ -311,6 +442,41 @@ async function readHandwriting (worker, page, px, players, debug) {
     if ((text && texts[k].conf >= HAND_MIN_CONF) || it.ringed) reads[it.i].push({ text: texts[k].conf >= HAND_MIN_CONF ? text : '', conf: text ? texts[k].conf : 0.5, ringed: it.ringed })
   })
   return players.map((p, i) => withHandReadings(p, reads[i]))
+}
+
+/**
+ * Rows the first reading lost between two player rows (a gap of two rows or
+ * more) with a pen line across them: struck out (owner: not playing), so
+ * named on the confirm screen with what a reading of that band alone gives
+ * (a line through a row can make Tesseract skip it: real photo, 2026-11-27).
+ */
+async function lostStruckRows (workers, page, px, players) {
+  const rows = players.filter((p) => p.handAt).map((p) => p.handAt).sort((a, b) => a.y - b.y)
+  if (rows.length < 3) return []
+  const gaps = rows.slice(1).map((r, i) => r.y - rows[i].y).sort((a, b) => a - b)
+  const pitch = gaps[gaps.length >> 1]
+  const line = rows[rows.length >> 1].line
+  const x0 = Math.min(...rows.map((r) => r.left))
+  const x1 = Math.max(...rows.map((r) => r.x1))
+  const bands = []
+  for (let i = 1; i < rows.length; i++) {
+    const missing = Math.round((rows[i].y - rows[i - 1].y) / pitch) - 1
+    for (let k = 1; k <= missing && missing <= 3; k++) {
+      const y = rows[i - 1].y + (k * (rows[i].y - rows[i - 1].y)) / (missing + 1)
+      if (lineAcross(px.before, px.width, px.height, { x0, x1, y, line })) bands.push(y)
+    }
+  }
+  if (!bands.length) return []
+  await setAll(workers, { tessedit_pageseg_mode: PSM_SINGLE_LINE, tessedit_char_whitelist: '' })
+  return onWorkers(workers, bands.slice(0, 3), async (worker, y) => {
+    const top = Math.max(0, Math.round(y - 0.75 * pitch))
+    const bottom = Math.min(px.height, Math.round(y + 0.75 * pitch))
+    const { data } = await worker.recognize(pgmOf(px.gray.subarray(top * px.width, bottom * px.width), px.width, bottom - top), {}, { text: true })
+    const words = String(data?.text || '').split(/\s+/).filter(Boolean)
+    const names = words.filter((w) => /^\p{Lu}\p{Ll}{2,}[\p{L}'’-]*$/u.test(w))
+    const licence = words.map((w) => w.replace(/\D/g, '')).find((d) => /^\d{5,6}$/.test(d)) || ''
+    return { firstName: names[0] || '', lastName: names.slice(1, 3).join(' '), licence }
+  })
 }
 
 const coded = (code, message, cause) => Object.assign(new Error(message), { code, cause })
@@ -338,80 +504,173 @@ async function loadCreateWorker () {
   return (mod.default || mod).createWorker
 }
 
+// at most this many workers: one a language (mergeLanguages)
+export const MAX_WORKERS = OCR_LANGS.length
+
 /**
- * The roster in the flat page of a photo (scan.js scanPage, as a canvas or
- * a Blob).
- * @param {HTMLCanvasElement|Blob} page
- * @param {{ onProgress?: (share: number, status: string) => void, signal?: AbortSignal, createWorker?: Function, timeoutMs?: number, startTimeoutMs?: number, dir?: string }} [opts]
+ * How many workers read a page at once on this device: one core left for
+ * the page itself, at most one a language, one alone on a device with
+ * little memory (Chrome's deviceMemory below 2; a Galaxy Tab A7 Lite has 8
+ * cores and 3 GB, which Chrome reports as 2: three workers).
  */
-export async function readRosterPhoto (page, { onProgress, signal, createWorker, timeoutMs = OCR_TIMEOUT_MS, startTimeoutMs = OCR_START_TIMEOUT_MS, dir, debug } = {}) {
-  let worker = null
-  // the handwriting read again after the page is quick: no second progress bar for it
-  let quiet = false
-  // closing the dialog ends the worker at once (its memory and the tablet's CPU back)
-  const cancelled = () => coded('ocr-cancelled', 'The reading was cancelled')
-  const onAbort = () => { try { worker?.terminate?.() } catch { /* gone */ } }
-  signal?.addEventListener?.('abort', onAbort)
-  try {
-    if (signal?.aborted) throw cancelled()
+export function ocrWorkerCount ({
+  cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : undefined,
+  memory = typeof navigator !== 'undefined' ? navigator.deviceMemory : undefined
+} = {}) {
+  let n = Number.isFinite(cores) && cores > 1 ? Math.min(MAX_WORKERS, cores - 1) : 1
+  if (Number.isFinite(memory) && memory > 0 && memory < 2) n = 1
+  return Math.max(1, n)
+}
+
+/**
+ * The recognition started ahead (RosterPhotoImport: while the scorer takes
+ * the photo and drags its corners, so "Read the list" does not wait for it),
+ * from the app's own files, each worker with the three languages. With
+ * three, the page is read by the three side by side, one language each
+ * (readRosterPhoto: engine.apart), everything else with all three. Never
+ * throws: engine.ready rejects (ocr-load) when none could start, and goes
+ * on with the workers that did (little memory). engine.terminate() ends
+ * them at once (the dialog closed, the list read).
+ * @returns {{ size: number, apart: boolean, ready: Promise<object[]>, listeners: Set<Function>, terminate: () => Promise<void>, ended: boolean }}
+ */
+export function startOcrEngine ({ size = ocrWorkerCount(), createWorker, dir, startTimeoutMs = OCR_START_TIMEOUT_MS } = {}) {
+  const count = Math.max(1, Math.min(MAX_WORKERS, size))
+  const engine = { size: count, apart: count === OCR_LANGS.length, listeners: new Set(), workers: [], ended: false }
+  engine.ready = (async () => {
     if (!wasmAllowed()) throw coded('ocr-load', 'This page may not run WebAssembly (its Content-Security-Policy, or the engine)')
     try {
       const create = createWorker || await loadCreateWorker()
       // (ocrFiles.js: the same addresses the web loads ahead, ocrWarmup.js)
       const { workerPath, corePath, langPath } = ocrPaths(dir || ocrDir(), await simdSupported())
-      worker = await withTimeout(create(OCR_LANGS, LSTM_ONLY, {
-        workerPath,
-        corePath,
-        langPath,
-        gzip: false,
-        // the files are the app's own (or the service worker's on the web): no second copy in IndexedDB
-        cacheMethod: 'none',
-        // a worker from the app's own address, not a blob: URL
-        workerBlobURL: false,
-        logger: (m) => { if (onProgress && !quiet && typeof m?.progress === 'number') onProgress(m.progress, m.status || '') }
-      }), startTimeoutMs)
-      await worker.setParameters({ tessedit_pageseg_mode: PSM_SINGLE_BLOCK, preserve_interword_spaces: '1' })
+      const one = async (k) => {
+        const w = await create(OCR_LANGS, LSTM_ONLY, {
+          workerPath,
+          corePath,
+          langPath,
+          gzip: false,
+          // the files are the app's own (or the service worker's on the web): no second copy in IndexedDB
+          cacheMethod: 'none',
+          // a worker from the app's own address, not a blob: URL
+          workerBlobURL: false,
+          logger: (m) => { for (const f of engine.listeners) f(m) }
+        })
+        // (ended while it started: its memory back at once)
+        if (engine.ended) { try { await w.terminate?.() } catch { /* gone */ } } else engine.workers[k] = w
+        return w
+      }
+      const started = await withTimeout(Promise.allSettled(Array.from({ length: count }, (_, k) => one(k))), startTimeoutMs)
+      if (engine.ended) throw coded('ocr-cancelled', 'The reading was cancelled')
+      const workers = engine.workers.filter(Boolean)
+      if (!workers.length) throw started.find((r) => r.status === 'rejected')?.reason || new Error('no worker')
+      // (one short: the page read by one worker with all three)
+      engine.apart = workers.length === OCR_LANGS.length
+      engine.workers = workers
+      return [...workers]
     } catch (err) {
-      if (signal?.aborted) throw cancelled()
+      if (err?.code === 'ocr-cancelled' || err?.code === 'ocr-load') throw err
+      throw coded('ocr-load', `The text recognition could not start (${err?.message || err})`, err)
+    }
+  })()
+  // (whoever reads awaits it; a start nobody waited for fails quietly)
+  engine.ready.catch(() => {})
+  engine.terminate = async () => {
+    engine.ended = true
+    const all = engine.workers.splice(0).filter(Boolean)
+    await Promise.all(all.map(async (w) => { try { await w.terminate?.() } catch { /* already gone */ } }))
+  }
+  return engine
+}
+
+// The progress bar's shares (owner 27.11: when it shows 100 % it is finished): the page
+// takes most of it, each step after it (SV numbers, handwriting, struck rows, circled
+// numbers) moves it on; readRosterPhoto never reports more than OCR_LAST_SHARE, the
+// dialog shows 100 % only together with the check screen.
+export const SHARE_PAGE = 0.8
+export const OCR_LAST_SHARE = 0.98
+
+/**
+ * The roster in the flat page of a photo (scan.js scanPage, as a canvas or
+ * a Blob).
+ *
+ * engine: the recognition started ahead (startOcrEngine), left to its owner
+ * to end; without one, readRosterPhoto starts its own and ends it.
+ * tuning (measurements): { workers: how many of its own (ocrWorkerCount) }.
+ * @param {HTMLCanvasElement|Blob} page
+ * @param {{ engine?: object, onProgress?: (share: number, status: string) => void, signal?: AbortSignal, createWorker?: Function, timeoutMs?: number, startTimeoutMs?: number, dir?: string, tuning?: object }} [opts]
+ */
+export async function readRosterPhoto (page, { engine = null, onProgress, signal, createWorker, timeoutMs = OCR_TIMEOUT_MS, startTimeoutMs = OCR_START_TIMEOUT_MS, dir, debug, tuning = {} } = {}) {
+  // (a Blob: read as it is, by one worker)
+  const own = engine ? null : startOcrEngine({ size: isCanvas(page) ? (tuning.workers ?? ocrWorkerCount()) : 1, createWorker, dir, startTimeoutMs })
+  const eng = engine || own
+  // progress: the page's share read (by each language, side by side), then the marks read again
+  let phase = null
+  const shares = new Map()
+  const report = (share, status) => { if (onProgress && !signal?.aborted) onProgress(Math.max(0, Math.min(1, share)), status) }
+  const listener = (m) => {
+    if (phase !== 'page' || typeof m?.progress !== 'number' || !String(m.status || '').startsWith('recognizing')) return
+    shares.set(m.workerId ?? 0, m.progress)
+    let sum = 0
+    for (const v of shares.values()) sum += v
+    report(SHARE_PAGE * sum / Math.max(1, phaseCount), 'recognizing text')
+  }
+  let phaseCount = 1
+  eng.listeners.add(listener)
+  // closing the dialog ends the workers at once (their memory and the tablet's CPU back)
+  const cancelled = () => coded('ocr-cancelled', 'The reading was cancelled')
+  const onAbort = () => { eng.terminate() }
+  signal?.addEventListener?.('abort', onAbort)
+  try {
+    if (signal?.aborted) throw cancelled()
+    let workers
+    try {
+      workers = await withTimeout(eng.ready, startTimeoutMs)
+      await setAll(workers, { tessedit_pageseg_mode: PSM_SINGLE_BLOCK, preserve_interword_spaces: '1' })
+    } catch (err) {
+      if (signal?.aborted || err?.code === 'ocr-cancelled') throw cancelled()
+      if (err?.code === 'ocr-load') throw err
       throw coded('ocr-load', `The text recognition could not start (${err?.message || err})`, err)
     }
     if (signal?.aborted) throw cancelled()
+    // the page by the three side by side, one language each (a few
+    // milliseconds to switch); everything else with all three, as before
+    const languages = async (apart) => {
+      await Promise.all(workers.map((w, k) => w.reinitialize(apart ? OCR_LANGS[k] : OCR_LANGS, LSTM_ONLY)))
+      await setAll(workers, { tessedit_pageseg_mode: PSM_SINGLE_BLOCK, preserve_interword_spaces: '1' })
+    }
+    const read = async (p) => {
+      phase = 'page'
+      shares.clear()
+      phaseCount = eng.apart ? OCR_LANGS.length : 1
+      if (eng.apart) await languages(true)
+      const data = await withTimeout(readPage(workers, p, { apart: eng.apart }), timeoutMs)
+      if (eng.apart) await languages(false)
+      phase = null
+      return data
+    }
     let data
     try {
       // a page wider than high is an A4 list photographed on its side, most
       // likely: the small copy's quarter turns first (and as it lies), not a
       // whole reading of sideways text first (seconds on a tablet)
       let turnedFirst = false
-      if (typeof page?.getContext === 'function' && page.width > 1.15 * page.height) {
-        quiet = true
-        const turns = await withTimeout(uprightTurns(worker, page, null, [1, 3, 0]), timeoutMs)
-        quiet = false
+      if (isCanvas(page) && page.width > 1.15 * page.height) {
+        const turns = await withTimeout(uprightTurns(workers, page, null, [1, 3, 0]), timeoutMs)
         turnedFirst = true
         if (debug) debug.turned = turns
-        if (turns) {
-          const before = page.beforeRules
-          const turned = turnedCanvas(page, turns)
-          if (before?.length === page.width * page.height) turned.beforeRules = turnGray(before, page.width, page.height, turns).gray
-          page = turned
-        }
+        if (turns) page = turnedCanvas(page, turns)
         if (signal?.aborted) throw cancelled()
       }
-      ;({ data } = await withTimeout(worker.recognize(page, {}, { blocks: true, text: false }), timeoutMs))
+      data = await read(page)
       // few words read sure: the page on its side or upside down? (a canvas
       // only: a Blob is read as it is)
       const asIs = sureWords(data)
-      if (!turnedFirst && asIs < UPRIGHT_ENOUGH && typeof page?.getContext === 'function' && !signal?.aborted) {
-        quiet = true
-        const turns = await withTimeout(uprightTurns(worker, page, asIs), timeoutMs)
-        quiet = false
+      if (!turnedFirst && asIs < UPRIGHT_ENOUGH && isCanvas(page) && !signal?.aborted) {
+        const turns = await withTimeout(uprightTurns(workers, page, asIs), timeoutMs)
         if (debug) debug.turned = turns
         if (turns) {
-          const before = page.beforeRules
-          const turned = turnedCanvas(page, turns)
-          if (before?.length === page.width * page.height) turned.beforeRules = turnGray(before, page.width, page.height, turns).gray
-          page = turned
+          page = turnedCanvas(page, turns)
           if (signal?.aborted) throw cancelled()
-          ;({ data } = await withTimeout(worker.recognize(page, {}, { blocks: true, text: false }), timeoutMs))
+          data = await read(page)
         }
       }
     } catch (err) {
@@ -419,38 +678,49 @@ export async function readRosterPhoto (page, { onProgress, signal, createWorker,
       if (err?.code === PDF_TIMEOUT_CODE) throw coded('ocr-timeout', 'The text recognition took too long', err)
       throw coded('ocr-load', `The text recognition stopped (${err?.message || err})`, err)
     }
+    phase = null
+    report(SHARE_PAGE, 'recognizing text')
     const confidence = Number(data?.confidence)
     if (Number.isFinite(confidence) && confidence < BLURRY_CONFIDENCE) throw coded('ocr-blurry', 'The photo is too blurry to read')
     const px = pixelsOf(page)
     const parsed = rosterFromOcr(data, circlesOn(px))
-    if (parsed.players.some((p) => p.licenceAt) && typeof page?.getContext === 'function' && !signal?.aborted) {
-      quiet = true
+    if (parsed.players.some((p) => p.licenceAt) && isCanvas(page) && !signal?.aborted) {
+      report(0.83, 'reading marks')
       try {
-        parsed.players = await withTimeout(readLicencesAgain(worker, page, parsed.players), HAND_TIMEOUT_MS)
+        parsed.players = await withTimeout(readLicencesAgain(workers, page, parsed.players), HAND_TIMEOUT_MS)
       } catch { /* the SV numbers as first read (to check) */ }
-      quiet = false
     }
     if (px && parsed.players.some((p) => p.handAt) && !signal?.aborted) {
-      quiet = true
+      report(0.86, 'reading marks')
       try {
-        parsed.players = await withTimeout(readHandwriting(worker, page, px, parsed.players, debug), HAND_TIMEOUT_MS)
+        parsed.players = await withTimeout(readHandwriting(workers, page, px, parsed.players, debug), HAND_TIMEOUT_MS)
       } catch { /* the first reading's marks stay (all of them to check) */ }
-      quiet = false
     }
-    const ringed = parsed.players.filter((p) => p.ringAt)
+    report(0.92, 'reading marks')
+    if (px && !signal?.aborted) {
+      try {
+        const lost = (await withTimeout(lostStruckRows(workers, page, px, parsed.players), HAND_TIMEOUT_MS)).filter((r) => r.firstName || r.lastName || r.licence)
+        if (lost.length) parsed.struck = [...(parsed.struck || []), ...lost]
+      } catch { /* a lost row stays lost (it is not imported either way) */ }
+    }
+    report(0.95, 'reading marks')
+    const ringed = parsed.players.filter((p) => p.ringAt).slice(0, 4)
     if (ringed.length && !signal?.aborted) {
       try {
-        await worker.setParameters({ tessedit_pageseg_mode: PSM_SINGLE_WORD, tessedit_char_whitelist: '0123456789' })
-        for (const p of ringed.slice(0, 4)) {
-          const read = await withTimeout(readCircledNumber(worker, page, p.ringAt), CIRCLE_TIMEOUT_MS)
-          if (read && !parsed.players.some((q) => q.number === read.number)) {
-            p.number = read.number
-            p.confidence = { ...p.confidence, number: Math.min(read.conf, HANDWRITTEN_MAX) }
+        await setAll(workers, { tessedit_pageseg_mode: PSM_SINGLE_WORD, tessedit_char_whitelist: '0123456789' })
+        const reads = await withTimeout(onWorkers(workers, ringed, (w, p) => readCircledNumber(w, page, p.ringAt)), CIRCLE_TIMEOUT_MS)
+        ringed.forEach((p, k) => {
+          const got = reads[k]
+          if (got && !parsed.players.some((q) => q.number === got.number)) {
+            p.number = got.number
+            p.confidence = { ...p.confidence, number: Math.min(got.conf, HANDWRITTEN_MAX) }
           }
-        }
+        })
       } catch { /* the captain stays marked; the number is the scorer's (or the saved team's) */ }
     }
     if (signal?.aborted) throw cancelled()
+    // never 1: the bar shows 100 % only with the check screen (owner 27.11: "100 % = finished")
+    report(OCR_LAST_SHARE, 'reading marks')
     const roster = importedRosterOf(parsed, 'ocr')
     if (!roster.players.length && !roster.struck?.length) {
       // a page read without much certainty and no row: the photo, not the list
@@ -459,7 +729,9 @@ export async function readRosterPhoto (page, { onProgress, signal, createWorker,
     return roster
   } finally {
     signal?.removeEventListener?.('abort', onAbort)
+    eng.listeners.delete(listener)
     // its memory (the three languages) back at once; a worker that never answers is ended too
-    try { await worker?.terminate?.() } catch { /* already gone */ }
+    // ended without holding the result back (its memory still comes back at once)
+    if (own) Promise.resolve(own.terminate()).catch(() => {})
   }
 }

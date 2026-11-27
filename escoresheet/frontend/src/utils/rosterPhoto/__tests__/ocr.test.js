@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { readRosterPhoto, OCR_LANGS, ocrDir } from '../ocr'
+import { readRosterPhoto, startOcrEngine, ocrWorkerCount, pgmOf, mergeLanguages, OCR_LANGS, ocrDir } from '../ocr'
 import { version as TESSERACT_VERSION } from 'tesseract.js/package.json'
 import vmShot from './fixtures/ocr-vm-de-screenshot.json'
 
@@ -11,6 +11,7 @@ function fakeTesseract ({ data = vmShot, recognize, failCreate = false } = {}) {
     if (failCreate) throw new Error('failed to fetch worker.min.js')
     return {
       setParameters: async (p) => { calls.params.push(p) },
+      reinitialize: async () => {},
       recognize: async (...args) => { calls.recognize++; return recognize ? recognize(...args) : { data } },
       terminate: async () => { calls.terminated++ }
     }
@@ -94,11 +95,117 @@ describe('readRosterPhoto (Tesseract on this device)', () => {
     await expect(readRosterPhoto(new Blob(['page']), { createWorker: sharp.createWorker, dir: '/ocr/x/' })).rejects.toMatchObject({ code: 'ocr-empty' })
   })
 
-  it('a progress callback gets the share and the phase', async () => {
-    const { createWorker, calls } = fakeTesseract()
+  it('a progress callback gets the share of the page read and the phase, to the end', async () => {
+    const fake = fakeTesseract({
+      recognize: async () => {
+        fake.calls.create.options.logger({ status: 'recognizing text', progress: 0.5, workerId: 'w1' })
+        return { data: vmShot }
+      }
+    })
+    const { createWorker, calls } = fake
     const seen = []
     await readRosterPhoto(new Blob(['page']), { createWorker, dir: '/ocr/x/', onProgress: (share, status) => seen.push([share, status]) })
-    calls.create.options.logger({ status: 'recognizing text', progress: 0.5 })
-    expect(seen).toContainEqual([0.5, 'recognizing text'])
+    expect(seen).toContainEqual([0.4, 'recognizing text'])
+    expect(seen[seen.length - 1]).toEqual([0.98, 'reading marks'])
+    // never 100 % before the result is back (owner 27.11: "100 % = finished"), never backwards
+    expect(seen.every(([share]) => share < 1)).toBe(true)
+    for (let k = 1; k < seen.length; k++) expect(seen[k][0]).toBeGreaterThanOrEqual(seen[k - 1][0])
+    // (nothing after the end)
+    const before = seen.length
+    calls.create.options.logger({ status: 'recognizing text', progress: 0.7, workerId: 'w1' })
+    expect(seen.length).toBe(before)
+  })
+})
+
+describe('the recognition started ahead (startOcrEngine)', () => {
+  it('starts its workers before the photo is read; the reading uses them and leaves them to their owner', async () => {
+    const { createWorker, calls } = fakeTesseract()
+    const engine = startOcrEngine({ size: 3, createWorker, dir: '/ocr/x/' })
+    const workers = await engine.ready
+    expect(createWorker).toHaveBeenCalledTimes(3)
+    expect(workers).toHaveLength(3)
+    const roster = await readRosterPhoto(new Blob(['page']), { engine, createWorker })
+    expect(roster.players).toHaveLength(10)
+    // no second start, not ended by the reading
+    expect(createWorker).toHaveBeenCalledTimes(3)
+    expect(calls.terminated).toBe(0)
+    await engine.terminate()
+    expect(calls.terminated).toBe(3)
+  })
+
+  it('goes on with the workers that started (little memory); none started: ocr-load', async () => {
+    let n = 0
+    const some = vi.fn(async () => {
+      if (++n === 2) throw new Error('out of memory')
+      return { setParameters: async () => {}, recognize: async () => ({ data: vmShot }), terminate: async () => {}, reinitialize: async () => {} }
+    })
+    const short = startOcrEngine({ size: 3, createWorker: some, dir: '/ocr/x/' })
+    expect(await short.ready).toHaveLength(2)
+    // (one short: the page read by one worker with all three)
+    expect(short.apart).toBe(false)
+    const none = startOcrEngine({ size: 2, createWorker: async () => { throw new Error('failed to fetch') }, dir: '/ocr/x/' })
+    await expect(none.ready).rejects.toMatchObject({ code: 'ocr-load' })
+  })
+
+  it('ended while it starts (the dialog closed): its workers end as they come', async () => {
+    const { createWorker, calls } = fakeTesseract()
+    const engine = startOcrEngine({ size: 2, createWorker, dir: '/ocr/x/' })
+    await engine.terminate()
+    await expect(engine.ready).rejects.toMatchObject({ code: 'ocr-cancelled' })
+    expect(calls.terminated).toBe(2)
+  })
+
+  it('ocrWorkerCount: one core left for the page, one worker a language, one alone on little memory', () => {
+    expect(ocrWorkerCount({ cores: 8, memory: 8 })).toBe(3)
+    // a Galaxy Tab A7 Lite: 8 cores, 3 GB (Chrome says 2)
+    expect(ocrWorkerCount({ cores: 8, memory: 2 })).toBe(3)
+    expect(ocrWorkerCount({ cores: 8, memory: 1 })).toBe(1)
+    expect(ocrWorkerCount({ cores: 3 })).toBe(2)
+    expect(ocrWorkerCount({ cores: 2 })).toBe(1)
+    expect(ocrWorkerCount({ cores: 0 })).toBe(1)
+  })
+
+  it('three workers read the page side by side, one language each, and the rest with all three', async () => {
+    const created = []
+    const switched = []
+    let read = 0
+    const createWorker = vi.fn(async (langs) => {
+      const k = created.push(langs) - 1
+      return {
+        setParameters: async () => {},
+        recognize: async () => { read++; return { data: vmShot } },
+        terminate: async () => {},
+        reinitialize: async (l) => { switched.push([k, l]) }
+      }
+    })
+    const engine = startOcrEngine({ size: 3, createWorker, dir: '/ocr/x/' })
+    await engine.ready
+    expect(created).toEqual([OCR_LANGS, OCR_LANGS, OCR_LANGS])
+    expect(engine.apart).toBe(true)
+    const canvas = Object.assign(document.createElement('canvas'), { width: 4, height: 6 })
+    canvas.gray = new Uint8ClampedArray(24).fill(255)
+    await readRosterPhoto(canvas, { engine, createWorker })
+    expect(read).toBeGreaterThanOrEqual(3)
+    expect(switched.slice(0, 3).sort()).toEqual([[0, 'deu'], [1, 'fra'], [2, 'ita']])
+    expect(switched.slice(3, 6).map(([, l]) => l)).toEqual([OCR_LANGS, OCR_LANGS, OCR_LANGS])
+    await engine.terminate()
+  })
+
+  it('mergeLanguages: each line from the language that read it surest; a line one reading lost is kept', () => {
+    const w = (text, x0, conf, y = 10) => ({ text, confidence: conf, bbox: { x0, y0: y, x1: x0 + 10 * text.length, y1: y + 20 } })
+    const page = (...lines) => ({ blocks: [{ paragraphs: [{ lines: lines.map((words) => ({ words })) }] }] })
+    const de = page([w('123456', 0, 95), w('Anna', 80, 60), w('Mustor', 140, 50)], [w('234567', 0, 95, 50), w('Paul', 80, 92), w('Beispiel', 140, 91, 50)])
+    const fr = page([w('123456', 0, 95), w('Anna', 80, 93), w('Muster', 140, 90)])
+    const it = page([w('123456', 0, 90), w('Anna', 80, 70), w('Muster', 140, 70)], [w('234567', 0, 80, 50), w('Paul', 80, 70), w('Beispiel', 140, 60, 50)])
+    const merged = mergeLanguages([de, fr, it])
+    const lines = merged.blocks[0].paragraphs[0].lines.map((l) => l.words.map((x) => x.text).join(' '))
+    expect(lines).toEqual(['123456 Anna Muster', '234567 Paul Beispiel'])
+    expect(merged.confidence).toBeGreaterThan(90)
+  })
+
+  it('pgmOf: the grey pixels as a PGM file (what the recognition reads instead of a canvas)', () => {
+    const out = pgmOf(new Uint8ClampedArray([0, 128, 255, 7, 8, 9]), 3, 2)
+    expect(new TextDecoder().decode(out.slice(0, 11))).toBe('P5\n3 2\n255\n')
+    expect([...out.slice(11)]).toEqual([0, 128, 255, 7, 8, 9])
   })
 })

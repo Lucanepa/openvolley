@@ -338,24 +338,73 @@ function takeMarks (words, circled = () => false, tableRight = Infinity) {
 }
 
 // "Trainer: #12345 | Anna Muster (1980)" as read: the "#" or the "|" lost or
-// read as something else; written back the way parseLabelledOfficials reads it
-const OFFICIAL_LINE = /^(.{1,80}?):\s*[#H*]?\s*(\d{3,7})\s*[|Il1!/]?\s*([^\d()]+?)\s*\(?\s*(\d{4})\s*\)?\s*$/u
+// read as something else, the colon lost ("coach #12345"), the year in
+// brackets cut or garbled (a birth year, never part of the name)
+const OFFICIAL_LINE = /^(.{1,80}?)\s*[:;]?\s*[#H*]\s*(\d{3,7})\s*[|Il1!/]?\s*([^\d()]+?)\s*(?:\(?\s*(\d{4})\s*\)?)?\s*$/u
+const OFFICIAL_LINE_NO_HASH = /^(.{1,80}?)\s*[:;]\s*(\d{3,7})\s*[|Il1!/]\s*([^\d()]+?)\s*(?:\(?\s*(\d{4})\s*\)?)?\s*$/u
+// a name's word that starts its last name: "Ruedi von Beispiel", "Marco De Esempio"
+const LAST_NAME_START = /^(von|vom|van|de|del|della|dello|dei|degli|di|da|dal|dos|das|do|du|des|der|den|la|le|lo|ten|ter|zu|zur|mc|st)$/i
 
-function officialLine (text) {
-  const m = OFFICIAL_LINE.exec(text)
-  if (!m || !officialRoleOf(m[1].split(/\s+/).slice(-4).join(' '))) return null
-  // "1." / "2." in front is that assistant, whatever became of the role's
-  // words ("2. Allenatore ===}+<nte"): VolleyManager numbers only the assistants
+/**
+ * The role of an official's label as read: parseRosterPdf officialRoleOf,
+ * else by what is left of its words ("oach" for a Coach whose C the photo
+ * lost, real photo 2026-11-27): 'coach', 'ac1', 'ac2', 'ac' or null.
+ */
+function roleOfLabel (label) {
+  const role = officialRoleOf(label)
+  if (role) return role
+  if (!/oach|rainer|llenat|ntra[iî]n|ssist/i.test(label)) return null
+  if (/ssist|djoint|iuto/i.test(label)) return /(^|\D)2(\D|$)/.test(label) ? 'ac2' : /(^|\D)1(\D|$)/.test(label) ? 'ac1' : 'ac'
+  return 'coach'
+}
+
+/**
+ * An official's line ("<role>: #<SV number> | <first> <last> (<year>)",
+ * VolleyManager's, the role in English or the list's language) as read:
+ * { label, slot, licence, names } or null. "1." / "2." in front is that
+ * assistant, whatever became of the role's words ("2. Allenatore
+ * ===}+<nte"): VolleyManager numbers only the assistants.
+ */
+function officialOf (text) {
+  const m = OFFICIAL_LINE.exec(text) || OFFICIAL_LINE_NO_HASH.exec(text)
+  if (!m) return null
+  const label = m[1].trim().split(/\s+/).slice(-4).join(' ')
   const nth = /^\s*([12])\s*[.)]/.exec(m[1])
-  const label = nth ? `${nth[1]}. Assistant Coach` : m[1].trim()
-  // a name misread with signs in it ("E==mp=!") keeps its letters, capitalised,
-  // so the official is not lost: the confirm screen shows it to check
+  const slot = nth ? `ac${nth[1]}` : roleOfLabel(label)
+  if (!slot) return null
+  // a name misread with signs in it ("E==mp=!") keeps its letters, so the
+  // official is not lost: the confirm screen shows it to check
   const names = m[3].split(/\s+/)
     .map((w) => w.replace(/[^\p{L}'’-]/gu, ''))
-    .filter((w) => /\p{L}/u.test(w))
-    .map((w) => w.charAt(0).toLocaleUpperCase() + w.slice(1))
+    .filter((w) => /\p{L}{2,}/u.test(w))
   if (names.length < 2) return null
-  return `${label}: #${m[2]} | ${names.join(' ')} (${m[4]})`
+  return { label: nth ? `${nth[1]}. Assistant Coach` : m[1].trim(), slot, licence: m[2], names, year: m[4] || '' }
+}
+
+/** The line written back the way parseLabelledOfficials reads it (each name word capitalised). */
+function officialLine (text) {
+  const o = officialOf(text)
+  if (!o) return null
+  const names = o.names.map((w) => w.charAt(0).toLocaleUpperCase() + w.slice(1))
+  return `${o.label}: #${o.licence} | ${names.join(' ')} (${o.year || '1900'})`
+}
+
+/**
+ * First and last name of an official as VolleyManager writes them ("<first>
+ * <last>"): the player row with the same SV number knows them (its names
+ * are in columns of their own), else the last name starts at a particle
+ * ("von", "De") or is the last word. sure: false when the split is a guess
+ * (three words or more, no player to tell): both names to check.
+ */
+function officialNames (names, player) {
+  const joined = names.join(' ')
+  if (player && `${player.firstName} ${player.lastName}`.replace(/\s+/g, ' ').trim().toLowerCase() === joined.toLowerCase()) {
+    return { firstName: player.firstName, lastName: player.lastName, sure: true }
+  }
+  // (two words: one each; more: a particle starts the last name, else the last word is it)
+  const at = names.findIndex((w, i) => i > 0 && i < names.length - 1 && LAST_NAME_START.test(w))
+  const cut = at > 0 ? at : names.length - 1
+  return { firstName: names.slice(0, cut).join(' '), lastName: names.slice(cut).join(' '), sure: names.length === 2 }
 }
 
 const median = (values) => {
@@ -405,6 +454,9 @@ export function rosterFromOcr (data, { circled, ringAt, struck } = {}) {
     return n
   }
   let lastRow = null // the player row just above: { licence, words, bottom }
+  let headerBottom = Infinity // where the table's header row ends
+  const lostStruck = [] // struck rows no player came of: { top, bottom, names, licence }
+  const officialsRead = [] // officials' lines above the table (officialOf)
   const printedBoxes = [] // every word of print on the page (not the handwriting)
   lines.forEach((line, index) => {
     const words = line.words
@@ -442,6 +494,7 @@ export function rosterFromOcr (data, { circled, ringAt, struck } = {}) {
     lastRow = null
     // the table's header row: its columns (LFP among them) and where it ends
     if (words.some((w) => LFP_HEADER.test(w.text) || NAME_HEADER.test(w.text))) {
+      headerBottom = line.bottom
       headers = words.map((w) => ({ x: w.x0, lfp: LFP_HEADER.test(w.text) }))
       tableRight = Math.max(...words.map((w) => w.x1))
       const first = words.find((w) => FIRST_NAME_COL.test(w.text))
@@ -476,6 +529,17 @@ export function rosterFromOcr (data, { circled, ringAt, struck } = {}) {
     const kept = marks.words
     if (!kept.length) return
     const licenceWord = kept.find((w) => LICENCE.test(w.text))
+    // a row of the table the recognition could not make a player of, a pen
+    // line through it (the line garbles the reading): left out all the same,
+    // and named on the confirm screen with what was read of it (real photos,
+    // 2026-11-27); kept if it lies within the table (checked below)
+    if (!licenceWord && headers && struck && line.top > headerBottom) {
+      const named = kept.filter((w) => w.conf > 0 && nameLike(w) && w.text.length >= 3 && !NAME_HEADER.test(w.text))
+      const dated = kept.some((w) => birthDateLike(w.text) || /\d{2}\D?\d{2}\D?\d{4}/.test(w.text))
+      if ((named.length || dated) && struck(kept.filter((w) => w.conf >= 0))) {
+        lostStruck.push({ top: line.top, bottom: line.bottom, names: named.map((w) => w.text), licence: (kept.map((w) => w.text.replace(/\D/g, '')).find((d) => LOOSE_LICENCE.test(d)) || '') })
+      }
+    }
     if (licenceWord) {
       const at0 = kept.indexOf(licenceWord)
       // signs that are no name and no number between the SV number and the
@@ -580,6 +644,9 @@ export function rosterFromOcr (data, { circled, ringAt, struck } = {}) {
     }
     for (const w of kept) if (w.conf > 0 && w.text !== NO_NAME && w.text !== STAND_IN_DATE) printedBoxes.push({ x0: w.x0, y0: w.y0, x1: w.x1, y1: w.y1 })
     const joined = kept.map((w) => w.text).join(' ')
+    // (an official's line above the table: the coach and the assistants)
+    const official = headers ? null : officialOf(joined)
+    if (official) officialsRead.push({ ...official, words: kept })
     textLines.push({ text: officialLine(joined) || joined, words: kept })
     // one y per line (its order): the reader's rows are Tesseract's lines,
     // however a photo's rows slope
@@ -644,6 +711,20 @@ export function rosterFromOcr (data, { circled, ringAt, struck } = {}) {
       }
     }
   })
+  // The officials as read on their lines (the reader's text pattern loses
+  // a name with a particle, a role whose first letter the photo lost): each
+  // into its slot, an assistant without its number into the first free one;
+  // names split as VolleyManager writes them (officialNames)
+  const taken = new Set()
+  for (const o of officialsRead) {
+    let slot = o.slot
+    if (slot === 'ac' || (slot === 'coach' && taken.has('coach'))) slot = ['ac1', 'ac2'].find((k) => !taken.has(k)) || null
+    if (!slot || taken.has(slot)) continue
+    taken.add(slot)
+    const player = result.players.find((p) => p.licence === o.licence)
+    const { firstName, lastName, sure } = officialNames(o.names, player)
+    result[slot] = { firstName, lastName, dob: '', birthYear: o.year, licence: o.licence, guessedSplit: !sure }
+  }
   for (const k of ['coach', 'ac1', 'ac2']) {
     const o = result[k]
     if (!o) continue
@@ -653,21 +734,37 @@ export function rosterFromOcr (data, { circled, ringAt, struck } = {}) {
       const ws = line ? line.words.filter(pred) : []
       return ws.length ? Math.min(...ws.map((w) => w.conf)) / 100 : 0.5
     }
-    const nameWords = (name) => new Set(String(name || '').split(/\s+/).filter(Boolean))
+    const nameWords = (name) => new Set(String(name || '').toLowerCase().split(/\s+/).filter(Boolean))
     const first = nameWords(o.firstName)
     const last = nameWords(o.lastName)
+    const has = (set) => (w) => set.has(w.text.toLowerCase().replace(/[^\p{L}'’-]/gu, ''))
+    // (first and last name split by a guess: both to check)
+    const split = o.guessedSplit ? 0.6 : 1
+    const { guessedSplit, ...person } = o
     result[k] = {
-      ...o,
+      ...person,
       confidence: {
         licence: confOf((w) => w.text.includes(o.licence)),
-        firstName: confOf((w) => first.has(w.text)),
-        lastName: confOf((w) => last.has(w.text))
+        firstName: Math.min(split, confOf(has(first))),
+        lastName: Math.min(split, confOf(has(last)))
       }
     }
   }
   // a row struck out by hand is no player of this game (owner): left out,
   // and named on the confirm screen, never imported as playing
   result.struck = result.players.filter((p) => p.struck).map(({ firstName, lastName, licence }) => ({ firstName, lastName, licence }))
+  // the struck rows no player came of, inside the table (between its first
+  // and last player row, or a row's height below the last)
+  const tops = [...rows.values()].map((r) => r.hand.y).sort((a, b) => a - b)
+  if (tops.length) {
+    const pitch = tops.length > 1 ? median(tops.slice(1).map((y, i) => y - tops[i])) : 2 * height
+    for (const l of lostStruck) {
+      const mid = (l.top + l.bottom) / 2
+      if (mid < tops[0] - 1.5 * pitch || mid > tops[tops.length - 1] + 1.5 * pitch) continue
+      const [firstName = '', ...rest] = l.names
+      result.struck.push({ firstName, lastName: rest.join(' '), licence: l.licence })
+    }
+  }
   result.players = result.players.filter((p) => !p.struck)
   return result
 }

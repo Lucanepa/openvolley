@@ -7355,7 +7355,8 @@
     },
     "reading": {
       "prepare": "Texterkännig wird vorbereitet…",
-      "read": "Liste wird gläse… {{percent}} %"
+      "read": "Liste wird gläse… {{percent}} %",
+      "marks": "Handgschribni Nummere werdet gläse… {{percent}} %"
     },
     "confirm": {
       "description": "Prüef jedi Ziile und korrigier, was falsch gläse worde isch. Erscht mit «Übernä» änderet sich öppis.",
