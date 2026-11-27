@@ -1,6 +1,6 @@
 {
   "name": "escoresheet",
-  "version": "26.11.8",
+  "version": "26.11.9",
   "private": true,
   "type": "module",
   "description": "Open Source Volleyball eScoresheet",

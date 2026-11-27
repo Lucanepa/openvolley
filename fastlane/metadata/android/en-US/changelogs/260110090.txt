@@ -1,0 +1,6 @@
+OpenVolley 26.11.9
+- Photo of the Einsatzliste: pick the list's language; handwritten shirt numbers, C and L are read much better, on the device
+- Roster import: one switch for Remote, PDF and Photo. The photo goes straight into the roster, unsure fields highlighted, with Undo
+- German and French texts use the official rule terms
+- "Your first match": a guided tour from Home to the signatures
+- Full team names everywhere; libero lists Libero 1 / Libero 2
