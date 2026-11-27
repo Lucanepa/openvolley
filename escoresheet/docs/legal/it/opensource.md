@@ -1,6 +1,6 @@
 # Avviso open source
 
-**OpenVolley e OpenBeach** · Aggiornato al 7 ottobre 2026
+**OpenVolley e OpenBeach** · Aggiornato al 27 novembre 2026
 
 ## OpenVolley e OpenBeach
 
@@ -45,6 +45,8 @@ PDF.js, per il testo del PDF del referto).
 | PDF.js (pdfjs-dist) | Apache-2.0 |
 | Tesseract.js, tesseract.js-core (riconoscimento del testo dell'importazione da foto) | Apache-2.0 |
 | Dati linguistici Tesseract tedesco, francese, italiano (@tesseract.js-data) | Apache-2.0 (pacchetto: MIT) |
+| ONNX Runtime Web (onnxruntime-web: esegue il lettore della scrittura a mano dell'importazione da foto) | MIT |
+| PP-OCRv6 rec tiny, il modello di riconoscimento del testo di PaddleOCR, convertito in ONNX da RapidOCR (lettore della scrittura a mano dell'importazione da foto; la sua nota lo accompagna, `NOTICE.txt`) | Apache-2.0 |
 | wasm-feature-detect | Apache-2.0 |
 | JSZip | MIT (o GPL-3.0-or-later) |
 | fflate | MIT |

@@ -45,20 +45,27 @@ beforeEach(() => {
   globalThis.URL.revokeObjectURL = vi.fn()
 })
 
-async function toCrop () {
+// the dialog's source step: the list's language picked (none at first), then the photo
+async function toCrop (lang = 'de') {
   fireEvent.click(screen.getByTestId('roster-photo-home'))
   expect(screen.getByTestId('roster-photo-source')).toBeInTheDocument()
+  fireEvent.click(screen.getByTestId(`roster-photo-lang-dialog-${lang}`))
   fireEvent.change(screen.getByTestId('roster-photo-file-home'), { target: { files: [new File(['x'], 'list.jpg', { type: 'image/jpeg' })] } })
   await screen.findByTestId('roster-photo-read')
 }
 
 describe('RosterPhotoImport', () => {
-  it('the recognition starts when the dialog opens, the reading uses it, and it ends after the reading and on close', async () => {
+  it('the recognition starts once the list\'s language is picked, with its languages; the reading uses it, and it ends after the reading and on close', async () => {
     readRosterPhoto.mockResolvedValue(read())
     const onApply = vi.fn()
     render(<RosterPhotoImport side="home" teamLabel="VBC Seewiese" onApply={onApply} />)
     fireEvent.click(screen.getByTestId('roster-photo-home'))
+    // (no language yet: nothing started)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(startOcrEngine).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTestId('roster-photo-lang-dialog-fr'))
     await waitFor(() => expect(startOcrEngine).toHaveBeenCalledTimes(1))
+    expect(startOcrEngine.mock.calls[0][0]).toEqual({ langs: ['fra', 'deu'] })
     fireEvent.change(screen.getByTestId('roster-photo-file-home'), { target: { files: [new File(['x'], 'list.jpg', { type: 'image/jpeg' })] } })
     await screen.findByTestId('roster-photo-read')
     // (still the one started at the opening)
@@ -66,12 +73,17 @@ describe('RosterPhotoImport', () => {
     fireEvent.click(screen.getByTestId('roster-photo-read'))
     await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1))
     expect(readRosterPhoto.mock.calls[0][1].engine).toBe(engines[0])
+    expect(readRosterPhoto.mock.calls[0][1].langs).toEqual(['fra', 'deu'])
     await waitFor(() => expect(engines[0].terminate).toHaveBeenCalled())
 
-    // another photo: a new one, ended when the dialog closes
+    // another photo: no language again (a conscious pick each time); a new engine, ended when the dialog closes
     readRosterPhoto.mockReset()
     fireEvent.click(screen.getByTestId('roster-photo-home'))
+    expect(screen.getByTestId('roster-photo-take')).toBeDisabled()
+    expect(screen.getByTestId('roster-photo-lang-hint-dialog')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('roster-photo-lang-dialog-other'))
     await waitFor(() => expect(startOcrEngine).toHaveBeenCalledTimes(2))
+    expect(startOcrEngine.mock.calls[1][0]).toEqual({ langs: ['deu', 'fra', 'ita'] })
     fireEvent.click(screen.getByText('common.cancel'))
     await waitFor(() => expect(engines[1].terminate).toHaveBeenCalled())
   })
@@ -79,6 +91,7 @@ describe('RosterPhotoImport', () => {
   it('the page hidden (the camera app in front) ends the recognition; back, it starts again', async () => {
     render(<RosterPhotoImport side="home" teamLabel="VBC Seewiese" onApply={() => {}} />)
     fireEvent.click(screen.getByTestId('roster-photo-home'))
+    fireEvent.click(screen.getByTestId('roster-photo-lang-dialog-it'))
     await waitFor(() => expect(startOcrEngine).toHaveBeenCalledTimes(1))
     const state = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
     document.dispatchEvent(new Event('visibilitychange'))
@@ -181,6 +194,7 @@ describe('RosterPhotoImport', () => {
     render(<RosterPhotoImport side="home" teamLabel="VBC Seewiese" onApply={onApply} />)
     fireEvent.click(screen.getByTestId('roster-photo-home'))
     expect(screen.queryByText('rosterPhoto.source.private')).toBeNull()
+    fireEvent.click(screen.getByTestId('roster-photo-lang-dialog-de'))
     fireEvent.change(screen.getByTestId('roster-photo-file-home'), { target: { files: [new File(['x'], 'list.jpg', { type: 'image/jpeg' })] } })
     await screen.findByTestId('roster-photo-read')
     fireEvent.click(screen.getByTestId('roster-photo-read'))
@@ -198,8 +212,8 @@ describe('RosterPhotoImport', () => {
   const ROSTER_STRINGS = ['Exempel', 'Musler', 'Muster', 'Luca', 'Noé', 'Hans', '12345', '10001', 'Rita', 'Probst', 'VBC']
   const onlyCounts = (data) => {
     expect(Object.keys(data).every((k) => ACTIVITY_KINDS['photo.read'].keys.includes(k))).toBe(true)
-    // the one text is the outcome; nothing read from the photo
-    expect(Object.entries(data).filter(([, v]) => typeof v === 'string').map(([k]) => k)).toEqual(['outcome'])
+    // the texts are from fixed lists (outcome, the reader of the marks, the list's language); nothing read from the photo
+    expect(Object.entries(data).filter(([, v]) => typeof v === 'string').map(([k]) => k)).toEqual(['outcome', 'marksBy', 'lang'])
     const json = JSON.stringify(data)
     for (const s of ROSTER_STRINGS) expect(json).not.toContain(s)
     // what the server keeps is all of it
@@ -210,20 +224,22 @@ describe('RosterPhotoImport', () => {
     readRosterPhoto.mockImplementation(async (page, opts) => {
       opts.stats.workers = 3
       opts.stats.turned = true
+      Object.assign(opts.stats, { msEngine: 5, msPage: 7, msHand: 2, marksBy: 'onnx' })
       return { ...read(), struck: [{ firstName: 'Rita', lastName: 'Probst', licence: '123459' }] }
     })
     const onApply = vi.fn()
     render(<RosterPhotoImport side="home" teamLabel="VBC Seewiese" onApply={onApply} />)
-    await toCrop()
+    await toCrop('it')
     fireEvent.click(screen.getByTestId('roster-photo-read'))
     await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1))
     expect(photoReads()).toHaveLength(1)
     const [, data, opts] = photoReads()[0]
     expect(opts).toEqual({ level: 'info' })
     // 7 twice (red), a last name hard to read (amber); the struck row counted, not named
-    expect(data).toMatchObject({ outcome: 'ok', rows: 2, toCheck: 3, struck: 1, workers: 3, turned: true })
+    expect(data).toMatchObject({ outcome: 'ok', rows: 2, toCheck: 3, struck: 1, workers: 3, turned: true, msEngine: 5, msPage: 7, msHand: 2, marksBy: 'onnx', lang: 'it' })
     expect(data.ms).toBeGreaterThanOrEqual(0)
-    expect(Object.keys(data).sort()).toEqual(['cores', 'memory', 'ms', 'outcome', 'rows', 'struck', 'toCheck', 'turned', 'workers'])
+    expect(data.msRest).toBe(Math.max(0, data.ms - 14))
+    expect(Object.keys(data).sort()).toEqual(['cores', 'lang', 'marksBy', 'memory', 'ms', 'msEngine', 'msHand', 'msPage', 'msRest', 'outcome', 'rows', 'struck', 'toCheck', 'turned', 'workers'])
     onlyCounts(data)
     // written once, when the reading ended
     await new Promise((resolve) => setTimeout(resolve, 20))
@@ -242,7 +258,7 @@ describe('RosterPhotoImport', () => {
     expect(photoReads()).toHaveLength(1)
     const [, data, opts] = photoReads()[0]
     expect(opts).toEqual({ level: 'warn' })
-    expect(data).toMatchObject({ outcome: 'ocr-blurry', workers: 1, turned: false })
+    expect(data).toMatchObject({ outcome: 'ocr-blurry', workers: 1, turned: false, lang: 'de' })
     expect(data).not.toHaveProperty('rows')
     onlyCounts(data)
   })
@@ -268,5 +284,38 @@ describe('RosterPhotoImport', () => {
     expect(readingTime(6000, 0.5, t)).toBe('rosterPhoto.reading.elapsedLeft|6|6')
     expect(readingTime(9000, 0.75, t)).toBe('rosterPhoto.reading.elapsedLeft|9|3')
     expect(readingTime(12000, 1, t)).toBe('rosterPhoto.reading.elapsed|12|')
+  })
+
+  // owner 27.11.2026: the list's language first, no default, never remembered
+  it('Match setup\'s Photo segment: "Take a photo" and "Choose a picture" wait for the list\'s language, with a hint why; no language is picked for the scorer', async () => {
+    readRosterPhoto.mockResolvedValue(read())
+    const onApply = vi.fn()
+    render(<RosterPhotoImport entry="sources" side="away" teamLabel="VBC" onApply={onApply} />)
+    const take = screen.getByTestId('roster-photo-take-away')
+    const choose = screen.getByTestId('roster-photo-choose-away')
+    expect(take).toBeDisabled()
+    expect(choose).toBeDisabled()
+    expect(screen.getByTestId('roster-photo-lang-hint-away').textContent).toBe('rosterPhoto.lang.hint')
+    // a radio group with nothing checked, the four choices, the first one reachable by Tab
+    const radios = screen.getAllByRole('radio')
+    expect(radios.map((r) => r.textContent)).toEqual(['Deutsch', 'Français', 'Italiano', 'rosterPhoto.lang.other'])
+    expect(radios.every((r) => r.getAttribute('aria-checked') === 'false')).toBe(true)
+    expect(radios[0].tabIndex).toBe(0)
+    // nothing starts before the pick
+    expect(startOcrEngine).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTestId('roster-photo-lang-away-de'))
+    expect(take).not.toBeDisabled()
+    expect(choose).not.toBeDisabled()
+    expect(screen.queryByTestId('roster-photo-lang-hint-away')).toBeNull()
+    expect(screen.getByTestId('roster-photo-lang-away-de').getAttribute('aria-checked')).toBe('true')
+    fireEvent.change(screen.getByTestId('roster-photo-file-away'), { target: { files: [new File(['x'], 'list.jpg', { type: 'image/jpeg' })] } })
+    await screen.findByTestId('roster-photo-read')
+    await waitFor(() => expect(startOcrEngine).toHaveBeenCalledWith({ langs: ['deu'] }))
+    fireEvent.click(screen.getByTestId('roster-photo-read'))
+    await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1))
+    expect(readRosterPhoto.mock.calls[0][1].langs).toEqual(['deu'])
+    // the next photo import starts blank again
+    expect(screen.getByTestId('roster-photo-take-away')).toBeDisabled()
+    expect(screen.getAllByRole('radio').every((r) => r.getAttribute('aria-checked') === 'false')).toBe(true)
   })
 })

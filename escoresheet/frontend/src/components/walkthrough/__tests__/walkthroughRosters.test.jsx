@@ -65,6 +65,12 @@ describe('walkthrough: the Rosters chapter, tapped', () => {
     fireEvent.click(document.querySelector('[data-testid="roster-photo-take-home"]'))
     expect(opened).not.toHaveBeenCalled()
     expect(card()?.dataset.step).toBe('rosterPhoto')
+    // the list's language shown too (owner 27.11), none picked, taking no tap either: the buttons stay waiting
+    expect(document.querySelector('[data-testid="roster-photo-lang-home"]')).not.toBeNull()
+    fireEvent.click(document.querySelector('[data-testid="roster-photo-lang-home-de"]'))
+    expect(document.querySelector('[data-testid="roster-photo-lang-home-de"]').getAttribute('aria-checked')).toBe('false')
+    expect(document.querySelector('[data-testid="roster-photo-take-home"]').disabled).toBe(true)
+    expect(card()?.dataset.step).toBe('rosterPhoto')
     next()
     for (const id of ['rosterRemote', 'rosterUploaded', 'rosterSaved']) {
       await readyAt(id)

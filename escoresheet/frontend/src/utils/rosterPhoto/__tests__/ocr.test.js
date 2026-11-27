@@ -128,7 +128,9 @@ describe('the recognition started ahead (startOcrEngine)', () => {
     const stats = { workers: 0, turned: false }
     const roster = await readRosterPhoto(new Blob(['page']), { engine, createWorker, stats })
     expect(roster.players).toHaveLength(10)
-    expect(stats).toEqual({ workers: 3, turned: false })
+    expect(stats).toMatchObject({ workers: 3, turned: false, marksBy: 'tesseract' })
+    // where the time went (photo.read): whole milliseconds
+    for (const k of ['msEngine', 'msPage', 'msHand']) expect(Number.isInteger(stats[k]) && stats[k] >= 0).toBe(true)
     // no second start, not ended by the reading
     expect(createWorker).toHaveBeenCalledTimes(3)
     expect(calls.terminated).toBe(0)
@@ -212,5 +214,167 @@ describe('the recognition started ahead (startOcrEngine)', () => {
     const out = pgmOf(new Uint8ClampedArray([0, 128, 255, 7, 8, 9]), 3, 2)
     expect(new TextDecoder().decode(out.slice(0, 11))).toBe('P5\n3 2\n255\n')
     expect([...out.slice(11)]).toEqual([0, 128, 255, 7, 8, 9])
+  })
+})
+
+// A canvas for jsdom (which draws nothing): RGBA pixels, white or black fills, nearest-neighbour drawImage
+function fakeCanvas (w = 300, h = 150) {
+  const c = { _w: w, _h: h, buf: new Uint8ClampedArray(w * h * 4) }
+  Object.defineProperty(c, 'width', { get: () => c._w, set: (v) => { c._w = v; c.buf = new Uint8ClampedArray(v * c._h * 4) } })
+  Object.defineProperty(c, 'height', { get: () => c._h, set: (v) => { c._h = v; c.buf = new Uint8ClampedArray(c._w * v * 4) } })
+  const ctx = {
+    fillStyle: '#000',
+    fillRect (x, y, fw, fh) {
+      const v = /^#f{3,6}$/i.test(ctx.fillStyle) ? 255 : 0
+      for (let yy = Math.max(0, Math.floor(y)); yy < Math.min(c._h, Math.ceil(y + fh)); yy++) for (let xx = Math.max(0, Math.floor(x)); xx < Math.min(c._w, Math.ceil(x + fw)); xx++) c.buf.set([v, v, v, 255], (yy * c._w + xx) * 4)
+    },
+    drawImage (src, sx, sy, sw, sh, dx, dy, dw, dh) {
+      if (dx === undefined) { [dx, dy, dw, dh] = [sx, sy, sw ?? src.width, sh ?? src.height]; [sx, sy, sw, sh] = [0, 0, src.width, src.height] }
+      for (let yy = 0; yy < Math.round(dh); yy++) {
+        for (let xx = 0; xx < Math.round(dw); xx++) {
+          const tx = Math.round(dx) + xx; const ty = Math.round(dy) + yy
+          if (tx < 0 || ty < 0 || tx >= c._w || ty >= c._h) continue
+          const fx = Math.floor(sx + (xx * sw) / dw); const fy = Math.floor(sy + (yy * sh) / dh)
+          if (fx < 0 || fy < 0 || fx >= src.width || fy >= src.height) continue
+          c.buf.set(src.buf.subarray((fy * src.width + fx) * 4, (fy * src.width + fx) * 4 + 4), (ty * c._w + tx) * 4)
+        }
+      }
+    },
+    getImageData (x, y, gw, gh) {
+      const data = new Uint8ClampedArray(gw * gh * 4)
+      for (let yy = 0; yy < gh; yy++) for (let xx = 0; xx < gw; xx++) if (x + xx < c._w && y + yy < c._h) data.set(c.buf.subarray(((y + yy) * c._w + x + xx) * 4, ((y + yy) * c._w + x + xx) * 4 + 4), (yy * gw + xx) * 4)
+      return { data, width: gw, height: gh }
+    },
+    putImageData (img, x, y) { for (let yy = 0; yy < img.height; yy++) for (let xx = 0; xx < img.width; xx++) c.buf.set(img.data.subarray((yy * img.width + xx) * 4, (yy * img.width + xx) * 4 + 4), ((y + yy) * c._w + x + xx) * 4) },
+    createImageData: (iw, ih) => ({ data: new Uint8ClampedArray(iw * ih * 4), width: iw, height: ih }),
+    translate () {},
+    rotate () {}
+  }
+  c.getContext = () => ctx
+  return c
+}
+
+describe('the handwriting reader in the reading (option B)', () => {
+  // the made-up screenshot's page with a number written left of one row's SV number
+  // (Dora Muster's row: 323411 at x 211, y 480..497), nothing else on it
+  function pageWithMark () {
+    const W = 1080
+    const H = 1600
+    const page = fakeCanvas(W, H)
+    const gray = new Uint8ClampedArray(W * H).fill(255)
+    for (let y = 478; y <= 500; y++) for (let x = 160; x <= 176; x++) if (x - 160 < 3 || y - 478 < 3) gray[y * W + x] = 40
+    for (let i = 0; i < gray.length; i++) page.buf.set([gray[i], gray[i], gray[i], 255], i * 4)
+    page.gray = gray
+    return page
+  }
+  // Tesseract: the page read as the screenshot; the marks read again (digits C K L) as `hand`, the rest nothing
+  function tesseractFor ({ hand = '8' } = {}) {
+    const calls = { hand: 0 }
+    const createWorker = vi.fn(async () => {
+      let p = {}
+      return {
+        setParameters: async (q) => { p = { ...p, ...q } },
+        reinitialize: async () => {},
+        recognize: async () => {
+          if (p.tessedit_char_whitelist === '0123456789CKL') {
+            calls.hand++
+            return { data: { blocks: [{ paragraphs: [{ lines: [{ words: [{ text: hand, confidence: 80, bbox: { x0: 1, y0: 1, x1: 9, y1: 9 } }] }] }] }] } }
+          }
+          if (p.tessedit_pageseg_mode === '7' || p.tessedit_pageseg_mode === '8') return { data: { text: '', blocks: [] } }
+          return { data: vmShot }
+        },
+        terminate: async () => {}
+      }
+    })
+    return { createWorker, calls }
+  }
+  const handReader = (answer) => {
+    const reader = { loaded: true, ended: false, seen: [], ready: Promise.resolve(), terminate () { reader.ended = true } }
+    reader.read = async (inputs) => { reader.seen.push(inputs); return answer(inputs) }
+    return reader
+  }
+  const withCanvases = async (fn) => {
+    const real = document.createElement.bind(document)
+    const spy = vi.spyOn(document, 'createElement').mockImplementation((tag, ...rest) => (tag === 'canvas' ? fakeCanvas() : real(tag, ...rest)))
+    try { return await fn() } finally { spy.mockRestore() }
+  }
+  const dora = (roster) => roster.players.find((p) => p.licence === '323411')
+
+  it('the margin read by the handwriting reader, as one crop 48 px high; Tesseract never reads the marks again', async () => {
+    const { createWorker, calls } = tesseractFor()
+    const hand = handReader((inputs) => inputs.map(() => ({ text: '12', conf: 0.93 })))
+    const stats = {}
+    const debug = {}
+    const roster = await withCanvases(() => readRosterPhoto(pageWithMark(), { createWorker, dir: '/ocr/x/', tuning: { workers: 1 }, hand, stats, debug }))
+    expect(calls.hand).toBe(0)
+    expect(hand.seen).toHaveLength(1)
+    expect(hand.seen[0].length).toBeGreaterThanOrEqual(1)
+    expect(hand.seen[0].every((inp) => inp.data.length === inp.w * 48)).toBe(true)
+    // one crop of the row's margin, round the mark, up to the SV column
+    expect(debug.bands).toHaveLength(1)
+    const box = debug.bands[0].box
+    expect(box.x0).toBeLessThanOrEqual(160)
+    expect(box.x0 + box.w).toBeGreaterThanOrEqual(177)
+    expect(box.x0 + box.w).toBeLessThan(211)
+    // the number taken, amber (a handwritten mark is never sure)
+    expect(dora(roster).number).toBe(12)
+    expect(dora(roster).confidence.number).toBeLessThanOrEqual(0.7)
+    expect(stats.marksBy).toBe('onnx')
+    expect(hand.ended).toBe(true)
+  })
+
+  it('the handwriting reader fails or did not load: Tesseract reads the marks, as before', async () => {
+    const t1 = tesseractFor({ hand: '8' })
+    const broken = handReader(() => { throw Object.assign(new Error('memory access out of bounds'), { code: 'hand-read' }) })
+    const stats = {}
+    const roster = await withCanvases(() => readRosterPhoto(pageWithMark(), { createWorker: t1.createWorker, dir: '/ocr/x/', tuning: { workers: 1 }, hand: broken, stats }))
+    expect(t1.calls.hand).toBeGreaterThanOrEqual(1)
+    expect(dora(roster).number).toBe(8)
+    expect(stats.marksBy).toBe('tesseract')
+    const t2 = tesseractFor({ hand: '8' })
+    const never = { loaded: false, ended: false, ready: Promise.reject(Object.assign(new Error('no SIMD'), { code: 'hand-unsupported' })), read: vi.fn(), terminate () {} }
+    never.ready.catch(() => {})
+    const stats2 = {}
+    const roster2 = await withCanvases(() => readRosterPhoto(pageWithMark(), { createWorker: t2.createWorker, dir: '/ocr/x/', tuning: { workers: 1 }, hand: never, stats: stats2 }))
+    expect(never.read).not.toHaveBeenCalled()
+    expect(dora(roster2).number).toBe(8)
+    expect(stats2.marksBy).toBe('tesseract')
+  })
+
+  it('a reader still loading is waited for only when there is handwriting to read', async () => {
+    const { createWorker } = tesseractFor()
+    const loading = { loaded: false, ended: false, ready: new Promise(() => {}), read: vi.fn(), terminate () {} }
+    const blank = pageWithMark()
+    blank.gray.fill(255)
+    const stats = {}
+    const t0 = Date.now()
+    await withCanvases(() => readRosterPhoto(blank, { createWorker, dir: '/ocr/x/', tuning: { workers: 1 }, hand: loading, stats }))
+    expect(Date.now() - t0).toBeLessThan(5000)
+    expect(loading.read).not.toHaveBeenCalled()
+    expect(stats.marksBy).toBe('tesseract')
+  })
+
+  it('the list\'s language: the workers start with its languages; two read the page side by side, one language each', async () => {
+    const created = []
+    const switched = []
+    const createWorker = vi.fn(async (langs) => {
+      const k = created.push(langs) - 1
+      return { setParameters: async () => {}, recognize: async () => ({ data: vmShot }), terminate: async () => {}, reinitialize: async (l) => { switched.push([k, l]) } }
+    })
+    const engine = startOcrEngine({ size: 3, createWorker, dir: '/ocr/x/', langs: ['fra', 'deu'], hand: false })
+    await engine.ready
+    expect(created).toEqual([['fra', 'deu'], ['fra', 'deu'], ['fra', 'deu']])
+    expect(engine.apart).toBe(true)
+    expect(engine.hand).toBeNull()
+    const canvas = Object.assign(document.createElement('canvas'), { width: 4, height: 6 })
+    canvas.gray = new Uint8ClampedArray(24).fill(255)
+    await readRosterPhoto(canvas, { engine, createWorker })
+    expect(switched.slice(0, 3).sort()).toEqual([[0, 'fra'], [1, 'deu'], [2, ['fra', 'deu']]])
+    await engine.terminate()
+    // one language: one worker reads the page, no switching
+    const one = fakeTesseract()
+    const roster = await readRosterPhoto(new Blob(['page']), { createWorker: one.createWorker, dir: '/ocr/x/', langs: ['deu'] })
+    expect(one.calls.create.langs).toEqual(['deu'])
+    expect(roster.players).toHaveLength(10)
   })
 })

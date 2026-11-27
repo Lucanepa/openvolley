@@ -13,7 +13,7 @@ import { browserCheck } from './browser-check.js'
 import { buildChannelPlugin } from './build-channel.js'
 import { cspMeta } from './csp.js'
 import { htmlToImageFontSize } from './vite-plugin-html-to-image-font-size.js'
-import { ocrAssets } from './vite-plugin-ocr-assets.js'
+import { ocrAssets, ORT_WASM_ALIAS } from './vite-plugin-ocr-assets.js'
 import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, PRECACHE_MAX_FILE_BYTES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, API_NETWORK_ONLY_ROUTE, STATIC_ASSETS_ROUTE, OCR_FILES_ROUTE, PWA_INCLUDE_ASSETS, PWA_ICONS } from './pwa-workbox.js'
 
 // Valid HTML pages for the app (folder-based structure for clean URLs)
@@ -88,6 +88,8 @@ export default defineConfig({
     dedupe: ['react', 'react-dom', 'dexie'],
     alias: [
       { find: '@', replacement: resolve(__dirname, 'src') },
+      // the handwriting reader's onnxruntime-web: its engine from ocr/hand-<version>/ (vite-plugin-ocr-assets.js)
+      ORT_WASM_ALIAS,
       // Android app: OpenBeach's tournament import (Excel/CSV) is
       // manager-beach's, a web page. Its XLSX reader and writer resolve to a
       // stub, so neither ships in the APK (the dialog is loaded on demand).
