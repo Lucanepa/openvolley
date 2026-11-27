@@ -30,8 +30,8 @@
       cancelled: 'Signing was cancelled on the scoring device.', invalid: 'This link is not valid.', full: 'The pad is full. Tap Done, or Clear to start again.'
     },
     de: {
-      title: 'Unterschreiben als {role}', captainOf: 'Captain von {team}', coachOf: 'Coach von {team}', scorer: 'Schreiber/in',
-      asstScorer: 'Hilfsschreiber/in', ref1: '1. Schiedsrichter/in', ref2: '2. Schiedsrichter/in', team: 'Team {l}', match: 'Spiel #{n}',
+      title: 'Unterschreiben als {role}', captainOf: 'Kapitän von {team}', coachOf: 'Trainer von {team}', scorer: 'Schreiber/in',
+      asstScorer: 'Schreiberassistent/in', ref1: '1. Schiedsrichter/in', ref2: '2. Schiedsrichter/in', team: 'Team {l}', match: 'Spiel #{n}',
       hint: 'Hier unterschreiben', clear: 'Löschen', done: 'Fertig', pad: 'Unterschriftsfeld', loading: 'Wird geöffnet…', sending: 'Wird gesendet…',
       sent: 'Unterschrift gesendet. Du kannst diese Seite schliessen.', sendFailed: 'Senden fehlgeschlagen. Verbindung prüfen und nochmals auf Fertig tippen.',
       openFailed: 'Das Gerät des Schreibers ist nicht erreichbar. Verbindung prüfen; neuer Versuch…',
@@ -39,8 +39,8 @@
       cancelled: 'Das Unterschreiben wurde am Schreibergerät abgebrochen.', invalid: 'Dieser Link ist ungültig.', full: 'Das Feld ist voll. Auf Fertig tippen oder Löschen, um neu zu beginnen.'
     },
     'de-CH': {
-      title: 'Underschriibe als {role}', captainOf: 'Captain vo {team}', coachOf: 'Coach vo {team}', scorer: 'Schriiber/in',
-      asstScorer: 'Hilfsschriiber/in', ref1: '1. Schiri', ref2: '2. Schiri', team: 'Team {l}', match: 'Spiel #{n}',
+      title: 'Underschriibe als {role}', captainOf: 'Kapitän vo {team}', coachOf: 'Trainer vo {team}', scorer: 'Schriiber/in',
+      asstScorer: 'Schreiberassistent/in', ref1: '1. Schiri', ref2: '2. Schiri', team: 'Team {l}', match: 'Spiel #{n}',
       hint: 'Da underschriibe', clear: 'Lösche', done: 'Fertig', pad: 'Underschriftsfäld', loading: 'Wird ufgmacht…', sending: 'Wird gschickt…',
       sent: 'Underschrift gschickt. Du chasch die Siite zuemache.', sendFailed: 'Schicke hät nöd klappt. Verbindig prüefe und nomal uf Fertig tippe.',
       openFailed: 'S Grät vom Schriiber isch nöd erreichbar. Verbindig prüefe; neue Versuech…',
@@ -49,7 +49,7 @@
     },
     fr: {
       title: 'Signer comme {role}', captainOf: 'capitaine de {team}', coachOf: 'entraîneur de {team}', scorer: 'marqueur',
-      asstScorer: 'marqueur assistant', ref1: '1er arbitre', ref2: '2e arbitre', team: 'l’équipe {l}', match: 'Match n° {n}',
+      asstScorer: 'marqueur adjoint', ref1: '1er arbitre', ref2: '2e arbitre', team: 'l’équipe {l}', match: 'Match n° {n}',
       hint: 'Signer ici', clear: 'Effacer', done: 'Terminé', pad: 'Zone de signature', loading: 'Ouverture…', sending: 'Envoi…',
       sent: 'Signature envoyée. Tu peux fermer cette page.', sendFailed: 'Échec de l’envoi. Vérifie la connexion et touche Terminé à nouveau.',
       openFailed: 'Appareil du marqueur injoignable. Vérifie la connexion ; nouvel essai…',

@@ -153,7 +153,7 @@ describe('the phone signing page', () => {
   })
 
   it('speaks the phone\'s language: de-CH, de-AT -> de, fr, it, en; else the scorer\'s', async () => {
-    const cases = [[['de-CH', 'de'], 'de-CH', 'Underschriibe als Captain vo Team A'], [['de-AT'], 'de', 'Unterschreiben als Captain von Team A'],
+    const cases = [[['de-CH', 'de'], 'de-CH', 'Underschriibe als Kapitän vo Team A'], [['de-AT'], 'de', 'Unterschreiben als Kapitän von Team A'],
       [['fr-CH'], 'fr', 'Signer comme capitaine de l’équipe A'], [['it'], 'it', 'Firma come capitano di squadra A'], [['es', 'en-US'], 'en', 'Sign as captain of Team A']]
     for (const [langs, want, title] of cases) {
       setLanguages(langs)

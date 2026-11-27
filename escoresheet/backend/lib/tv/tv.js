@@ -33,7 +33,7 @@
   var L = {
     en: { live: 'Live', empty: 'No game is live yet. The scores appear here as soon as a game starts.', lost: 'Connection lost, retrying', fin: 'Final', to: 'Timeout', br: 'Set break', set: 'Set ' },
     de: { live: 'Live', empty: 'Noch kein Spiel l\u00e4uft. Die Spielst\u00e4nde erscheinen hier, sobald ein Spiel beginnt.', lost: 'Verbindung unterbrochen, neuer Versuch', fin: 'Beendet', to: 'Auszeit', br: 'Satzpause', set: 'Satz ' },
-    fr: { live: 'En direct', empty: 'Aucun match en cours. Les scores apparaissent ici d\u00e8s qu\u2019un match commence.', lost: 'Connexion perdue, nouvel essai', fin: 'Termin\u00e9', to: 'Temps mort', br: 'Pause entre les sets', set: 'Set ' },
+    fr: { live: 'En direct', empty: 'Aucun match en cours. Les scores apparaissent ici d\u00e8s qu\u2019un match commence.', lost: 'Connexion perdue, nouvel essai', fin: 'Termin\u00e9', to: 'Temps-mort', br: 'Pause entre les sets', set: 'Set ' },
     it: { live: 'Live', empty: 'Nessuna partita in corso. I punteggi appaiono qui appena inizia una partita.', lost: 'Connessione persa, nuovo tentativo', fin: 'Finita', to: 'Time-out', br: 'Pausa tra i set', set: 'Set ' }
   };
   var lang = String(navigator.language || 'en').slice(0, 2).toLowerCase();

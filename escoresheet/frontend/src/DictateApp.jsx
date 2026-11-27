@@ -79,8 +79,8 @@ const TEXT = {
     language: 'Sprache',
     version: 'Version',
     original: 'Original',
-    exceptional: 'Mit ausserordentlichen Auswechslungen',
-    exceptionalNote: 'Fügt in Satz 5 drei ausserordentliche Auswechslungen ein: Verletzung (LUZERN #9 → #4 bei 15:16), Ausschluss (ZÜRICH #1 → #10) und Disqualifikation (LUZERN #4 → #2), beide bei 16:16. Alles andere ist wie im Original.',
+    exceptional: 'Mit ausnahmsweisen Auswechslungen',
+    exceptionalNote: 'Fügt in Satz 5 drei ausnahmsweise Auswechslungen ein: Verletzung (LUZERN #9 → #4 bei 15:16), Hinausstellung (ZÜRICH #1 → #10) und Disqualifikation (LUZERN #4 → #2), beide bei 16:16. Alles andere ist wie im Original.',
     chapters: 'Springe zu',
     howTitle: 'Bevor du startest',
     how: [
@@ -98,12 +98,12 @@ const TEXT = {
     winner: 'ZÜRICH gewinnt 3:2',
     resultSheet: 'OpenVolley-Matchblatt (PDF)',
     resultNote: 'Das Matchblatt, das OpenVolley geschrieben hat, als diese Version Schritt für Schritt in der App gespielt wurde.',
-    resultExc: 'Zusätzlich zum Original: die drei ausserordentlichen Auswechslungen stehen in den Bemerkungen, der Ausschluss von ZÜRICH #1 und die Disqualifikation von LUZERN #4 bei den Sanktionen; ausserordentliche Auswechslungen zählen nicht zu den 6.',
+    resultExc: 'Zusätzlich zum Original: die drei ausnahmsweisen Auswechslungen stehen in den Bemerkungen, die Hinausstellung von ZÜRICH #1 und die Disqualifikation von LUZERN #4 bei den Sanktionen; ausnahmsweise Auswechslungen zählen nicht zu den 6.',
     source: 'Nach dem eScoresheet-Diktat von Swiss Volley (v5.0, 13.09.2021). Das Video ist stumm: lies die Karten.',
     print: 'Schrittliste zum Drucken (PDF)',
     howTitle2: 'So erfasst du die speziellen Schritte',
     howLead: 'Die Schritte, die mehr als einen Tipp auf Punkt brauchen, so wie OpenVolley sie zeigt (Screenshots der englischen App). Tippe auf eine Schrittnummer, um im Video dorthin zu springen.',
-    excOnly: 'Version mit ausserordentlichen Auswechslungen',
+    excOnly: 'Version mit ausnahmsweisen Auswechslungen',
     stepsAt: 'Im Diktat'
   }
 }
