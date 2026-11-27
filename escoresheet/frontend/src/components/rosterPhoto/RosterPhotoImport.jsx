@@ -30,17 +30,45 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
   const cameraRef = useRef(null)
   const fileRef = useRef(null)
   const readingRef = useRef(null) // the AbortController of the reading under way
+  // the recognition started ahead (ocr.js startOcrEngine): a promise of it
+  const engineRef = useRef(null)
 
+  // The recognition starts while the scorer takes the photo and drags its
+  // corners: "Read the list" then does not wait for it (seconds on a slow
+  // tablet). Ended when the dialog closes or the list is read, and while the
+  // page is hidden (the camera app in front: its memory back, so the phone
+  // does not end the page meanwhile); started again when the photo comes.
+  const startEngine = () => {
+    if (engineRef.current) return
+    engineRef.current = import('../../utils/rosterPhoto/ocr').then(({ startOcrEngine }) => startOcrEngine())
+    engineRef.current.catch(() => { engineRef.current = null })
+  }
+  const endEngine = () => {
+    const was = engineRef.current
+    engineRef.current = null
+    was?.then((engine) => engine.terminate(), () => {})
+  }
   const dropPhoto = () => setPhoto((prev) => { if (prev?.url) URL.revokeObjectURL(prev.url); return null })
   const close = () => {
     readingRef.current?.abort()
     readingRef.current = null
+    endEngine()
     dropPhoto()
     setRoster(null)
     setError(null)
     setStep(null)
   }
-  useEffect(() => () => { readingRef.current?.abort() }, [])
+  useEffect(() => () => { readingRef.current?.abort(); endEngine() }, [])
+  useEffect(() => {
+    if (step !== 'source' && step !== 'loading' && step !== 'crop') return undefined
+    if (typeof document === 'undefined' || document.visibilityState !== 'hidden') startEngine()
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') endEngine()
+      else startEngine()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [step])
   useEffect(() => () => { if (photo?.url) URL.revokeObjectURL(photo.url) }, [photo])
 
   const onFile = async (e) => {
@@ -70,14 +98,22 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
     setProgress({ share: 0, phase: 'prepare' })
     // let the dialog show the reading step before the page's pixels keep the device busy
     await new Promise((resolve) => setTimeout(resolve, 40))
+    // (the one started ahead, else one now; ended after the reading either way)
+    startEngine()
+    const enginePromise = engineRef.current
+    engineRef.current = null
+    let engine = null
     try {
       const page = scanPage(photo.canvas, corners)
       const { readRosterPhoto } = await import('../../utils/rosterPhoto/ocr')
+      engine = await enginePromise.catch(() => null)
       const result = await readRosterPhoto(page, {
+        engine,
         signal: controller.signal,
+        // one bar for the whole reading: the page (most of it), then the handwriting read again
         onProgress: (share, status) => {
           if (controller.signal.aborted) return
-          setProgress(status.startsWith('recognizing') ? { share, phase: 'read' } : { share: 0, phase: 'prepare' })
+          setProgress(status === 'reading marks' ? { share: 0.85 + 0.15 * share, phase: 'marks' } : { share: 0.85 * share, phase: 'read' })
         }
       })
       if (controller.signal.aborted) return
@@ -90,6 +126,8 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
       setStep('error')
     } finally {
       if (readingRef.current === controller) readingRef.current = null
+      // its memory back at once
+      engine?.terminate()
     }
   }
 
@@ -187,10 +225,12 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
         )}
         {step === 'reading' && (
           <div className="space-y-2" data-testid="roster-photo-reading">
-            <p className="m-0 text-sm font-medium text-stone-800">
-              {progress.phase === 'read' ? t('rosterPhoto.reading.read', { percent: Math.round(progress.share * 100) }) : t('rosterPhoto.reading.prepare')}
+            <p className="m-0 text-sm font-medium text-stone-800 tabular-nums" data-testid="roster-photo-progress" data-phase={progress.phase}>
+              {progress.phase === 'prepare'
+                ? t('rosterPhoto.reading.prepare')
+                : t(progress.phase === 'marks' ? 'rosterPhoto.reading.marks' : 'rosterPhoto.reading.read', { percent: Math.round(progress.share * 100) })}
             </p>
-            <ProgressBar value={progress.phase === 'read' ? progress.share * 100 : 0} max={100} label={t('rosterPhoto.reading.prepare')} />
+            <ProgressBar value={progress.phase === 'prepare' ? 0 : progress.share * 100} max={100} label={t('rosterPhoto.reading.prepare')} />
             <p className="m-0 text-xs text-stone-500">{t('rosterPhoto.source.private')}</p>
           </div>
         )}

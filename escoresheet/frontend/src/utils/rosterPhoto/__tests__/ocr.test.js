@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { readRosterPhoto, OCR_LANGS, ocrDir } from '../ocr'
+import { readRosterPhoto, startOcrEngine, ocrWorkerCount, pgmOf, OCR_LANGS, ocrDir } from '../ocr'
 import { version as TESSERACT_VERSION } from 'tesseract.js/package.json'
 import vmShot from './fixtures/ocr-vm-de-screenshot.json'
 
@@ -94,11 +94,72 @@ describe('readRosterPhoto (Tesseract on this device)', () => {
     await expect(readRosterPhoto(new Blob(['page']), { createWorker: sharp.createWorker, dir: '/ocr/x/' })).rejects.toMatchObject({ code: 'ocr-empty' })
   })
 
-  it('a progress callback gets the share and the phase', async () => {
-    const { createWorker, calls } = fakeTesseract()
+  it('a progress callback gets the share of the page read and the phase, to the end', async () => {
+    const fake = fakeTesseract({
+      recognize: async () => {
+        fake.calls.create.options.logger({ status: 'recognizing text', progress: 0.5, workerId: 'w1' })
+        return { data: vmShot }
+      }
+    })
+    const { createWorker, calls } = fake
     const seen = []
     await readRosterPhoto(new Blob(['page']), { createWorker, dir: '/ocr/x/', onProgress: (share, status) => seen.push([share, status]) })
-    calls.create.options.logger({ status: 'recognizing text', progress: 0.5 })
     expect(seen).toContainEqual([0.5, 'recognizing text'])
+    expect(seen[seen.length - 1]).toEqual([1, 'reading marks'])
+    // (nothing after the end)
+    calls.create.options.logger({ status: 'recognizing text', progress: 0.7, workerId: 'w1' })
+    expect(seen).not.toContainEqual([0.7, 'recognizing text'])
+  })
+})
+
+describe('the recognition started ahead (startOcrEngine)', () => {
+  it('starts its workers before the photo is read; the reading uses them and leaves them to their owner', async () => {
+    const { createWorker, calls } = fakeTesseract()
+    const engine = startOcrEngine({ size: 3, createWorker, dir: '/ocr/x/' })
+    const workers = await engine.ready
+    expect(createWorker).toHaveBeenCalledTimes(3)
+    expect(workers).toHaveLength(3)
+    const roster = await readRosterPhoto(new Blob(['page']), { engine, createWorker })
+    expect(roster.players).toHaveLength(10)
+    // no second start, not ended by the reading
+    expect(createWorker).toHaveBeenCalledTimes(3)
+    expect(calls.terminated).toBe(0)
+    await engine.terminate()
+    expect(calls.terminated).toBe(3)
+  })
+
+  it('goes on with the workers that started (little memory); none started: ocr-load', async () => {
+    let n = 0
+    const some = vi.fn(async () => {
+      if (++n === 2) throw new Error('out of memory')
+      return { setParameters: async () => {}, recognize: async () => ({ data: vmShot }), terminate: async () => {} }
+    })
+    expect(await startOcrEngine({ size: 3, createWorker: some, dir: '/ocr/x/' }).ready).toHaveLength(2)
+    const none = startOcrEngine({ size: 2, createWorker: async () => { throw new Error('failed to fetch') }, dir: '/ocr/x/' })
+    await expect(none.ready).rejects.toMatchObject({ code: 'ocr-load' })
+  })
+
+  it('ended while it starts (the dialog closed): its workers end as they come', async () => {
+    const { createWorker, calls } = fakeTesseract()
+    const engine = startOcrEngine({ size: 2, createWorker, dir: '/ocr/x/' })
+    await engine.terminate()
+    await expect(engine.ready).rejects.toMatchObject({ code: 'ocr-cancelled' })
+    expect(calls.terminated).toBe(2)
+  })
+
+  it('ocrWorkerCount: one core left for the page, at most four, fewer on little memory', () => {
+    expect(ocrWorkerCount({ cores: 8, memory: 8 })).toBe(4)
+    // a Galaxy Tab A7 Lite: 8 cores, 3 GB (Chrome says 2)
+    expect(ocrWorkerCount({ cores: 8, memory: 2 })).toBe(3)
+    expect(ocrWorkerCount({ cores: 8, memory: 1 })).toBe(1)
+    expect(ocrWorkerCount({ cores: 2 })).toBe(1)
+    expect(ocrWorkerCount({ cores: 4 })).toBe(3)
+    expect(ocrWorkerCount({ cores: 0 })).toBe(1)
+  })
+
+  it('pgmOf: the grey pixels as a PGM file (what the recognition reads instead of a canvas)', () => {
+    const out = pgmOf(new Uint8ClampedArray([0, 128, 255, 7, 8, 9]), 3, 2)
+    expect(new TextDecoder().decode(out.slice(0, 11))).toBe('P5\n3 2\n255\n')
+    expect([...out.slice(11)]).toEqual([0, 128, 255, 7, 8, 9])
   })
 })

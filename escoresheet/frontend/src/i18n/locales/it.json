@@ -7359,7 +7359,8 @@
     },
     "reading": {
       "prepare": "Preparazione del riconoscimento del testo…",
-      "read": "Lettura della lista… {{percent}} %"
+      "read": "Lettura della lista… {{percent}} %",
+      "marks": "Lettura dei numeri scritti a mano… {{percent}} %"
     },
     "confirm": {
       "description": "Controlla ogni riga e correggi ciò che è stato letto male. Nulla cambia prima di «Usa».",

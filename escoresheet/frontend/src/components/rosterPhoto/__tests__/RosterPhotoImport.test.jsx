@@ -14,7 +14,8 @@ vi.mock('../../../utils/rosterPhoto/scan', async (orig) => ({
   canvasBlob: vi.fn(async () => new Blob(['jpeg']))
 }))
 const readRosterPhoto = vi.fn()
-vi.mock('../../../utils/rosterPhoto/ocr', () => ({ readRosterPhoto: (...args) => readRosterPhoto(...args) }))
+const startOcrEngine = vi.fn()
+vi.mock('../../../utils/rosterPhoto/ocr', () => ({ readRosterPhoto: (...args) => readRosterPhoto(...args), startOcrEngine: (...args) => startOcrEngine(...args) }))
 
 import RosterPhotoImport from '../RosterPhotoImport'
 import { importedRosterOf } from '../../../domain/importedRoster'
@@ -29,8 +30,12 @@ const read = () => importedRosterOf({
 }, 'ocr')
 const savedTeam = { players: [{ number: 9, first_name: 'Noé', last_name: 'Muster', license_number: '123452', active: true }], staff: [] }
 
+const engines = []
 beforeEach(() => {
   readRosterPhoto.mockReset()
+  engines.length = 0
+  startOcrEngine.mockReset()
+  startOcrEngine.mockImplementation(() => { const e = { terminate: vi.fn(async () => {}), ready: Promise.resolve([]) }; engines.push(e); return e })
   globalThis.URL.createObjectURL = vi.fn(() => 'blob:photo')
   globalThis.URL.revokeObjectURL = vi.fn()
 })
@@ -43,6 +48,42 @@ async function toCrop () {
 }
 
 describe('RosterPhotoImport', () => {
+  it('the recognition starts when the dialog opens, the reading uses it, and it ends after the reading and on close', async () => {
+    readRosterPhoto.mockResolvedValue(read())
+    render(<RosterPhotoImport side="home" teamLabel="VBC Seewiese" onApply={() => {}} />)
+    fireEvent.click(screen.getByTestId('roster-photo-home'))
+    await waitFor(() => expect(startOcrEngine).toHaveBeenCalledTimes(1))
+    fireEvent.change(screen.getByTestId('roster-photo-file-home'), { target: { files: [new File(['x'], 'list.jpg', { type: 'image/jpeg' })] } })
+    await screen.findByTestId('roster-photo-read')
+    // (still the one started at the opening)
+    expect(startOcrEngine).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByTestId('roster-photo-read'))
+    await screen.findByTestId('roster-photo-players')
+    expect(readRosterPhoto.mock.calls[0][1].engine).toBe(engines[0])
+    await waitFor(() => expect(engines[0].terminate).toHaveBeenCalled())
+
+    // another photo: a new one, ended when the dialog closes
+    readRosterPhoto.mockReset()
+    fireEvent.click(screen.getByTestId('roster-photo-cancel'))
+    fireEvent.click(screen.getByTestId('roster-photo-home'))
+    await waitFor(() => expect(startOcrEngine).toHaveBeenCalledTimes(2))
+    fireEvent.click(screen.getByText('common.cancel'))
+    await waitFor(() => expect(engines[1].terminate).toHaveBeenCalled())
+  })
+
+  it('the page hidden (the camera app in front) ends the recognition; back, it starts again', async () => {
+    render(<RosterPhotoImport side="home" teamLabel="VBC Seewiese" onApply={() => {}} />)
+    fireEvent.click(screen.getByTestId('roster-photo-home'))
+    await waitFor(() => expect(startOcrEngine).toHaveBeenCalledTimes(1))
+    const state = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    document.dispatchEvent(new Event('visibilitychange'))
+    await waitFor(() => expect(engines[0].terminate).toHaveBeenCalled())
+    state.mockReturnValue('visible')
+    document.dispatchEvent(new Event('visibilitychange'))
+    await waitFor(() => expect(startOcrEngine).toHaveBeenCalledTimes(2))
+    state.mockRestore()
+  })
+
   it('nothing is applied until the scorer fixes the red fields and taps Use; the edits are what is applied', async () => {
     readRosterPhoto.mockResolvedValue(read())
     const onApply = vi.fn()

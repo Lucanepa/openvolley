@@ -753,32 +753,96 @@ export function handInk (gray, width, height, region, { ink = 190, leftOf = Infi
 
 /**
  * Whether a printed row is struck out by hand (owner: that player does not
- * play): ink across most of the gaps between its words at the height of
- * their middle, where print leaves paper. A team's number between two names
- * fills one gap; a pen line through the row fills them all.
+ * play): a pen line through the row's words at the height of their middle,
+ * where print leaves paper between them. A team's number between two names
+ * fills one gap; a pen line fills several in a row, even one that does not
+ * cross the whole row, slopes a little or is drawn in a pale or coloured pen
+ * (owner, 2026-11-27: a readable row under a line was imported). When the
+ * recognition ran the line and the words together (few gaps left), a long
+ * stretch of ink along the row's middle tells it: no printed word is that
+ * long, and table rules and underlines lie above or below the middle.
  * @param {{x0,y0,x1,y1}[]} words the row's printed words, SV number to date
  */
-export function struckThrough (gray, width, height, words, { ink = 140 } = {}) {
-  const ws = [...words].sort((a, b) => a.x0 - b.x0)
-  if (ws.length < 3) return false
-  const mid = [...ws.map((w) => (w.y0 + w.y1) / 2)].sort((a, b) => a - b)[ws.length >> 1]
+export function struckThrough (gray, width, height, words, { ink = 170 } = {}) {
+  const ws = [...words].filter((w) => w.x1 > w.x0 && w.y1 > w.y0).sort((a, b) => a.x0 - b.x0)
+  if (ws.length < 2) return false
   const h = [...ws.map((w) => w.y1 - w.y0)].sort((a, b) => a - b)[ws.length >> 1]
-  const y0 = Math.max(0, Math.round(mid - 0.6 * h))
-  const y1 = Math.min(height - 1, Math.round(mid + 0.6 * h))
+  const midOf = (w) => (w.y0 + w.y1) / 2
+  // the row's middle along it (a row slopes in a photo): between two words' middles
+  const midAt = (x) => {
+    let k = ws.findIndex((w) => (w.x0 + w.x1) / 2 >= x)
+    if (k <= 0) return midOf(ws[k < 0 ? ws.length - 1 : 0])
+    const a = ws[k - 1]
+    const b = ws[k]
+    const xa = (a.x0 + a.x1) / 2
+    const xb = (b.x0 + b.x1) / 2
+    return midOf(a) + ((midOf(b) - midOf(a)) * (x - xa)) / Math.max(1, xb - xa)
+  }
+  const inkAt = (x, reach) => {
+    const m = midAt(x)
+    const y0 = Math.max(0, Math.round(m - reach * h))
+    const y1 = Math.min(height - 1, Math.round(m + reach * h))
+    for (let y = y0; y <= y1; y++) if (gray[y * width + x] < ink) return true
+    return false
+  }
+  // 1. the gaps between the words: crossed when ink lies across (nearly) all of one
   let gaps = 0
   let crossed = 0
+  let run = 0
+  let longest = 0
   for (let i = 1; i < ws.length; i++) {
     const a = Math.max(0, Math.ceil(ws[i - 1].x1 + 2))
     const b = Math.min(width - 1, Math.floor(ws[i].x0 - 2))
     if (b - a < 0.4 * h) continue
     gaps++
     let inked = 0
-    for (let x = a; x <= b; x++) {
-      for (let y = y0; y <= y1; y++) if (gray[y * width + x] < ink) { inked++; break }
-    }
-    if (inked >= 0.85 * (b - a + 1)) crossed++
+    for (let x = a; x <= b; x++) if (inkAt(x, 0.6)) inked++
+    if (inked >= 0.85 * (b - a + 1)) { crossed++; run++; longest = Math.max(longest, run) } else run = 0
   }
-  return gaps >= 2 && crossed >= Math.max(2, Math.ceil(0.6 * gaps))
+  if (longest >= 2 || (gaps >= 2 && crossed >= Math.max(2, Math.ceil(0.6 * gaps)))) return true
+  // 2. one long stretch of ink along the middle (gaps of a fifth of a line
+  // allowed: a pen that skips), longer than any printed word can be
+  const x0 = Math.max(0, Math.floor(ws[0].x0))
+  const x1 = Math.min(width - 1, Math.ceil(ws[ws.length - 1].x1))
+  const need = Math.max(8 * h, 0.4 * (x1 - x0))
+  // (across at least one gap between two words: a long name alone is no line)
+  const gapIn = (a, b) => ws.some((w, i) => i > 0 && w.x0 - ws[i - 1].x1 >= 0.4 * h && ws[i - 1].x1 >= a && w.x0 <= b)
+  let start = -1
+  let last = -1
+  for (let x = x0; x <= x1; x++) {
+    if (!inkAt(x, 0.35)) continue
+    if (start < 0 || x - last > 0.2 * h) start = x
+    last = x
+    if (last - start >= need && gapIn(start, last)) return true
+  }
+  return false
+}
+
+/**
+ * Whether a pen line runs across a band of the page where the recognition
+ * read nothing (a row it lost: a line through a row can garble it that
+ * much): ink along the band's middle (y, a line's height either way) over
+ * half its width or more, gaps of a fifth of a line allowed. Text alone
+ * never runs that far without a gap.
+ * @param {{ x0, x1, y, line }} band page pixels
+ */
+export function lineAcross (gray, width, height, { x0, x1, y, line }, { ink = 170 } = {}) {
+  const a = Math.max(0, Math.floor(x0))
+  const b = Math.min(width - 1, Math.ceil(x1))
+  const top = Math.max(0, Math.round(y - 0.6 * line))
+  const bottom = Math.min(height - 1, Math.round(y + 0.6 * line))
+  const need = 0.5 * (b - a)
+  let start = -1
+  let last = -1
+  for (let x = a; x <= b; x++) {
+    let dark = false
+    for (let yy = top; yy <= bottom && !dark; yy++) dark = gray[yy * width + x] < ink
+    if (!dark) continue
+    if (start < 0 || x - last > 0.2 * line) start = x
+    last = x
+    if (last - start >= need) return true
+  }
+  return false
 }
 
 /** A grey page (width x height) turned a quarter clockwise per step: { gray, width, height }. */
@@ -900,6 +964,8 @@ export function scanPage (canvas, corners, { maxSide = PAGE_MAX_SIDE } = {}) {
   const gray = removeRules(even, width, height)
   const out = canvasOf(width, height)
   out.beforeRules = beforeRules
+  // its grey pixels kept beside it: what the recognition is handed (ocr.js pgmOf), no read back
+  out.gray = gray
   const ctx = out.getContext('2d')
   const img = ctx.createImageData(width, height)
   for (let i = 0, j = 0; i < gray.length; i++, j += 4) {

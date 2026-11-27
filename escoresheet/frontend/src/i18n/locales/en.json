@@ -7360,7 +7360,8 @@
     },
     "reading": {
       "prepare": "Preparing the text recognition…",
-      "read": "Reading the list… {{percent}} %"
+      "read": "Reading the list… {{percent}} %",
+      "marks": "Reading the handwritten numbers… {{percent}} %"
     },
     "confirm": {
       "description": "Check every row and correct what was misread. Nothing changes until you tap Use.",

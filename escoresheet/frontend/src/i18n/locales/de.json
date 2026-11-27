@@ -7342,7 +7342,8 @@
     },
     "reading": {
       "prepare": "Texterkennung wird vorbereitet…",
-      "read": "Liste wird gelesen… {{percent}} %"
+      "read": "Liste wird gelesen… {{percent}} %",
+      "marks": "Handschriftliche Nummern werden gelesen… {{percent}} %"
     },
     "confirm": {
       "description": "Prüfe jede Zeile und korrigiere, was falsch gelesen wurde. Erst mit «Übernehmen» ändert sich etwas.",

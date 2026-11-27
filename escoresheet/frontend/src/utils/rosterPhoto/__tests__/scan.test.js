@@ -198,6 +198,31 @@ describe('a row struck out, the team\'s handwriting, a page turned', () => {
     expect(struckThrough(page(400, 60, (x, y) => (inWords(x, y) ? 20 : undefined)), 400, 60, rowWords)).toBe(false)
   })
 
+  it('struckThrough: a readable row under a line counts in a pale pen, a wavy line, a line over part of the row (owner, 2026-11-27)', () => {
+    const row = (line) => page(400, 60, (x, y) => (inWords(x, y) ? 20 : line(x, y)))
+    // a pale (blue) ballpoint, grey 150 on the photo
+    expect(struckThrough(row((x, y) => (Math.abs(y - 30) < 1.5 && x >= 15 && x <= 385 ? 150 : undefined)), 400, 60, rowWords)).toBe(true)
+    // drawn by hand: wavy and sloping, a little off the middle
+    expect(struckThrough(row((x, y) => (Math.abs(y - 27 - 3 * Math.sin(x / 25) - (x - 20) * 0.02) < 1.5 && x >= 15 && x <= 385 ? 40 : undefined)), 400, 60, rowWords)).toBe(true)
+    // through the names only, not the SV number or the date
+    expect(struckThrough(row((x, y) => (Math.abs(y - 31) < 1.5 && x >= 100 && x <= 290 ? 40 : undefined)), 400, 60, rowWords)).toBe(true)
+    // the recognition ran the line into the words: two words left, one long stretch of ink
+    const merged = [{ x0: 20, y0: 20, x1: 80, y1: 40 }, { x0: 110, y0: 20, x1: 380, y1: 40 }]
+    expect(struckThrough(row((x, y) => (Math.abs(y - 30) < 1.5 && x >= 15 && x <= 385 ? 40 : undefined)), 400, 60, merged)).toBe(true)
+  })
+
+  it('struckThrough: underlines, table rules and marks like L1 or K are no strike', () => {
+    const row = (line) => page(400, 60, (x, y) => (inWords(x, y) ? 20 : line(x, y)))
+    // a line under the row (an underline) and the rules between the rows
+    expect(struckThrough(row((x, y) => ((y === 43 || y === 3 || y === 57) && x >= 0 ? 30 : undefined)), 400, 60, rowWords)).toBe(false)
+    // "L1" and "K" written in two gaps, a short dash in the margin
+    const marks = (x, y) => ((x >= 88 && x <= 102 && y >= 22 && y <= 38 && (x === 88 || y === 38 || x === 100)) || (x >= 280 && x <= 292 && y >= 22 && y <= 38 && (x === 280 || Math.abs(y - 30 - (x - 280)) < 1 || Math.abs(y - 30 + (x - 280)) < 1)) || (x >= 2 && x <= 14 && y === 30) ? 30 : undefined)
+    expect(struckThrough(row(marks), 400, 60, rowWords)).toBe(false)
+    // one long name alone is no line
+    const longName = [{ x0: 20, y0: 20, x1: 80, y1: 40 }, { x0: 100, y0: 20, x1: 330, y1: 40 }, { x0: 340, y0: 20, x1: 380, y1: 40 }]
+    expect(struckThrough(page(400, 60, (x, y) => (longName.some((w) => x >= w.x0 && x < w.x1 && y >= w.y0 && y < w.y1 && (x + y) % 3 === 0) ? 20 : undefined)), 400, 60, longName)).toBe(false)
+  })
+
   it('handInk: ink left of the SV number and between the names, none of the printed words, a pale pen too', () => {
     // a number in the margin (pale grey), a mark between the 2nd and 3rd word, a speck
     const g = page(400, 60, (x, y) => {
