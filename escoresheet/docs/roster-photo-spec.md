@@ -412,7 +412,7 @@ privacy policy needs no new processor. Candidates, in order:
 and `MainActivity`, iOS `Info.plist`, locales (`rosterPhoto.*`, help `importPhoto`), legal texts
 (privacy 1.28, open-source notices, data map).
 
-Activity log (owner 27.11, privacy 1.31): each reading that ends writes one `photo.read` entry
+Activity log (owner 27.11, privacy 1.32): each reading that ends writes one `photo.read` entry
 (`utils/rosterPhoto/photoReadLog.js`): its time, outcome code and counts (rows, fields to check,
 struck rows), the device's cores and memory, the workers used and whether the page was turned;
 since 27.11.2026 the time per stage (`msEngine`, `msPage`, `msHand`, `msRest`), the reader of the
