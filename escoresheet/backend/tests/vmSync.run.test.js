@@ -75,7 +75,7 @@ function fakePool({ failUpsert = null, failLogInsert = false, failClose = false,
           }
           if (/to_regclass\('public\.redacted_people'\)/.test(text)) return { rows: [{ ok: true }] }
           if (/FROM public\.redacted_people/.test(text)) return { rows: register }
-          if (/SELECT game_number, datetime(, league, gender)? FROM public\.svrz_games/.test(text)) return { rows: state.stored }
+          if (/SELECT game_number, datetime(, league, gender, team_home, team_away)? FROM public\.svrz_games/.test(text)) return { rows: state.stored }
           // the season's games a calendar run merges with (storedForMerge)
           if (/SELECT game_number, league, gender, team_home/.test(text)) return { rows: season }
           if (/DELETE FROM public\.svrz_games_removed/.test(text)) return { rowCount: 0 }
@@ -608,8 +608,10 @@ describe('runVmSync with league calendars', () => {
     ]
     const stored = [
       { game_number: '406020', datetime: '2026-10-06T18:30:00.000000+00:00', league: '3L B', gender: 'women' },
-      { game_number: '406555', datetime: '2026-10-07T18:30:00.000000+00:00', league: '3L A', gender: 'women' }, // gone from the 3L calendar
-      { game_number: '400001', datetime: '2026-10-08T18:30:00.000000+00:00', league: '1L D', gender: 'men' } // no calendar: stays
+      { game_number: '406555', datetime: '2026-10-07T18:30:00.000000+00:00', league: '3L A', gender: 'women', team_home: 'Volley Züri Nord', team_away: 'Old Club D3' }, // gone from the 3L calendar
+      { game_number: '400001', datetime: '2026-10-08T18:30:00.000000+00:00', league: '1L D', gender: 'men', team_home: 'A', team_away: 'B' }, // no calendar: stays
+      // another "3L ♀" league whose link is missing: its teams are in no calendar read, so it stays
+      { game_number: '407777', datetime: '2026-10-09T18:30:00.000000+00:00', league: '3L C', gender: 'women', team_home: 'Other League D1', team_away: 'Other League D2' }
     ]
     const pool = fakePool({ stored, season })
     const logger = memLogger()
@@ -633,7 +635,7 @@ describe('runVmSync with league calendars', () => {
     assert.equal(byNumber['406171'].league, '2L')
     assert.equal(byNumber['406171'].gender, 'men')
     assert.equal(byNumber['406171'].match_format, null, 'no format known for 2L men: Match setup asks')
-    assert.deepEqual(pool.state.removed, ['406555'], 'only a game of a covered league that the calendar dropped')
+    assert.deepEqual(pool.state.removed, ['406555'], 'only a game whose league AND team a calendar covers')
     assert.match(pool.state.log.get(r.logId).message, /Synced 3 games from 2 league calendar\(s\)/)
   })
 

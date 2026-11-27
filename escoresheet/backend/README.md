@@ -1104,8 +1104,9 @@ judges, licences, supervision marks, group letter or number of win sets: referee
 are written as NULL (a stale crew must not be pre-filled on an official sheet; scorers type them
 or pick them from the referee directory); the group letter (`3L B`), the street's number, the
 number of win sets (else the league's usual one) and the group / phase texts are kept from the
-stored row (`mergeWithStored`). A complete run removes only games of the leagues the calendars
-cover (a 1L or cup game the login sync stored stays until it is past); a calendar that fails makes
+stored row (`mergeWithStored`). A complete run removes only games whose league has a calendar AND
+one of whose teams that calendar lists: several leagues share a name (three "U23 ♀" in SVRZ), and
+one whose link is missing keeps its games (a 1L or cup game the login sync stored stays until it is past); a calendar that fails makes
 the run partial and removes nothing. Team-name translations (`followTeamRenames`, db/059) need the
 login and do not run.
 

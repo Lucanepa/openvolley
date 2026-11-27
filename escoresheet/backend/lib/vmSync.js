@@ -1278,11 +1278,11 @@ export function mergeWithStored(rows, stored) {
 /**
  * Fetches and parses every calendar. Never throws for one calendar: a failed
  * or empty one is listed in `failed`, and the run must then remove nothing.
- * -> { rows, covered: Set("gender|league"), failed: [{ url, error }], skipped }
+ * -> { rows, covered: Map("gender|league" -> Set(team names)), failed: [{ url, error }], skipped }
  */
 export async function fetchIcalFeeds(urls, { fetch: fetchImpl, http = {}, logger = null, syncedAt = new Date(), sleep = defaultSleep, delayMs = 500 } = {}) {
   const rows = []
-  const covered = new Set()
+  const covered = new Map()
   const failed = []
   let skipped = 0
   for (const [i, url] of urls.entries()) {
@@ -1295,8 +1295,14 @@ export async function fetchIcalFeeds(urls, { fetch: fetchImpl, http = {}, logger
       if (!parsed.calendar.league || !parsed.calendar.gender) throw new Error(`${label}: no league name / gender in the calendar`)
       if (!parsed.games.length) throw new Error(`${label}: no games (${parsed.calendar.league})`)
       skipped += parsed.skipped
-      covered.add(`${parsed.calendar.gender}|${parsed.calendar.league}`)
-      for (const g of parsed.games) rows.push(icalGameToRow(g, parsed.calendar, { syncedAt }))
+      const key = `${parsed.calendar.gender}|${parsed.calendar.league}`
+      const teams = covered.get(key) ?? new Set()
+      covered.set(key, teams)
+      for (const g of parsed.games) {
+        rows.push(icalGameToRow(g, parsed.calendar, { syncedAt }))
+        teams.add(g.team_home.trim())
+        teams.add(g.team_away.trim())
+      }
     } catch (err) {
       failed.push({ url, error: err?.message ?? String(err) })
       logger?.warn?.(`vm-sync: ${err?.message ?? err}`)
@@ -1396,7 +1402,7 @@ export async function closeStaleRunningRows(client, { olderThanMs = STALE_RUNNIN
  */
 async function storedUpcoming(client, win, from) {
   const { rows } = await client.query(
-    'SELECT game_number, datetime, league, gender FROM public.svrz_games WHERE datetime >= $1 AND datetime < $2',
+    'SELECT game_number, datetime, league, gender, team_home, team_away FROM public.svrz_games WHERE datetime >= $1 AND datetime < $2',
     [addDaysYmd(win.fromDay, -1), addDaysYmd(win.toDay, 2)])
   const to = Date.parse(win.dateTo)
   const start = Math.max(from, Date.parse(win.dateFrom))
@@ -1414,9 +1420,17 @@ async function storedForMerge(client, win) {
   return rows
 }
 
-/** A stored game of a league one of the calendars covers ("3L B" -> "3L"). */
-const coveredByCalendars = (row, covered) =>
-  covered.has(`${row.gender}|${row.league}`) || covered.has(`${row.gender}|${String(row.league ?? '').replace(/\s+[A-Z]$/, '')}`)
+/**
+ * A stored game the calendars answer for: its league ("3L B" -> "3L") has a
+ * calendar AND one of its teams plays in that calendar. Several leagues share
+ * a name (three "U23 ♀" in SVRZ): a league whose link is missing must not
+ * lose its games because another one of the same name was read (27.11.2026:
+ * 49 U23 games were removed that way, and came back with the third link).
+ */
+const coveredByCalendars = (row, covered) => {
+  const teams = covered.get(`${row.gender}|${row.league}`) ?? covered.get(`${row.gender}|${String(row.league ?? '').replace(/\s+[A-Z]$/, '')}`)
+  return !!teams && (teams.has(String(row.team_home ?? '').trim()) || teams.has(String(row.team_away ?? '').trim()))
+}
 
 /** Moves the games out of svrz_games into svrz_games_removed (db/041); returns their numbers. */
 async function removeGames(client, numbers, logId) {
