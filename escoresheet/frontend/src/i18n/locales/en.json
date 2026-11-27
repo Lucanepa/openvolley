@@ -6641,7 +6641,8 @@
       "scoresheet_pdf": "eScoresheet PDF",
       "auth_sign_in": "Signed in",
       "auth_sign_out": "Signed out",
-      "activity_overflow": "Old entries dropped"
+      "activity_overflow": "Old entries dropped",
+      "photo_read": "Photo of the list"
     }
   },
   "phoneSign": {

@@ -6640,7 +6640,8 @@
       "scoresheet_pdf": "PDF dell’eScoresheet",
       "auth_sign_in": "Accesso effettuato",
       "auth_sign_out": "Disconnesso",
-      "activity_overflow": "Voci vecchie scartate"
+      "activity_overflow": "Voci vecchie scartate",
+      "photo_read": "Foto della lista"
     }
   },
   "phoneSign": {

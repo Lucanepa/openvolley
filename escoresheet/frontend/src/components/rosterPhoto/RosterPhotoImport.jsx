@@ -6,6 +6,7 @@ import { Button, Banner, ProgressBar } from '../../ui'
 import { fieldIssues, importedRosterOf } from '../../domain/importedRoster'
 import { canvasBlob, guessCorners, loadPhoto, rotateCorners, scanPage } from '../../utils/rosterPhoto/scan'
 import { withSavedTeamNames } from '../../utils/rosterPhoto/savedTeamNames'
+import { logPhotoRead } from '../../utils/rosterPhoto/photoReadLog'
 import PhotoCropStep from './PhotoCropStep'
 import RosterConfirmStep from './RosterConfirmStep'
 
@@ -127,6 +128,8 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
     const enginePromise = engineRef.current
     engineRef.current = null
     let engine = null
+    // what the reading notes for the activity log (counts only: photoReadLog)
+    const stats = { workers: 0, turned: false }
     try {
       const page = scanPage(photo.canvas, corners)
       const { readRosterPhoto } = await import('../../utils/rosterPhoto/ocr')
@@ -134,6 +137,7 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
       const result = await readRosterPhoto(page, {
         engine,
         signal: controller.signal,
+        stats,
         // one bar for the whole reading (shares in ocr.js): the page, then each step after it;
         // it never reaches 100 % before the check screen (owner 27.11: "100 % = finished")
         onProgress: (share, status) => {
@@ -142,16 +146,21 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
         }
       })
       if (controller.signal.aborted) return
-      setRoster(withSavedTeamNames(result, savedTeam))
+      const shown = withSavedTeamNames(result, savedTeam)
+      setRoster(shown)
       setProgress({ share: 1, phase: 'marks' })
       const took = Math.round(performance.now() - readStartRef.current)
       setReadMs(took)
       console.info('[RosterPhoto] read in', took, 'ms')
+      // the time and counts in the activity log (owner 27.11), never what was read
+      logPhotoRead({ ms: took, outcome: 'ok', roster: shown, stats })
       setStep('confirm')
     } catch (err) {
       if (controller.signal.aborted || err?.code === 'ocr-cancelled') return
       console.warn('[RosterPhoto] reading failed:', err?.code || err?.message)
-      setError(err?.code || 'ocr-load')
+      const code = err?.code || 'ocr-load'
+      logPhotoRead({ ms: performance.now() - readStartRef.current, outcome: code, stats })
+      setError(code)
       setStep('error')
     } finally {
       if (readingRef.current === controller) readingRef.current = null

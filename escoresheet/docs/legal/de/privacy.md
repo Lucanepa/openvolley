@@ -172,7 +172,11 @@ Korrekturen (was wann und warum geändert wurde), Sätze und Spielstatus,
 Unterschriften (nur die Funktion und dass sie erfolgt sind),
 Bemerkungen (nur ihre Länge), Änderungen an Kaderlisten (nur die
 Rückennummer), Ergebnisse der Übertragung zum Server, App-Fehler (Meldung und
-Programmstelle), Start, Update und Beenden der App sowie An- und Abmeldung.
+Programmstelle), Dauer und Ergebnis des Lesens eines Fotos einer
+Einsatzliste (mit der Zahl der Zeilen, der zu prüfenden Felder und der
+durchgestrichenen Zeilen sowie der Zahl der Prozessorkerne und der Grösse des
+Arbeitsspeichers des Geräts; nie das Foto oder was darauf gelesen wurde),
+Start, Update und Beenden der App sowie An- und Abmeldung.
 Jeder Eintrag enthält eine zufällige Kennung des Geräts (von der App erzeugt,
 nicht mit der Hardware verknüpft), die App-Version, die Plattform und, wenn
 du angemeldet bist, dein Konto. **Nie aufgezeichnet werden** PINs,

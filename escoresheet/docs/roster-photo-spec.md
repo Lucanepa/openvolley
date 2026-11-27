@@ -301,9 +301,20 @@ privacy policy needs no new processor. Candidates, in order:
 
 ## 5. Files
 
-`src/domain/importedRoster.js`, `src/utils/rosterPhoto/{scan,ocr,ocrFiles,ocrWarmup,ocrRoster,savedTeamNames}.js`,
+`src/domain/importedRoster.js`, `src/utils/rosterPhoto/{scan,ocr,ocrFiles,ocrWarmup,ocrRoster,savedTeamNames,photoReadLog}.js`,
 `src/components/rosterPhoto/{RosterPhotoImport,PhotoCropStep,RosterConfirmStep}.jsx`, `e2e-ui/photo-check-fit.mjs`,
 `src/components/MatchSetup.jsx` (`applyImportedRoster`, the button), `vite-plugin-ocr-assets.js`,
 `pwa-workbox.js` (`ocr/**`, `OCR_FILES_ROUTE`), `scripts/build-subdomains.js`, the Android manifest
 and `MainActivity`, iOS `Info.plist`, locales (`rosterPhoto.*`, help `importPhoto`), legal texts
 (privacy 1.28, open-source notices, data map).
+
+Activity log (owner 27.11, privacy 1.30): each reading that ends writes one `photo.read` entry
+(`utils/rosterPhoto/photoReadLog.js`): its time, outcome code and counts (rows, fields to check,
+struck rows), the device's cores and memory, the workers used and whether the page was turned.
+Never the photo or anything read from it (docs/activity-log-spec.md). On the server:
+
+```sql
+SELECT app_version, platform, data->>'cores' cores, data->>'memory' mem, data->>'outcome' outcome,
+       count(*), round(avg((data->>'ms')::int) / 1000.0, 1) avg_s, round(max((data->>'ms')::int) / 1000.0, 1) max_s
+FROM ov_read.activity_log WHERE kind = 'photo.read' GROUP BY 1,2,3,4,5 ORDER BY 6 DESC;
+```

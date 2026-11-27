@@ -172,8 +172,11 @@ e correzioni (cosa è stato modificato, quando e perché), set e stato della
 partita, firme (solo la funzione e il fatto che sono
 avvenute), osservazioni (solo la loro lunghezza), modifiche alle liste
 squadra (solo il numero di maglia), esiti degli invii al server, errori
-dell'app (messaggio e punto del programma), avvio, aggiornamento e chiusura
-dell'app, nonché accesso e uscita. Ogni voce contiene un identificativo
+dell'app (messaggio e punto del programma), durata ed esito della lettura
+della foto di un'Einsatzliste (con il numero di righe, di campi da controllare
+e di righe barrate, nonché il numero di core del processore e la memoria del
+dispositivo; mai la foto né ciò che vi è stato letto), avvio, aggiornamento e
+chiusura dell'app, nonché accesso e uscita. Ogni voce contiene un identificativo
 casuale del dispositivo (creato dall'app, non legato all'hardware), la
 versione dell'app, la piattaforma e, se hai effettuato l'accesso, il tuo
 account. **Non vengono mai registrati** PIN, password, token di accesso,

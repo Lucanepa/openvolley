@@ -35,8 +35,12 @@ describe('activity log (unit)', () => {
   it('the server sanitizer is the app\'s (same catalog, same results)', { skip: existsSync(APP_SANITIZER) ? false : 'frontend not checked out' }, async () => {
     const app = await import(pathToFileURL(APP_SANITIZER).href)
     assert.deepEqual(serverSide.ACTIVITY_KINDS, app.ACTIVITY_KINDS)
+    assert.deepEqual(serverSide.ACTIVITY_TYPES, app.ACTIVITY_TYPES)
     assert.equal(String(serverSide.DENIED_KEY), String(app.DENIED_KEY))
     const samples = [
+      // a photo reading: typed counts only (a name in outcome, strings for numbers, extra keys: dropped)
+      ['photo.read', { ms: 11384.4, outcome: 'ok', rows: 13, toCheck: 9, struck: 1, cores: 8, memory: 4, workers: 3, turned: true, names: ['Muster Anna'] }],
+      ['photo.read', { ms: '900', outcome: 'Muster Anna', rows: -2, toCheck: 1e9, cores: null, memory: 0.256, workers: '3', turned: 'yes' }],
       ['match.manual_change', { category: 'player', field: 'dob', before: '1.1.2000', after: '2.1.2000' }],
       ['sync.error', { resource: 'event', code: { gamePin: '1234', ok: 1 }, status: 409 }],
       ['app.error', { message: 'x'.repeat(400), frames: Array.from({ length: 30 }, (_, i) => `f${i}.js:${i}`) }],
@@ -80,6 +84,32 @@ describe('activity log (unit)', () => {
       ['event.add', { type: 'point', team: 'team1', scoreA: 5, scoreB: 2, stateSnapshot: {} }],
       ['app.error', { message: 'pin 123456 failed' }]
     ]) assert.deepEqual(serverSide.sanitizeActivityData(kind, data), beach.sanitizeActivityData(kind, data), kind)
+  })
+
+  it('photo.read: its keys only, typed (numbers clamped, outcome from a fixed list, booleans); nothing else passes', () => {
+    const me = randomUUID()
+    const clean = (data) => serverSide.sanitizeActivityData('photo.read', data)
+    // made-up values
+    const ok = { ms: 11384, outcome: 'ok', rows: 13, toCheck: 9, struck: 1, cores: 8, memory: 4, workers: 3, turned: false }
+    assert.deepEqual(serverSide.ACTIVITY_KINDS['photo.read'].keys, ['ms', 'outcome', 'rows', 'toCheck', 'struck', 'cores', 'memory', 'workers', 'turned'])
+    assert.deepEqual(clean(ok), ok)
+    // extra keys dropped, whatever they hold
+    assert.deepEqual(clean({ ...ok, lastName: 'Muster', licence: '123451', text: 'Exempel Luca 7', photo: 'data:image/jpeg;base64,AAAA', players: [{ n: 7 }] }), ok)
+    // numbers rounded and clamped to sane ranges
+    assert.deepEqual(clean({ ms: 1234.6, rows: -3, toCheck: 5000, struck: 2.4, cores: 9999, memory: 0.256, workers: 40 }),
+      { ms: 1235, rows: 0, toCheck: 999, struck: 2, cores: 256, memory: 0.26, workers: 16 })
+    assert.equal(clean({ ms: 9e12 }).ms, 3600000)
+    // the wrong type is dropped: strings for numbers, a number for a boolean, a name or any text as outcome
+    assert.deepEqual(clean({ ms: '11384', rows: '13', toCheck: [9], struck: { n: 1 }, cores: '8', memory: '4', workers: true, turned: 'yes' }), {})
+    for (const bad of ['Muster Anna', 'Exempel', '123451', 'OK', 'ocr-blurry Muster', '', 7]) assert.deepEqual(clean({ outcome: bad }), {}, String(bad))
+    for (const code of serverSide.PHOTO_READ_OUTCOMES) assert.deepEqual(clean({ outcome: code }), { outcome: code })
+    // only cores and memory may be unknown
+    assert.deepEqual(clean({ cores: null, memory: null, ms: null, rows: null, turned: null }), { cores: null, memory: null })
+    // an upload of it is accepted, with the data cleaned again
+    const r = checkEntry(entry({ kind: 'photo.read', level: 'warn', set_index: null, event_seq: null, data: { ms: 8150, outcome: 'ocr-blurry', cores: 4, memory: null, workers: 1, turned: false, firstName: 'Lea' } }), me)
+    assert.equal(r.code, undefined)
+    assert.equal(r.row.kind, 'photo.read')
+    assert.deepEqual(r.row.data, { ms: 8150, outcome: 'ocr-blurry', cores: 4, memory: null, workers: 1, turned: false })
   })
 
   it('checkEntry: catalog, account, shapes; the data is sanitized again', () => {

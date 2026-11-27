@@ -595,10 +595,12 @@ export const OCR_LAST_SHARE = 0.98
  * engine: the recognition started ahead (startOcrEngine), left to its owner
  * to end; without one, readRosterPhoto starts its own and ends it.
  * tuning (measurements): { workers: how many of its own (ocrWorkerCount) }.
+ * stats: filled in as it goes, for the activity log (photoReadLog), counts only:
+ * { workers: the recognition workers used, turned: true when it turned the page }.
  * @param {HTMLCanvasElement|Blob} page
- * @param {{ engine?: object, onProgress?: (share: number, status: string) => void, signal?: AbortSignal, createWorker?: Function, timeoutMs?: number, startTimeoutMs?: number, dir?: string, tuning?: object }} [opts]
+ * @param {{ engine?: object, onProgress?: (share: number, status: string) => void, signal?: AbortSignal, createWorker?: Function, timeoutMs?: number, startTimeoutMs?: number, dir?: string, tuning?: object, stats?: { workers?: number, turned?: boolean } }} [opts]
  */
-export async function readRosterPhoto (page, { engine = null, onProgress, signal, createWorker, timeoutMs = OCR_TIMEOUT_MS, startTimeoutMs = OCR_START_TIMEOUT_MS, dir, debug, tuning = {} } = {}) {
+export async function readRosterPhoto (page, { engine = null, onProgress, signal, createWorker, timeoutMs = OCR_TIMEOUT_MS, startTimeoutMs = OCR_START_TIMEOUT_MS, dir, debug, tuning = {}, stats = null } = {}) {
   // (a Blob: read as it is, by one worker)
   const own = engine ? null : startOcrEngine({ size: isCanvas(page) ? (tuning.workers ?? ocrWorkerCount()) : 1, createWorker, dir, startTimeoutMs })
   const eng = engine || own
@@ -624,6 +626,7 @@ export async function readRosterPhoto (page, { engine = null, onProgress, signal
     let workers
     try {
       workers = await withTimeout(eng.ready, startTimeoutMs)
+      if (stats) stats.workers = workers.length
       await setAll(workers, { tessedit_pageseg_mode: PSM_SINGLE_BLOCK, preserve_interword_spaces: '1' })
     } catch (err) {
       if (signal?.aborted || err?.code === 'ocr-cancelled') throw cancelled()
@@ -657,6 +660,7 @@ export async function readRosterPhoto (page, { engine = null, onProgress, signal
         const turns = await withTimeout(uprightTurns(workers, page, null, [1, 3, 0]), timeoutMs)
         turnedFirst = true
         if (debug) debug.turned = turns
+        if (turns && stats) stats.turned = true
         if (turns) page = turnedCanvas(page, turns)
         if (signal?.aborted) throw cancelled()
       }
@@ -668,6 +672,7 @@ export async function readRosterPhoto (page, { engine = null, onProgress, signal
         const turns = await withTimeout(uprightTurns(workers, page, asIs), timeoutMs)
         if (debug) debug.turned = turns
         if (turns) {
+          if (stats) stats.turned = true
           page = turnedCanvas(page, turns)
           if (signal?.aborted) throw cancelled()
           data = await read(page)

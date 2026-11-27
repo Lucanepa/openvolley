@@ -6634,7 +6634,8 @@
       "scoresheet_pdf": "PDF de l’eScoresheet",
       "auth_sign_in": "Connecté",
       "auth_sign_out": "Déconnecté",
-      "activity_overflow": "Anciennes entrées supprimées"
+      "activity_overflow": "Anciennes entrées supprimées",
+      "photo_read": "Photo de la liste"
     }
   },
   "phoneSign": {
