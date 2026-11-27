@@ -678,7 +678,7 @@ red; it is a colour, not a federation mark.
   crops in `img/` (`hdr_left`, `hdr_right`, `appr`, `result`, `sanct`, ...).
   Approval columns: Land / Lizenz-Nr. / Unterschrift; line judges 1-4; captains A / B.
 - `course.pdf` / `course.txt` (2025): roster and officials' "Licence n." column
-  holds the date of birth (p. 9-10, e.g. `Kanagalingam, T. CHE 07.02.1999`);
+  holds the date of birth (p. 9-10, e.g. `Muster, A. CHE 14.03.2004`);
   names "Last name, First initial."; at set end: close the winner's service,
   circle the final points in the service box only (never in the points box),
   strike the unused points with a vertical "T" (p. 39); the team that received

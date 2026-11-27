@@ -643,7 +643,7 @@ export function parseRosterText(text, lfp = new Set()) {
     for (const o of parseLabelledOfficials(normalizedText, fullName)) {
       if (!result[o.slot]) result[o.slot] = o.person
     }
-  // The text has no column borders, so "Noel von Wattenwyl" comes out as first name
+  // The text has no column borders, so "Tim von Muster" comes out as first name
   // "Noel von": a name particle belongs to the last name
   for (const p of result.players) Object.assign(p, moveNameParticles(p.firstName, p.lastName))
   for (const k of OFFICIAL_SLOTS) {
@@ -700,7 +700,7 @@ export function parseLabelledOfficials(text, fullName) {
   return out
 }
 
-// Lowercase only: as VolleyManager writes them ("von Wattenwyl", "de Weck", "van der Berg")
+// Lowercase only: as VolleyManager writes them ("von Allmen", "de Weck", "van der Berg")
 const NAME_PARTICLES = new Set(['von', 'vom', 'van', 'zu', 'zur', 'zum', 'de', 'des', 'du', 'di', 'da', 'del',
   'della', 'dalla', 'dello', 'degli', 'dei', 'dos', 'das', 'le', 'la', 'lo', 'ten', 'ter', 'den', 'der', 'af', 'av', 'y'])
 
