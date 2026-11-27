@@ -36,10 +36,10 @@
 
 import { realpathSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { runVmSync, resolveWindow, windowFromEnv, isYmd, icalFeedsFromEnv } from '../lib/vmSync.js'
+import { runVmSync, resolveWindow, windowFromEnv, isYmd, icalFeedsFromEnv, gameCenterRegionsFromEnv } from '../lib/vmSync.js'
 
 const USAGE = 'Usage: node scripts/vm-sync.mjs [--date YYYY-MM-DD | --from YYYY-MM-DD --to YYYY-MM-DD | --days-back N --days-ahead N] [--dry-run] [--json]\n' +
-  'Needs VM_ICAL_FEEDS (league calendars, no login) or VM_USERNAME + VM_PASSWORD, and (unless --dry-run) DATABASE_URL; OV_PIN_SECRET once people erased on request are registered (db/052).'
+  'Needs VM_GAME_CENTER_REGIONS (Swiss Volley Game Center, no login), VM_ICAL_FEEDS (league calendars, no login) or VM_USERNAME + VM_PASSWORD, and (unless --dry-run) DATABASE_URL; OV_PIN_SECRET once people erased on request are registered (db/052).'
 
 export const EXIT = { success: 0, failed: 1, usage: 2, skipped: 3, partial: 4 }
 
@@ -95,6 +95,7 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
   let opts
   let window
   let feeds = []
+  let gameCenterRegions = []
   try {
     opts = parseArgs(argv)
     if (opts.help) {
@@ -104,14 +105,15 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
     window = Object.keys(opts.window).length ? opts.window : windowFromEnv(env)
     resolveWindow(window) // validate before connecting anywhere
     feeds = icalFeedsFromEnv(env, baseUrl ? { baseUrl } : {})
+    gameCenterRegions = gameCenterRegionsFromEnv(env)
   } catch (err) {
     console.error(err.message)
     console.error(USAGE)
     return EXIT.usage
   }
 
-  // VM_ICAL_FEEDS (the league calendars) needs no login
-  const missing = [...(feeds.length ? [] : ['VM_USERNAME', 'VM_PASSWORD']), ...(opts.dryRun ? [] : ['DATABASE_URL'])].filter((k) => !env[k])
+  // the Game Center and the league calendars need no login
+  const missing = [...(feeds.length || gameCenterRegions.length ? [] : ['VM_USERNAME', 'VM_PASSWORD']), ...(opts.dryRun ? [] : ['DATABASE_URL'])].filter((k) => !env[k])
   if (missing.length) {
     console.error(`Missing environment: ${missing.join(', ')}`)
     return EXIT.usage
@@ -142,6 +144,7 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
       ...(baseUrl ? { baseUrl } : {}),
       ...(http ? { http } : {}),
       feeds,
+      gameCenterRegions,
       credentials: { username: env.VM_USERNAME, password: env.VM_PASSWORD },
       ...(env.VM_ROLE_ATTRIBUTE_GAMES ? { roleAttribute: env.VM_ROLE_ATTRIBUTE_GAMES } : {}),
       // the register of people erased on request (db/052): their places stay empty
