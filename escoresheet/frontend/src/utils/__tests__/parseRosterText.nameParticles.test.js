@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { moveNameParticles, parseRosterText } from '../parseRosterPdf'
 
-// Owner 09.11.2026: "Noel von Wattenwyl" was imported as first name "Noel von". Made-up names.
+// Owner 09.11.2026: a "<first> von <last>" player was imported with the first name "<first> von". Made-up names.
 describe('moveNameParticles', () => {
   it('moves lowercase particles at the end of the first name to the last name', () => {
-    expect(moveNameParticles('Noel von', 'Muster')).toEqual({ firstName: 'Noel', lastName: 'von Muster' })
+    expect(moveNameParticles('Tim von', 'Muster')).toEqual({ firstName: 'Tim', lastName: 'von Muster' })
     expect(moveNameParticles('Anna Maria van der', 'Berg')).toEqual({ firstName: 'Anna Maria', lastName: 'van der Berg' })
     expect(moveNameParticles('Luca de', 'Beispiel')).toEqual({ firstName: 'Luca', lastName: 'de Beispiel' })
   })
@@ -18,10 +18,10 @@ describe('moveNameParticles', () => {
 
 describe('parseRosterText: particles in an Einsatzliste row', () => {
   it('reads "von Muster" as the last name', () => {
-    const text = 'Einsatzliste 123456   Noel   von Muster   M   29.09.2002 234567   Jan   Beispiel   M   16.06.2004'
+    const text = 'Einsatzliste 123456   Tim   von Muster   M   14.05.2003 234567   Jan   Beispiel   M   16.06.2004'
     const players = parseRosterText(text).players
     expect(players.map(p => [p.firstName, p.lastName, p.licence])).toEqual([
-      ['Noel', 'von Muster', '123456'], ['Jan', 'Beispiel', '234567']
+      ['Tim', 'von Muster', '123456'], ['Jan', 'Beispiel', '234567']
     ])
   })
 })

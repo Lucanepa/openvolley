@@ -32,7 +32,7 @@ const einsatzliste = [
   ...at(760, [[40, 'SV-Nr'], [100, 'Vorname'], [200, 'Name'], [330, 'G'], [360, 'Geburtsdatum'], [450, 'LFP']]),
   ...at(740, [[40, '123456'], [100, 'Sofia'], [200, 'Garcia'], [237, 'Lopez'], [330, 'F'], [360, '14.03.2008'], [452, 'X']]),
   ...at(720, [[40, '234567'], [100, 'Anna'], [126, 'Maria'], [200, 'Muster'], [330, 'F'], [360, '02.07.2007']]),
-  ...at(700, [[40, '345678'], [100, 'Noel'], [200, 'von Beispiel'], [330, 'M'], [360, '29.09.2006'], [451, 'X']]),
+  ...at(700, [[40, '345678'], [100, 'Tim'], [200, 'von Beispiel'], [330, 'M'], [360, '14.05.2006'], [451, 'X']]),
   // a licence row without the gender letter, and the line of the club
   ...at(680, [[40, '456789'], [100, 'Lea'], [200, 'Exemple'], [360, '07.10'], [385, '.2007']]),
   ...at(660, [[40, '987654'], [100, 'VBC'], [200, 'Musterdorf'], [330, 'H1']])
@@ -44,7 +44,7 @@ describe('playersFromColumns: the cells by their x positions', () => {
     expect(players.map((p) => [p.licence, p.firstName, p.lastName, p.dob, p.isLfp, p.number])).toEqual([
       ['123456', 'Sofia', 'Garcia Lopez', '14/03/2008', true, null],
       ['234567', 'Anna Maria', 'Muster', '02/07/2007', false, null],
-      ['345678', 'Noel', 'von Beispiel', '29/09/2006', true, null],
+      ['345678', 'Tim', 'von Beispiel', '14/05/2006', true, null],
       ['456789', 'Lea', 'Exemple', '07/10/2007', false, null]
     ])
   })
@@ -52,7 +52,7 @@ describe('playersFromColumns: the cells by their x positions', () => {
   it('wins over the text patterns (which split by words)', () => {
     const r = parseRosterContent(text(einsatzliste), einsatzliste)
     expect(r.players.map((p) => [p.firstName, p.lastName, p.isLfp])).toEqual([
-      ['Sofia', 'Garcia Lopez', true], ['Anna Maria', 'Muster', false], ['Noel', 'von Beispiel', true], ['Lea', 'Exemple', false]
+      ['Sofia', 'Garcia Lopez', true], ['Anna Maria', 'Muster', false], ['Tim', 'von Beispiel', true], ['Lea', 'Exemple', false]
     ])
     // the text alone splits by words: what the columns are for
     expect(parseRosterText(text(einsatzliste)).players[0]).toMatchObject({ firstName: 'Sofia Garcia', lastName: 'Lopez' })
@@ -82,7 +82,7 @@ describe('playersFromColumns: the headers of the row above the table, not the fi
   const teamBlock = at(820, [[40, 'Name'], [100, 'Volley'], [150, 'Musterdorf'], [200, 'GFL'], [230, 'Regeln']])
   const expected = [
     ['123456', 'Sofia', 'Garcia Lopez', true], ['234567', 'Anna Maria', 'Muster', false],
-    ['345678', 'Noel', 'von Beispiel', true], ['456789', 'Lea', 'Exemple', false]
+    ['345678', 'Tim', 'von Beispiel', true], ['456789', 'Lea', 'Exemple', false]
   ]
 
   it('a "Name" or "GFL" label above the table swaps no names and moves no LFP mark', () => {
@@ -123,7 +123,7 @@ describe('parseRosterText: numbers, header lines, LFP and the officials', () => 
   })
 
   it('LFP goes by the licence, also for a name with a particle or two words', () => {
-    const r = parseRosterText('Einsatzliste 345678 Noel von Beispiel M 29.09.2006 123456 Sofia Garcia Lopez F 14.03.2008 234567 Lea Exemple F 03.04.2006', new Set(['345678', '123456']))
+    const r = parseRosterText('Einsatzliste 345678 Noel von Beispiel M 14.05.2006 123456 Sofia Garcia Lopez F 14.03.2008 234567 Lea Exemple F 03.04.2006', new Set(['345678', '123456']))
     expect(r.players.map((p) => [p.licence, p.isLfp])).toEqual([['345678', true], ['123456', true], ['234567', false]])
   })
 
