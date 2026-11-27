@@ -1,6 +1,6 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.29 · Aggiornata al 24 novembre 2026
+**OpenVolley e OpenBeach** · Versione 1.30 · Aggiornata al 27 novembre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
 la versione inglese.
@@ -169,7 +169,7 @@ Inoltre carica:
 tracciabilità del referto e per la diagnosi dei problemi, l'app annota ciò
 che avviene sul dispositivo: punti e altri eventi della partita, annullamenti
 e correzioni (cosa è stato modificato, quando e perché), set e stato della
-partita, firme e approvazioni (solo la funzione e il fatto che sono
+partita, firme (solo la funzione e il fatto che sono
 avvenute), osservazioni (solo la loro lunghezza), modifiche alle liste
 squadra (solo il numero di maglia), esiti degli invii al server, errori
 dell'app (messaggio e punto del programma), avvio, aggiornamento e chiusura
@@ -283,19 +283,17 @@ squadra) nel tuo account Google; valgono le condizioni di Google.
 
 Su un dispositivo condiviso, esci dall'account dopo la partita. L'uscita
 cancella dall'app il token di accesso, il tuo profilo e le tue società, le
-partite del giorno, le squadre, gli elenchi e le liste delle licenze delle
-società memorizzati temporaneamente, e gli indirizzi e-mail con cui gli
-ufficiali hanno confermato su questo dispositivo; lo stesso avviene quando la
+partite del giorno e le squadre, gli elenchi e le liste delle licenze delle
+società memorizzati temporaneamente; lo stesso avviene quando la
 sessione scade o accede un altro account. Senza connessione, l'uscita chiude
-anche la sessione sul server appena il dispositivo torna online. Gli
-indirizzi degli ufficiali sono conservati al massimo 7 giorni. Non configurare
+anche la sessione sul server appena il dispositivo torna online. Non configurare
 una passkey su un dispositivo condiviso (all'accesso spunta "Dispositivo
 condiviso").
 
 ## 6. Account ed e-mail
 
-Ti serve un account per sincronizzare partite, gestire squadre e tornei o
-approvare risultati come ufficiale di gara. Gli account si aprono su
+Ti serve un account per sincronizzare partite o gestire squadre e tornei. Gli
+account si aprono su
 `manager.openvolley.app` e `manager-beach.openvolley.app`.
 
 **Dati:** indirizzo e-mail, password (salvata solo come hash, mai in chiaro),
@@ -371,10 +369,9 @@ viene cancellato dopo le sue 24 ore, con una nuova password e con l'account;
 una rete 60 giorni dopo il suo ultimo uso e con l'account.
 
 **E-mail:** invio solo e-mail legate all'account: conferma dell'indirizzo
-e-mail, link per reimpostare la password, avviso di cambio password, avviso
-che qualcuno continua a provare ad accedere al tuo account (sopra), avviso
-che un risultato è stato approvato con il tuo PIN di approvazione e avviso
-che il tuo PIN è stato bloccato. Non contengono pixel di tracciamento né
+e-mail, link per reimpostare la password, avviso di cambio password e avviso
+che qualcuno continua a provare ad accedere al tuo account (sopra). Non
+contengono pixel di tracciamento né
 immagini caricate da remoto. Un link di conferma vale 24 ore, un link di
 reimpostazione 60 minuti.
 
@@ -401,11 +398,10 @@ loro compito lo richiede:
   ogni partita, nell'elenco dei referti.
 
 **Cancellare l'account:** puoi cancellare il tuo account in qualsiasi momento
-nell'app. Vengono cancellati account, profilo, sessioni, PIN di approvazione,
-codici d'invito utilizzati, le tue copie di sicurezza e i registri caricati e
+nell'app. Vengono cancellati account, profilo, sessioni, codici d'invito
+utilizzati, le tue copie di sicurezza e i registri caricati e
 le tue voci del registro attività senza partita. **Restano** i documenti
 ufficiali a cui altri hanno un interesse: i referti che hai registrato, le
-approvazioni che hai dato (con il tuo nome come figura nel referto), le
 squadre e i tornei salvati, le voci del registro delle modifiche
 (sezione 14), nonché il registro attività e la cronologia degli eventi delle
 partite (sezione 5). Il tuo account viene separato da queste voci. Puoi far
@@ -485,8 +481,8 @@ dell'idoneità (numero di licenza), livescore.
 |---|---|
 | L'account che ha registrato o chiuso la partita; gli amministratori | Tutto |
 | Gli account che hanno inserito il PIN della partita (per esempio un tablet che riprende la partita) | Tutto, fino alla chiusura della partita |
-| Tablet dell'arbitro con il PIN arbitro | Squadre, entrambe le liste squadra con nomi e numeri, punteggio, osservazioni (senza le osservazioni tecniche). **Nessuna** data di nascita, firma, ufficiale di gara o approvazione |
-| Tablet della panchina con il PIN della sua squadra | La lista della propria squadra con nomi e numeri, i numeri di maglia dell'altra squadra, punteggio. **Nessuna** osservazione, data di nascita, firma, ufficiale di gara o approvazione |
+| Tablet dell'arbitro con il PIN arbitro | Squadre, entrambe le liste squadra con nomi e numeri, punteggio, osservazioni (senza le osservazioni tecniche). **Nessuna** data di nascita, firma o ufficiale di gara |
+| Tablet della panchina con il PIN della sua squadra | La lista della propria squadra con nomi e numeri, i numeri di maglia dell'altra squadra, punteggio. **Nessuna** osservazione, data di nascita, firma o ufficiale di gara |
 | Tutti (pubblico) | Vedi sezione 8 |
 
 Una volta approvata e chiusa, una partita non può più essere modificata da
@@ -514,7 +510,7 @@ ufficiale indoor chiusa, in PDF, a:
 
 - l'account che ha chiuso la partita e l'account del segnapunti che ha
   approvato il risultato;
-- gli arbitri che hanno approvato il risultato con il loro account o il cui
+- gli arbitri il cui
   indirizzo e-mail è stato inserito per la partita;
 - l'indirizzo di contatto della società di ogni squadra (sezione 6), affinché
   la società possa inoltrare il referto agli allenatori;
@@ -644,16 +640,6 @@ elencata ha bisogno di un codice proprio. Le partite di campionato sono
 comunque nel livescore; le partite di prova e semplici non vi compaiono mai.
 Disattiva lo schermo live nelle Opzioni per interrompere l'invio.
 
-**Approvazione con PIN:** gli ufficiali di gara possono confermare il
-risultato, oltre che con la firma, con un PIN di approvazione personale.
-Vengono salvati: il PIN come hash crittografico (mai in chiaro), i tentativi
-falliti e i blocchi; per ogni approvazione la partita, la funzione (1° o
-2° arbitro, segnapunti), il tuo account, il tuo nome al momento
-dell'approvazione, l'ora, il risultato approvato e un hash pseudonimizzato
-dell'indirizzo IP e del dispositivo (per riconoscere abusi). Le approvazioni
-fanno parte del verbale della partita. Tu vedi le tue approvazioni; anche il
-segnapunti della partita e gli amministratori le vedono.
-
 **Firmare sul telefono (OpenVolley dalla versione 2.4.0):** invece che sul
 dispositivo del segnapunti, una persona può firmare sul proprio telefono. Il
 dispositivo mostra un codice QR con un link al mio server
@@ -714,8 +700,8 @@ di una partita, o le partite del giorno di una società, con il widget
 livescore (anche come `<iframe>`); mostra gli stessi dati, senza nomi di
 giocatrici e giocatori.
 
-**Mai pubblici:** date di nascita, numeri di licenza, firme, approvazioni,
-indirizzi e-mail e PIN. Le liste squadra con i nomi sono visibili solo a chi
+**Mai pubblici:** date di nascita, numeri di licenza, firme, indirizzi e-mail
+e PIN. Le liste squadra con i nomi sono visibili solo a chi
 conosce il PIN della partita o, per una partita Global salvata nel cloud, il
 suo link di condivisione o codice torneo (sezione 7).
 
@@ -993,7 +979,7 @@ richiesta.
   il server limita richieste e connessioni per indirizzo IP, e il relay in
   diretta lo usa per riconoscere i dispositivi della stessa palestra. Tiene
   gli indirizzi IP solo nella memoria di lavoro e non li salva né li registra
-  (salvo come hash pseudonimizzato di un'approvazione, sezione 7, e come hash
+  (salvo come hash
   con chiave delle reti da cui un account è stato usato, sezione 6).
 - **Registro delle modifiche:** per la tracciabilità il server annota chi ha
   modificato ruoli, approvato, chiuso o riaperto partite, aggiunto
@@ -1065,8 +1051,7 @@ ricevi una copia di queste garanzie.
 | Tentativi di accesso falliti di un indirizzo e-mail (un numero, sotto un hash dell'indirizzo) | 24 ore; cancellati prima con una nuova password o con l'account |
 | Reti da cui un account è stato usato (hash con chiave, al massimo 20) | 60 giorni dopo l'ultimo uso da lì; cancellate con l'account |
 | Link nelle e-mail | Validi 60 minuti o 24 ore, cancellati 7 giorni dopo |
-| PIN di approvazione | Finché non lo rimuovi o non cancelli il tuo account |
-| Referti, eventi delle partite, cronologia degli eventi, firme, approvazioni, osservazioni (compresi i dati sulla salute), file dei referti | Come verbale ufficiale della partita: la stagione della partita e le 2 stagioni successive (una stagione va dal 1° luglio al 30 giugno), poi cancellati da un passaggio giornaliero; per esempio i verbali della stagione 2024/25 vengono cancellati il 1° luglio 2027. Prima su richiesta nella misura in cui il verbale non necessita dei dati (sezione 19) |
+| Referti, eventi delle partite, cronologia degli eventi, firme, osservazioni (compresi i dati sulla salute), file dei referti | Come verbale ufficiale della partita: la stagione della partita e le 2 stagioni successive (una stagione va dal 1° luglio al 30 giugno), poi cancellati da un passaggio giornaliero; per esempio i verbali della stagione 2024/25 vengono cancellati il 1° luglio 2027. Prima su richiesta nella misura in cui il verbale non necessita dei dati (sezione 19) |
 | Squadre salvate, tornei di beach volley | Finché un gestore non li cancella, o su richiesta |
 | Elenco degli arbitri | Finché un amministratore non cancella la voce; cancellazione su richiesta |
 | Designazioni di Swiss Volley | Come i verbali delle partite: la stagione della partita e le 2 stagioni successive |
@@ -1214,7 +1199,7 @@ Se si applica il RGPD, mi baso su:
   delle partite corretti e verificabili per società, federazione e ufficiali
   di gara (liste squadra, numeri di licenza e, dove il segnapunti ne digita
   una nel referto, la data di nascita per il controllo dell'idoneità, firme,
-  approvazioni, registro attività, cronologia degli eventi e osservazioni),
+  registro attività, cronologia degli eventi e osservazioni),
   squadre salvate ed elenchi delle società completati dalle liste delle
   partite ufficiali, invio del referto finale a ufficiali di gara e società, livescore per il
   pubblico, organizzazione di tornei, diagnosi dei problemi (anche le
