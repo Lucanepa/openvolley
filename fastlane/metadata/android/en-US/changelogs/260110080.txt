@@ -1,6 +1,7 @@
 OpenVolley 26.11.8
 - "Your first match": a guided tour from Home to the signatures ("?" > Your first match)
-- Roster photo import: photograph the Einsatzliste and the players are filled in
+- Roster import: one switch for Remote, PDF and Photo. A photo of the Einsatzliste goes straight into the roster, unsure fields highlighted, with Undo
+- Load saved team shows your club's teams
 - Full team names everywhere
 - Libero lists offer none, Libero 1 and Libero 2
 - Officials sign by hand only: approving with a PIN was removed
