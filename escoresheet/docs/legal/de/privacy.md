@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.29 · Stand: 24. November 2026
+**OpenVolley und OpenBeach** · Version 1.30 · Stand: 27. November 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
 Massgebend ist die englische Fassung.
@@ -169,7 +169,7 @@ Die Desktop-App verwendet dafür ihr eigenes Relay im lokalen Netz.
 Nachvollziehbarkeit des Spielberichts und zur Fehlersuche hält die App fest,
 was auf dem Gerät geschieht: Punkte und andere Spielereignisse, Rückgängig und
 Korrekturen (was wann und warum geändert wurde), Sätze und Spielstatus,
-Unterschriften und Freigaben (nur die Funktion und dass sie erfolgt sind),
+Unterschriften (nur die Funktion und dass sie erfolgt sind),
 Bemerkungen (nur ihre Länge), Änderungen an Kaderlisten (nur die
 Rückennummer), Ergebnisse der Übertragung zum Server, App-Fehler (Meldung und
 Programmstelle), Start, Update und Beenden der App sowie An- und Abmeldung.
@@ -282,19 +282,17 @@ von Google.
 
 Auf einem gemeinsam genutzten Gerät solltest du dich nach dem Spiel abmelden.
 Beim Abmelden löscht die App dein Anmelde-Token, dein Profil und deine Vereine,
-die Spiele des Tages, die zwischengespeicherten Teams, Kader und
-Lizenzlisten der Vereine sowie die E-Mail-Adressen, mit denen Offizielle auf
-diesem Gerät bestätigt haben; ebenso, wenn deine Sitzung abläuft oder sich ein
+die Spiele des Tages sowie die zwischengespeicherten Teams, Kader und
+Lizenzlisten der Vereine; ebenso, wenn deine Sitzung abläuft oder sich ein
 anderes Konto anmeldet. Ohne Verbindung beendet die Abmeldung deine Sitzung auf
-dem Server, sobald das Gerät wieder online ist. Die Adressen der Offiziellen
-bleiben höchstens 7 Tage gespeichert. Richte auf einem gemeinsam
+dem Server, sobald das Gerät wieder online ist. Richte auf einem gemeinsam
 genutzten Gerät keinen Passkey ein (bei der Anmeldung «Geteiltes Gerät»
 ankreuzen).
 
 ## 6. Konto und E-Mails
 
-Ein Konto brauchst du, um Spiele zu synchronisieren, Teams und Turniere zu
-verwalten oder Spielresultate als Offizielle oder Offizieller freizugeben.
+Ein Konto brauchst du, um Spiele zu synchronisieren oder Teams und Turniere zu
+verwalten.
 Konten werden auf `manager.openvolley.app` und `manager-beach.openvolley.app`
 eröffnet.
 
@@ -375,9 +373,8 @@ Konto.
 
 **E-Mails:** Ich sende nur E-Mails, die zum Konto gehören: Bestätigung der
 E-Mail-Adresse, Link zum Zurücksetzen des Passworts, Hinweis auf eine
-Passwortänderung, Hinweis, dass jemand immer wieder versucht, sich in dein
-Konto anzumelden (oben), Hinweis, dass ein Resultat mit deinem Freigabe-PIN
-freigegeben wurde, und Hinweis, dass dein PIN gesperrt wurde. Sie enthalten
+Passwortänderung und Hinweis, dass jemand immer wieder versucht, sich in dein
+Konto anzumelden (oben). Sie enthalten
 keine Zählpixel und keine nachgeladenen Bilder. Ein Bestätigungslink gilt
 24 Stunden, ein Link zum Zurücksetzen 60 Minuten.
 
@@ -406,12 +403,11 @@ soweit es ihre Aufgabe verlangt:
   erfasst hat, in der Liste der Spielberichte.
 
 **Konto löschen:** Du kannst dein Konto jederzeit selbst in der App löschen.
-Dabei werden Konto, Profil, Sitzungen, Freigabe-PIN, eingelöste
+Dabei werden Konto, Profil, Sitzungen, eingelöste
 Einladungscodes, deine hochgeladenen Sicherungskopien und App-Protokolle und
 deine Einträge im Aktivitätsprotokoll ohne Spiel gelöscht. **Bestehen
 bleiben** offizielle Unterlagen, an denen andere ein Interesse haben:
-Spielberichte, die du erfasst hast, Freigaben, die du erteilt hast (mit
-deinem Namen, wie er im Spielbericht steht), gespeicherte Teams und Turniere,
+Spielberichte, die du erfasst hast, gespeicherte Teams und Turniere,
 Einträge im Änderungsprotokoll (Abschnitt 14) sowie das Aktivitätsprotokoll
 und die Ereignisgeschichte von Spielen (Abschnitt 5). Dein Konto wird von
 diesen Einträgen getrennt. Was bestehen bleibt, kannst du
@@ -495,8 +491,8 @@ Spielberechtigung (Lizenznummer), Livescore.
 |---|---|
 | Das Konto, das das Spiel erfasst oder abgeschlossen hat; Administratorinnen und Administratoren | Alles |
 | Konten, die den Spiel-PIN eingegeben haben (zum Beispiel ein Tablet, das das Spiel übernimmt) | Alles, bis das Spiel abgeschlossen ist |
-| Schiedsrichter-Tablet mit dem Schiedsrichter-PIN | Teams, beide Kaderlisten mit Namen und Nummern, Spielstand, Bemerkungen (ohne die technischen Bemerkungen). **Keine** Geburtsdaten, Unterschriften, Offiziellen oder Freigaben |
-| Bank-Tablet mit dem PIN seines Teams | Die Kaderliste des eigenen Teams mit Namen und Nummern, die Rückennummern des anderen Teams, Spielstand. **Keine** Bemerkungen, Geburtsdaten, Unterschriften, Offiziellen oder Freigaben |
+| Schiedsrichter-Tablet mit dem Schiedsrichter-PIN | Teams, beide Kaderlisten mit Namen und Nummern, Spielstand, Bemerkungen (ohne die technischen Bemerkungen). **Keine** Geburtsdaten, Unterschriften oder Offiziellen |
+| Bank-Tablet mit dem PIN seines Teams | Die Kaderliste des eigenen Teams mit Namen und Nummern, die Rückennummern des anderen Teams, Spielstand. **Keine** Bemerkungen, Geburtsdaten, Unterschriften oder Offiziellen |
 | Alle (öffentlich) | Siehe Abschnitt 8 |
 
 Ist ein Spiel freigegeben und abgeschlossen, kann es niemand mehr ändern,
@@ -526,8 +522,8 @@ Spielbericht eines abgeschlossenen offiziellen Hallenspiels als PDF an:
 
 - das Konto, das das Spiel abgeschlossen hat, und das Konto der Schreiberin
   oder des Schreibers, das das Resultat freigegeben hat;
-- die Schiedsrichterinnen und Schiedsrichter, die das Resultat mit ihrem
-  Konto freigegeben haben oder deren E-Mail-Adresse beim Spiel erfasst wurde;
+- die Schiedsrichterinnen und Schiedsrichter, deren E-Mail-Adresse beim Spiel
+  erfasst wurde;
 - die Kontaktadresse des Vereins jedes Teams (Abschnitt 6), damit der Verein
   den Spielbericht an Trainerinnen und Trainer weitergeben kann;
 - die Kontaktadresse, die für jedes Team in der Spieleinrichtung oder unter
@@ -665,16 +661,6 @@ nicht gelistet werden soll, braucht einen eigenen Code. Meisterschaftsspiele
 sind ohnehin im Livescore; Test- und Einfach-Spiele werden nie gelistet.
 Schalte den Live-Bildschirm in den Optionen aus, um das Senden zu beenden.
 
-**Freigabe mit PIN:** Offizielle können das Resultat zusätzlich zur
-Unterschrift mit einem persönlichen Freigabe-PIN bestätigen. Gespeichert
-werden: der PIN als kryptografischer Hash (nie im Klartext), Fehlversuche und
-Sperren; pro Freigabe das Spiel, die Funktion (1. oder 2. Schiedsrichter,
-Schreiber), dein Konto, dein Name zum Zeitpunkt der Freigabe, Zeitpunkt, das
-freigegebene Resultat sowie ein pseudonymisierter Hash der IP-Adresse und des
-Geräts (um Missbrauch zu erkennen). Freigaben sind Teil der Spielaufzeichnung.
-Du siehst deine eigenen Freigaben; die Schreiberin oder der Schreiber des
-Spiels und die Administration sehen sie auch.
-
 **Unterschreiben auf dem Telefon (OpenVolley ab Version 2.4.0):** Statt auf
 dem Gerät der Schreiberin oder des Schreibers kann eine Person auf ihrem
 eigenen Telefon unterschreiben. Das Gerät zeigt dazu einen QR-Code mit einem
@@ -736,7 +722,7 @@ Diese Daten sind auch über die Programmierschnittstelle des Servers
 an einem Tag zeigen; es zeigt dieselben Daten, ohne Namen von Spielerinnen und
 Spielern.
 
-**Nie öffentlich:** Geburtsdaten, Lizenznummern, Unterschriften, Freigaben,
+**Nie öffentlich:** Geburtsdaten, Lizenznummern, Unterschriften,
 E-Mail-Adressen und PINs. Kaderlisten mit Namen sieht nur, wer den PIN des
 Spiels kennt oder, bei einem in der Cloud gespeicherten Global-Spiel, dessen
 Teilen-Link oder Turniercode (Abschnitt 7).
@@ -1024,7 +1010,7 @@ ich frühere Antworten nachschlagen kann; auf Anfrage früher.
   der Server Anfragen und Verbindungen pro IP-Adresse, und das Live-Relay
   erkennt daran Geräte derselben Halle. Er hält IP-Adressen dafür nur im
   Arbeitsspeicher und speichert oder protokolliert sie nicht (ausser als
-  pseudonymisierten Hash bei einer Freigabe, Abschnitt 7, und als Hashes mit
+  Hashes mit
   Schlüssel der Netze, aus denen ein Konto genutzt wurde, Abschnitt 6).
 - **Änderungsprotokoll:** Für die Nachvollziehbarkeit hält der Server fest,
   wer wann Rollen geändert, Spiele freigegeben, abgeschlossen oder wieder
@@ -1097,8 +1083,7 @@ Anfrage erhältst du eine Kopie dieser Garantien.
 | Fehlversuche bei der Anmeldung einer E-Mail-Adresse (eine Zahl, unter einem Hash der Adresse) | 24 Stunden; früher gelöscht mit einem neuen Passwort oder dem Konto |
 | Netze, aus denen ein Konto genutzt wurde (Hashes mit Schlüssel, höchstens 20) | 60 Tage nach der letzten Nutzung von dort; gelöscht mit dem Konto |
 | Links in E-Mails | 60 Minuten bzw. 24 Stunden gültig, 7 Tage danach gelöscht |
-| Freigabe-PIN | Bis du ihn entfernst oder dein Konto löschst |
-| Spielberichte, Spielereignisse, Ereignisgeschichte, Unterschriften, Freigaben, Bemerkungen (auch Gesundheitsdaten), Spielbericht-Dateien | Als offizielle Spielaufzeichnung: die Saison des Spiels und die 2 folgenden Saisons (eine Saison dauert vom 1. Juli bis 30. Juni), danach von einem täglichen Lauf gelöscht; zum Beispiel gehen die Aufzeichnungen der Saison 2024/25 am 1. Juli 2027. Früher auf Anfrage, soweit die Daten für die Aufzeichnung nicht nötig sind (Abschnitt 19) |
+| Spielberichte, Spielereignisse, Ereignisgeschichte, Unterschriften, Bemerkungen (auch Gesundheitsdaten), Spielbericht-Dateien | Als offizielle Spielaufzeichnung: die Saison des Spiels und die 2 folgenden Saisons (eine Saison dauert vom 1. Juli bis 30. Juni), danach von einem täglichen Lauf gelöscht; zum Beispiel gehen die Aufzeichnungen der Saison 2024/25 am 1. Juli 2027. Früher auf Anfrage, soweit die Daten für die Aufzeichnung nicht nötig sind (Abschnitt 19) |
 | Gespeicherte Teams, Beachturniere | Bis eine Managerin oder ein Manager sie löscht, oder auf Anfrage |
 | Schiedsrichter-Verzeichnis | Bis die Administration den Eintrag löscht; Löschung auf Anfrage |
 | Spielansetzungen von Swiss Volley | Wie die Spielaufzeichnungen: die Saison des Spiels und die 2 folgenden Saisons |
@@ -1252,8 +1237,8 @@ Soweit die DSGVO gilt, stütze ich mich auf:
   überprüfbare offizielle Spielaufzeichnungen für Vereine, Verband und
   Offizielle (Kaderlisten, Lizenznummern und, wo die Schreiberin oder der
   Schreiber eines auf dem Spielbericht eintippt, das Geburtsdatum zur
-  Kontrolle der Spielberechtigung, Unterschriften, Freigaben,
-  Aktivitätsprotokoll und Ereignisgeschichte, Bemerkungen), aus den Kadern
+  Kontrolle der Spielberechtigung, Unterschriften, Aktivitätsprotokoll und
+  Ereignisgeschichte, Bemerkungen), aus den Kadern
   offizieller Spiele ergänzte gespeicherte Teams und Vereinslisten,
   Zustellung des fertigen Spielberichts an Offizielle und Vereine,
   Livescore für das Publikum, Organisation von Turnieren, Fehlersuche
