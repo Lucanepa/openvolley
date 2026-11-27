@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Trash2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Info, Trash2 } from 'lucide-react'
 import Modal from '../Modal'
 import CaptainToggle from '../CaptainToggle'
 import { Button } from '../../ui/Button.jsx'
@@ -10,6 +10,8 @@ import { idLabelOf, idPlaceholderOf } from '../../domain/idMode'
 import { LicenceInfo } from './LicenceInfo.jsx'
 import { SectionHeader } from '../../ui/SectionHeader.jsx'
 import { cn } from '../../ui/cn.js'
+import { NOTICE } from '../../ui/tones.js'
+import { liberoChoices, liberoValueOf, withLoneLiberoAsL1 } from '../../domain/liberoChoices'
 import { playsChoice, withPlays } from '../../domain/playerOfficials'
 import { playsAsOptions } from './playsAs'
 
@@ -41,7 +43,7 @@ import { playsAsOptions } from './playsAs'
 
 const LIST = '@container border-y border-stone-200 divide-y divide-stone-100'
 const ROW = 'grid items-center gap-1.5 py-2.5'
-// The libero labels are short ("Libero" small and grey when none, L1, L2, LR): the date of birth gets the
+// The libero labels are short ("No libero" small and grey, L1, L2, LR): the date of birth gets the
 // number's track too. The last name, which the scoresheet prints, gets the
 // larger share of the names' line (4:3; 1:1 cut "Bachmann" at 360 px).
 // (phone: the last name's track gives the date what it needs, min auto)
@@ -78,10 +80,38 @@ const CAPTAIN_CELL = 'flex justify-center [grid-area:cap] [&>button]:!h-11 [&>bu
 // Names: 8 px of padding (the kit's 12 cut "Bachmann" on a phone)
 const NAME = 'px-2'
 
+// The libero select: none, L1, L2 (domain/liberoChoices: L2 once another
+// player is L1), a re-designated or unable libero keeping that state. Its
+// none option is blank under the Libero column head and "No libero" where
+// the head is hidden (the list under 560 px): it read "Libero", which made
+// "Libero / L1 / L2" look like three kinds (the owner, 27.11.2026).
+// A team's only libero is Libero 1 (owner 27.11.2026): with the L1 removed
+// or set to none, the L2 left becomes L1, but only while the match record
+// does not refer to the team's liberos (liberosInRecord, from
+// domain/liberoChoices; the record names them by L1 / L2). Once it does, L1
+// and L2 stay as they are and a line under the players says so. True when
+// not given: nothing is renumbered.
+const LIBERO_SHORT = { libero1: 'L1', libero2: 'L2', redesignated: 'LR' }
+
+// The list is at least `min` px wide (the container query of its rows); false
+// without ResizeObserver (tests)
+function useMinWidth(el, min) {
+  const [wide, setWide] = useState(false)
+  useEffect(() => {
+    if (!el || typeof ResizeObserver === 'undefined') return undefined
+    const check = () => setWide(el.getBoundingClientRect().width >= min)
+    check()
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [el, min])
+  return wide
+}
+
 // idMode: what the column beside a name holds (domain/idMode): 'licence' in a
 // Swiss match (a licence, or a date of birth typed with its dots), a Global
 // match's own choice; the date field only for 'dob'.
-export default function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose, t, benchRoles, toISODate, saving = false, idMode = 'licence' }) {
+export default function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose, t, benchRoles, toISODate, saving = false, idMode = 'licence', liberosInRecord = true }) {
   const [editingPlayers, setEditingPlayers] = useState(() =>
     players.map(p => ({ ...p })).sort((a, b) => (a.number || 0) - (b.number || 0))
   )
@@ -94,9 +124,20 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
   const [snapshotBench] = useState(() =>
     bench.filter(b => b.firstName || b.lastName || b.role).map(b => ({ ...b }))
   )
+  const [listEl, setListEl] = useState(null)
+  const headShown = useMinWidth(listEl, 560)
+
+  const settleLiberos = (list) => (liberosInRecord ? list : withLoneLiberoAsL1(list))
+  const isL1 = (p) => liberoValueOf(p) === 'libero1'
+  // the L1 removed or set to none in this edit, an L2 left, the record names them
+  const liberosKept = liberosInRecord && snapshotPlayers.some(isL1) &&
+    !editingPlayers.some(isL1) && editingPlayers.some(p => liberoValueOf(p) === 'libero2')
 
   const updatePlayer = (idx, field, value) => {
-    setEditingPlayers(prev => prev.map((p, i) => i === idx ? { ...p, [field]: value } : p))
+    setEditingPlayers(prev => {
+      const next = prev.map((p, i) => i === idx ? { ...p, [field]: value } : p)
+      return field === 'libero' ? settleLiberos(next) : next
+    })
   }
 
   const addPlayer = () => {
@@ -112,7 +153,7 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
   }
 
   const removePlayer = (idx) => {
-    setEditingPlayers(prev => prev.filter((_, i) => i !== idx))
+    setEditingPlayers(prev => settleLiberos(prev.filter((_, i) => i !== idx)))
   }
 
   const updateBench = (idx, field, value) => {
@@ -163,7 +204,7 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
               </span>
             )}
           />
-          <div role="list" className={cn(LIST, 'mt-2 mb-6')}>
+          <div role="list" ref={setListEl} className={cn(LIST, 'mt-2', liberosKept ? 'mb-2' : 'mb-6')}>
             <div className={cn(HEAD, PLAYER_GRID, 'gap-1.5')} aria-hidden="true">
               <span className="text-center">#</span>
               <span>{lastNameLabel}</span>
@@ -214,21 +255,22 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
                   wrapperClassName="dob-cell [grid-area:dob]"
                   className={DATE}
                 />
-                {/* L1 / L2 / none (as in roster setup); a re-designated or unable
-                    libero keeps that state unless changed explicitly */}
+                {/* none / L1 / L2 as in roster setup (domain/liberoChoices); a
+                    re-designated or unable libero keeps that state unless
+                    changed explicitly */}
                 <Select
                   size="lg"
                   block
                   aria-label={t('scoreboard.reopenRoster.libero', 'Libero')}
-                  value={player.libero === true ? 'libero1' : (player.libero || '')}
+                  value={liberoValueOf(player)}
                   onChange={(e) => updatePlayer(idx, 'libero', e.target.value)}
                   className={cn('[grid-area:lib] pl-2.5', !player.libero && 'text-xs text-stone-500 focus:text-base')}
                 >
-                  <option value="" className="text-stone-500">{t('scoreboard.reopenRoster.libero', 'Libero')}</option>
-                  <option value="libero1" className="text-base text-stone-800">L1</option>
-                  <option value="libero2" className="text-base text-stone-800">L2</option>
-                  {player.libero === 'redesignated' && <option value="redesignated" className="text-base text-stone-800">LR</option>}
-                  {player.libero === 'unable' && <option value="unable" className="text-base text-stone-800">{t('scoreboard.reopenRoster.liberoUnable', 'Unable')}</option>}
+                  {liberoChoices(editingPlayers, idx).map(value => (
+                    value
+                      ? <option key={value} value={value} className="text-base text-stone-800">{value === 'unable' ? t('scoreboard.reopenRoster.liberoUnable', 'Unable') : (LIBERO_SHORT[value] || value)}</option>
+                      : <option key={headShown ? 'blank' : 'none'} value="" className="text-stone-500">{headShown ? '' : t('matchSetup.noLibero', 'No libero')}</option>
+                  ))}
                 </Select>
                 <span className={CAPTAIN_CELL}>
                   <CaptainToggle
@@ -245,6 +287,12 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
               </div>
             ))}
           </div>
+          {liberosKept && (
+            <p role="note" data-testid="libero-slots-kept" className={cn(NOTICE.info, 'mb-6')}>
+              <Info size={14} aria-hidden="true" className="shrink-0" />
+              {t('scoreboard.reopenRoster.liberoSlotsKept', 'The liberos keep L1 and L2: the match record already refers to them.')}
+            </p>
+          )}
 
           {/* Bench officials */}
           <SectionHeader

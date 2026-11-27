@@ -903,7 +903,8 @@
       "lastName": "Nachname",
       "players": "Spieler",
       "benchOfficials": "Bankoffizielli",
-      "liberoUnable": "Spiilunfähig"
+      "liberoUnable": "Spiilunfähig",
+      "liberoSlotsKept": "D Liberos bhalted L1 und L2: S Spiilprotokoll nennt si scho."
     },
     "help": {
       "recordingPoints": "Pünkt erfasse",

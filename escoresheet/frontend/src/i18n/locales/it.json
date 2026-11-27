@@ -903,7 +903,8 @@
       "lastName": "Cognome",
       "players": "Giocatori",
       "benchOfficials": "Ufficiali di panchina",
-      "liberoUnable": "Inabile"
+      "liberoUnable": "Inabile",
+      "liberoSlotsKept": "I liberi tengono L1 e L2: il registro della partita li cita già."
     },
     "help": {
       "recordingPoints": "Registrazione punti",

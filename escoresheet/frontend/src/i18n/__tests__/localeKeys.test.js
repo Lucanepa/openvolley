@@ -38,7 +38,11 @@ const EXTRA_KEYS = [
   'auth.licenceNumber',
   'auth.licenceNumberHint',
   'auth.licenceNumberInvalid',
-  'auth.nameRequired'
+  'auth.nameRequired',
+  // the libero selects (owner 27.11.2026): "No libero" where no column head
+  // names the column, the in-match editor's note when L1 / L2 stay
+  'matchSetup.noLibero',
+  'scoreboard.reopenRoster.liberoSlotsKept'
 ]
 const SPEC_KEYS = [
   'access.pendingTitle',

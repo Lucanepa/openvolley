@@ -93,6 +93,7 @@ import { playerReplacedByLibero, playersForLiberoRedesignation, liberoPlayState,
 import { planSubstitutionDeletion, countRegularSubstitutions, countAllSubstitutions, MAX_SUBSTITUTIONS_PER_SET, substitutionBarsForMatch } from '../domain/substitutions'
 import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval, syncJobsForEvents, scoreAfterUndo } from '../domain/corrections'
 import { validateReopenedRoster, referencedPlayerNumbers, isShirtNumber } from '../domain/roster'
+import { liberosInRecord } from '../domain/liberoChoices'
 import { planRenumberPlayers, errorText as correctionErrorText } from '../domain/manualCorrections'
 import { applyCorrectionPlan } from '../services/corrections/applyCorrectionPlan'
 import { appendRemark, removeRemarkLine, eventRemark, remarkClock, setActualStartRemark, injurySubstitutionText, exceptionalSubstitutionText, liberoUnableText, liberoRecoveredText, isSheetRemark, TECHNICAL } from '../domain/remarks'
@@ -16032,6 +16033,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             teamName={reopenRosterTeam === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))}
             players={reopenRosterTeam === 'home' ? (data?.homePlayers || []) : (data?.awayPlayers || [])}
             bench={reopenRosterTeam === 'home' ? (data?.match?.bench_home || []) : (data?.match?.bench_away || [])}
+            // the record names the team's liberos already: L1 / L2 stay as
+            // they are (else the L2 left alone becomes L1; domain/liberoChoices)
+            liberosInRecord={liberosInRecord(data?.events, reopenRosterTeam, reopenRosterTeam === 'home' ? (data?.homePlayers || []) : (data?.awayPlayers || []))}
             onSave={handleSaveReopenedRoster}
             saving={reopenRosterSaving}
             onClose={() => setReopenRosterTeam(null)}

@@ -60,6 +60,7 @@ import { useSponsorsOption } from '../hooks/useSponsorsOption'
 import SavedTeamPickerModal, { confirmReplaceRoster } from './SavedTeamPickerModal'
 import { focusLeaves, sortedByNumber, displayOrder, readRosterSort, saveRosterSort } from '../utils/rosterOrder'
 import { isShirtNumber, shirtNumberDigits, recordNumbersMissingFrom } from '../domain/roster'
+import { liberoChoices, liberoValueOf, newPlayerLibero, withLoneLiberoAsL1 } from '../domain/liberoChoices'
 import { playersWithoutNumber } from '../domain/coinTossChecks'
 import { checkUploadedRoster, takesUploadedRoster, uploadedSignaturesKept, uploadedSignaturesToTake } from '../domain/uploadedRoster'
 import PlayerPoolModal from './PlayerPoolModal'
@@ -646,22 +647,29 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
   // the web: the photo import's recognition files loaded while the page is
   // idle, so a later photo import works offline (ocrWarmup.js; the apps carry them)
   useEffect(() => scheduleOcrWarmUp(), [])
-  // Portrait: the libero select's empty option has a text (its column head is
-  // hidden there): "Libero", small and grey while nothing is chosen
-  // (.libero-unset; it was "None": the owner, 2026-10-21); landscape keeps
-  // the blank option. A phone with LFP tracking has a 44 px LFP toggle more
-  // on the row's second line, which leaves the select room for "L1" / "L2"
-  // only (as the in-match roster editor).
+  // The libero select: no libero, Libero 1, Libero 2 (domain/liberoChoices
+  // says which a row offers). Landscape: the empty option is blank under the
+  // Libero column head. Portrait (the head is hidden there): "No libero",
+  // small and grey while nothing is chosen (.libero-unset); it read "Libero",
+  // so the list read "Libero / Libero 1 / Libero 2", as if Libero were a
+  // third kind (the owner, 27.11.2026). A phone with LFP tracking has a 44 px
+  // LFP toggle more on the row's second line, which leaves the select room
+  // for "–" / "L1" / "L2" only (as the in-match roster editor).
   // The options are keyed on the labels, so a change replaces the nodes: a
   // select keeps the width of a longer text when only its option's text
   // changes.
   const formStack = useFormStack()
   const phoneWidth = usePhoneWidth()
   const liberoLabels = !formStack
-    ? { key: 'blank', none: '', l1: t('matchSetup.libero1'), l2: t('matchSetup.libero2') }
+    ? { key: 'blank', none: '', libero1: t('matchSetup.libero1'), libero2: t('matchSetup.libero2') }
     : (phoneWidth && lfpTrackingEnabled
-      ? { key: 'tight', none: t('matchSetup.libero'), l1: 'L1', l2: 'L2' }
-      : { key: 'stack', none: t('matchSetup.libero'), l1: t('matchSetup.libero1'), l2: t('matchSetup.libero2') })
+      ? { key: 'tight', none: '–', libero1: 'L1', libero2: 'L2' }
+      : { key: 'stack', none: t('matchSetup.noLibero', 'No libero'), libero1: t('matchSetup.libero1'), libero2: t('matchSetup.libero2') })
+  // One libero select's options: a row of `roster` (rowIndex), or the add
+  // row (rowIndex null) with its pending value `own`
+  const liberoOptions = (roster, rowIndex, own) => liberoChoices(roster, rowIndex, own).map(value => (
+    <option key={`${value || 'none'}-${liberoLabels.key}`} value={value}>{value ? (liberoLabels[value] || value) : liberoLabels.none}</option>
+  ))
   // MatchSetup uses 25% larger scale by default
   const scaleFactor = baseScaleFactor * 1.25
   // Helper for scaled pixel values
@@ -5029,20 +5037,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 <StackLabel>{idLabel}</StackLabel>
                 <IdField idMode={idMode} rawValue={homeDob} onRawChange={v => setHomeDob(v)} size="bare" wrapperClassName={DOB_CELL} aria-label={idLabel} placeholder={idPlaceholder} value={homeDob ? formatDateToISO(homeDob) : ''} onChange={v => setHomeDob(v ? formatDateToDDMMYYYY(v) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.roleLibero')} · {t('matchSetup.captain')}</StackLabel>
-                <select aria-label={t('matchSetup.libero', 'Libero')} className={`cell-libero${homeLibero ? '' : ' libero-unset'}`} data-help-id="setup-libero-toggle" value={homeLibero} onChange={e => {
-                  let newValue = e.target.value
-                  if (newValue === 'libero2' && !homeRoster.some(p => p.libero === 'libero1')) {
-                    newValue = 'libero1'
-                  }
-                  setHomeLibero(newValue)
-                }}>
-                  <option key={`none-${liberoLabels.key}`} value="">{liberoLabels.none}</option>
-                  {!homeRoster.some(p => p.libero === 'libero1') && (
-                    <option key={`l1-${liberoLabels.key}`} value="libero1">{liberoLabels.l1}</option>
-                  )}
-                  {!homeRoster.some(p => p.libero === 'libero2') && (
-                    <option key={`l2-${liberoLabels.key}`} value="libero2">{liberoLabels.l2}</option>
-                  )}
+                <select aria-label={t('matchSetup.libero', 'Libero')} className={`cell-libero${homeLibero ? '' : ' libero-unset'}`} data-help-id="setup-libero-toggle" value={homeLibero} onChange={e => setHomeLibero(e.target.value)}>
+                  {liberoOptions(homeRoster, null, homeLibero)}
                 </select>
                 <div data-help-id="setup-captain-toggle" className="cell-captain">
                   <CaptainToggle pressed={homeCaptain} number={homeNum} onToggle={() => setHomeCaptain(!homeCaptain)} />
@@ -5072,15 +5068,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 <div className="cell-action">
                   <Button variant="secondary" size="md" onClick={() => {
                     if (!homeLast || !homeFirst) return
-                    const newPlayer = { number: homeNum ? Number(homeNum) : null, lastName: homeLast, firstName: homeFirst, dob: homeDob, libero: homeLibero, isCaptain: homeCaptain, isLfp: homeLfp }
                     setHomeRoster(list => {
                       const cleared = homeCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
+                      const newPlayer = { number: homeNum ? Number(homeNum) : null, lastName: homeLast, firstName: homeFirst, dob: homeDob, libero: newPlayerLibero(cleared, homeLibero), isCaptain: homeCaptain, isLfp: homeLfp }
                       const next = [...cleared, newPlayer].sort((a, b) => {
                         const an = a.number ?? 999
                         const bn = b.number ?? 999
                         return an - bn
                       })
-                      return next
+                      // a team's only libero is Libero 1
+                      return withLoneLiberoAsL1(next)
                     })
                     setHomeNum(''); setHomeFirst(''); setHomeLast(''); setHomeDob(''); setHomeLibero(''); setHomeCaptain(false); setHomeLfp(false)
                   }}>{t('common.add')}</Button>
@@ -5230,40 +5227,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 <select
                   aria-label={t('matchSetup.libero', 'Libero')}
                   className={`cell-libero${p.libero ? '' : ' libero-unset'}`}
-                  value={p.libero || ''}
+                  value={liberoValueOf(p)}
                   onChange={e => {
                     const updated = [...homeRoster]
-                    const oldValue = updated[i].libero
                     updated[i] = { ...updated[i], libero: e.target.value }
-
-                    // If L2 is selected but no L1 exists, automatically change L2 to L1
-                    if (e.target.value === 'libero2') {
-                      const hasL1 = updated.some((player, idx) => idx !== i && player.libero === 'libero1')
-                      if (!hasL1) {
-                        updated[i] = { ...updated[i], libero: 'libero1' }
-                      }
-                    }
-
-                    // If L1 is being cleared and there's an L2, promote L2 to L1
-                    if (oldValue === 'libero1' && !e.target.value) {
-                      const l2Idx = updated.findIndex((player, idx) => idx !== i && player.libero === 'libero2')
-                      if (l2Idx !== -1) {
-                        updated[l2Idx] = { ...updated[l2Idx], libero: 'libero1' }
-                      }
-                    }
-
-                    // state only: the editor's Save writes it with the other
-                    // edits, its Back discards it
-                    setHomeRoster(updated)
+                    // the L1 set to none: the L2 left becomes L1 (a team's
+                    // only libero is Libero 1). State only: the editor's Save
+                    // writes it with the other edits, its Back discards it
+                    setHomeRoster(withLoneLiberoAsL1(updated))
                   }}
                 >
-                  <option key={`none-${liberoLabels.key}`} value="">{liberoLabels.none}</option>
-                  {!homeRoster.some((player, idx) => idx !== i && player.libero === 'libero1') && (
-                    <option key={`l1-${liberoLabels.key}`} value="libero1">{liberoLabels.l1}</option>
-                  )}
-                  {!homeRoster.some((player, idx) => idx !== i && player.libero === 'libero2') && (
-                    <option key={`l2-${liberoLabels.key}`} value="libero2">{liberoLabels.l2}</option>
-                  )}
+                  {liberoOptions(homeRoster, i)}
                 </select>
                 <div className="cell-captain">
                   <CaptainToggle
@@ -5306,7 +5280,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 )}
                 <div className="cell-action gap-1">
                   {rowShield('home', 'roster', p, i)}
-                  <Button variant="danger-outline" size="md" title={t('common.delete')} onClick={() => setHomeRoster(list => list.filter((_, idx) => idx !== i))}>
+                  <Button variant="danger-outline" size="md" title={t('common.delete')} onClick={() => setHomeRoster(list => withLoneLiberoAsL1(list.filter((_, idx) => idx !== i)))}>
                     <Trash2 size={16} className="hidden stack:block" aria-hidden="true" /><span className="stack:sr-only">{t('common.delete')}</span>
                   </Button>
                 </div>
@@ -6118,20 +6092,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 <StackLabel>{idLabel}</StackLabel>
                 <IdField idMode={idMode} rawValue={awayDob} onRawChange={v => setAwayDob(v)} size="bare" wrapperClassName={DOB_CELL} aria-label={idLabel} placeholder={idPlaceholder} value={awayDob ? formatDateToISO(awayDob) : ''} onChange={v => setAwayDob(v ? formatDateToDDMMYYYY(v) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.roleLibero')} · {t('matchSetup.captain')}</StackLabel>
-                <select aria-label={t('matchSetup.libero', 'Libero')} className={`cell-libero${awayLibero ? '' : ' libero-unset'}`} value={awayLibero} onChange={e => {
-                  let newValue = e.target.value
-                  if (newValue === 'libero2' && !awayRoster.some(p => p.libero === 'libero1')) {
-                    newValue = 'libero1'
-                  }
-                  setAwayLibero(newValue)
-                }}>
-                  <option key={`none-${liberoLabels.key}`} value="">{liberoLabels.none}</option>
-                  {!awayRoster.some(p => p.libero === 'libero1') && (
-                    <option key={`l1-${liberoLabels.key}`} value="libero1">{liberoLabels.l1}</option>
-                  )}
-                  {!awayRoster.some(p => p.libero === 'libero2') && (
-                    <option key={`l2-${liberoLabels.key}`} value="libero2">{liberoLabels.l2}</option>
-                  )}
+                <select aria-label={t('matchSetup.libero', 'Libero')} className={`cell-libero${awayLibero ? '' : ' libero-unset'}`} value={awayLibero} onChange={e => setAwayLibero(e.target.value)}>
+                  {liberoOptions(awayRoster, null, awayLibero)}
                 </select>
                 <div className="cell-captain">
                   <CaptainToggle pressed={awayCaptain} number={awayNum} onToggle={() => setAwayCaptain(!awayCaptain)} />
@@ -6161,15 +6123,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 <div className="cell-action">
                   <Button variant="secondary" size="md" onClick={() => {
                     if (!awayLast || !awayFirst) return
-                    const newPlayer = { number: awayNum ? Number(awayNum) : null, lastName: awayLast, firstName: awayFirst, dob: awayDob, libero: awayLibero, isCaptain: awayCaptain, isLfp: awayLfp }
                     setAwayRoster(list => {
                       const cleared = awayCaptain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
+                      const newPlayer = { number: awayNum ? Number(awayNum) : null, lastName: awayLast, firstName: awayFirst, dob: awayDob, libero: newPlayerLibero(cleared, awayLibero), isCaptain: awayCaptain, isLfp: awayLfp }
                       const next = [...cleared, newPlayer].sort((a, b) => {
                         const an = a.number ?? 999
                         const bn = b.number ?? 999
                         return an - bn
                       })
-                      return next
+                      // a team's only libero is Libero 1
+                      return withLoneLiberoAsL1(next)
                     })
                     setAwayNum(''); setAwayFirst(''); setAwayLast(''); setAwayDob(''); setAwayLibero(''); setAwayCaptain(false); setAwayLfp(false)
                   }}>{t('common.add')}</Button>
@@ -6316,37 +6279,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 <select
                   aria-label={t('matchSetup.libero', 'Libero')}
                   className={`cell-libero${p.libero ? '' : ' libero-unset'}`}
-                  value={p.libero || ''}
+                  value={liberoValueOf(p)}
                   onChange={e => {
                     const updated = [...awayRoster]
-                    const oldValue = updated[i].libero
                     updated[i] = { ...updated[i], libero: e.target.value }
-
-                    if (e.target.value === 'libero2') {
-                      const hasL1 = updated.some((player, idx) => idx !== i && player.libero === 'libero1')
-                      if (!hasL1) {
-                        updated[i] = { ...updated[i], libero: 'libero1' }
-                      }
-                    }
-
-                    if (oldValue === 'libero1' && !e.target.value) {
-                      const l2Idx = updated.findIndex((player, idx) => idx !== i && player.libero === 'libero2')
-                      if (l2Idx !== -1) {
-                        updated[l2Idx] = { ...updated[l2Idx], libero: 'libero1' }
-                      }
-                    }
-
                     // state only, as on the home side
-                    setAwayRoster(updated)
+                    setAwayRoster(withLoneLiberoAsL1(updated))
                   }}
                 >
-                  <option key={`none-${liberoLabels.key}`} value="">{liberoLabels.none}</option>
-                  {!awayRoster.some((player, idx) => idx !== i && player.libero === 'libero1') && (
-                    <option key={`l1-${liberoLabels.key}`} value="libero1">{liberoLabels.l1}</option>
-                  )}
-                  {!awayRoster.some((player, idx) => idx !== i && player.libero === 'libero2') && (
-                    <option key={`l2-${liberoLabels.key}`} value="libero2">{liberoLabels.l2}</option>
-                  )}
+                  {liberoOptions(awayRoster, i)}
                 </select>
                 <div className="cell-captain">
                   <CaptainToggle
@@ -6389,7 +6330,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 )}
                 <div className="cell-action gap-1">
                   {rowShield('away', 'roster', p, i)}
-                  <Button variant="danger-outline" size="md" title={t('common.delete')} onClick={() => setAwayRoster(list => list.filter((_, idx) => idx !== i))}>
+                  <Button variant="danger-outline" size="md" title={t('common.delete')} onClick={() => setAwayRoster(list => withLoneLiberoAsL1(list.filter((_, idx) => idx !== i)))}>
                     <Trash2 size={16} className="hidden stack:block" aria-hidden="true" /><span className="stack:sr-only">{t('common.delete')}</span>
                   </Button>
                 </div>
