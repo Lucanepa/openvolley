@@ -45,6 +45,7 @@
 
 import { createRedactedMatcher, loadRegister, redactedPeopleKey, withholdRedacted } from './redactedPeople.js'
 import { parseLeagueCalendar } from './vmIcal.js'
+import { fetchGames as fetchGameCenterGames } from './gameCenter.js'
 
 export const VM_BASE = 'https://volleymanager.volleyball.ch'
 export const ZURICH_TZ = 'Europe/Zurich'
@@ -1267,7 +1268,8 @@ export function mergeWithStored(rows, stored) {
       if (group) out.league = group
     }
     if (old?.hall_address && row.hall_address && old.hall_address.startsWith(row.hall_address)) out.hall_address = old.hall_address
-    out.match_format = old?.match_format ?? usualFormat(row.gender, row.league)
+    // without the group letter: a Game Center row already says "3L B", the usual formats are kept per "3L"
+    out.match_format = row.match_format ?? old?.match_format ?? usualFormat(row.gender, row.league.replace(/\s+[A-Z]$/, ''))
     if (old?.group_display) out.group_display = old.group_display
     if (old?.phase_name) out.phase_name = old.phase_name
     if (old?.league_category) out.league_category = old.league_category
@@ -1309,6 +1311,112 @@ export async function fetchIcalFeeds(urls, { fetch: fetchImpl, http = {}, logger
     }
   }
   return { rows, covered, failed, skipped }
+}
+
+// ---------------------------------------------------------------------------
+// Swiss Volley Game Center (no login): VM_GAME_CENTER_REGIONS
+// ---------------------------------------------------------------------------
+
+/**
+ * VM_GAME_CENTER_REGIONS -> region codes ("SVRZ", "SVRA", … "SV" = Swiss
+ * Volley's national competitions), upper-cased, de-duplicated. Empty -> [].
+ */
+export function gameCenterRegionsFromEnv(env = process.env) {
+  const raw = String(env.VM_GAME_CENTER_REGIONS ?? '').trim()
+  if (!raw) return []
+  return [...new Set(raw.split(/[\s,]+/).filter(Boolean).map((r) => {
+    if (!/^[a-z]{2,8}$/i.test(r)) throw new Error(`VM_GAME_CENTER_REGIONS: not a region code: ${r.slice(0, 20)}`)
+    return r.toUpperCase()
+  }))]
+}
+
+/** A Game Center referee as the person refereeLicenceOf reads (its refereeId is the SV number). */
+const gcReferee = (r) => {
+  if (!r || typeof r !== 'object') return { name: '', firstName: '', lastName: '', licence: null }
+  const firstName = String(r.firstName ?? '').trim()
+  const lastName = String(r.lastName ?? '').trim()
+  return { name: `${firstName} ${lastName}`.trim(), firstName, lastName, licence: refereeLicenceOf({ associationId: r.refereeId }) }
+}
+
+/**
+ * One Game Center game (lib/gameCenter.js) -> a svrz_games row, the columns
+ * transformGame writes from a login search: the referees with their SV numbers
+ * (licence), the group letter, the street with its number and the best-of
+ * format all come with it. Not published there: line judges (SVRZ has none)
+ * and the supervision marks.
+ */
+export function gameCenterGameToRow(g, { syncedAt = new Date() } = {}) {
+  const str = (v) => (v == null ? '' : String(v).trim())
+  const league = g.league ?? {}
+  const grp = g.group ?? {}
+  const hall = g.hall ?? {}
+  const caption = str(league.caption)
+  const kickoff = g.playDateUtc ? new Date(g.playDateUtc) : null
+  const valid = kickoff && !Number.isNaN(kickoff.getTime())
+  const { date, time } = valid ? formatZurichDateTime(kickoff) : { date: '', time: '' }
+  const junior = AGE_CLASS_RE.test(caption) || JUNIOR_WORDS_RE.test(caption) || ROOKIE_FUTURE_RE.test(caption)
+  const groupDisplay = str(grp.caption)
+  // "Männer 3. Liga Gruppe A" -> A; 1L names its groups with the bare letter ("D")
+  const letter = groupDisplay.match(/Gruppe\s+([A-Z0-9]+)/) || groupDisplay.match(/\|\s*([A-Z0-9]+)\s*$/) || groupDisplay.match(/^([A-Z])$/)
+  const r1 = gcReferee(g.referees?.['1'])
+  const r2 = gcReferee(g.referees?.['2'])
+  return {
+    game_number: str(g.gameId),
+    date, time,
+    datetime: valid ? vmIsoDateTime(kickoff) : '',
+    city: str(hall.city),
+    hall: str(hall.caption),
+    match_type: /cup|pokal/i.test(caption) ? 'cup' : 'championship',
+    championship_type: /^1l\b|1\. liga/i.test(caption) && !junior ? 'national' : 'regional',
+    gender: g.gender === 'm' ? 'men' : g.gender === 'f' ? 'women' : '',
+    match_level: junior ? 'junior' : 'senior',
+    league: letter ? `${caption} ${letter[1]}` : caption,
+    league_category: caption,
+    junior_category: junior,
+    match_format: matchFormatOf(league.numberOfWinSets),
+    team_home: str(g.teams?.home?.caption),
+    team_away: str(g.teams?.away?.caption),
+    referee_1: r1.name, referee_1_first_name: r1.firstName, referee_1_last_name: r1.lastName, referee_1_licence: r1.licence,
+    referee_2: r2.name, referee_2_first_name: r2.firstName, referee_2_last_name: r2.lastName, referee_2_licence: r2.licence,
+    hall_address: [str(hall.street), str(hall.number)].filter(Boolean).join(' '),
+    hall_postal_code: str(hall.zip),
+    group_display: groupDisplay,
+    phase_name: str(g.phase?.caption),
+    linesman_1: '', linesman_2: '',
+    is_supervised: false, has_supervised_referee: false,
+    convocations: [r1.name, r2.name].filter(Boolean),
+    synced_at: (syncedAt instanceof Date ? syncedAt : new Date(syncedAt)).toISOString()
+  }
+}
+
+/**
+ * Game Center games -> rows, the way prepareRows treats a login search (NL
+ * dropped, one row per game number), plus the leagues and teams the answer
+ * covers: a stored game outside them (another region, 1L when only SVRZ is
+ * read) is never taken for removed.
+ */
+export function prepareGameCenterRows(games, opts = {}) {
+  const all = (games || []).map((g) => gameCenterGameToRow(g, opts)).filter((r) => r.game_number)
+  const kept = all.filter((r) => !isExcludedLeague(r.league))
+  const byNumber = new Map()
+  const covered = new Map()
+  for (const r of kept) {
+    byNumber.set(r.game_number, r)
+    const key = `${r.gender}|${r.league.replace(/\s+[A-Z]$/, '')}`
+    const teams = covered.get(key) ?? new Set()
+    covered.set(key, teams)
+    // keyed without the group letter: coveredByCalendars tries "3L B", then "3L"
+    for (const t of [r.team_home, r.team_away]) if (t) teams.add(t)
+  }
+  return {
+    rows: [...byNumber.values()],
+    numbers: new Set(all.map((r) => r.game_number)),
+    transformed: all.length,
+    excluded: all.length - kept.length,
+    excludedLeagues: [...new Set(all.filter((r) => isExcludedLeague(r.league)).map((r) => r.league))],
+    duplicates: kept.length - byNumber.size,
+    covered
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1509,10 +1617,14 @@ export async function runVmSync({
   staleRunningMs = STALE_RUNNING_MS,
   redactionSecret = null,
   feeds = [],
-  calendarDelayMs = 500
+  calendarDelayMs = 500,
+  gameCenterRegions = []
 } = {}) {
+  // The Swiss Volley Game Center (VM_GAME_CENTER_REGIONS): no login, referees
+  // with their SV numbers; wins over the calendars, which name no referee
+  const gcMode = Array.isArray(gameCenterRegions) && gameCenterRegions.length > 0
   // League calendars (VM_ICAL_FEEDS): no login, no role, no referees
-  const icalMode = Array.isArray(feeds) && feeds.length > 0
+  const icalMode = !gcMode && Array.isArray(feeds) && feeds.length > 0
   const clock = typeof now === 'function' ? now : () => new Date(now)
   const startedAt = clock()
   const win = resolveWindow(window, { now: startedAt })
@@ -1567,7 +1679,20 @@ export async function runVmSync({
     let fetched
     let prepared
     let covered = null
-    if (icalMode) {
+    if (gcMode) {
+      log.log(`vm-sync: reading the Swiss Volley Game Center for ${gameCenterRegions.join(', ')}, no login`)
+      // fetchGames throws on any failed call: a partial read never gets here
+      const games = await fetchGameCenterGames(gameCenterRegions.map((region) => ({ region })), win.fromDay, win.toDay, fetchImpl)
+      const from = Date.parse(win.dateFrom)
+      const to = Date.parse(win.dateTo)
+      const gc = prepareGameCenterRows(games, { syncedAt: clock() })
+      const inWindow = gc.rows.filter((r) => { const t = Date.parse(r.datetime); return t >= from && t <= to })
+      // the list carries no number of win sets: the stored format, else the league's usual one
+      const rows = dryRun ? inWindow : mergeWithStored(inWindow, await storedForMerge(client, win))
+      covered = gc.covered
+      prepared = { ...gc, rows }
+      fetched = { items: games, total: games.length, incomplete: false, pageError: null }
+    } else if (icalMode) {
       log.log(`vm-sync: reading ${feeds.length} league calendar(s), no login`)
       const cal = await fetchIcalFeeds(feeds, { fetch: fetchImpl, http, logger: log, syncedAt: clock(), sleep: http.sleep, delayMs: calendarDelayMs })
       const from = Date.parse(win.dateFrom)
@@ -1593,7 +1718,7 @@ export async function runVmSync({
 
     // Raw startingDateTime shapes (no secrets in them), so a dry run shows
     // whether VM sends Z/offsets or Zurich wall-clock times.
-    const rawTimes = icalMode ? [] : fetched.items.map((it) => it?.game?.startingDateTime).filter((v) => typeof v === 'string' && v.trim())
+    const rawTimes = icalMode || gcMode ? [] : fetched.items.map((it) => it?.game?.startingDateTime).filter((v) => typeof v === 'string' && v.trim())
     result.datetimeSamples = [...new Set(rawTimes)].slice(0, 5)
     result.offsetlessDatetimes = rawTimes.filter(isOffsetlessVmDateTime).length
     result.unparsedDatetimes = rawTimes.filter((v) => !parseVmDateTime(v)).length
@@ -1604,7 +1729,7 @@ export async function runVmSync({
       log.warn(`vm-sync: ${result.unparsedDatetimes} startingDateTime value(s) not ISO 8601, stored with empty date/time`)
     }
 
-    if (!icalMode) prepared = prepareRows(fetched.items, { syncedAt: clock() })
+    if (!icalMode && !gcMode) prepared = prepareRows(fetched.items, { syncedAt: clock() })
     result.kept = prepared.rows.length
     result.excluded = prepared.excluded
     result.excludedLeagues = prepared.excludedLeagues
@@ -1619,7 +1744,8 @@ export async function runVmSync({
       // People erased on request (db/052): their places stay empty. Read under
       // the run's lock, right before the writes; entries without the key to
       // check them would let the names back in, so the run writes nothing.
-      // a calendar run writes no referee or line judge: nothing to withhold
+      // a calendar run writes no referee or line judge: nothing to withhold;
+      // a Game Center run names the referees, so the register is read again
       const register = icalMode ? new Map() : await loadRegister(client)
       let rows = prepared.rows
       if (register.size) {
@@ -1654,7 +1780,8 @@ export async function runVmSync({
 
     // LOG-24: club_teams, saved teams and older schedule rows follow the
     // region's names the run wrote; never fails the run
-    if (!dryRun && !icalMode) {
+    // (login searches only: the renames come from VolleyManager's translation objects)
+    if (!dryRun && !icalMode && !gcMode) {
       try {
         const renamed = await followTeamRenames(client, teamNameRenames(fetched.items))
         result.renamedTeams = renamed
@@ -1671,7 +1798,7 @@ export async function runVmSync({
     // skip another while the count still adds up. Fewer distinct games than
     // the total means some were skipped: nothing is removed, the run is partial.
     const distinct = prepared.numbers.size + (fetched.items.length - prepared.transformed)
-    const overlap = !icalMode && !fetched.incomplete && distinct < fetched.total
+    const overlap = !icalMode && !gcMode && !fetched.incomplete && distinct < fetched.total
       ? `${distinct} distinct of ${fetched.total} games (pages overlapped), none removed`
       : null
     if (overlap) log.warn(`vm-sync: ${overlap}`)
@@ -1679,13 +1806,14 @@ export async function runVmSync({
     // the cancelled, renumbered or moved games: only after a complete run
     let suspicious = overlap
     if (!dryRun && !fetched.incomplete && !overlap && result.errors === 0) {
-      // a calendar run answers only for its leagues: 1L or cup games stored by the login sync stay
+      // a calendar or Game Center run answers only for its leagues and teams: 1L or cup
+      // games stored by the login sync (or another region's) stay
       const inScope = covered ? upcoming.filter((r) => coveredByCalendars(r, covered)) : upcoming
       const gone = inScope.filter((r) => !prepared.numbers.has(r.game_number)).map((r) => r.game_number)
       if (gone.length && !fetched.items.length) {
         suspicious = `VolleyManager returned no games; the schedule holds ${inScope.length} upcoming in this window, none removed`
       } else if (gone.length > Math.max(REMOVAL_GUARD_MIN, Math.floor(inScope.length / 2))) {
-        suspicious = `${gone.length} of ${inScope.length} upcoming games not returned, none removed (${icalMode ? 'check the calendars' : "check the account's role"})`
+        suspicious = `${gone.length} of ${inScope.length} upcoming games not returned, none removed (${gcMode ? 'check the Game Center' : icalMode ? 'check the calendars' : "check the account's role"})`
       } else if (gone.length) {
         result.removedGames = await removeGames(client, gone, result.logId)
         result.removed = result.removedGames.length
@@ -1693,7 +1821,7 @@ export async function runVmSync({
       if (suspicious) log.warn(`vm-sync: ${suspicious}`)
     }
 
-    const parts = [`[${dateLabel}] ${dryRun ? 'Dry run: fetched' : 'Synced'} ${prepared.rows.length} games${icalMode ? ` from ${feeds.length} league calendar(s)` : ''} in ${elapsed()}s`]
+    const parts = [`[${dateLabel}] ${dryRun ? 'Dry run: fetched' : 'Synced'} ${prepared.rows.length} games${gcMode ? ` from the Game Center (${gameCenterRegions.join(', ')})` : icalMode ? ` from ${feeds.length} league calendar(s)` : ''} in ${elapsed()}s`]
     if (!dryRun) parts.push(`(${result.created} created, ${result.updated} updated, ${result.unchanged} unchanged, ${result.errors} errors)`)
     if (result.withoutFormat) parts.push(`${result.withoutFormat} without a format`)
     if (result.withheld) parts.push(`${result.withheld} referee / line judge place(s) left empty (erased on request)`)

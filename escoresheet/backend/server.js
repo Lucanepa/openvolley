@@ -9652,21 +9652,28 @@ if (DB_MODE) {
     // VM_ICAL_FEEDS (since 27.11.2026): the public league calendars instead of
     // the login, which VolleyManager refuses. Set, it wins over the credentials:
     // no login, no role, and no referees in the schedule.
+    // VM_GAME_CENTER_REGIONS (since 27.11.2026, e.g. "SVRZ"): the Swiss Volley
+    // Game Center (svrz.ch's public schedule). Set, it wins over both: no login,
+    // and the referees with their SV numbers come back.
     const vmIcalSet = !!process.env.VM_ICAL_FEEDS?.trim()
-    if (!IS_LOCAL && process.env.VM_SYNC !== 'off' && (vmIcalSet || (process.env.VM_USERNAME && process.env.VM_PASSWORD))) {
+    const vmGameCenterSet = !!process.env.VM_GAME_CENTER_REGIONS?.trim()
+    if (!IS_LOCAL && process.env.VM_SYNC !== 'off' && (vmGameCenterSet || vmIcalSet || (process.env.VM_USERNAME && process.env.VM_PASSWORD))) {
       import('./lib/vmSync.js').then((vm) => {
         const vmWindow = vm.windowFromEnv() // throws on a bad VM_SYNC_DAYS_* value
         const allowedWindow = vm.runWindowFromEnv() // throws on a bad VM_SYNC_WINDOW_UTC
         const feeds = vm.icalFeedsFromEnv() // throws on an entry that is no VolleyManager calendar
+        const gameCenterRegions = vm.gameCenterRegionsFromEnv() // throws on a bad region code
+        const noLogin = gameCenterRegions.length > 0 || feeds.length > 0
         // The calendars need no shared login, so no role window: daily at 09:00
         // Zurich, retries and catch-ups at any hour. The login keeps 22:30 UTC.
-        const slot = feeds.length ? { hourLocal: 9, minuteLocal: 0, tz: 'Europe/Zurich' } : { hourLocal: 22, minuteLocal: 30, tz: 'UTC' }
+        const slot = noLogin ? { hourLocal: 9, minuteLocal: 0, tz: 'Europe/Zurich' } : { hourLocal: 22, minuteLocal: 30, tz: 'UTC' }
         const schedule = vm.scheduleVmSync({
           ...slot,
           run: () => vm.runVmSync({
             pool: layer.db.pool,
             window: vmWindow,
             feeds,
+            gameCenterRegions,
             credentials: { username: process.env.VM_USERNAME, password: process.env.VM_PASSWORD },
             // the shared account's referee-delegate role (lib/vmSync.js VM_ROLE_FOR_GAMES)
             ...(process.env.VM_ROLE_ATTRIBUTE_GAMES ? { roleAttribute: process.env.VM_ROLE_ATTRIBUTE_GAMES } : {}),
@@ -9674,16 +9681,17 @@ if (DB_MODE) {
             redactionSecret: process.env.OV_PIN_SECRET || null
           }).catch((err) => { captureServerError(err, { kind: 'job.failed', view: 'vm sync' }); throw err }),
           retryDelaysMs: vm.VM_SYNC_RETRY_DELAYS_MS,
-          allowedWindow: feeds.length ? null : allowedWindow,
+          allowedWindow: noLogin ? null : allowedWindow,
           catchUp: () => vm.readSyncRecord(layer.db.pool)
         })
         vmSync = { lib: vm, schedule }
-        console.log(`[VM sync] scheduled (${feeds.length ? `${feeds.length} league calendars, no login` : 'login'}), next run ` + (schedule.nextRunAt()?.toISOString() ?? 'n/a'))
+        const source = gameCenterRegions.length ? `Game Center ${gameCenterRegions.join(', ')}, no login` : feeds.length ? `${feeds.length} league calendars, no login` : 'login'
+        console.log(`[VM sync] scheduled (${source}), next run ` + (schedule.nextRunAt()?.toISOString() ?? 'n/a'))
       }).catch((err) => {
         console.error('❌ [VM sync] not started:', err.message)
       })
     } else if (!IS_LOCAL) {
-      console.warn(`[VM sync] off (${process.env.VM_SYNC === 'off' ? 'VM_SYNC=off' : 'neither VM_ICAL_FEEDS nor VM_USERNAME / VM_PASSWORD set'}): the official schedule is not refreshed`)
+      console.warn(`[VM sync] off (${process.env.VM_SYNC === 'off' ? 'VM_SYNC=off' : 'none of VM_GAME_CENTER_REGIONS, VM_ICAL_FEEDS, VM_USERNAME / VM_PASSWORD set'}): the official schedule is not refreshed`)
     }
   }, (err) => {
     console.error('❌ [DB] could not initialise the data layer:', err.message)

@@ -658,3 +658,76 @@ describe('runVmSync with league calendars', () => {
     assert.equal(f.calls.length, 2)
   })
 })
+
+describe('runVmSync with the Swiss Volley Game Center', () => {
+  // live shapes (svrz.ch, 27.11.2026), invented teams and referees
+  const g = (n, over = {}) => ({
+    gameId: n, playDateUtc: '2026-10-06T18:30:00Z', gender: 'f',
+    teams: { home: { caption: 'Volley Züri Nord' }, away: { caption: 'New Team D1' } },
+    league: { caption: '3L' }, group: { caption: 'Frauen 3. Liga Gruppe B' }, phase: { caption: 'Vorrunde' },
+    hall: { caption: 'Gloriarank', street: 'Gloriastrasse', number: '32', zip: 8006, city: 'Zürich' },
+    referees: { 1: { refereeId: 512345, firstName: 'Anna', lastName: 'Muster' } },
+    ...over
+  })
+  const gcFetch = (games, { fail = false } = {}) => {
+    const calls = []
+    return {
+      calls,
+      fetch: async (url, init) => {
+        calls.push(`${init?.method ?? 'GET'} ${url}`)
+        if (fail) return init?.method === 'POST' ? new Response('', { status: 503 }) : new Response('<html></html>')
+        return new Response(`0:["$@1",["b",null]]\n1:${JSON.stringify(games)}\n`)
+      }
+    }
+  }
+  const stored = [
+    { game_number: '406020', datetime: '2026-10-06T18:30:00.000000+00:00', league: '3L B', gender: 'women' },
+    { game_number: '406555', datetime: '2026-10-07T18:30:00.000000+00:00', league: '3L A', gender: 'women', team_home: 'Volley Züri Nord', team_away: 'Old Club D3' }, // gone from 3L
+    { game_number: '400001', datetime: '2026-10-08T18:30:00.000000+00:00', league: '1L D', gender: 'men', team_home: 'A', team_away: 'B' } // not read (SV): stays
+  ]
+  const season = [{ game_number: '406020', league: '3L B', gender: 'women', team_home: 'VBC Spada Academica D2', team_away: 'Volley Züri Nord', hall_address: 'Gloriastrasse', match_format: 5, group_display: '', phase_name: '', league_category: '3L' }]
+
+  it('writes the referees with their SV numbers, keeps the stored format, removes only its leagues and teams', async () => {
+    const f = gcFetch([g(406020, { teams: { home: { caption: 'VBC Spada Academica D2' }, away: { caption: 'Volley Züri Nord' } } }), g(406099)])
+    const pool = fakePool({ stored, season })
+    // the Game Center wins over the calendars when both are set
+    const r = await runVmSync({ pool, fetch: f.fetch, http, now: NOW, logger: memLogger(), gameCenterRegions: ['SVRZ'], feeds: [`https://vm.test/iCal/schedule/${'a'.repeat(40)}`] })
+    assert.equal(r.status, 'success', r.message)
+    assert.ok(f.calls.every((c) => c.startsWith('POST ') && c.endsWith('/game-center')), 'the Game Center only: no login, no calendar')
+    const byNumber = Object.fromEntries(pool.state.upserted.map((row) => [row.game_number, row]))
+    const known = byNumber['406020']
+    assert.equal(known.league, '3L B')
+    assert.deepEqual([known.referee_1, known.referee_1_licence], ['Anna Muster', '512345'])
+    assert.equal(known.hall_address, 'Gloriastrasse 32', 'the street number comes back')
+    assert.equal(known.match_format, 5, 'the list has no format: the stored one stays')
+    assert.equal(byNumber['406099'].match_format, 5, "a new game takes its league's usual format, letter or not")
+    assert.deepEqual(pool.state.removed, ['406555'], 'only a game whose league AND team the answer covers')
+    assert.match(pool.state.log.get(r.logId).message, /from the Game Center \(SVRZ\)/)
+  })
+
+  it('a Game Center that does not answer fails the run and removes nothing', async () => {
+    const pool = fakePool({ stored, season })
+    const r = await runVmSync({ pool, fetch: gcFetch([], { fail: true }).fetch, http, now: NOW, logger: memLogger(), gameCenterRegions: ['SVRZ'] })
+    assert.equal(r.status, 'failed')
+    assert.deepEqual(pool.state.removed, [])
+    assert.deepEqual(pool.state.upserted, [])
+  })
+
+  it('names referees again, so the register of people erased on request (db/052) is read again', async () => {
+    const register = personEntries(redactedPeopleKey(PIN_SECRET), { first: 'Anna', last: 'Muster', licences: ['512345'] })
+    const pool = fakePool({ stored, season, register })
+    const r = await runVmSync({ pool, fetch: gcFetch([g(406099)]).fetch, http, now: NOW, logger: memLogger(), gameCenterRegions: ['SVRZ'], redactionSecret: PIN_SECRET })
+    assert.equal(r.status, 'success', r.message)
+    assert.equal(r.withheld, 1)
+    const [row] = pool.state.upserted
+    assert.deepEqual([row.referee_1, row.referee_1_licence], [null, null])
+  })
+
+  it('the CLI runs on VM_GAME_CENTER_REGIONS without VolleyManager credentials', async () => {
+    const f = gcFetch([g(406099)])
+    const quiet = async (fn) => { const e = console.error, l = console.log; console.error = () => {}; console.log = () => {}; try { return await fn() } finally { console.error = e; console.log = l } }
+    const code = await quiet(() => cliMain(['--dry-run', '--from', '2026-10-01', '--to', '2026-10-31'], { VM_GAME_CENTER_REGIONS: 'svrz' }, { fetch: f.fetch, http }))
+    assert.equal(code, EXIT.success)
+    assert.equal(f.calls.length, 1)
+  })
+})
