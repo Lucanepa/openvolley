@@ -45,7 +45,7 @@
 
 import { createRedactedMatcher, loadRegister, redactedPeopleKey, withholdRedacted } from './redactedPeople.js'
 import { parseLeagueCalendar } from './vmIcal.js'
-import { fetchGames as fetchGameCenterGames } from './gameCenter.js'
+import { fetchGames as fetchGameCenterGames, fetchLeagueWinSets } from './gameCenter.js'
 
 export const VM_BASE = 'https://volleymanager.volleyball.ch'
 export const ZURICH_TZ = 'Europe/Zurich'
@@ -1356,8 +1356,9 @@ export function gameCenterGameToRow(g, { syncedAt = new Date() } = {}) {
   const { date, time } = valid ? formatZurichDateTime(kickoff) : { date: '', time: '' }
   const junior = AGE_CLASS_RE.test(caption) || JUNIOR_WORDS_RE.test(caption) || ROOKIE_FUTURE_RE.test(caption)
   const groupDisplay = str(grp.caption)
-  // "Männer 3. Liga Gruppe A" -> A; 1L names its groups with the bare letter ("D")
-  const letter = groupDisplay.match(/Gruppe\s+([A-Z0-9]+)/) || groupDisplay.match(/\|\s*([A-Z0-9]+)\s*$/) || groupDisplay.match(/^([A-Z])$/)
+  // "Männer 3. Liga Gruppe A" -> A, Vaud's "Groupe C-2" -> C-2, Bern's "Gruppe III" -> III;
+  // 1L names its groups with the bare letter ("D")
+  const letter = groupDisplay.match(/(?:Gruppe|Groupe|Gruppo)\s+([A-Z0-9]+(?:-[A-Z0-9]+)?)\b/) || groupDisplay.match(/\|\s*([A-Z0-9]+)\s*$/) || groupDisplay.match(/^([A-Z])$/)
   const r1 = gcReferee(g.referees?.['1'])
   const r2 = gcReferee(g.referees?.['2'])
   return {
@@ -1402,12 +1403,15 @@ export function prepareGameCenterRows(games, opts = {}) {
   const covered = new Map()
   for (const r of kept) {
     byNumber.set(r.game_number, r)
-    const key = `${r.gender}|${r.league.replace(/\s+[A-Z]$/, '')}`
-    const teams = covered.get(key) ?? new Set()
-    covered.set(key, teams)
-    // keyed without the group letter: coveredByCalendars tries "3L B", then "3L"
-    for (const t of [r.team_home, r.team_away]) if (t) teams.add(t)
+    // under the league with and without its group ("3L B" and "3L"; "4L III" and "4L"):
+    // coveredByCalendars looks the stored text up as it is, then without a one-letter group
+    for (const key of new Set([`${r.gender}|${r.league}`, `${r.gender}|${r.league_category}`])) {
+      const teams = covered.get(key) ?? new Set()
+      covered.set(key, teams)
+      for (const t of [r.team_home, r.team_away]) if (t) teams.add(t)
+    }
   }
+  const leagueOf = new Map((games || []).map((g) => [String(g?.gameId ?? ''), g?.league?.leagueId]))
   return {
     rows: [...byNumber.values()],
     numbers: new Set(all.map((r) => r.game_number)),
@@ -1415,9 +1419,43 @@ export function prepareGameCenterRows(games, opts = {}) {
     excluded: all.length - kept.length,
     excludedLeagues: [...new Set(all.filter((r) => isExcludedLeague(r.league)).map((r) => r.league))],
     duplicates: kept.length - byNumber.size,
-    covered
+    covered,
+    leagueOf
   }
 }
+
+// leagueId -> best of 3 / 5, read once per league from a game's detail page
+// (the schedule list leaves numberOfWinSets out); kept for the life of the process
+const gcLeagueFormats = new Map()
+const GC_FORMAT_LOOKUPS_PER_RUN = 250
+
+/**
+ * Fills match_format where neither the list nor the stored schedule has one,
+ * from one detail page per league. Never fails the run: a league whose page
+ * does not answer keeps null (Match setup asks), and is tried again next run.
+ */
+export async function fillGameCenterFormats(rows, leagueOf, { fetchImpl, logger } = {}) {
+  let lookups = 0
+  for (const row of rows) {
+    if (row.match_format != null) continue
+    const leagueId = leagueOf.get(row.game_number)
+    if (leagueId == null) continue
+    if (!gcLeagueFormats.has(leagueId)) {
+      if (lookups >= GC_FORMAT_LOOKUPS_PER_RUN) continue
+      lookups++
+      const winSets = await fetchLeagueWinSets(row.game_number, fetchImpl).catch(() => undefined)
+      const format = matchFormatOf(winSets)
+      if (format == null) continue
+      gcLeagueFormats.set(leagueId, format)
+    }
+    row.match_format = gcLeagueFormats.get(leagueId)
+  }
+  if (lookups) logger?.log?.(`vm-sync: ${lookups} league format(s) read from the Game Center's game pages`)
+  return lookups
+}
+
+/** Test seam. */
+export function __resetGcLeagueFormats() { gcLeagueFormats.clear() }
 
 // ---------------------------------------------------------------------------
 // Database
@@ -1689,6 +1727,7 @@ export async function runVmSync({
       const inWindow = gc.rows.filter((r) => { const t = Date.parse(r.datetime); return t >= from && t <= to })
       // the list carries no number of win sets: the stored format, else the league's usual one
       const rows = dryRun ? inWindow : mergeWithStored(inWindow, await storedForMerge(client, win))
+      await fillGameCenterFormats(rows, gc.leagueOf, { fetchImpl, logger: log })
       covered = gc.covered
       prepared = { ...gc, rows }
       fetched = { items: games, total: games.length, incomplete: false, pageError: null }

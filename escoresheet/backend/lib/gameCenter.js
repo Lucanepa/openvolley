@@ -114,5 +114,23 @@ export async function fetchStandings(groupId, fetchImpl = fetch) {
   return act('standings', Number(groupId), Number(groupId), fetchImpl)
 }
 
+/**
+ * A league's numberOfWinSets ("three_win_sets" / "two_win_sets"), from one of
+ * its games' detail page: the schedule list leaves it out, the page renders the
+ * whole game (league included) into its React-Server-Components stream.
+ * undefined when the page does not say.
+ */
+export async function fetchLeagueWinSets(gameId, fetchImpl = fetch) {
+  const res = await fetchImpl(`${GAME_CENTER_BASE}/game-center/game/${encodeURIComponent(String(gameId))}`, { headers: HEADERS, signal: AbortSignal.timeout(TIMEOUT_MS) })
+  if (!res.ok) return undefined
+  const html = await res.text()
+  let flight = ''
+  for (const m of html.matchAll(/self\.__next_f\.push\(\[1,("(?:[^"\\]|\\.)*")\]\)/g)) {
+    try { flight += JSON.parse(m[1]) } catch { /* a chunk that is no string */ }
+  }
+  const at = flight.indexOf('"game":{"gameId":')
+  return at < 0 ? undefined : flight.slice(at).match(/"numberOfWinSets":"(\w+)"/)?.[1]
+}
+
 /** Test seam. */
-export function __setActionId(kind, id) { ACTIONS[kind].id = id; }
+export function __setActionId(kind, id) { ACTIONS[kind].id = id }

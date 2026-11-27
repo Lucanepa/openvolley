@@ -1097,12 +1097,17 @@ host from VolleyManager): `lib/gameCenter.js` calls the page's own server action
 `dateEnd` exclusive; one call per month of the window) and finds the action again in the page's
 scripts when svrz.ch redeploys. `VM_GAME_CENTER_REGIONS` names the regions (`SVRZ`, `SVRA`, …; `SV`
 = Swiss Volley's national competitions, NL still dropped). Set, it wins over the calendars and the
-login, and runs like the calendars (daily 09:00 Europe/Zurich, no window).
+login, and runs like the calendars (daily 09:00 Europe/Zurich, no window). All 15 codes work through
+svrz.ch's action (`SV SVRZ SVRA SVRBA SVRBESO SVRF SVRG SVRGSGL SVRI SVRJS SVRN SVRNO SVRTM SVRV SVRW`);
+production reads them all (owner, 27.11). Groups in every region's wording become the league's
+suffix ("Gruppe A", Vaud's "Groupe C-2", Bern's "Gruppe III").
 `gameCenterGameToRow` writes what the login search wrote: **both referees with their SV numbers
 (`referee_X_licence`)**, the group letter (1L: the bare letter), the street with its number. So
 the register of people erased on request is read again (`OV_PIN_SECRET` needed once it has
-entries). Not in the list: the number of win sets (the stored format or the league's usual one is
-kept, as with the calendars), line judges (SVRZ has none), supervision marks. Only games of the
+entries). Not in the list: the number of win sets — the stored format, else the league's usual one,
+else one game page per league is read for it (`fillGameCenterFormats`, at most 250 a run, remembered
+for the life of the process; all regions, one week: 203 pages, 0 games left without a format) —
+line judges (SVRZ has none), supervision marks. Only games of the
 leagues and teams the answer covers are ever taken for removed (1L games of another source stay).
 Live check against the stored schedule (27.11): 903 upcoming games, 0 team-name differences; the
 VEL league reads "SVRZ VEL" (svrz.ch's name) instead of the calendar's "SVRZ Meisterschaft 1".

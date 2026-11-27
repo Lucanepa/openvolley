@@ -1,7 +1,7 @@
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { flightValue, dateChunks, fetchGames, __setActionId } from '../lib/gameCenter.js'
-import { gameCenterGameToRow, prepareGameCenterRows, gameCenterRegionsFromEnv } from '../lib/vmSync.js'
+import { flightValue, dateChunks, fetchGames, fetchLeagueWinSets, __setActionId } from '../lib/gameCenter.js'
+import { gameCenterGameToRow, prepareGameCenterRows, gameCenterRegionsFromEnv, fillGameCenterFormats, __resetGcLeagueFormats } from '../lib/vmSync.js'
 
 // The Swiss Volley Game Center as the schedule's source (VM_GAME_CENTER_REGIONS).
 // Shapes are the live ones (svrz.ch, checked 27.11.2026); teams, halls and
@@ -69,6 +69,11 @@ describe('a Game Center game as a svrz_games row', () => {
     assert.equal(gameCenterGameToRow(gcGame({ league: { caption: 'U23' }, group: { caption: 'Frauen U23 2. Stärkeklasse' } })).match_level, 'junior')
     assert.equal(gameCenterGameToRow(gcGame({ league: { caption: 'Züri Cup' }, group: { caption: 'Runde 3, Spiel 3' } })).match_type, 'cup')
   })
+  it('groups in every region\'s wording: Vaud\'s "Groupe C-2", Bern\'s "Gruppe III"', () => {
+    assert.equal(gameCenterGameToRow(gcGame({ league: { caption: '2L' }, group: { caption: 'Groupe C-2' } })).league, '2L C-2')
+    assert.equal(gameCenterGameToRow(gcGame({ league: { caption: '4L' }, group: { caption: '4. Liga Gruppe III' } })).league, '4L III')
+    assert.equal(gameCenterGameToRow(gcGame({ league: { caption: '2L' }, group: { caption: 'Frauen 2. Liga' } })).league, '2L')
+  })
   it('a game without referees yet has empty places and no licence', () => {
     const r = gameCenterGameToRow(gcGame({ referees: {} }))
     assert.deepEqual([r.referee_1, r.referee_1_licence, r.referee_2_licence], ['', null, null])
@@ -87,6 +92,8 @@ describe('preparing a Game Center answer', () => {
     assert.deepEqual(p.excludedLeagues, ['NLA'])
     assert.ok(p.numbers.has('2'), 'a game it returns is not cancelled, NL included')
     assert.deepEqual([...p.covered.get('women|3L')].sort(), ['Test Away D1', 'Test Home D2'])
+    assert.ok(p.covered.has('women|3L B'), 'under the league with its group too')
+    assert.equal(p.leagueOf.get('999001'), 7125)
   })
 })
 
@@ -126,5 +133,30 @@ describe('Game Center client', () => {
       return new Response(`var c=(0,l.$)("${OTHER}"),d=(0,l.$)("${NEW}");`)
     }
     assert.equal((await fetchGames([{ region: 'SVRZ' }], '2026-10-04', '2026-10-19', fake)).length, 1)
+  })
+})
+
+const detailPage = (game) => `<html><script>self.__next_f.push([1,${JSON.stringify(`0:["$","div",null,{"x":1,"game":${JSON.stringify(game)}}]\n`)}])</script></html>`
+
+describe('the format from a game\'s detail page', () => {
+  it('reads numberOfWinSets of the game\'s league', async () => {
+    const fake = async () => new Response(detailPage({ gameId: 1, league: { leagueId: 7, caption: 'U16', numberOfWinSets: 'two_win_sets' } }))
+    assert.equal(await fetchLeagueWinSets(1, fake), 'two_win_sets')
+    assert.equal(await fetchLeagueWinSets(1, async () => new Response('<html>nope</html>')), undefined)
+  })
+  it('fills the rows without a format, one page per league, and keeps what is known', async () => {
+    __resetGcLeagueFormats()
+    let pages = 0
+    const fake = async () => { pages++; return new Response(detailPage({ gameId: 1, league: { leagueId: 7, numberOfWinSets: 'two_win_sets' } })) }
+    const rows = [{ game_number: '1', match_format: null }, { game_number: '2', match_format: null }, { game_number: '3', match_format: 5 }]
+    await fillGameCenterFormats(rows, new Map([['1', 7], ['2', 7], ['3', 8]]), { fetchImpl: fake })
+    assert.deepEqual(rows.map((r) => r.match_format), [3, 3, 5])
+    assert.equal(pages, 1, 'one page for the league, then remembered')
+  })
+  it('a page that does not answer leaves the format to the scorer and fails nothing', async () => {
+    __resetGcLeagueFormats()
+    const rows = [{ game_number: '1', match_format: null }]
+    await fillGameCenterFormats(rows, new Map([['1', 9]]), { fetchImpl: async () => new Response('', { status: 503 }) })
+    assert.equal(rows[0].match_format, null)
   })
 })
