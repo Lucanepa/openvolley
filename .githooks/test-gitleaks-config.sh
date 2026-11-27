@@ -64,6 +64,8 @@ expect miss supabase-secret-api-key   a.js   "const k = 'sb_""publishable_$(rnd 
 
 # Env-style secrets the backend reads.
 expect hit  openvolley-env-secret .env.prod "SMTP_PASS=$(rnd 16)"
+expect hit  openvolley-env-secret .env.prod "SES_SECRET_ACCESS_KEY=$(rnd 40)"
+expect miss openvolley-env-secret a.js      "const secretAccessKey = env.SES_SECRET_ACCESS_KEY || ''"
 expect hit  openvolley-env-secret .env.prod "POCKETBASE_ADMIN_PASSWORD=$(rnd 16)"
 expect hit  openvolley-env-secret .env.prod "SUPABASE_SERVICE_ROLE_KEY=$(rnd 40)"
 expect hit  openvolley-env-secret c.yml     "  RESEND_API_KEY: \"$(rnd 30)\""

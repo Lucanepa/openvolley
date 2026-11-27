@@ -8,9 +8,11 @@ import assert from 'node:assert/strict'
 import {
   pickLang, authLink, renderMail, maskEmail, mailerFromEnv, createMailer, transportOptions,
   inboxKey, describeMailError, mailErrorReason, disabledMailer, mailApp, mailBrandOf, brandFrom, beachManagerBase, privacyLine, budgetsFromEnv,
+  sigV4, sesTransport, sesFromEnv,
   MAIL_LANGS, MAIL_KINDS, MAIL_APPS, MAIL_BRANDS, DEFAULT_MANAGER_URL, DEFAULT_MANAGER_URL_BEACH, DEFAULT_BUDGETS, DEFAULT_MAX_PER_INBOX,
   MAIL_BUDGET_OF, BUDGET_ENV
 } from '../lib/mailer.js'
+import nodemailer from 'nodemailer'
 import { startFakeSmtp, makeTestCert, linkToken, SMTP_USER, SMTP_PASS } from './helpers/fakeSmtp.js'
 
 // The account mails come in both brands; the scoresheet mails (db/021, a PDF
@@ -276,6 +278,78 @@ describe('mailer: SMTP sessions against a local sink', () => {
       assert.equal(mailErrorReason(caught), 'EENVELOPE/550', 'the value-free reason')
       assert.equal(m.stats().failed, 1)
     } finally { m.close() }
+  })
+})
+
+describe('mailer: Amazon SES over its HTTPS API (a Region without SMTP)', () => {
+  // AWS's own example key (the SigV4 test suite): not a credential
+  const EXAMPLE = { accessKeyId: 'AKIDEXAMPLE', secretAccessKey: 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLE' + 'KEY' }
+  const ses = (fetch) => nodemailer.createTransport(sesTransport({ region: 'eu-central-2', ...EXAMPLE, fetch, now: () => new Date('2026-11-27T20:00:00Z') }))
+  const ok = (calls) => async (url, init) => { calls.push({ url, ...init }); return { ok: true, status: 200, text: async () => '{"MessageId":"m-1"}' } }
+
+  it('signs as AWS Signature Version 4 (the "get-vanilla" vector of AWS\'s test suite)', () => {
+    const h = sigV4({ method: 'GET', host: 'example.amazonaws.com', path: '/', region: 'us-east-1', service: 'service', ...EXAMPLE, now: new Date('2015-08-30T12:36:00Z') })
+    assert.equal(h['x-amz-date'], '20150830T123600Z')
+    assert.equal(h.authorization, 'AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/service/aws4_request, SignedHeaders=host;x-amz-date, Signature=5fa00fa31553b73ebf1942676e86291e8372ff2a2260956d9b8aae1d763fbf31')
+  })
+
+  it('posts the finished message, attachments included, to the Region\'s endpoint; every recipient in Destination', async () => {
+    const calls = []
+    const info = await ses(ok(calls)).sendMail({
+      from: 'OpenVolley <noreply@example.test>', to: 'a@example.test', bcc: 'b@example.test', subject: 'Scoresheet äöü', text: 'hello',
+      attachments: [{ filename: 'sheet.pdf', content: Buffer.from('%PDF-1.4 test'), contentType: 'application/pdf' }]
+    })
+    assert.equal(info.messageId, 'm-1')
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].url, 'https://email.eu-central-2.amazonaws.com/v2/email/outbound-emails')
+    assert.equal(calls[0].method, 'POST')
+    assert.match(calls[0].headers.authorization, /^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE\/20261127\/eu-central-2\/ses\/aws4_request, SignedHeaders=host;x-amz-date, Signature=[0-9a-f]{64}$/)
+    assert.equal(calls[0].headers['x-amz-date'], '20261127T200000Z')
+    const body = JSON.parse(calls[0].body)
+    assert.deepEqual(body.Destination, { ToAddresses: ['a@example.test', 'b@example.test'] })
+    const raw = Buffer.from(body.Content.Raw.Data, 'base64').toString('utf8')
+    assert.match(raw, /^From: OpenVolley <noreply@example\.test>\r?$/m)
+    assert.match(raw, /^To: a@example\.test\r?$/m)
+    assert.doesNotMatch(raw, /b@example\.test/, 'a Bcc address is not in the message')
+    assert.match(raw, /filename=sheet\.pdf/)
+    assert.match(raw, new RegExp(Buffer.from('%PDF-1.4 test').toString('base64')))
+  })
+
+  it('a refusal is an error with code ESES and the HTTP status; a timeout is ETIMEDOUT; neither logs an address', async () => {
+    const refused = ses(async () => ({ ok: false, status: 403, text: async () => '{"message":"Email address is not verified: someone@example.test"}' }))
+    await assert.rejects(refused.sendMail({ from: 'noreply@example.test', to: 'a@example.test', subject: 's', text: 't' }), (e) => {
+      assert.deepEqual([e.code, e.responseCode, mailErrorReason(e)], ['ESES', 403, 'ESES/403'])
+      assert.match(describeMailError(e), /^ESES HTTP 403 Amazon SES answered 403/)
+      assert.doesNotMatch(describeMailError(e), /someone@example\.test/)
+      return true
+    })
+    const slow = ses(async () => { throw Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' }) })
+    await assert.rejects(slow.sendMail({ from: 'noreply@example.test', to: 'a@example.test', subject: 's', text: 't' }), (e) => mailErrorReason(e) === 'timeout')
+  })
+
+  it('settings: all three or none; the Region is checked (it becomes the host name)', () => {
+    const full = { SES_REGION: 'eu-central-2', SES_ACCESS_KEY_ID: EXAMPLE.accessKeyId, SES_SECRET_ACCESS_KEY: EXAMPLE.secretAccessKey }
+    assert.equal(sesFromEnv({}), null)
+    assert.equal(sesFromEnv({ ...full, SES_SECRET_ACCESS_KEY: '' }).reason, 'SES_SECRET_ACCESS_KEY not set')
+    assert.equal(sesFromEnv({ ...full, SES_ACCESS_KEY_ID: '' }).reason, 'SES_ACCESS_KEY_ID not set')
+    for (const bad of ['', 'eu-central-2.evil.example', 'EU-CENTRAL-2', 'eu central 2']) assert.match(sesFromEnv({ ...full, SES_REGION: bad }).reason, /SES_REGION is not an AWS Region/)
+    assert.deepEqual([sesFromEnv(full).region, sesFromEnv(full).keyHint], ['eu-central-2', '…MPLE'])
+  })
+
+  it('the mailer of the environment uses it instead of SMTP_*; a half-set account stops the startup', () => {
+    const full = { SES_REGION: 'eu-central-2', SES_ACCESS_KEY_ID: EXAMPLE.accessKeyId, SES_SECRET_ACCESS_KEY: EXAMPLE.secretAccessKey, MAIL_FROM: 'OpenVolley <noreply@example.test>' }
+    const alone = mailerFromEnv(full, { logger: silent })
+    assert.deepEqual([alone.enabled, alone.route, alone.from], [true, 'Amazon SES API eu-central-2 (key …MPLE)', 'OpenVolley <noreply@example.test>'])
+    alone.close()
+    // with the SMTP account too (the support form's): still SES for the account mails
+    const both = mailerFromEnv({ ...full, SMTP_HOST: 'smtp.example.test', SMTP_USER: 'noreply@example.test', SMTP_PASS: 'x'.repeat(12), SMTP_PORT: '587' }, { logger: silent })
+    assert.match(both.route, /^Amazon SES API eu-central-2/)
+    both.close()
+    assert.throws(() => mailerFromEnv({ ...full, SES_SECRET_ACCESS_KEY: '' }, { logger: silent }), /mail settings unusable: SES_SECRET_ACCESS_KEY not set/)
+    assert.throws(() => mailerFromEnv({ ...full, MAIL_FROM: '' }, { logger: silent }), /MAIL_FROM not set/)
+    const smtpOnly = mailerFromEnv({ SMTP_HOST: 'smtp.example.test', SMTP_USER: 'noreply@example.test', SMTP_PASS: 'x'.repeat(12), SMTP_PORT: '587' }, { logger: silent })
+    assert.equal(smtpOnly.route, 'SMTP smtp.example.test:587 as noreply@example.test')
+    smtpOnly.close()
   })
 })
 

@@ -524,7 +524,7 @@ describe('contact: the mail', () => {
     assert.match(sent[1].subject, /P1 – match running/)
   })
 
-  it('a mail the form\'s own account refused goes over the fallback; both refusing gives it back', async () => {
+  it('a mail the SMTP account refused goes over the fallback; both refusing gives it back', async () => {
     const { body, contentType } = await formBody(VALID)
     const viaFallback = []
     const warned = []
@@ -537,7 +537,7 @@ describe('contact: the mail', () => {
     assert.equal((await handleContact({ body, contentType, mailer, logger: silent })).status, 200)
     assert.equal(viaFallback.length, 1)
     assert.deepEqual([viaFallback[0].from, viaFallback[0].to], ['OpenVolley <noreply@example.test>', 'support@example.test'])
-    assert.match(warned[0], /own SMTP account did not take the mail/)
+    assert.match(warned[0], /SMTP account did not take the support mail .*550 daily quota reached/)
     fallbackDown = true
     for (let i = 0; i < 3; i++) assert.equal((await handleContact({ body, contentType, mailer, logger: silent })).status, 502)
     fallbackDown = false
@@ -777,25 +777,19 @@ describe('contact: settings', () => {
     b.close()
   })
 
-  it('CONTACT_SMTP_HOST: an SMTP account of its own, never mixed with SMTP_*', () => {
-    const own = { CONTACT_SMTP_HOST: 'smtp.mailbox.test', CONTACT_SMTP_USER: 'support-out@example.test', CONTACT_SMTP_PASS: `sink-${randomBytes(12).toString('hex')}`, CONTACT_SMTP_PORT: '587' }
-    // the default From names the account in use: the form's own, not the account mails'
-    const a = contactMailerFromEnv({ ...smtp, ...own })
-    assert.equal(a.enabled, true)
-    assert.equal(a.from, 'OpenVolley <support-out@example.test>')
-    assert.equal(a.host, 'smtp.mailbox.test')
-    assert.equal(a.fallbackHost, 'smtp.example.test', 'a mail the own account refuses goes over SMTP_*')
+  it('with an Amazon SES account for the account mails, a support mail the SMTP account refuses goes through it', () => {
+    // AWS's documented example key: not a credential
+    const ses = { SES_REGION: 'eu-central-2', SES_ACCESS_KEY_ID: 'AKIDEXAMPLE', SES_SECRET_ACCESS_KEY: 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLE' + 'KEY' }
+    const a = contactMailerFromEnv({ ...smtp, ...ses })
+    assert.deepEqual([a.enabled, a.host, a.fallbackHost], [true, 'smtp.example.test', 'Amazon SES eu-central-2'])
     a.close()
-    const alone = contactMailerFromEnv(own)
-    assert.deepEqual([alone.enabled, alone.fallbackHost], [true, null], 'no SMTP_*: no fallback')
-    alone.close()
-    const shared = contactMailerFromEnv(smtp)
-    assert.deepEqual([shared.host, shared.fallbackHost], ['smtp.example.test', null])
-    shared.close()
-    // a half-set account is off: it never borrows SMTP_USER or SMTP_PASS for another host
-    assert.equal(contactMailerFromEnv({ ...smtp, ...own, CONTACT_SMTP_PASS: '' }).reason, 'CONTACT_SMTP_PASS not set')
-    assert.equal(contactMailerFromEnv({ ...smtp, ...own, CONTACT_SMTP_USER: '' }).reason, 'CONTACT_SMTP_USER not set')
-    assert.equal(contactMailerFromEnv({ ...smtp, ...own, CONTACT_SMTP_PORT: 'x' }).reason, 'CONTACT_SMTP_PORT is not a port number')
+    const plain = contactMailerFromEnv(smtp)
+    assert.deepEqual([plain.host, plain.fallbackHost], ['smtp.example.test', null], 'no SES account: no fallback, as before')
+    plain.close()
+    // a half-set SES account gives no fallback here (lib/mailer.js stops the startup for it)
+    const half = contactMailerFromEnv({ ...smtp, ...ses, SES_SECRET_ACCESS_KEY: '' })
+    assert.deepEqual([half.enabled, half.fallbackHost], [true, null])
+    half.close()
   })
 })
 

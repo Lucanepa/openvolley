@@ -90,7 +90,7 @@
  */
 
 import nodemailer from 'nodemailer'
-import { transportOptions, maskEmail, describeMailError, DEFAULT_FROM_NAME } from './mailer.js'
+import { transportOptions, maskEmail, describeMailError, sesFromEnv, DEFAULT_FROM_NAME } from './mailer.js'
 import { EMAIL_RE } from './emailAddress.js'
 
 export const DEFAULT_CONTACT_EMAIL = 'support@openvolley.app'
@@ -720,7 +720,7 @@ export function createContactMailer({ transport, fallback = null, from, to, maxP
           await transport.sendMail(message)
         } catch (err) {
           if (!fallback) throw err
-          logger.warn(`[Contact] the form's own SMTP account did not take the mail (${describeMailError(err)}): sending it over the account mails' SMTP`)
+          logger.warn(`[Contact] the SMTP account did not take the support mail (${describeMailError(err)}): sending it through the account mails' Amazon SES account`)
           await fallback.sendMail(message)
         }
       } catch (err) {
@@ -734,47 +734,37 @@ export function createContactMailer({ transport, fallback = null, from, to, maxP
   }
 }
 
-/** The account mails' SMTP as a transport (the support form's fallback), or null when SMTP_* is not complete. */
-function sharedTransport(env, tls) {
-  const host = (env.SMTP_HOST || '').trim()
-  const user = (env.SMTP_USER || '').trim()
-  const pass = env.SMTP_PASS || ''
-  const port = Number((env.SMTP_PORT || '').trim() || '465')
-  if (!host || !user || !pass || !Number.isInteger(port) || port < 1 || port > 65535) return null
-  return nodemailer.createTransport({ ...transportOptions({ host, port, user, pass, tls }), pool: false })
-}
-
 /**
- * The support mailer of the environment: the SMTP account of the account
- * mails (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS; From MAIL_FROM, with
- * the same default as lib/mailer.js), To CONTACT_EMAIL. With
- * CONTACT_SMTP_HOST set it uses an SMTP account of its own instead (all four
- * CONTACT_SMTP_*, never mixed with SMTP_*), so the support mails can stay
- * with the mailbox's provider while the account mails go through another;
- * a mail that account refuses then goes over SMTP_* (fallbackHost).
- * A disabled one, with the reason, when that is not configured. Never throws,
- * never logs the password. One connection per mail (no pool): the form sends
- * rarely.
+ * The support mailer of the environment: the SMTP account (SMTP_HOST,
+ * SMTP_PORT, SMTP_USER, SMTP_PASS; From MAIL_FROM, with the same default as
+ * lib/mailer.js), To CONTACT_EMAIL. With an Amazon SES account set
+ * (lib/mailer.js sesFromEnv) the account mails leave through that, and this
+ * SMTP account is the support form's alone; a mail it refuses then goes
+ * through SES (fallbackHost). A disabled one, with the reason, when the SMTP
+ * account is not configured. Never throws, never logs the password. One
+ * connection per mail (no pool): the form sends rarely.
  */
 export function contactMailerFromEnv(env = process.env, { tls, maxPerHour } = {}) {
-  const p = (env.CONTACT_SMTP_HOST || '').trim() ? 'CONTACT_SMTP_' : 'SMTP_'
-  const host = (env[`${p}HOST`] || '').trim()
-  const pass = env[`${p}PASS`] || ''
-  if (!host || !pass) return disabledContactMailer(!host ? `${p}HOST not set` : `${p}PASS not set`)
-  const user = (env[`${p}USER`] || '').trim()
-  if (!user) return disabledContactMailer(`${p}USER not set`)
-  const portText = (env[`${p}PORT`] || '').trim() || '465'
+  const host = (env.SMTP_HOST || '').trim()
+  const pass = env.SMTP_PASS || ''
+  if (!host || !pass) return disabledContactMailer(!host ? 'SMTP_HOST not set' : 'SMTP_PASS not set')
+  const user = (env.SMTP_USER || '').trim()
+  if (!user) return disabledContactMailer('SMTP_USER not set')
+  const portText = (env.SMTP_PORT || '').trim() || '465'
   const port = Number(portText)
-  if (!/^\d+$/.test(portText) || port < 1 || port > 65535) return disabledContactMailer(`${p}PORT is not a port number`)
+  if (!/^\d+$/.test(portText) || port < 1 || port > 65535) return disabledContactMailer('SMTP_PORT is not a port number')
   const from = (env.MAIL_FROM || '').trim() || (user.includes('@') ? `${DEFAULT_FROM_NAME} <${user}>` : '')
-  if (!from) return disabledContactMailer(`MAIL_FROM not set (and ${p}USER is not an address)`)
+  if (!from) return disabledContactMailer('MAIL_FROM not set (and SMTP_USER is not an address)')
   const to = (env.CONTACT_EMAIL || '').trim() || DEFAULT_CONTACT_EMAIL
   if (!isContactEmail(to)) return disabledContactMailer('CONTACT_EMAIL is not one address')
   try {
     const transport = nodemailer.createTransport({ ...transportOptions({ host, port, user, pass, tls }), pool: false })
-    const fallback = p === 'CONTACT_SMTP_' ? sharedTransport(env, tls) : null
-    // host, fallbackHost: for the startup line only (which SMTP accounts the form uses)
-    return Object.assign(createContactMailer({ transport, fallback, from, to, maxPerHour }), { host, fallbackHost: fallback ? (env.SMTP_HOST || '').trim() : null })
+    // A support mail the SMTP account refuses (its provider's daily quota, an
+    // outage) goes through the account mails' Amazon SES account, when one is set
+    const ses = sesFromEnv(env)
+    const fallback = ses?.transport ?? null
+    // host, fallbackHost: for the startup line only
+    return Object.assign(createContactMailer({ transport, fallback, from, to, maxPerHour }), { host, fallbackHost: fallback ? `Amazon SES ${ses.region}` : null })
   } catch (err) {
     return disabledContactMailer(err.message)
   }
