@@ -769,7 +769,10 @@
       "penalty": "Penalità",
       "expulsion": "Espulsione",
       "disqualification": "Squalifica",
-      "wholeTeam": "La squadra"
+      "wholeTeam": "La squadra",
+      "improperRequestShort": "Richiesta impropria",
+      "delayWarningShort": "Avvertimento per ritardo",
+      "delayPenaltyShort": "Penalità per ritardo"
     },
     "playerMenu": {
       "liberoOut": "Libero esce",

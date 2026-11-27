@@ -922,8 +922,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         <div className="text-xs font-medium text-stone-500">
           {getSignatureLabel(role)}
         </div>
-          /* Unsigned: the kit's dashed "tap to sign" well. Signed: emerald done
-             state with the signature image. */
+          {/* Unsigned: the kit's dashed "tap to sign" well. Signed: emerald done
+             state with the signature image. */}
           <div
             onClick={() => !disabled && !isSigned && !signaturesLocked && setOpenSignature(role)}
             className={isSigned

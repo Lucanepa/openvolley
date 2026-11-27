@@ -338,7 +338,7 @@ const cleanVar = (v) => (typeof v === 'boolean'
 const SIGNUP_KINDS = Object.freeze({
   en: { scorer: 'Scorer', referee: 'Referee', team_manager: 'Team manager / coach', club_manager: 'Club manager', asks: 'Asks for:', none: 'It asks for no role yet: give it one, or delete the account, under Accounts.' },
   de: { scorer: 'Schreiber', referee: 'Schiedsrichter', team_manager: 'Teamverantwortliche/r / Trainer', club_manager: 'Vereinsverantwortliche/r', asks: 'Anfrage:', none: 'Das Konto fragt noch nach keiner Rolle: gib ihm unter Konten eine, oder lösche es.' },
-  fr: { scorer: 'Marqueur', referee: 'Arbitre', team_manager: 'Responsable d’équipe / entraîneur', club_manager: 'Responsable du club', asks: 'Demande :', none: 'Le compte ne demande encore aucun rôle : donne-lui-en un, ou supprime-le, sous Comptes.' },
+  fr: { scorer: 'Marqueur', referee: 'Arbitre', team_manager: 'Responsable d’équipe / coach', club_manager: 'Responsable du club', asks: 'Demande :', none: 'Le compte ne demande encore aucun rôle : donne-lui-en un, ou supprime-le, sous Comptes.' },
   it: { scorer: 'Segnapunti', referee: 'Arbitro', team_manager: 'Responsabile della squadra / allenatore', club_manager: 'Responsabile della società', asks: 'Richiesta:', none: 'L’account non chiede ancora nessun ruolo: dagliene uno, o eliminalo, in Account.' }
 })
 // The self-chosen name: letters, spaces, hyphens and apostrophes only (mailName, SEC-34)

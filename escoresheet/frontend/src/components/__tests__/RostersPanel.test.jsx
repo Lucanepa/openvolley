@@ -205,8 +205,11 @@ describe('rosterLive locale keys', () => {
 
 describe('oneLine', () => {
   it('puts the button labels with a soft break on one line for the tooltip', () => {
-    expect(oneLine(de.scoreboard.sanctions.delayWarning)).toBe('Verzögerungswarnung')
-    expect(oneLine(deCH.scoreboard.sanctions.delayWarning)).toBe('Verzögerigswarnig')
+    // the official term (rule 16.2.2), on two lines on the scoreboard button
+    expect(oneLine(de.scoreboard.sanctions.delayWarning)).toBe('Verwarnung wegen Verzögerung')
+    expect(oneLine(deCH.scoreboard.sanctions.delayWarning)).toBe('Verwarnung wegen Verzögerung')
+    // a hyphenated soft break joins the word again
+    expect(oneLine('Verzögerungs-\nwarnung')).toBe('Verzögerungswarnung')
     expect(oneLine('Delay warning')).toBe('Delay warning')
     expect(oneLine('a\nb')).toBe('a b')
   })

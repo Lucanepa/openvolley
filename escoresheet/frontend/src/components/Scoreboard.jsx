@@ -8,7 +8,7 @@ import { queueMatchUpdate, toCloudPlayers, toCloudBench, matchInfoFromLocal } fr
 import { matchLfpTracking } from '../domain/sheetInputs'
 import { withActivityContext, currentActivityContext, maxVoidedSeq, rememberSeedKey } from '../db/eventHistory'
 import Modal from './Modal'
-import RostersPanel from './rosters/RostersPanel'
+import RostersPanel, { oneLine } from './rosters/RostersPanel'
 import ReopenRosterModal from './rosters/ReopenRosterModal'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 import { useActionLiveQuery } from '../hooks/useActionLiveQuery'
@@ -16126,7 +16126,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 style={{ marginBottom: '2.5cqw', fontSize: (isCompactMode || isShortHeight) ? 'calc(4.4cqw * var(--cqf, 1))' : 'max(12px, calc(5.6cqw * var(--cqf, 1)))' }}
               />
             )}
-            <div style={{ display: 'flex', gap: '1.25cqw', marginBottom: '2.5cqw' }}>
+            {/* Time-out and substitution boxes: the substitution box as wide as its label on one
+                line when that fits, the time-out box the rest; with a large system font the
+                substitution label breaks at its soft hyphen instead of leaving the panel */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(min-content, 1fr) minmax(min-content, max-content)', gap: '1.25cqw', marginBottom: '2.5cqw' }}>
               <div
                 data-help-id="scoreboard-timeout-left"
                 onClick={() => {
@@ -16342,8 +16345,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     disabled={rallyStatus === 'in_play'}
                     className="tap-hint tap-hint-sm"
                     style={sanctionButtonStyles.improper}
+                    title={oneLine(t('scoreboard.sanctions.improperRequest'))}
+                    aria-label={oneLine(t('scoreboard.sanctions.improperRequest'))}
                   >
-                    {t('scoreboard.sanctions.improperRequest')}
+                    {t('scoreboard.sanctions.improperRequestShort')}
                   </button>
                 )}
                 {!data?.match?.sanctions?.[leftIsHome ? 'delayWarningHome' : 'delayWarningAway'] ? (
@@ -16352,8 +16357,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     disabled={rallyStatus === 'in_play'}
                     className="tap-hint tap-hint-sm"
                     style={sanctionButtonStyles.delayWarning}
+                    title={oneLine(t('scoreboard.sanctions.delayWarning'))}
+                    aria-label={oneLine(t('scoreboard.sanctions.delayWarning'))}
                   >
-                    {t('scoreboard.sanctions.delayWarning')}
+                    {t('scoreboard.sanctions.delayWarningShort')}
                   </button>
                 ) : (
                   <button
@@ -16361,8 +16368,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     disabled={rallyStatus === 'in_play'}
                     className="tap-hint tap-hint-sm"
                     style={sanctionButtonStyles.delayPenalty}
+                    title={oneLine(t('scoreboard.sanctions.delayPenalty'))}
+                    aria-label={oneLine(t('scoreboard.sanctions.delayPenalty'))}
                   >
-                    {t('scoreboard.sanctions.delayPenalty')}
+                    {t('scoreboard.sanctions.delayPenaltyShort')}
                   </button>
                 )}
               </div>
@@ -19623,7 +19632,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 style={{ marginBottom: '2.5cqw', fontSize: (isCompactMode || isShortHeight) ? 'calc(4.4cqw * var(--cqf, 1))' : 'max(12px, calc(5.6cqw * var(--cqf, 1)))' }}
               />
             )}
-            <div style={{ display: 'flex', gap: '1.25cqw', marginBottom: (isCompactMode || isShortHeight) ? '1.25cqw' : '2.5cqw' }}>
+            {/* Time-out and substitution boxes: the substitution box as wide as its label on one
+                line when that fits, the time-out box the rest; with a large system font the
+                substitution label breaks at its soft hyphen instead of leaving the panel */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(min-content, 1fr) minmax(min-content, max-content)', gap: '1.25cqw', marginBottom: (isCompactMode || isShortHeight) ? '1.25cqw' : '2.5cqw' }}>
               <div
                 data-help-id="scoreboard-timeout-right"
                 onClick={() => {
@@ -19839,8 +19851,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     disabled={rallyStatus === 'in_play'}
                     className="tap-hint tap-hint-sm"
                     style={sanctionButtonStyles.improper}
+                    title={oneLine(t('scoreboard.sanctions.improperRequest'))}
+                    aria-label={oneLine(t('scoreboard.sanctions.improperRequest'))}
                   >
-                    {t('scoreboard.sanctions.improperRequest')}
+                    {t('scoreboard.sanctions.improperRequestShort')}
                   </button>
                 )}
                 {!data?.match?.sanctions?.[leftIsHome ? 'delayWarningAway' : 'delayWarningHome'] ? (
@@ -19849,8 +19863,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     disabled={rallyStatus === 'in_play'}
                     className="tap-hint tap-hint-sm"
                     style={sanctionButtonStyles.delayWarning}
+                    title={oneLine(t('scoreboard.sanctions.delayWarning'))}
+                    aria-label={oneLine(t('scoreboard.sanctions.delayWarning'))}
                   >
-                    {t('scoreboard.sanctions.delayWarning')}
+                    {t('scoreboard.sanctions.delayWarningShort')}
                   </button>
                 ) : (
                   <button
@@ -19858,8 +19874,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     disabled={rallyStatus === 'in_play'}
                     className="tap-hint tap-hint-sm"
                     style={sanctionButtonStyles.delayPenalty}
+                    title={oneLine(t('scoreboard.sanctions.delayPenalty'))}
+                    aria-label={oneLine(t('scoreboard.sanctions.delayPenalty'))}
                   >
-                    {t('scoreboard.sanctions.delayPenalty')}
+                    {t('scoreboard.sanctions.delayPenaltyShort')}
                   </button>
                 )}
               </div>
