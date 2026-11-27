@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.33 · Stand: 27. November 2026
+**OpenVolley und OpenBeach** · Version 1.33 · Stand: 28. November 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
 Massgebend ist die englische Fassung.

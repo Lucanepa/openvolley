@@ -1,6 +1,6 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.33 · As of 27 November 2026
+**OpenVolley and OpenBeach** · Version 1.33 · As of 28 November 2026
 
 This policy is available in German, English, French and Italian. The English
 version is binding.
