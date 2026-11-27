@@ -4,6 +4,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import { Banner, Button } from '../../ui'
 import { cn } from '../../ui/cn.js'
 import { OFFICIAL_KEYS } from '../../domain/importedRoster'
+import { appVersionWithBuild } from '../../utils/identity'
 
 /**
  * The rows a photo gave, every field editable before anything is applied:
@@ -119,7 +120,7 @@ const numberOf = (text) => {
   return digits ? Number(digits) : null
 }
 
-export default function RosterConfirmStep ({ roster, issues, onChange }) {
+export default function RosterConfirmStep ({ roster, issues, onChange, readMs = null }) {
   const { t } = useTranslation()
   const players = roster.players || []
   const setPlayer = (i, patch) => onChange({ ...roster, players: players.map((p, k) => (k === i ? { ...p, ...patch } : p)) })
@@ -140,7 +141,7 @@ export default function RosterConfirmStep ({ roster, issues, onChange }) {
   return (
     <div className="@container space-y-3" data-sensitive="">
       <p className="m-0 text-xs text-stone-500" data-testid="roster-photo-method">
-        {[t('rosterPhoto.confirm.method'), fromSaved ? t('rosterPhoto.confirm.fromSaved', { count: fromSaved }) : null].filter(Boolean).join(' · ')}
+        {[readMs != null ? t('rosterPhoto.confirm.readIn', { seconds: (readMs / 1000).toFixed(1), build: appVersionWithBuild() }) : null, fromSaved ? t('rosterPhoto.confirm.fromSaved', { count: fromSaved }) : null].filter(Boolean).join(' · ')}
       </p>
       {roster.struck?.length > 0 && (
         // rows struck out on the list: not playing, never applied (named so the scorer knows)

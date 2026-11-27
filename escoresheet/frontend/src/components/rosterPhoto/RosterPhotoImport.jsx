@@ -19,6 +19,18 @@ import RosterConfirmStep from './RosterConfirmStep'
  *
  * Steps: source → (loading) → crop → reading → confirm, or error.
  */
+/**
+ * "12 s elapsed · about 8 s left": the time left is estimated from the bar (elapsed
+ * time × what is left ÷ what is done), once a tenth is done; before that the elapsed
+ * time alone.
+ */
+export function readingTime (elapsedMs, share, t) {
+  const elapsed = Math.floor(Math.max(0, elapsedMs) / 1000)
+  if (!(share >= 0.1) || share >= 1) return t('rosterPhoto.reading.elapsed', { elapsed })
+  const left = Math.max(1, Math.round((elapsedMs * (1 - share) / share) / 1000))
+  return t('rosterPhoto.reading.elapsedLeft', { elapsed, left })
+}
+
 // The bar's top while reading: 100 % only together with the check screen (owner 27.11:
 // "100 % = finished"); ocr.js reports at most OCR_LAST_SHARE (0.98) itself.
 const READ_CAP = 0.98
@@ -31,6 +43,11 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
   const [progress, setProgress] = useState({ share: 0, phase: 'prepare' })
   const [roster, setRoster] = useState(null)
   const [error, setError] = useState(null)
+  // how long the reading takes (owner 27.11, for testers' notes): its start, the time
+  // shown while it runs, and the total shown on the check screen
+  const readStartRef = useRef(0)
+  const [elapsedMs, setElapsedMs] = useState(0)
+  const [readMs, setReadMs] = useState(null)
   const cameraRef = useRef(null)
   const fileRef = useRef(null)
   const readingRef = useRef(null) // the AbortController of the reading under way
@@ -100,6 +117,9 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
     readingRef.current = controller
     setStep('reading')
     setProgress({ share: 0, phase: 'prepare' })
+    readStartRef.current = performance.now()
+    setElapsedMs(0)
+    setReadMs(null)
     // let the dialog show the reading step before the page's pixels keep the device busy
     await new Promise((resolve) => setTimeout(resolve, 40))
     // (the one started ahead, else one now; ended after the reading either way)
@@ -124,6 +144,9 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
       if (controller.signal.aborted) return
       setRoster(withSavedTeamNames(result, savedTeam))
       setProgress({ share: 1, phase: 'marks' })
+      const took = Math.round(performance.now() - readStartRef.current)
+      setReadMs(took)
+      console.info('[RosterPhoto] read in', took, 'ms')
       setStep('confirm')
     } catch (err) {
       if (controller.signal.aborted || err?.code === 'ocr-cancelled') return
@@ -136,6 +159,13 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
       engine?.terminate()
     }
   }
+
+  // the clock ticks while reading (4 times a second is enough for whole seconds)
+  useEffect(() => {
+    if (step !== 'reading') return undefined
+    const id = setInterval(() => setElapsedMs(performance.now() - readStartRef.current), 250)
+    return () => clearInterval(id)
+  }, [step])
 
   const issues = useMemo(() => (roster ? fieldIssues(roster) : null), [roster])
   const apply = () => {
@@ -222,7 +252,6 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
               <Button variant="primary" size="xl" icon={Camera} onClick={takePhoto} data-testid="roster-photo-take">{t('rosterPhoto.source.take')}</Button>
               <Button variant="secondary" size="xl" icon={ImageIcon} onClick={choosePicture} data-testid="roster-photo-choose">{t('rosterPhoto.source.choose')}</Button>
             </div>
-            <p className="m-0 text-xs text-stone-500">{t('rosterPhoto.source.private')}</p>
           </div>
         )}
         {step === 'loading' && <p className="m-0 text-sm text-stone-600">{t('rosterPhoto.loading')}</p>}
@@ -237,11 +266,13 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
                 : t(progress.phase === 'marks' ? 'rosterPhoto.reading.marks' : 'rosterPhoto.reading.read', { percent: Math.round(progress.share * 100) })}
             </p>
             <ProgressBar value={progress.phase === 'prepare' ? 0 : progress.share * 100} max={100} label={t('rosterPhoto.reading.prepare')} />
-            <p className="m-0 text-xs text-stone-500">{t('rosterPhoto.source.private')}</p>
+            <p className="m-0 text-xs text-stone-500 tabular-nums" data-testid="roster-photo-time">
+              {readingTime(elapsedMs, progress.phase === 'prepare' ? 0 : progress.share, t)}
+            </p>
           </div>
         )}
         {step === 'confirm' && roster && issues && (
-          <RosterConfirmStep roster={roster} issues={issues} onChange={setRoster} />
+          <RosterConfirmStep roster={roster} issues={issues} onChange={setRoster} readMs={readMs} />
         )}
         {step === 'error' && (
           <Banner tone="danger" data-testid="roster-photo-error" data-code={error}>{t(`rosterPhoto.error.${error}`, t('rosterPhoto.error.ocr-load'))}</Banner>

@@ -1,6 +1,6 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.29 · As of 24 November 2026
+**OpenVolley and OpenBeach** · Version 1.30 · As of 27 November 2026
 
 This policy is available in German, English, French and Italian. The English
 version is binding.
@@ -157,7 +157,7 @@ It also uploads:
 **Activity log (OpenVolley from version 2.4.0).** For the integrity of the
 scoresheet and for troubleshooting, the app records what happens on the
 device: points and other match events, undo and corrections (what was
-changed, when and why), sets and match status, signatures and approvals (only
+changed, when and why), sets and match status, signatures (only
 the role and that they happened), remarks (only their length), roster changes
 (only the shirt number), results of uploads to the server, app errors
 (message and place in the program), the app starting, updating and quitting,
@@ -259,18 +259,18 @@ backup, Android may also back up the app data (with rosters) to your Google
 account; Google's terms apply to that.
 
 On a shared device, sign out after the match. Signing out deletes from the
-app your sign-in token, your profile and clubs, today's games, the cached
-teams, rosters and club licence lists, and the email addresses officials
-approved with on this device; the same happens when your session expires or
+app your sign-in token, your profile and clubs, today's games and the cached
+teams, rosters and club licence lists; the same happens when your session
+expires or
 another account signs in. Without a connection, the sign-out also ends your
-session on the server as soon as the device is online again. The addresses
-officials approved with are kept for 7 days at most. Do not set up a passkey
+session on the server as soon as the device is online again. Do not set up a
+passkey
 on a shared device (tick "Shared device" when signing in).
 
 ## 6. Account and emails
 
-You need an account to sync matches, manage teams and tournaments, or approve
-match results as an official. Accounts are opened on
+You need an account to sync matches or manage teams and tournaments. Accounts
+are opened on
 `manager.openvolley.app` and `manager-beach.openvolley.app`.
 
 **Data:** email address, password (stored only as a hash, never in plain
@@ -339,9 +339,8 @@ use and with the account.
 
 **Emails:** I only send emails that belong to the account: confirming your
 email address, a link to reset your password, a notice that your password
-changed, a notice that someone keeps trying to sign in to your account
-(above), a notice that a result was approved with your approval PIN, and a
-notice that your PIN was locked. They contain no tracking pixels and no
+changed, and a notice that someone keeps trying to sign in to your account
+(above). They contain no tracking pixels and no
 remote images. A confirmation link is valid for 24 hours, a reset link for
 60 minutes.
 
@@ -367,11 +366,11 @@ people I appoint). In addition, as far as their task needs it:
   each match, in the list of scoresheets.
 
 **Deleting your account:** you can delete your account yourself in the app at
-any time. This deletes the account, profile, sessions, approval PIN, redeemed
+any time. This deletes the account, profile, sessions, redeemed
 invite codes, your uploaded backup copies and app logs, and your activity log
 entries without a match. **What remains** are official records that others
-have an interest in: scoresheets you recorded, approvals you gave (with your
-name as it appears on the scoresheet), saved teams and tournaments, entries in
+have an interest in: scoresheets you recorded, saved teams and tournaments,
+entries in
 the change log (section 14), and the activity log and event history of
 matches (section 5). Your account is unlinked from these entries. You can have what remains deleted
 under section 19, as far as the scoresheet does not need it.
@@ -444,8 +443,8 @@ livescore.
 |---|---|
 | The account that recorded or closed the match; administrators | Everything |
 | Accounts that entered the game PIN (for example a tablet that takes over the match) | Everything, until the match is closed |
-| Referee tablet with the referee PIN | Teams, both rosters with names and numbers, score, remarks (not the technical remarks). **No** dates of birth, signatures, officials or approvals |
-| Bench tablet with its team's PIN | Its own team's roster with names and numbers, the other team's shirt numbers, score. **No** remarks, dates of birth, signatures, officials or approvals |
+| Referee tablet with the referee PIN | Teams, both rosters with names and numbers, score, remarks (not the technical remarks). **No** dates of birth, signatures or officials |
+| Bench tablet with its team's PIN | Its own team's roster with names and numbers, the other team's shirt numbers, score. **No** remarks, dates of birth, signatures or officials |
 | Everyone (public) | See section 8 |
 
 Once a match is approved and closed, nobody can change it any more, not even
@@ -472,8 +471,7 @@ to:
 
 - the account that closed the match and the scorer's account that approved
   the result;
-- the referees who approved the result with their account or whose email
-  address was entered for the match;
+- the referees whose email address was entered for the match;
 - the contact address of each team's club (section 6), so the club can pass
   the scoresheet on to the coaches;
 - the contact address typed in for each team in the match setup or in "Edit
@@ -592,15 +590,6 @@ code of its own. League matches are on the livescore anyway; test and Easy
 matches are never listed. Switch the live screen off in Options to stop
 sending.
 
-**Approval with a PIN:** officials can confirm the result with a personal
-approval PIN in addition to their signature. Stored are: the PIN as a
-cryptographic hash (never in plain text), failed attempts and locks; for each
-approval the match, the role (1st or 2nd referee, scorer), your account, your
-name at the time of approval, the time, the approved result, and a
-pseudonymised hash of the IP address and of the device (to detect misuse).
-Approvals are part of the match record. You see your own approvals; the
-match's scorer and the administrators see them too.
-
 **Signing on a phone (OpenVolley from version 2.4.0):** instead of on the
 scorer's device, a person can sign on their own phone. The device shows a QR
 code with a link to my server (`backend.openvolley.app`) or, in venue mode, to
@@ -654,8 +643,8 @@ This data can also be retrieved through the server's programming interface
 the day's games of a club, with the livescore widget (also as an `<iframe>`);
 it shows the same data without names of players.
 
-**Never public:** dates of birth, licence numbers, signatures, approvals,
-email addresses and PINs. Rosters with names are only visible to whoever
+**Never public:** dates of birth, licence numbers, signatures, email addresses
+and PINs. Rosters with names are only visible to whoever
 knows the match's PIN or, for a Global match saved in the cloud, its share link
 or tournament code (section 7).
 
@@ -921,8 +910,8 @@ look up earlier answers; earlier on request.
 - **IP addresses in memory only:** to protect against misuse the server
   limits requests and connections per IP address, and the live relay uses it
   to recognise devices at the same venue. It keeps IP addresses in memory
-  only and neither stores nor logs them (except as a pseudonymised hash of an
-  approval, section 7, and the keyed hashes of the networks an account was
+  only and neither stores nor logs them (except as the keyed hashes of the
+  networks an account was
   used from, section 6).
 - **Change log:** for accountability the server records who changed roles,
   approved, closed or reopened matches, added co-editors or changed
@@ -989,8 +978,7 @@ copy of these safeguards.
 | Failed sign-ins of an email address (a count, under a hash of the address) | 24 hours; deleted earlier with a new password or the account |
 | Networks an account was used from (keyed hashes, at most 20) | 60 days after the last use from there; deleted with the account |
 | Links in emails | Valid 60 minutes or 24 hours, deleted 7 days later |
-| Approval PIN | Until you remove it or delete your account |
-| Scoresheets, match events, event history, signatures, approvals, remarks (health data included), scoresheet files | As the official match record: the season of the match and the 2 seasons after it (a season runs from 1 July to 30 June), then deleted by a daily sweep; for example the records of the season 2024/25 go on 1 July 2027. Earlier on request where the record does not need the data (section 19) |
+| Scoresheets, match events, event history, signatures, remarks (health data included), scoresheet files | As the official match record: the season of the match and the 2 seasons after it (a season runs from 1 July to 30 June), then deleted by a daily sweep; for example the records of the season 2024/25 go on 1 July 2027. Earlier on request where the record does not need the data (section 19) |
 | Saved teams, beach tournaments | Until a manager deletes them, or on request |
 | Referee directory | Until an administrator deletes the entry; deleted on request |
 | Match assignments from Swiss Volley | Like the match records: the season of the game and the 2 seasons after it |
@@ -1123,7 +1111,7 @@ Where the GDPR applies, I rely on:
 - **Legitimate interests** (Art. 6(1)(f) GDPR): correct and verifiable
   official match records for clubs, the association and officials (rosters,
   licence numbers and, where the scorer types one on the sheet, the date of
-  birth to check eligibility, signatures, approvals, activity log and event
+  birth to check eligibility, signatures, activity log and event
   history, remarks), saved teams and club lists filled from official match
   rosters, delivering the final scoresheet to officials and clubs,
   livescore for the public, running tournaments,

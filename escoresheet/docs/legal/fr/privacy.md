@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.29 · État au 24 novembre 2026
+**OpenVolley et OpenBeach** · Version 1.30 · État au 27 novembre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version anglaise fait foi.
@@ -179,7 +179,7 @@ sur le réseau local.
 traçabilité de la feuille de match et pour le dépannage, l'application
 consigne ce qui se passe sur l'appareil : points et autres événements du
 match, annulations et corrections (ce qui a été modifié, quand et pourquoi),
-sets et statut du match, signatures et validations (seulement la fonction et
+sets et statut du match, signatures (seulement la fonction et
 le fait qu'elles ont eu lieu), remarques (seulement leur longueur),
 modifications des listes d'équipe (seulement le numéro de maillot), résultats
 des envois au serveur, erreurs de l'application (message et endroit dans le
@@ -303,19 +303,18 @@ s'appliquent.
 
 Sur un appareil partagé, déconnecte-toi après le match. La déconnexion
 efface de l'application ton jeton de connexion, ton profil et tes clubs,
-les matchs du jour, les équipes, listes et listes de licences des clubs mises en
-cache, ainsi que les adresses e-mail avec lesquelles des officiels ont
-confirmé sur cet appareil ; de même lorsque ta session expire ou qu'un
+les matchs du jour ainsi que les équipes, listes et listes de licences des
+clubs mises en cache ; de même lorsque ta session expire ou qu'un
 autre compte se connecte. Sans connexion, la déconnexion met aussi fin à
-ta session sur le serveur dès que l'appareil est de nouveau en ligne. Les
-adresses des officiels sont conservées 7 jours au plus. Ne configure pas de
+ta session sur le serveur dès que l'appareil est de nouveau en ligne. Ne
+configure pas de
 clé d'accès sur un appareil partagé (coche "Appareil partagé" à la
 connexion).
 
 ## 6. Compte et e-mails
 
-Il te faut un compte pour synchroniser des matchs, gérer des équipes et des
-tournois ou valider des résultats en tant qu'officiel. Les comptes s'ouvrent
+Il te faut un compte pour synchroniser des matchs ou gérer des équipes et des
+tournois. Les comptes s'ouvrent
 sur `manager.openvolley.app` et `manager-beach.openvolley.app`.
 
 **Données :** adresse e-mail, mot de passe (enregistré uniquement sous forme
@@ -394,9 +393,8 @@ un réseau 60 jours après sa dernière utilisation et avec le compte.
 
 **E-mails :** je n'envoie que des e-mails liés au compte : confirmation de
 l'adresse e-mail, lien de réinitialisation du mot de passe, avis de
-changement du mot de passe, avis que quelqu'un essaie sans cesse de se
-connecter à ton compte (ci-dessus), avis qu'un résultat a été validé avec ton
-NIP de validation et avis que ton NIP a été bloqué. Ils ne contiennent ni pixel
+changement du mot de passe et avis que quelqu'un essaie sans cesse de se
+connecter à ton compte (ci-dessus). Ils ne contiennent ni pixel
 de suivi ni image chargée à distance. Un lien de confirmation est valable
 24 heures, un lien de réinitialisation 60 minutes.
 
@@ -426,12 +424,11 @@ où leur tâche l'exige :
 
 **Supprimer ton compte :** tu peux supprimer ton compte toi-même dans
 l'application à tout moment. Sont alors effacés le compte, le profil, les
-sessions, le NIP de validation, les codes d'invitation utilisés, tes copies
+sessions, les codes d'invitation utilisés, tes copies
 de sauvegarde et journaux téléversés ainsi que tes entrées du journal
 d'activité sans match. **Subsistent** les documents officiels auxquels
-d'autres ont un intérêt : les feuilles de match que tu as saisies, les
-validations que tu as données (avec ton nom tel qu'il figure sur la
-feuille de match), les équipes et tournois enregistrés, les entrées du
+d'autres ont un intérêt : les feuilles de match que tu as saisies, les équipes
+et tournois enregistrés, les entrées du
 journal des modifications (section 14) ainsi que le journal d'activité et
 l'historique des événements des matchs (section 5). Ton compte est
 dissocié de ces entrées. Tu peux faire effacer ce qui subsiste selon la
@@ -512,8 +509,8 @@ qualification (numéro de licence), livescore.
 |---|---|
 | Le compte qui a saisi ou clôturé le match ; les administrateurs | Tout |
 | Les comptes qui ont saisi le NIP du match (par exemple une tablette qui reprend le match) | Tout, jusqu'à la clôture du match |
-| Tablette d'arbitre avec le NIP d'arbitre | Équipes, les deux listes d'équipe avec noms et numéros, score, remarques (sans les remarques techniques). **Pas** de dates de naissance, signatures, officiels ni validations |
-| Tablette de banc avec le NIP de son équipe | La liste de sa propre équipe avec noms et numéros, les numéros de maillot de l'autre équipe, score. **Pas** de remarques, dates de naissance, signatures, officiels ni validations |
+| Tablette d'arbitre avec le NIP d'arbitre | Équipes, les deux listes d'équipe avec noms et numéros, score, remarques (sans les remarques techniques). **Pas** de dates de naissance, signatures ni officiels |
+| Tablette de banc avec le NIP de son équipe | La liste de sa propre équipe avec noms et numéros, les numéros de maillot de l'autre équipe, score. **Pas** de remarques, dates de naissance, signatures ni officiels |
 | Tout le monde (public) | Voir section 8 |
 
 Une fois un match validé et clôturé, personne ne peut plus le modifier, pas
@@ -543,7 +540,7 @@ feuille de match d'un match officiel en salle clôturé, en PDF, à :
 
 - le compte qui a clôturé le match et le compte du marqueur qui a validé le
   résultat ;
-- les arbitres qui ont validé le résultat avec leur compte ou dont l'adresse
+- les arbitres dont l'adresse
   e-mail a été saisie pour le match ;
 - l'adresse de contact du club de chaque équipe (section 6), afin que le club
   puisse transmettre la feuille aux entraîneurs ;
@@ -683,16 +680,6 @@ n'affiche que ses résumés listés, aussi sur les TV ; un match qui ne doit pas
 toute façon dans le livescore ; les matchs de test et simples n'y sont jamais
 listés. Désactive l'écran en direct dans les Options pour arrêter l'envoi.
 
-**Validation avec NIP :** les officiels peuvent confirmer le résultat, en plus
-de leur signature, avec un NIP de validation personnel. Sont enregistrés : le
-NIP sous forme de hachage cryptographique (jamais en clair), les tentatives
-échouées et blocages ; pour chaque validation, le match, la fonction (1er ou
-2e arbitre, marqueur), ton compte, ton nom au moment de la validation,
-l'heure, le résultat validé ainsi qu'un hachage pseudonymisé de l'adresse IP
-et de l'appareil (pour détecter les abus). Les validations font partie du
-procès-verbal du match. Tu vois tes propres validations ; le marqueur du
-match et les administrateurs les voient aussi.
-
 **Signer sur un téléphone (OpenVolley à partir de la version 2.4.0) :** au
 lieu de signer sur l'appareil du marqueur, une personne peut signer sur son
 propre téléphone. L'appareil affiche pour cela un code QR avec un lien vers
@@ -755,7 +742,7 @@ en `<iframe>`) ; il montre les mêmes données, sans noms de joueuses et de
 joueurs.
 
 **Jamais publics :** dates de naissance, numéros de licence, signatures,
-validations, adresses e-mail et NIP. Les listes d'équipe avec les noms ne
+adresses e-mail et NIP. Les listes d'équipe avec les noms ne
 sont visibles que pour qui connaît le NIP du match ou, pour un match Global
 enregistré dans le cloud, son lien de partage ou son code du tournoi
 (section 7).
@@ -1048,8 +1035,8 @@ précédentes ; plus tôt sur demande.
   serveur limite les requêtes et les connexions par adresse IP, et le relais
   en direct s'en sert pour reconnaître les appareils d'une même salle. Il ne
   garde les adresses IP qu'en mémoire vive et ne les enregistre ni ne les
-  journalise (sauf sous forme de hachage pseudonymisé d'une validation,
-  section 7, et de hachages à clé des réseaux depuis lesquels un compte a été
+  journalise (sauf sous forme de hachages à clé des réseaux depuis lesquels un
+  compte a été
   utilisé, section 6).
 - **Journal des modifications :** pour la traçabilité, le serveur consigne qui
   a modifié des rôles, validé, clôturé ou rouvert des matchs, ajouté des
@@ -1121,8 +1108,7 @@ prestataires. Tu peux me demander une copie de ces garanties.
 | Tentatives de connexion échouées d'une adresse e-mail (un nombre, sous un hachage de l'adresse) | 24 heures ; supprimées plus tôt avec un nouveau mot de passe ou le compte |
 | Réseaux depuis lesquels un compte a été utilisé (hachages à clé, 20 au plus) | 60 jours après la dernière utilisation depuis là ; supprimés avec le compte |
 | Liens dans les e-mails | Valables 60 minutes ou 24 heures, effacés 7 jours plus tard |
-| NIP de validation | Jusqu'à ce que tu le supprimes ou supprimes ton compte |
-| Feuilles de match, événements, historique des événements, signatures, validations, remarques (données de santé comprises), fichiers des feuilles de match | Comme procès-verbal officiel : la saison du match et les 2 saisons suivantes (une saison va du 1er juillet au 30 juin), puis effacés par un passage quotidien ; par exemple, les procès-verbaux de la saison 2024/25 partent le 1er juillet 2027. Plus tôt sur demande dans la mesure où le procès-verbal n'a pas besoin des données (section 19) |
+| Feuilles de match, événements, historique des événements, signatures, remarques (données de santé comprises), fichiers des feuilles de match | Comme procès-verbal officiel : la saison du match et les 2 saisons suivantes (une saison va du 1er juillet au 30 juin), puis effacés par un passage quotidien ; par exemple, les procès-verbaux de la saison 2024/25 partent le 1er juillet 2027. Plus tôt sur demande dans la mesure où le procès-verbal n'a pas besoin des données (section 19) |
 | Équipes enregistrées, tournois de beach-volley | Jusqu'à ce qu'un gestionnaire les supprime, ou sur demande |
 | Répertoire des arbitres | Jusqu'à ce qu'un administrateur supprime l'entrée ; effacement sur demande |
 | Convocations de Swiss Volley | Comme les procès-verbaux de match : la saison du match et les 2 saisons suivantes |
@@ -1277,7 +1263,7 @@ Lorsque le RGPD s'applique, je me fonde sur :
   de match officiels corrects et vérifiables pour les clubs, la fédération et
   les officiels (listes d'équipe, numéros de licence et, là où le marqueur en
   tape une sur la feuille, la date de naissance pour le contrôle de la
-  qualification, signatures, validations, journal d'activité, historique
+  qualification, signatures, journal d'activité, historique
   des événements et remarques), les équipes enregistrées et les listes des
   clubs complétées à partir des listes des matchs officiels, l'envoi de la
   feuille de match finale aux officiels et aux clubs, le livescore pour le public, l'organisation de tournois, le
