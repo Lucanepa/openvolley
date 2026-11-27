@@ -74,8 +74,8 @@ export default function PreMatchSignDialog({ data, team, teamTitle, matchId, onC
         homeCoach: coachOf(match.bench_home),
         awayCoach: coachOf(match.bench_away),
         lang: i18n.language,
-        fallbackHome: t('common.home'),
-        fallbackAway: t('common.away')
+        fallbackHome: t('common.homeTeam'),
+        fallbackAway: t('common.awayTeam')
       })
     }
   }

@@ -131,7 +131,7 @@ const globalMatch = (extra = {}) => {
 
 const openInfo = async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'common.edit' }))
-  await screen.findAllByLabelText('common.home matchSetup.teamName')
+  await screen.findAllByLabelText('common.homeTeam matchSetup.teamName')
 }
 
 describe('Match setup: 10-minute interval after set 2', () => {

@@ -3,7 +3,7 @@
     "showPassword": "Passwort anzeigen",
     "hidePassword": "Passwort verbergen",
     "back": "Zurück",
-    "home": "Heim",
+    "home": "Startseite",
     "away": "Gast",
     "close": "Schliessen",
     "dismissNotification": "Meldung schliessen",
@@ -47,7 +47,9 @@
     "invalid": "ungültig",
     "later": "Später",
     "remove": "Entfernen",
-    "saving": "Speichern..."
+    "saving": "Speichern...",
+    "homeTeam": "Heim",
+    "awayTeam": "Gast"
   },
   "alert": {
     "error": "Fehler",

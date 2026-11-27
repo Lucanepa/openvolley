@@ -1700,11 +1700,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 ...sheetInputsToMatchInfo(match)
               },
               home_team: {
-                name: homeTeam?.name || home || t('common.home'),
+                name: homeTeam?.name || home || t('common.homeTeam'),
                 color: homeTeam?.color || homeColor
               },
               away_team: {
-                name: awayTeam?.name || away || t('common.away'),
+                name: awayTeam?.name || away || t('common.awayTeam'),
                 color: awayTeam?.color || awayColor
               },
               bench_home: match.bench_home || benchHome || [],
@@ -2915,8 +2915,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
         homeCoach: coachOf(benchHome),
         awayCoach: coachOf(benchAway),
         lang: i18n.language,
-        fallbackHome: t('common.home'),
-        fallbackAway: t('common.away')
+        fallbackHome: t('common.homeTeam'),
+        fallbackAway: t('common.awayTeam')
       })
     }
   }
@@ -2940,7 +2940,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
   }
   const sideRoster = (side) => (side === 'home' ? homeRoster : awayRoster)
   const sideBench = (side) => (side === 'home' ? benchHome : benchAway)
-  const sideTeamName = (side) => (side === 'home' ? home : away) || t(side === 'home' ? 'common.home' : 'common.away')
+  const sideTeamName = (side) => (side === 'home' ? home : away) || t(side === 'home' ? 'common.homeTeam' : 'common.awayTeam')
   const forgetSideSignatures = (side) => {
     for (const role of ['coach', 'captain']) delete signedForRef.current[PRE_MATCH_SIGNATURE_FIELD[`${side}-${role}`]]
     pendingSentRef.current[side] = null
@@ -4788,7 +4788,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                   <Field tone="form" className={cn(FIELD, 'flex-1 stack:basis-auto')} label={t('matchSetup.teamName')}>
                     <Input
                       size="lg"
-                      aria-label={`${t('common.home')} ${t('matchSetup.teamName')}`}
+                      aria-label={`${t('common.homeTeam')} ${t('matchSetup.teamName')}`}
                       type="text"
                       value={home}
                       onChange={e => setHome(e.target.value)}
@@ -4799,14 +4799,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 </div>
                 {/* the team's contact: gets the final scoresheet by email, as a typed referee address (domain/officials team contact) */}
                 <Field tone="compact" className={cn(FIELD, 'mt-3')} label={t('matchSetup.teamContactEmail', 'Team contact email (optional)')} hint={t('matchSetup.teamContactEmailHint', 'Gets the final scoresheet by email. Only this match\'s scorers see it.')}>
-                  <Input aria-label={`${t('common.home')} ${t('matchSetup.teamContactEmail', 'Team contact email (optional)')}`} type="email" inputMode="email" autoComplete="off" value={homeContactEmail} onChange={e => setHomeContactEmail(e.target.value)} maxLength={254} />
+                  <Input aria-label={`${t('common.homeTeam')} ${t('matchSetup.teamContactEmail', 'Team contact email (optional)')}`} type="email" inputMode="email" autoComplete="off" value={homeContactEmail} onChange={e => setHomeContactEmail(e.target.value)} maxLength={254} />
                 </Field>
                 {/* Sponsors on clothing (domain/sponsors.js): while the option is on, or the match is marked */}
                 {showSponsors && (
                   <Checkbox
                     className="mt-3"
                     data-testid="sponsors-home"
-                    aria-label={`${t('common.home')} ${t('options.sponsorsOnClothing')}`}
+                    aria-label={`${t('common.homeTeam')} ${t('options.sponsorsOnClothing')}`}
                     label={t('options.sponsorsOnClothing')}
                     hint={t('options.sponsorsOnClothingInfo')}
                     checked={homeSponsors}
@@ -4862,7 +4862,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                   <Field tone="form" className={cn(FIELD, 'flex-1 stack:basis-auto')} label={t('matchSetup.teamName')}>
                     <Input
                       size="lg"
-                      aria-label={`${t('common.away')} ${t('matchSetup.teamName')}`}
+                      aria-label={`${t('common.awayTeam')} ${t('matchSetup.teamName')}`}
                       type="text"
                       value={away}
                       onChange={e => setAway(e.target.value)}
@@ -4873,14 +4873,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 </div>
                 {/* the team's contact: gets the final scoresheet by email, as a typed referee address (domain/officials team contact) */}
                 <Field tone="compact" className={cn(FIELD, 'mt-3')} label={t('matchSetup.teamContactEmail', 'Team contact email (optional)')} hint={t('matchSetup.teamContactEmailHint', 'Gets the final scoresheet by email. Only this match\'s scorers see it.')}>
-                  <Input aria-label={`${t('common.away')} ${t('matchSetup.teamContactEmail', 'Team contact email (optional)')}`} type="email" inputMode="email" autoComplete="off" value={awayContactEmail} onChange={e => setAwayContactEmail(e.target.value)} maxLength={254} />
+                  <Input aria-label={`${t('common.awayTeam')} ${t('matchSetup.teamContactEmail', 'Team contact email (optional)')}`} type="email" inputMode="email" autoComplete="off" value={awayContactEmail} onChange={e => setAwayContactEmail(e.target.value)} maxLength={254} />
                 </Field>
                 {/* Sponsors on clothing (domain/sponsors.js): while the option is on, or the match is marked */}
                 {showSponsors && (
                   <Checkbox
                     className="mt-3"
                     data-testid="sponsors-away"
-                    aria-label={`${t('common.away')} ${t('options.sponsorsOnClothing')}`}
+                    aria-label={`${t('common.awayTeam')} ${t('options.sponsorsOnClothing')}`}
                     label={t('options.sponsorsOnClothing')}
                     hint={t('options.sponsorsOnClothingInfo')}
                     checked={awaySponsors}
@@ -5053,7 +5053,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
               onClick={(e) => e.stopPropagation()}
             >
               <div className="mb-3 text-sm leading-[1.3] font-semibold text-stone-900">
-                {t('matchSetup.chooseTeamColour', { team: colorPickerModal.team === 'home' ? t('common.home') : t('common.away') })}
+                {t('matchSetup.chooseTeamColour', { team: colorPickerModal.team === 'home' ? t('common.homeTeam') : t('common.awayTeam') })}
               </div>
               <TeamColourPicker
                 value={colorPickerModal.team === 'home' ? homeColor : awayColor}
@@ -5432,7 +5432,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
           })()}
         </div>
         <div data-help-id="setup-bench-officials" className="mt-4">
-          <SectionHeader as="h4" title={`${t('matchSetup.benchOfficials')} — ${t('common.home')}`} action={clubTeams.home && (
+          <SectionHeader as="h4" title={`${t('matchSetup.benchOfficials')} — ${t('common.homeTeam')}`} action={clubTeams.home && (
             <Button variant="ghost" size="md" className="bg-white" icon={<UserPlus size={16} aria-hidden />} onClick={() => setOfficialPicker('home')} data-testid="bench-from-club-home">
               {t('clubPlayers.add')}
             </Button>
@@ -6346,7 +6346,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
           })()}
         </div>
         <div className="mt-4">
-          <SectionHeader as="h4" title={`${t('matchSetup.benchOfficials')} — ${t('common.away')}`} action={clubTeams.away && (
+          <SectionHeader as="h4" title={`${t('matchSetup.benchOfficials')} — ${t('common.awayTeam')}`} action={clubTeams.away && (
             <Button variant="ghost" size="md" className="bg-white" icon={<UserPlus size={16} aria-hidden />} onClick={() => setOfficialPicker('away')} data-testid="bench-from-club-away">
               {t('clubPlayers.add')}
             </Button>
@@ -8064,8 +8064,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
         return (
           <div className="flex justify-center">
             <div className="grid w-full max-w-[1200px] grid-cols-1 gap-4 md:grid-cols-2">
-              {teamPanel(home || t('common.home'), paddedHomePlayers, paddedHomeLiberos, homeLiberosCount, paddedHomeBench)}
-              {teamPanel(away || t('common.away'), paddedAwayPlayers, paddedAwayLiberos, awayLiberosCount, paddedAwayBench)}
+              {teamPanel(home || t('common.homeTeam'), paddedHomePlayers, paddedHomeLiberos, homeLiberosCount, paddedHomeBench)}
+              {teamPanel(away || t('common.awayTeam'), paddedAwayPlayers, paddedAwayLiberos, awayLiberosCount, paddedAwayBench)}
             </div>
           </div>
         )
@@ -8088,7 +8088,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-3 text-sm leading-[1.3] font-semibold text-stone-900">
-              {t('matchSetup.chooseTeamColor', { team: colorPickerModal.team === 'home' ? t('common.home') : t('common.away') })}
+              {t('matchSetup.chooseTeamColor', { team: colorPickerModal.team === 'home' ? t('common.homeTeam') : t('common.awayTeam') })}
             </div>
             <TeamColourPicker
               value={colorPickerModal.team === 'home' ? homeColor : awayColor}

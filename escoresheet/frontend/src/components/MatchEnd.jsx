@@ -730,8 +730,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   // names here, as the PDF prints them (the match decides, not the option)
   const sponsors = sponsorsOf(match)
   const markedName = (team, name) => withSponsorMark(name, team === 'away' ? sponsors.away : sponsors.home, sponsors.marked)
-  const homeName = markedName('home', homeTeam?.name || t('common.home'))
-  const awayName = markedName('away', awayTeam?.name || t('common.away'))
+  const homeName = markedName('home', homeTeam?.name || t('common.homeTeam'))
+  const awayName = markedName('away', awayTeam?.name || t('common.awayTeam'))
   const resultsTeamAName = homeLabel === 'A' ? markedName('home', homeTeam?.name || 'Team A') : markedName('away', awayTeam?.name || 'Team A')
   const resultsTeamBName = homeLabel === 'B' ? markedName('home', homeTeam?.name || 'Team B') : markedName('away', awayTeam?.name || 'Team B')
   const showSponsorBoxes = match?.easy !== true && showsSponsorBoxes(sponsorsOption, match)
@@ -1087,7 +1087,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         if (!(await confirmSignedSheetChange(t('matchEnd.signedSheetChange.sponsors')))) return
         const before = sponsorsOf(current)[team] ? SPONSOR_MARK_YES : SPONSOR_MARK_NO
         const after = ticked ? SPONSOR_MARK_YES : SPONSOR_MARK_NO
-        const teamName = (team === 'home' ? homeTeam?.name : awayTeam?.name) || t(team === 'home' ? 'common.home' : 'common.away')
+        const teamName = (team === 'home' ? homeTeam?.name : awayTeam?.name) || t(team === 'home' ? 'common.homeTeam' : 'common.awayTeam')
         await writeSignedSheetChange(db, matchId, patch, {
           action: 'editSponsors', before, after, text: t('matchEnd.signedSheetChange.logSponsors', { team: teamName, mark: after })
         })
@@ -1279,7 +1279,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   const mailTestScoresheet = (pdfResult) => {
     if (!authCtx?.user || (typeof navigator !== 'undefined' && navigator.onLine === false)) return
     sendTestScoresheet(pdfResult.blob, {
-      teams: `${homeTeam?.name || t('common.home')} – ${awayTeam?.name || t('common.away')}`,
+      teams: `${homeTeam?.name || t('common.homeTeam')} – ${awayTeam?.name || t('common.awayTeam')}`,
       result: `${homeSetsWon}:${awaySetsWon}`
     }).then((res) => {
       if (res?.data?.sent) showAlert(t('matchEnd.testMailSent', { to: res.data.to }), 'success')
@@ -1362,7 +1362,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         // the LOCAL match day (the UTC day is the day before for a match after midnight)
         ? new Date(match.scheduledAt).toLocaleDateString('en-GB').replace(/\//g, '-')
         : new Date().toLocaleDateString('en-GB').replace(/\//g, '-')
-      const jsonFilename = `MatchData_${sanitizeForFilename(homeTeam?.name || t('common.home'))}_vs_${sanitizeForFilename(awayTeam?.name || t('common.away'))}_${matchDate}.json`
+      const jsonFilename = `MatchData_${sanitizeForFilename(homeTeam?.name || t('common.homeTeam'))}_vs_${sanitizeForFilename(awayTeam?.name || t('common.awayTeam'))}_${matchDate}.json`
 
       // Mark JSON as ready
       setDownloadProgress(prev => ({ ...prev, json: true }))
@@ -1408,7 +1408,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       }
 
       const zipBlob = await zip.generateAsync({ type: 'blob' })
-      const zipFilename = `Match_${sanitizeForFilename(homeTeam?.name || t('common.home'))}_vs_${sanitizeForFilename(awayTeam?.name || t('common.away'))}_${matchDate}.zip`
+      const zipFilename = `Match_${sanitizeForFilename(homeTeam?.name || t('common.homeTeam'))}_vs_${sanitizeForFilename(awayTeam?.name || t('common.awayTeam'))}_${matchDate}.zip`
 
       // Download the ZIP. On iOS / iPadOS (browser or app) a hidden download
       // is not usable (the app does nothing, Safari hides the folder): the
@@ -1952,7 +1952,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           <div className={SECTION_HEAD}><h3 className={SECTION_TITLE}>{t('options.sponsorsOnClothing')}</h3></div>
           <div className="ov-kit stack:flex-col" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
             {(homeLabel === 'A' ? ['home', 'away'] : ['away', 'home']).map(team => {
-              const name = (team === 'home' ? homeTeam?.name : awayTeam?.name) || t(team === 'home' ? 'common.home' : 'common.away')
+              const name = (team === 'home' ? homeTeam?.name : awayTeam?.name) || t(team === 'home' ? 'common.homeTeam' : 'common.awayTeam')
               return (
                 <Checkbox
                   key={team}
@@ -2435,8 +2435,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             homeCaptain,
             awayCaptain,
             lang: i18n.language,
-            fallbackHome: t('common.home'),
-            fallbackAway: t('common.away')
+            fallbackHome: t('common.homeTeam'),
+            fallbackAway: t('common.awayTeam')
           })
         } : null}
       />

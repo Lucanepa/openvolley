@@ -56,7 +56,7 @@ function LineupGrid({ lineup, emptyLabel }) {
 export default function RestorePreview({ data, source, backupName }) {
   const { t } = useTranslation()
   const s = summarizeBackup(data)
-  const name = (side) => s.teams[side] || t(side === 'home' ? 'common.home' : 'common.away')
+  const name = (side) => s.teams[side] || t(side === 'home' ? 'common.homeTeam' : 'common.awayTeam')
   const tp = (key, opts) => t(`settings.backup.preview.${key}`, opts)
 
   const sourceLabel = source === 'database' ? t('settings.backup.fromDatabase', 'From database')
@@ -86,7 +86,7 @@ export default function RestorePreview({ data, source, backupName }) {
           <div key={side} className={cn('min-w-0 text-center', i === 1 && 'order-3')}>
             <div className="break-words text-sm font-bold leading-snug text-stone-900 sm:text-base">{name(side)}</div>
             <div className="mt-0.5 text-[11px] text-stone-500">
-              {t(side === 'home' ? 'common.home' : 'common.away')}
+              {t(side === 'home' ? 'common.homeTeam' : 'common.awayTeam')}
             </div>
           </div>
         ))}

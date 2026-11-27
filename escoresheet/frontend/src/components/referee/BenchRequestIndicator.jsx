@@ -47,7 +47,7 @@ export default function BenchRequestIndicator({ matchId, teams, setIndex = null 
         const Icon = e.kind === 'timeout' ? Timer : ArrowLeftRight
         return (
           <div key={e.id} data-referee-bench-request={e.kind} data-team={e.team} className="flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900 shadow-lg">
-            <span className="rounded-md px-2 py-0.5 text-xs font-bold truncate max-w-[40%]" style={teamBoxStyle(team.colour)}>{team.name || t(`common.${e.team}`)}</span>
+            <span className="rounded-md px-2 py-0.5 text-xs font-bold truncate max-w-[40%]" style={teamBoxStyle(team.colour)}>{team.name || t(e.team === 'home' ? 'common.homeTeam' : 'common.awayTeam')}</span>
             <Icon size={16} aria-hidden="true" className="shrink-0" />
             <span className="font-medium min-w-0">
               {e.kind === 'timeout'

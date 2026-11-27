@@ -1123,8 +1123,8 @@ export default function BenchApp() {
                   key={m.id}
                   match={m}
                   lang={i18n.language}
-                  home={matchTeamNames(m).home || t('common.home')}
-                  away={matchTeamNames(m).away || t('common.away')}
+                  home={matchTeamNames(m).home || t('common.homeTeam')}
+                  away={matchTeamNames(m).away || t('common.awayTeam')}
                   gameLabel={benchGameLabel(t, m.gameNumber)}
                   onOpen={() => handleMatchSelect(m)}
                   status={<ChevronRight size={16} className="text-stone-400" aria-hidden />}

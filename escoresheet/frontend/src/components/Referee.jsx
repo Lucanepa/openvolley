@@ -2453,8 +2453,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // Match finished info - use liveState sets won for accurate data
   const matchWinner = isMatchFinished && data
     ? (liveStateSetsWonHome > liveStateSetsWonAway
-      ? (data.homeTeam?.name || t('common.home'))
-      : (data.awayTeam?.name || t('common.away')))
+      ? (data.homeTeam?.name || t('common.homeTeam'))
+      : (data.awayTeam?.name || t('common.awayTeam')))
     : ''
 
   const matchResult = isMatchFinished
@@ -3191,8 +3191,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   {refereeEventLabel(lastEvent, {
                     homeLabel,
                     awayLabel,
-                    homeName: data?.homeTeam?.name || t('common.home'),
-                    awayName: data?.awayTeam?.name || t('common.away'),
+                    homeName: data?.homeTeam?.name || t('common.homeTeam'),
+                    awayName: data?.awayTeam?.name || t('common.awayTeam'),
                     leftLabel,
                     rightLabel,
                     leftPoints: leftDisplayScore,

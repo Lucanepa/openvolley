@@ -47,7 +47,9 @@
     "invalid": "invalide",
     "later": "Plus tard",
     "remove": "Supprimer",
-    "saving": "Enregistrement..."
+    "saving": "Enregistrement...",
+    "homeTeam": "Local",
+    "awayTeam": "Visiteur"
   },
   "alert": {
     "error": "Erreur",

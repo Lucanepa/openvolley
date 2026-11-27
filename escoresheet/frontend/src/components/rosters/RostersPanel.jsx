@@ -347,7 +347,7 @@ export default function RostersPanel({ data, lineups, servingTeam, team: onlyTea
       const lineup = lineups?.[key] || null
       return {
         key,
-        name: (key === 'home' ? data?.homeTeam?.name : data?.awayTeam?.name) || t(key === 'home' ? 'common.home' : 'common.away'),
+        name: (key === 'home' ? data?.homeTeam?.name : data?.awayTeam?.name) || t(key === 'home' ? 'common.homeTeam' : 'common.awayTeam'),
         players: all.filter(p => !p.libero).sort(byNumber),
         liberos: all.filter(p => p.libero).sort(byNumber),
         bench: sortBench(((key === 'home' ? data?.match?.bench_home : data?.match?.bench_away) || []).filter(b => b.firstName || b.lastName || b.dob)),
