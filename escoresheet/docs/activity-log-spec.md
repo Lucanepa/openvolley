@@ -133,7 +133,7 @@ The bus (`bus.js`, no database import) carries the rest:
   (the approved view makes it again). No personal data.
 - `photo.read` (`utils/rosterPhoto/photoReadLog.js`, written by
   `RosterPhotoImport` when a reading ends; a cancelled one is not logged;
-  owner 27.11, privacy 1.30): `ms` from the tap on "Read the list" to the
+  owner 27.11, privacy 1.31): `ms` from the tap on "Read the list" to the
   check screen or the error, `outcome` (`ok`, `ocr-load`, `ocr-timeout`,
   `ocr-empty`, `ocr-blurry`, `other`; a failure is a warning), on success
   `rows`, `toCheck` (fields shown amber or red) and `struck`, the device's
