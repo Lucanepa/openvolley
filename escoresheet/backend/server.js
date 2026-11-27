@@ -9654,10 +9654,11 @@ if (DB_MODE) {
         const vmWindow = vm.windowFromEnv() // throws on a bad VM_SYNC_DAYS_* value
         const allowedWindow = vm.runWindowFromEnv() // throws on a bad VM_SYNC_WINDOW_UTC
         const feeds = vm.icalFeedsFromEnv() // throws on an entry that is no VolleyManager calendar
+        // The calendars need no shared login, so no role window: daily at 09:00
+        // Zurich, retries and catch-ups at any hour. The login keeps 22:30 UTC.
+        const slot = feeds.length ? { hourLocal: 9, minuteLocal: 0, tz: 'Europe/Zurich' } : { hourLocal: 22, minuteLocal: 30, tz: 'UTC' }
         const schedule = vm.scheduleVmSync({
-          hourLocal: 22,
-          minuteLocal: 30,
-          tz: 'UTC',
+          ...slot,
           run: () => vm.runVmSync({
             pool: layer.db.pool,
             window: vmWindow,
@@ -9669,7 +9670,7 @@ if (DB_MODE) {
             redactionSecret: process.env.OV_PIN_SECRET || null
           }).catch((err) => { captureServerError(err, { kind: 'job.failed', view: 'vm sync' }); throw err }),
           retryDelaysMs: vm.VM_SYNC_RETRY_DELAYS_MS,
-          allowedWindow,
+          allowedWindow: feeds.length ? null : allowedWindow,
           catchUp: () => vm.readSyncRecord(layer.db.pool)
         })
         vmSync = { lib: vm, schedule }

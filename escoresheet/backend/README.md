@@ -1096,7 +1096,8 @@ VolleyManager's public league calendars instead (`/iCal/schedule/<token>`, one p
 login; `lib/vmIcal.js` parses them, `lib/vmSync.js` `fetchIcalFeeds` / `icalGameToRow` /
 `mergeWithStored` write them). `VM_ICAL_FEEDS` lists the calendars (tokens or links, separated by
 spaces, commas or new lines; not in the code, so any region can bring its own). Set, it wins over
-`VM_USERNAME` / `VM_PASSWORD`: no login, no role switch. The parser reads structured fields only
+`VM_USERNAME` / `VM_PASSWORD`: no login, no role switch, and no role window: it runs daily at 09:00
+Europe/Zurich, its retries and catch-ups at any hour (the login keeps 22:30 UTC inside its window). The parser reads structured fields only
 (UID `game-<n>`, `DTSTART` with `TZID`, `LOCATION`, the hall in `X-APPLE-STRUCTURED-LOCATION`
 `X-TITLE`, the teams around the em dash of the description's first line), never the labels,
 which follow the language of the account the link was made with. A calendar has no referees, line
@@ -1104,8 +1105,9 @@ judges, licences, supervision marks, group letter or number of win sets: referee
 are written as NULL (a stale crew must not be pre-filled on an official sheet; scorers type them
 or pick them from the referee directory); the group letter (`3L B`), the street's number, the
 number of win sets (else the league's usual one) and the group / phase texts are kept from the
-stored row (`mergeWithStored`). A complete run removes only games of the leagues the calendars
-cover (a 1L or cup game the login sync stored stays until it is past); a calendar that fails makes
+stored row (`mergeWithStored`). A complete run removes only games whose league has a calendar AND
+one of whose teams that calendar lists: several leagues share a name (three "U23 ♀" in SVRZ), and
+one whose link is missing keeps its games (a 1L or cup game the login sync stored stays until it is past); a calendar that fails makes
 the run partial and removes nothing. Team-name translations (`followTeamRenames`, db/059) need the
 login and do not run.
 
