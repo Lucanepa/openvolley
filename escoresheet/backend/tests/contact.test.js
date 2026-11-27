@@ -524,6 +524,26 @@ describe('contact: the mail', () => {
     assert.match(sent[1].subject, /P1 – match running/)
   })
 
+  it('a mail the form\'s own account refused goes over the fallback; both refusing gives it back', async () => {
+    const { body, contentType } = await formBody(VALID)
+    const viaFallback = []
+    const warned = []
+    let fallbackDown = false
+    const mailer = createContactMailer({
+      transport: { async sendMail() { throw new Error('550 daily quota reached') } },
+      fallback: { async sendMail(m) { if (fallbackDown) throw new Error('421 try later'); viaFallback.push(m) } },
+      from: 'OpenVolley <noreply@example.test>', to: 'support@example.test', maxPerHour: 10, logger: { warn: (l) => warned.push(l) }
+    })
+    assert.equal((await handleContact({ body, contentType, mailer, logger: silent })).status, 200)
+    assert.equal(viaFallback.length, 1)
+    assert.deepEqual([viaFallback[0].from, viaFallback[0].to], ['OpenVolley <noreply@example.test>', 'support@example.test'])
+    assert.match(warned[0], /own SMTP account did not take the mail/)
+    fallbackDown = true
+    for (let i = 0; i < 3; i++) assert.equal((await handleContact({ body, contentType, mailer, logger: silent })).status, 502)
+    fallbackDown = false
+    assert.equal((await handleContact({ body, contentType, mailer, logger: silent })).status, 200, 'the failures used nothing up')
+  })
+
   it('from and to come from the mailer, never from the request', async () => {
     const { mailer, sent } = streamMailer()
     const mail = buildSupportMail(normalizeContact(Object.fromEntries(VALID)), [])
@@ -764,9 +784,13 @@ describe('contact: settings', () => {
     assert.equal(a.enabled, true)
     assert.equal(a.from, 'OpenVolley <support-out@example.test>')
     assert.equal(a.host, 'smtp.mailbox.test')
+    assert.equal(a.fallbackHost, 'smtp.example.test', 'a mail the own account refuses goes over SMTP_*')
     a.close()
+    const alone = contactMailerFromEnv(own)
+    assert.deepEqual([alone.enabled, alone.fallbackHost], [true, null], 'no SMTP_*: no fallback')
+    alone.close()
     const shared = contactMailerFromEnv(smtp)
-    assert.equal(shared.host, 'smtp.example.test')
+    assert.deepEqual([shared.host, shared.fallbackHost], ['smtp.example.test', null])
     shared.close()
     // a half-set account is off: it never borrows SMTP_USER or SMTP_PASS for another host
     assert.equal(contactMailerFromEnv({ ...smtp, ...own, CONTACT_SMTP_PASS: '' }).reason, 'CONTACT_SMTP_PASS not set')

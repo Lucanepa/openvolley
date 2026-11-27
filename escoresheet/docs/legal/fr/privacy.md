@@ -1008,7 +1008,9 @@ Le serveur transmet la demande sous la forme d'un seul e-mail à
 support@openvolley.app, avec ton adresse comme adresse de réponse. Il n'en
 garde rien, sauf une ligne de journal avec le type, le domaine et une forme
 abrégée de ton adresse e-mail (section 14). Cet e-mail est envoyé par
-Migadu, qui héberge aussi la boîte aux lettres (section 15). Mon système de tickets
+Migadu, qui héberge aussi la boîte aux lettres ; seulement si Migadu ne
+l'accepte pas (par exemple au-delà de sa limite journalière), il passe par
+Amazon SES (section 15). Mon système de tickets
 (support.openvolley.app), que j'exploite moi-même sur mon serveur chez Infomaniak en Suisse,
 la lit, afin que je puisse te répondre et suivre ta demande. J'utilise
 ton adresse uniquement pour te répondre. **Pour les demandes concernant
@@ -1081,7 +1083,7 @@ besoin pour l'exploitation. Ils traitent les données sur mandat.
 |---|---|---|
 | Infomaniak Network SA | Hébergement du serveur : base de données, fichiers, helpdesk et page de téléchargement | Suisse |
 | Cloudflare, Inc. | Diffusion des sites, DNS, connexion sécurisée au serveur | États-Unis (réseau mondial) |
-| Amazon Web Services EMEA SARL (Amazon SES) | Envoi des e-mails des applications : e-mails du compte, infos du match et NIP du match, feuille de match finale, avis | Suisse (Zurich) ; l'entreprise a son siège au Luxembourg et appartient à Amazon (États-Unis) |
+| Amazon Web Services EMEA SARL (Amazon SES) | Envoi des e-mails des applications : e-mails du compte, infos du match et NIP du match, feuille de match finale, avis ; l'e-mail du formulaire de support seulement si Migadu ne l'accepte pas | Suisse (Zurich) ; l'entreprise a son siège au Luxembourg et appartient à Amazon (États-Unis) |
 | Migadu | Boîtes aux lettres (support@, noreply@) et envoi de l'e-mail du formulaire de support | Suisse / Europe |
 
 **Important concernant Cloudflare :** la connexion chiffrée de ton appareil

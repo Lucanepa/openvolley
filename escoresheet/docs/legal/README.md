@@ -51,8 +51,9 @@ all four languages); until then the pages show them highlighted.
    Zurich (`SMTP_*`), contracting entity Amazon Web Services EMEA SARL
    (check it on the AWS invoice); the support form's mail and the mailboxes
    are at Migadu (`CONTACT_SMTP_*`), "Switzerland / Europe" for the company
-   and mail servers. If `CONTACT_SMTP_*` is ever left empty, the support
-   form's mail goes through Amazon SES too: say so in privacy 13 and 15.
+   and mail servers. A support mail Migadu does not take goes through Amazon
+   SES (privacy 13 and 15 say so). If `CONTACT_SMTP_*` is ever left empty,
+   every support mail goes through Amazon SES: say so there.
 3. Resend is not listed (since 1.33): `RESEND_API_KEY` is not set in
    production and the code only uses it on a server without `SMTP_*`. List
    it again (privacy 7 and 15) before setting the key.

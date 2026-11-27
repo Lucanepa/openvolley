@@ -985,7 +985,8 @@ Der Server leitet die Anfrage als eine E-Mail an support@openvolley.app
 weiter, mit deiner Adresse als Antwortadresse. Er behält davon nichts ausser
 einer Protokollzeile mit Art, Bereich und einer gekürzten Form deiner
 E-Mail-Adresse (Abschnitt 14). Diese E-Mail wird über Migadu versendet; dort
-liegt auch das Postfach (Abschnitt 15).
+liegt auch das Postfach. Nur wenn Migadu sie nicht annimmt (zum Beispiel über
+seinem Tageslimit), geht sie stattdessen über Amazon SES (Abschnitt 15).
 Mein Helpdesk (support.openvolley.app), den ich selbst auf meinem Server bei
 Infomaniak in der Schweiz betreibe, liest es, damit ich dir antworten und deine Anfrage
 nachverfolgen kann. Ich verwende deine Adresse nur, um dir zu antworten.
@@ -1058,7 +1059,7 @@ brauche. Sie bearbeiten die Daten in meinem Auftrag.
 |---|---|---|
 | Infomaniak Network SA | Betrieb des Servers: Datenbank, Dateien, Helpdesk und Download-Seite | Schweiz |
 | Cloudflare, Inc. | Auslieferung der Websites, DNS, sichere Verbindung zum Server | USA (weltweites Netz) |
-| Amazon Web Services EMEA SARL (Amazon SES) | Versand der E-Mails der Apps: Konto-E-Mails, Spielinfo und Spiel-PIN, fertiger Spielbericht, Hinweise | Schweiz (Zürich); das Unternehmen sitzt in Luxemburg und gehört zu Amazon (USA) |
+| Amazon Web Services EMEA SARL (Amazon SES) | Versand der E-Mails der Apps: Konto-E-Mails, Spielinfo und Spiel-PIN, fertiger Spielbericht, Hinweise; die E-Mail des Support-Formulars nur, wenn Migadu sie nicht annimmt | Schweiz (Zürich); das Unternehmen sitzt in Luxemburg und gehört zu Amazon (USA) |
 | Migadu | Postfächer (support@, noreply@) und Versand der E-Mail des Support-Formulars | Schweiz / Europa |
 
 **Wichtig zu Cloudflare:** Die verschlüsselte Verbindung deines Geräts endet

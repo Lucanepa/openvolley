@@ -885,7 +885,8 @@ The server forwards the request as one email to support@openvolley.app, with
 your address as the reply address. It keeps nothing of it except a log line
 with the type, the area and a shortened form of your email address
 (section 14). This email is sent through Migadu, which also hosts the
-mailbox (section 15). My helpdesk
+mailbox; only if Migadu does not take it (for example over its daily limit)
+is it sent through Amazon SES instead (section 15). My helpdesk
 (support.openvolley.app), which I run myself on my server at Infomaniak in Switzerland,
 reads it so that I can answer you and keep track of your request. I use your
 address only to answer you. **For requests about your data, please write
@@ -952,7 +953,7 @@ They process the data on my behalf.
 |---|---|---|
 | Infomaniak Network SA | Hosting the server: database, files, helpdesk and download page | Switzerland |
 | Cloudflare, Inc. | Delivering the websites, DNS, secure connection to the server | USA (global network) |
-| Amazon Web Services EMEA SARL (Amazon SES) | Sending the apps' emails: account emails, match info and game PIN, final scoresheet, notices | Switzerland (Zurich); the company is based in Luxembourg and belongs to Amazon (USA) |
+| Amazon Web Services EMEA SARL (Amazon SES) | Sending the apps' emails: account emails, match info and game PIN, final scoresheet, notices; the support form's email only when Migadu does not take it | Switzerland (Zurich); the company is based in Luxembourg and belongs to Amazon (USA) |
 | Migadu | Mailboxes (support@, noreply@) and sending the support form's email | Switzerland / Europe |
 
 **Important about Cloudflare:** the encrypted connection from your device ends

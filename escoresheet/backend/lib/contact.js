@@ -688,10 +688,12 @@ export function disabledContactMailer(reason = 'not configured') {
  * that is not `trusted` may use CONTACT_PUBLIC_SHARE of it (a `p1` message
  * 1 - CONTACT_SIGNED_IN_SHARE). `sources`: the keys (an account, a network)
  * of which each sends at most perSourcePerHour in the window (skipped
- * 'source'). A mail the SMTP server does not take is given back.
- * @param {{ transport: { sendMail: Function, close?: Function }, from: string, to: string, maxPerHour?: number, perSourcePerHour?: number, now?: () => number }} o
+ * 'source'). A mail the SMTP server does not take is given back. `fallback`:
+ * a second transport that takes a mail the first one refused (its provider's
+ * daily quota, an outage), so a support request is not lost.
+ * @param {{ transport: { sendMail: Function, close?: Function }, fallback?: { sendMail: Function, close?: Function } | null, from: string, to: string, maxPerHour?: number, perSourcePerHour?: number, now?: () => number, logger?: { warn: Function } }} o
  */
-export function createContactMailer({ transport, from, to, maxPerHour = CONTACT_MAILS_PER_HOUR, perSourcePerHour = CONTACT_PER_SOURCE_PER_HOUR, now = Date.now } = {}) {
+export function createContactMailer({ transport, fallback = null, from, to, maxPerHour = CONTACT_MAILS_PER_HOUR, perSourcePerHour = CONTACT_PER_SOURCE_PER_HOUR, now = Date.now, logger = console } = {}) {
   if (!transport || typeof transport.sendMail !== 'function') throw new Error('createContactMailer: transport is required')
   if (!from) throw new Error('createContactMailer: from is required')
   if (!isContactEmail(to)) throw new Error('createContactMailer: to must be one address')
@@ -712,8 +714,15 @@ export function createContactMailer({ transport, from, to, maxPerHour = CONTACT_
       if (keys.some((k) => (perSource.get(k) || 0) >= perSourcePerHour)) return { sent: false, skipped: 'source' }
       used++
       for (const k of keys) perSource.set(k, (perSource.get(k) || 0) + 1)
+      const message = { ...mail, from, to, disableFileAccess: true, disableUrlAccess: true }
       try {
-        await transport.sendMail({ ...mail, from, to, disableFileAccess: true, disableUrlAccess: true })
+        try {
+          await transport.sendMail(message)
+        } catch (err) {
+          if (!fallback) throw err
+          logger.warn(`[Contact] the form's own SMTP account did not take the mail (${describeMailError(err)}): sending it over the account mails' SMTP`)
+          await fallback.sendMail(message)
+        }
       } catch (err) {
         if (used > 0) used--
         for (const k of keys) perSource.set(k, Math.max(0, (perSource.get(k) || 1) - 1))
@@ -721,8 +730,18 @@ export function createContactMailer({ transport, from, to, maxPerHour = CONTACT_
       }
       return { sent: true }
     },
-    close() { try { transport.close?.() } catch { /* already closed */ } }
+    close() { for (const t of [transport, fallback]) { try { t?.close?.() } catch { /* already closed */ } } }
   }
+}
+
+/** The account mails' SMTP as a transport (the support form's fallback), or null when SMTP_* is not complete. */
+function sharedTransport(env, tls) {
+  const host = (env.SMTP_HOST || '').trim()
+  const user = (env.SMTP_USER || '').trim()
+  const pass = env.SMTP_PASS || ''
+  const port = Number((env.SMTP_PORT || '').trim() || '465')
+  if (!host || !user || !pass || !Number.isInteger(port) || port < 1 || port > 65535) return null
+  return nodemailer.createTransport({ ...transportOptions({ host, port, user, pass, tls }), pool: false })
 }
 
 /**
@@ -731,7 +750,8 @@ export function createContactMailer({ transport, from, to, maxPerHour = CONTACT_
  * the same default as lib/mailer.js), To CONTACT_EMAIL. With
  * CONTACT_SMTP_HOST set it uses an SMTP account of its own instead (all four
  * CONTACT_SMTP_*, never mixed with SMTP_*), so the support mails can stay
- * with the mailbox's provider while the account mails go through another.
+ * with the mailbox's provider while the account mails go through another;
+ * a mail that account refuses then goes over SMTP_* (fallbackHost).
  * A disabled one, with the reason, when that is not configured. Never throws,
  * never logs the password. One connection per mail (no pool): the form sends
  * rarely.
@@ -752,8 +772,9 @@ export function contactMailerFromEnv(env = process.env, { tls, maxPerHour } = {}
   if (!isContactEmail(to)) return disabledContactMailer('CONTACT_EMAIL is not one address')
   try {
     const transport = nodemailer.createTransport({ ...transportOptions({ host, port, user, pass, tls }), pool: false })
-    // host: for the startup line only (which SMTP account the form uses)
-    return Object.assign(createContactMailer({ transport, from, to, maxPerHour }), { host })
+    const fallback = p === 'CONTACT_SMTP_' ? sharedTransport(env, tls) : null
+    // host, fallbackHost: for the startup line only (which SMTP accounts the form uses)
+    return Object.assign(createContactMailer({ transport, fallback, from, to, maxPerHour }), { host, fallbackHost: fallback ? (env.SMTP_HOST || '').trim() : null })
   } catch (err) {
     return disabledContactMailer(err.message)
   }
