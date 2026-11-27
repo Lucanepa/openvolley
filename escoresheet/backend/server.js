@@ -775,8 +775,12 @@ function getDataLayer() {
     })
     // Roles from public.profiles (never the request), 30 s per process (lib/access.js)
     const access = ac.createAccessResolver({ pool: db.pool })
-    // Account approvals (lib/approvals.js): the approval PINs need OV_PIN_SECRET
-    // (never plaintext); without it every endpoint answers 503. OpenBeach
+    // Account approvals (lib/approvals.js) are OFF (owner 27.11.2026: signatures
+    // only, the approval PIN is being removed): secret null makes every endpoint
+    // answer 503 OV_APPROVAL_UNAVAILABLE and getPinStatus { available: false },
+    // so apps already installed show "feature off on the server" next to the
+    // signature. OV_PIN_SECRET stays set: it also hashes the game PINs
+    // (lib/pinHash.js) and signs match tokens (lib/matchAccess.js). OpenBeach
     // approves with accounts too (beachApprovals): a beach match needs the
     // beach roles (beach:referee / beach:scorer), an indoor match the indoor
     // ones, and either kind makes an account eligible for an approval PIN.
@@ -786,8 +790,8 @@ function getDataLayer() {
     const beachAddress = apv.beachRefereeAddressFromEnv(process.env)
     if (beachAddress.warning) console.warn(`⚠️  [Config] ${beachAddress.warning}`)
     else if (beachAddress.required) console.log('[Config] OV_BEACH_REFEREE_ADDRESS=required: a beach referee slot needs the address stored with its match')
-    const approvals = apv.createApprovals({ pool: db.pool, auth, mailer, secret: pins.enabled ? String(process.env.OV_PIN_SECRET) : null, beachApprovals: true, beachOfficialAddressRequired: beachAddress.required })
-    if (!approvals.enabled) console.warn('⚠️  [Config] OV_PIN_SECRET is not set: approval with an account is off (503 OV_APPROVAL_UNAVAILABLE).')
+    const approvals = apv.createApprovals({ pool: db.pool, auth, mailer, secret: null, beachApprovals: true, beachOfficialAddressRequired: beachAddress.required })
+    if (!approvals.enabled) console.log('[Config] approval with an account is off (signatures only, 503 OV_APPROVAL_UNAVAILABLE)')
     // Clubs (db/018, lib/clubs.js) audit through accounts, which asks them for /api/me
     let clubs = null
     // An admin's delete / reject of an account runs delete-account's own deletion (files included)
