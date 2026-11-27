@@ -55,7 +55,7 @@ export const STEPS = [
 
   // ---- 2 Rosters: every way -------------------------------------------------
   S(2, 'rosterType', { screen: 'rosterEditor', target: { helpId: 'setup-add-player' }, prepare: (ctx) => toRosterEditor(ctx) }),
-  S(2, 'rosterPdf', { screen: 'rosterEditor', target: { helpId: 'setup-pdf-import' }, prepare: (ctx) => toRosterEditor(ctx) }),
+  S(2, 'rosterPdf', { screen: 'rosterEditor', target: { helpId: 'setup-pdf-import' }, prepare: (ctx) => toRosterEditor(ctx, { mode: 'pdf' }) }),
   S(2, 'rosterRemote', {
     screen: 'rosterEditor',
     target: T.remote,

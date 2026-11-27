@@ -36,7 +36,9 @@ export function readingTime (elapsedMs, share, t) {
 // "100 % = finished"); ocr.js reports at most OCR_LAST_SHARE (0.98) itself.
 const READ_CAP = 0.98
 
-export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, disabled = false, onApply }) {
+// entry 'sources' (Match setup's Roster import › Photo): "Take a photo" and "Choose a
+// picture" in place of the one button, each opening its source at once (no source step)
+export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, disabled = false, onApply, entry = 'button' }) {
   const { t } = useTranslation()
   const [step, setStep] = useState(null)
   const [photo, setPhoto] = useState(null) // { canvas, url }
@@ -224,18 +226,25 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
       {/* capture: the camera at once on a phone or tablet (a file picker on a desktop) */}
       <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={onFile} className="hidden" data-testid={`roster-photo-camera-${side}`} />
       <input ref={fileRef} type="file" accept="image/*" onChange={onFile} className="hidden" data-testid={`roster-photo-file-${side}`} />
-      <Button
-        variant="secondary"
-        size="xl"
-        icon={<Camera size={16} aria-hidden />}
-        onClick={() => setStep('source')}
-        disabled={disabled}
-        className="w-full"
-        data-help-id="setup-photo-import"
-        data-testid={`roster-photo-${side}`}
-      >
-        {t('rosterPhoto.button')}
-      </Button>
+      {entry === 'sources' ? (
+        <div className="flex flex-wrap gap-2 [&>*]:flex-[1_1_11rem]" data-help-id="setup-photo-import">
+          <Button variant="secondary" size="xl" icon={<Camera size={16} aria-hidden />} onClick={takePhoto} disabled={disabled} data-testid={`roster-photo-take-${side}`}>{t('rosterPhoto.source.take')}</Button>
+          <Button variant="secondary" size="xl" icon={<ImageIcon size={16} aria-hidden />} onClick={choosePicture} disabled={disabled} data-testid={`roster-photo-choose-${side}`}>{t('rosterPhoto.source.choose')}</Button>
+        </div>
+      ) : (
+        <Button
+          variant="secondary"
+          size="xl"
+          icon={<Camera size={16} aria-hidden />}
+          onClick={() => setStep('source')}
+          disabled={disabled}
+          className="w-full"
+          data-help-id="setup-photo-import"
+          data-testid={`roster-photo-${side}`}
+        >
+          {t('rosterPhoto.button')}
+        </Button>
+      )}
       <KitModal
         open={step !== null}
         onClose={close}

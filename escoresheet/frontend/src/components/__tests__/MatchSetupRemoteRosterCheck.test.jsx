@@ -295,12 +295,15 @@ describe('the Remote panel checks the server', () => {
     await waitFor(() => expect(screen.getByTestId('roster-check-status-home')).toHaveTextContent('matchSetup.rosterCheck.lastChecked 14:33'))
   })
 
-  it('stops when the panel closes (Local) and when Match Setup goes', async () => {
+  it('stops when the panel closes (PDF or Photo chosen) and when Match Setup goes', async () => {
     storeMatch()
     const { unmount } = render(<Setup matchId={1} />)
     await openRemote()
     await waitFor(() => expect(server.asks).toBe(1))
-    fireEvent.click(screen.getByRole('radio', { name: 'matchSetup.local' }))
+    fireEvent.click(screen.getByRole('radio', { name: 'matchSetup.rosterImport.pdf' }))
+    await nextPanelCheck()
+    expect(server.asks).toBe(1)
+    fireEvent.click(screen.getByRole('radio', { name: 'matchSetup.rosterImport.photo' }))
     await nextPanelCheck()
     await nextPanelCheck()
     expect(server.asks).toBe(1)

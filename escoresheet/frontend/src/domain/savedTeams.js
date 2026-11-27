@@ -365,6 +365,54 @@ export function findSavedTeamSuggestions(teams, { home, away, league, scheduledA
   return { home: pick(home), away: pick(away) }
 }
 
+// ---------------------------------------------------------------- the club of "Load saved team"
+// Owner 2026-11-27: "load saved team of course should check for the same club".
+// A saved team keeps its club's name (`club`: the manager's Club dropdown,
+// components/manage/TeamEditor.jsx, lists the clubs by name) and its
+// VolleyManager name (`svrzTeamName`); a match keeps its teams' names only (the
+// schedule's VolleyManager names, or typed). The account's club lists on the
+// device (db/024, db/clubPlayers.js clubOfTeam) give a club's id and name for
+// the VolleyManager names of its teams (club_teams).
+
+/**
+ * The club of a match's team, the strongest link first:
+ * 1. `clubTeam`, the team's club in the account's club lists (clubOfTeam): its id and name;
+ * 2. the saved team of that VolleyManager name (else of that name) with a club: that club's name.
+ * Null when neither tells (a guest match, a test match of no club, a team no
+ * saved team names): then every saved team is offered, as before.
+ * @param {{ teamName?: string, clubTeam?: {clubId?: string, clubName?: string}|null, savedTeams?: object[] }} o
+ * @returns {{ id: string|null, name: string }|null}
+ */
+export function clubOfMatchTeam({ teamName, clubTeam = null, savedTeams = [] } = {}) {
+  if (clubTeam?.clubId) return { id: String(clubTeam.clubId), name: String(clubTeam.clubName || '').trim() }
+  const key = normalizeName(teamName)
+  if (!key) return null
+  const withClub = (Array.isArray(savedTeams) ? savedTeams : []).filter(team => team && normalizeName(team.club))
+  const named = withClub.find(team => normalizeName(teamSvrzName(team)) === key) ||
+    withClub.find(team => normalizeName(team.name) === key)
+  return named ? { id: null, name: String(named.club).trim() } : null
+}
+
+/**
+ * Whether saved team `team` is of `club` (clubOfMatchTeam): by the club's id
+ * when both are known (`clubIdOf(name)`: the id of the account's club that has
+ * the VolleyManager team `name`, or null), else by the club's name (case and
+ * spaces aside). No club: every team is.
+ */
+export function savedTeamOfClub(team, club, clubIdOf = () => null) {
+  if (!club) return true
+  const id = clubIdOf(teamSvrzName(team)) ?? clubIdOf(team?.name) ?? null
+  if (club.id && id != null) return String(id) === String(club.id)
+  const name = normalizeName(club.name)
+  return !!name && normalizeName(team?.club) === name
+}
+
+/** The saved teams of `club` (all of them when the club is not known). */
+export function savedTeamsOfClub(teams, club, clubIdOf = () => null) {
+  const list = Array.isArray(teams) ? teams : []
+  return club ? list.filter(team => savedTeamOfClub(team, club, clubIdOf)) : list
+}
+
 // ---------------------------------------------------------------- shirt numbers from a saved team
 // Owner 2026-11-19: "next games ... the numbers can be automatically filled
 // with roster (einsatzliste) import". An Einsatzliste has no shirt numbers;

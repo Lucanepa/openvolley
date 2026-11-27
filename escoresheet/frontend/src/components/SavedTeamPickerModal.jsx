@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Users } from 'lucide-react'
 import KitModal from './manage/KitModal'
 import { useSavedTeams } from '../hooks/useSavedTeams'
-import { normalizeName, rosterHasContent } from '../domain/savedTeams'
+import { normalizeName, rosterHasContent, savedTeamsOfClub } from '../domain/savedTeams'
 import { Select, SearchInput, RowList, Row, Chip, EmptyInset, SkeletonRows, Banner, dayTimeLabel, confirmDialog } from '../ui'
 import { cn } from '../ui/cn.js'
 import { PICKER_RESULTS } from './pickerLayout'
@@ -31,14 +31,17 @@ function isOnline() {
  * "Load saved team": pick a saved team from the offline cache. The cache is
  * refreshed when the picker opens (online); offline it shows the cached
  * teams with their date.
+ * `club` ({ id, name }, domain/savedTeams clubOfMatchTeam): only the saved
+ * teams of the club of the team being edited (owner 2026-11-27), matched by
+ * id through `clubIdOf`, else by the club's name; null (not known): all.
  */
-export default function SavedTeamPickerModal({ open, onClose, onPick, userId, access, defaultCompetitionId = '', title, roster, bench, teamLabel }) {
+export default function SavedTeamPickerModal({ open, onClose, onPick, userId, access, defaultCompetitionId = '', title, roster, bench, teamLabel, club = null, clubIdOf }) {
   const { t } = useTranslation()
   if (!open) return null
-  return <PickerBody {...{ onClose, onPick, userId, access, defaultCompetitionId, title, roster, bench, teamLabel, t }} />
+  return <PickerBody {...{ onClose, onPick, userId, access, defaultCompetitionId, title, roster, bench, teamLabel, club, clubIdOf, t }} />
 }
 
-function PickerBody({ onClose, onPick, userId, access, defaultCompetitionId, title, roster, bench, teamLabel, t }) {
+function PickerBody({ onClose, onPick, userId, access, defaultCompetitionId, title, roster, bench, teamLabel, club, clubIdOf, t }) {
   const { teams, competitions, meta, loading } = useSavedTeams({ userId, access, refreshOnMount: true })
   const [competitionId, setCompetitionId] = useState(defaultCompetitionId || '')
   const [q, setQ] = useState('')
@@ -48,14 +51,15 @@ function PickerBody({ onClose, onPick, userId, access, defaultCompetitionId, tit
     () => competitions.filter(c => !c.archived).sort((a, b) => (b.season || '').localeCompare(a.season || '') || a.name.localeCompare(b.name)),
     [competitions]
   )
+  const current = useMemo(() => teams.filter(team => !team.competition?.archived), [teams])
+  const ofClub = useMemo(() => savedTeamsOfClub(current, club, clubIdOf), [current, club, clubIdOf])
   const list = useMemo(() => {
     const needle = normalizeName(q)
-    return teams
-      .filter(team => !team.competition?.archived)
+    return ofClub
       .filter(team => !competitionId || team.competitionId === competitionId)
       .filter(team => !needle || normalizeName(`${team.name} ${team.club} ${team.svrzTeamName}`).includes(needle))
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [teams, competitionId, q])
+  }, [ofClub, competitionId, q])
 
   return (
     <KitModal
@@ -64,6 +68,7 @@ function PickerBody({ onClose, onPick, userId, access, defaultCompetitionId, tit
       layout="sections"
       size="lg"
       title={title || t('savedTeams.pickerTitle')}
+      description={club?.name ? t('savedTeams.pickerClubOnly', { club: club.name }) : undefined}
       icon={Users}
       closeLabel={t('common.close', 'Close')}
     >
@@ -91,6 +96,11 @@ function PickerBody({ onClose, onPick, userId, access, defaultCompetitionId, tit
         )}
         {loading && !teams.length ? (
           <SkeletonRows rows={4} pill={false} />
+        ) : club && current.length > 0 && ofClub.length === 0 ? (
+          // none of the club: said in one line, never an empty list
+          <div data-testid="saved-teams-none-of-club">
+            <EmptyInset>{club.name ? t('savedTeams.pickerNoneOfClub', { club: club.name }) : t('savedTeams.pickerNoneOfTheClub')}</EmptyInset>
+          </div>
         ) : list.length === 0 ? (
           <EmptyInset>{t('savedTeams.pickerEmpty')}</EmptyInset>
         ) : (
