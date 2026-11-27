@@ -42,7 +42,7 @@ Le code des programmes OpenVolley et OpenBeach est un logiciel libre sous la
 licence publique générale GNU, version 3 ou ultérieure (GPL-3.0-or-later). Les
 licences des bibliothèques, polices et icônes utilisées figurent dans
 l'[avis open source](opensource.md). Les noms et logos d'associations et de
-services (par exemple Swiss Volley, VolleyManager, FIVB) sont des marques de
+services (par exemple Swiss Volley, FIVB) sont des marques de
 leurs titulaires respectifs.
 
 ## Protection des données

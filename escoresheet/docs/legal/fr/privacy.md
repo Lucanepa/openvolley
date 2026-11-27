@@ -850,7 +850,7 @@ acceptée, à la déconnexion et au plus tard 36 heures après le match.
 
 **Listes de licences des clubs (OpenVolley) :** les responsables d'un club
 peuvent charger les listes des joueuses et joueurs, des marqueurs et des
-entraîneurs du club depuis l'administration du club de VolleyManager. Le
+entraîneurs du club depuis l'administration du club de Swiss Volley. Le
 fichier est lu dans le navigateur : seuls le numéro de licence, le nom, le
 prénom et le sexe de chaque personne sont conservés ; la colonne de la date
 de naissance n'est pas lue, et rien d'autre du fichier n'est envoyé au
@@ -910,19 +910,19 @@ si le compte qui les a créées est supprimé.
 ## 11. Données concernant les arbitres
 
 **Convocations de Swiss Volley :** chaque jour, le serveur reprend les
-convocations officielles du VolleyManager de Swiss Volley, pour la période
+convocations officielles du système de Swiss Volley, pour la période
 d'hier à 14 jours à l'avance : équipes, salle et adresse, ligue, 1er et
 2e arbitre avec leurs noms, juges de ligne, convocations. Le serveur utilise
-pour cela un compte VolleyManager. But : charger les matchs officiels avec
-les bons officiels. Les noms sont publics (section 8). VolleyManager envoie
-aussi les dates de naissance des arbitres ; le serveur ne les lit pas et ne
+pour cela un compte dans ce système. But : charger les matchs officiels avec
+les bons officiels. Les noms sont publics (section 8). Le
+système de Swiss Volley envoie aussi les dates de naissance des arbitres ; le serveur ne les lit pas et ne
 les conserve pas (depuis le 19 novembre 2026 ; celles conservées auparavant
 ont été effacées). Les convocations sont conservées comme les procès-verbaux
 de match (section 16).
 
 **Numéros de licence des arbitres :** depuis le 20 novembre 2026, le serveur
 conserve aussi le numéro de licence (le numéro Swiss Volley) que
-VolleyManager envoie pour le 1er et le 2e arbitre. Ces numéros ne sont pas
+le système de Swiss Volley envoie pour le 1er et le 2e arbitre. Ces numéros ne sont pas
 publics : seuls les administrateurs et les comptes qui marquent des matchs en
 salle les voient, afin que l'application de marquage les inscrive à côté des
 arbitres lorsqu'elle charge un match officiel. Ils sont effacés avec les
@@ -1099,7 +1099,7 @@ utiliser les données que pour fournir son service.
 
 **Sont responsables de manière indépendante :** GitHub, Inc. (États-Unis) pour
 les téléchargements et la liste des versions, F-Droid pour le catalogue
-d'applications, Swiss Volley pour les données du VolleyManager.
+d'applications, Swiss Volley pour les données de son propre système.
 
 **Les sauvegardes** sont conservées chiffrées sur mon serveur chez Infomaniak
 et sur mon propre support de stockage, tous deux en Suisse. Elles sont

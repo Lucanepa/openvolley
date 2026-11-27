@@ -90,7 +90,7 @@ export function auditDetailsLine(entry, opts = {}) {
     // LOG-24: a team the schedule sync renamed to its region's name (no account did)
     if (entry.action === 'club.update' && d.renamed && typeof d.renamed === 'object') {
       parts.push(`${String(d.renamed.from ?? '')} → ${String(d.renamed.to ?? '')}`)
-      if (d.by === 'vm-sync') parts.push('VolleyManager')
+      if (d.by === 'vm-sync') parts.push('schedule sync')
     }
     if (Array.isArray(d.after)) parts.push(tr('manage.clubs.managersCount', `${d.after.length} managers`, { count: d.after.length }))
     if (Number.isFinite(d.scorers)) parts.push(tr('manage.clubs.scorers', `Scorers: ${d.scorers}`, { count: d.scorers }))
