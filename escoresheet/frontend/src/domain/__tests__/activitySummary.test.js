@@ -84,8 +84,8 @@ describe('match row entries', () => {
       .toEqual([{ kind: 'match.status', data: { from: 'ended', to: 'live' } }])
     expect(matchUpdateEntries({ homeCoachSignature: 'data:image/png;base64,xx' }, row)).toEqual([{ kind: 'match.signature', data: { role: 'homeCoach', signed: true } }])
     expect(matchUpdateEntries({ remarks: 'secret words here' }, row)).toEqual([{ kind: 'match.remarks', data: { length: 17 } }])
-    expect(matchUpdateEntries({ accountApprovals: { scorer: { method: 'pin', pin: '1234' } } }, row))
-      .toEqual([{ kind: 'match.approval', data: { role: 'scorer', approved: true, method: 'pin' } }])
+    // approval with a PIN is gone (27.11.2026): an old field logs nothing
+    expect(matchUpdateEntries({ accountApprovals: { scorer: { method: 'pin', pin: '1234' } } }, row)).toEqual([])
     expect(matchUpdateEntries({ forfeitTeam: 'away', forfeitReason: 'no show' }, row))
       .toEqual([{ kind: 'match.forfeit', data: { team: 'away', forfeit: true, stopped: false } }])
     // bookkeeping and unchanged values are nothing

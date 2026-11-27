@@ -4,7 +4,6 @@
  * match there and cleared its signatures while the server refused every
  * change). Known closed (a refusal, the local status, or the server's answer
  * on mount): the approved view, no edit path, a short explanation.
- * The harness is MatchEndAccountApproval.test.jsx's.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, cleanup, act } from '@testing-library/react'
@@ -44,17 +43,12 @@ vi.mock('../../utils/backendConfig', async (orig) => ({ ...(await orig()), getCl
 const asked = vi.hoisted(() => ({ fn: null }))
 vi.mock('../../utils/askConfirm.js', () => ({ askConfirm: (...a) => asked.fn(...a), default: (...a) => asked.fn(...a) }))
 
-const api = vi.hoisted(() => ({ approve: null, list: null, undo: null, reopen: null }))
+const api = vi.hoisted(() => ({ reopen: null }))
 vi.mock('../../lib/accountApi', async (orig) => {
   const actual = await orig()
   return {
     ...actual,
-    admin: { ...actual.admin, reopenMatch: (...a) => api.reopen(...a) },
-    approvalsApi: {
-      approve: (...a) => api.approve(...a),
-      list: (...a) => api.list(...a),
-      undo: (...a) => api.undo(...a)
-    }
+    admin: { ...actual.admin, reopenMatch: (...a) => api.reopen(...a) }
   }
 })
 // server.row: the server's answer to a read of the matches table (Reopen
@@ -152,12 +146,6 @@ const SETS = [
   { id: 13, matchId: 1, index: 3, homePoints: 25, awayPoints: 18, finished: true },
   { id: 14, matchId: 1, index: 4, homePoints: 25, awayPoints: 22, finished: true }
 ]
-const KEY = 'ov-result-v1|1:25:20,2:23:25,3:25:18,4:25:22'
-const record = (slot, over = {}) => ({
-  id: `${slot}-uuid`, short_id: slot === 'referee1' ? '6F1C2A9B' : 'A1B2C3D4', slot, name: slot === 'referee1' ? 'Muster Anna' : 'Beispiel Ben',
-  approved_at: '2026-10-07T19:42:10.000Z', result_key: KEY, result_matches: true, mine: false, ...over
-})
-const PIN = '804613'
 
 function seed(matchOver = {}) {
   store.tables = {}
@@ -194,9 +182,8 @@ async function settled() {
     for (const version of store.shown.values()) expect(version).toBe(store.version)
   })
 }
-// The mount refresh (list) writes the match row: wait for it and its re-render
+// The page has rendered its latest write
 async function refreshed() {
-  await waitFor(() => expect(store.tables.matches.get(1)).toHaveProperty('accountApprovals'))
   await settled()
 }
 
@@ -207,9 +194,6 @@ beforeEach(() => {
   logs.calls = []
   alerts.showAlert = vi.fn()
   asked.fn = vi.fn(async () => true)
-  api.list = vi.fn(async () => ({ data: { match: { status: 'ended', closed_at: null, result_key: KEY }, approvals: [] }, error: null, status: 200 }))
-  api.approve = vi.fn()
-  api.undo = vi.fn(async () => ({ data: { approval: {}, already: false }, error: null, status: 200 }))
   api.reopen = vi.fn(async () => ({ data: { reopened: true }, error: null, status: 200 }))
   server.row = null
   auth.value = { user: { id: 'u-scorer', email: 'scorer@club.ch', email_confirmed_at: '2026-10-01T08:00:00Z' }, access: { roles: ['scorer'], isAdmin: false } }
@@ -258,7 +242,8 @@ describe('MatchEnd of a match closed on the server', () => {
   })
 
   it('the server says closed on mount (the refusal not in yet): the same', async () => {
-    api.list = vi.fn(async () => ({ data: { match: { status: 'approved', closed_at: '2026-10-20T21:30:00Z', result_key: KEY }, approvals: [] }, error: null, status: 200 }))
+    // the mount check reads the server's match row
+    server.row = { id: 'm-1', status: 'approved', closed_at: '2026-10-20T21:30:00Z' }
     render(<MatchEnd matchId={1} />)
     expect((await screen.findByTestId('matchend-closed-on-server')).textContent).toBe(en.matchEnd.closedOnServer)
     expect(editButtons()).toEqual([])

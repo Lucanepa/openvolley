@@ -150,7 +150,6 @@ export const HELP_SECTIONS = [
     q('matchEnd', 'reviewResults', 'matchend-results-table'),
     q('matchEnd', 'signatures', 'matchend-signatures'),
     q('matchEnd', 'signOnPhone'),
-    q('matchEnd', 'approveWithPin'),
     q('matchEnd', 'approve'),
     q('matchEnd', 'pdfFailed'),
     q('matchEnd', 'exportPdf', 'matchend-export-pdf'),

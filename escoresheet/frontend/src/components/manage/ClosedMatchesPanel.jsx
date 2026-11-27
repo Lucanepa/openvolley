@@ -5,7 +5,6 @@ import { admin } from '../../lib/accountApi'
 import { usePanelData, usePanelRoute, useOnline, OfflineBanner, PageMissing, PanelHead, MatchStatusPill, ReasonModal, useErrorText } from './common'
 import { usePageItem } from './usePageItem'
 import { Button, SegmentedControl, SearchInput, RowList, Row, RowTool, Chip, EmptyInset, KeyValue, SectionHeader, SectionNote, SkeletonRows, Notice, dayTimeLabel, toast } from '../../ui'
-import { ApprovalChips, ApprovalLookup } from './ApprovalBits'
 import RevisionsList from './RevisionsList'
 import ClosuresList from './ClosuresList'
 import MatchPinBox from './MatchPinBox'
@@ -95,8 +94,6 @@ export default function ClosedMatchesPanel({ onShowActivity = null, state: state
     <section>
       <PanelHead title={t('manage.tabs.matches')} />
       <OfflineBanner online={online} />
-      {/* The "ID" on a PDF approval stamp, or a game number */}
-      <ApprovalLookup online={online} />
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
 {!stateProp && (
           <SegmentedControl
@@ -148,7 +145,6 @@ export default function ClosedMatchesPanel({ onShowActivity = null, state: state
                     </span>
                   )}
                   {m.official_game_exempt && <Chip>{t('manage.games.releaseGame')}</Chip>}
-                  <ApprovalChips approvals={m.approvals} />
                 </>}
                 // the corrections are on the match's page (the row opens it)
                 tools={<>
@@ -167,7 +163,7 @@ export default function ClosedMatchesPanel({ onShowActivity = null, state: state
 
 /**
  * A match's page: what its row says (game, when, league, scorer, editors,
- * closed when and by whom, its approvals), Reopen (a closed one) and
+ * closed when and by whom), Reopen (a closed one) and
  * Activity, its game PIN (MatchPinBox, hidden until asked), the final
  * scoresheet mail of a closed indoor match (FinalMailBox), its earlier
  * closes (ClosuresList: before and after each admin reopen) and its
@@ -187,7 +183,6 @@ function MatchPage({ match: m, online, onBack, onReopen, onShowActivity }) {
     { label: t('manage.matches.facts.editors'), value: <span className="tabular-nums">{m.editors ?? 0}</span> },
     { label: t('manage.matches.facts.closed'), value: closed }
   ]
-  const hasChips = m.official_game_exempt || (m.approvals || []).length > 0
   const activity = !!(onShowActivity && m.external_id)
   return (
     <section data-testid="match-page">
@@ -196,10 +191,9 @@ function MatchPage({ match: m, online, onBack, onReopen, onShowActivity }) {
         <MatchStatusPill status={m.status} />
       </PanelHead>
       <OfflineBanner online={online} />
-      {hasChips && (
+      {m.official_game_exempt && (
         <div className="mb-3 flex flex-wrap gap-1.5">
-          {m.official_game_exempt && <Chip>{t('manage.games.releaseGame')}</Chip>}
-          <ApprovalChips approvals={m.approvals} />
+          <Chip>{t('manage.games.releaseGame')}</Chip>
         </div>
       )}
       <div className="mb-6 rounded-2xl border border-stone-200/70 bg-white p-4 shadow-card sm:p-5" data-testid="match-facts">

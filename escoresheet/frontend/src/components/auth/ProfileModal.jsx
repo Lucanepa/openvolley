@@ -8,7 +8,6 @@ import RoleChips from './RoleChips'
 import PendingApprovalBanner from './PendingApprovalBanner'
 import EmailConfirmBanner from './EmailConfirmBanner'
 import { licenceInput, licenceOk, licenceValue } from './licenceNumber'
-import ApprovalPinSection from './ApprovalPinSection'
 import PasskeySection from './PasskeySection'
 import AccountSecuritySection from './AccountSecuritySection'
 import { confirmErrorText, withConfirmation } from './confirmIdentity'
@@ -183,8 +182,6 @@ export default function ProfileModal({ open, onClose }) {
             {access?.known ? <RoleChips roles={access.roles} pending={access.isPending} manages={{ clubs: access.managedClubs, teams: access.managedTeams }} /> : <span className="text-xs text-stone-400">–</span>}
           </div>
           <PendingApprovalBanner className="mb-4" />
-          {/* Referees and scorers: the personal PIN to approve results with the account */}
-          <ApprovalPinSection className="mb-4" />
           {/* Sign-in with the device's fingerprint or face (web only) */}
           <PasskeySection className="mb-4" />
           {/* A new password, where the account is signed in, sign out everywhere */}

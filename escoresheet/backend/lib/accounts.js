@@ -65,8 +65,8 @@ export const AUDIT_ACTIONS = Object.freeze([
   'match.restore',
   // db/018: a home-club scorer took over a game an account outside the club held (takeOverHeldGame)
   'match.game_taken_over',
-  // lib/approvals.js (db/011); match.approval_void is written by the trigger;
-  // approval_pin.failed: one wrong approval PIN (the caller's count per official)
+  // approval with a PIN (db/011, removed 27.11.2026): kept so old audit rows
+  // still read; match.approval_void is written by the trigger
   'approval_pin.set', 'approval_pin.remove', 'approval_pin.locked', 'approval_pin.failed',
   'match.approve', 'match.approval_revoke', 'match.approval_void',
   // db/012: an existing account joined another app (POST /api/account/join)
@@ -291,15 +291,12 @@ function trimmedText (raw, { min = 0, max }) {
  * @param {ReturnType<import('./pgQuery.js').createPgQuery>} o.db
  * @param {ReturnType<import('./matchRestore.js').createMatchRestore>} o.restore
  * @param {ReturnType<import('./access.js').createAccessResolver>} o.access
- * @param {(ids: string[]) => Promise<Map<string, object[]>>} [o.approvalsForMatches]
- *   lib/approvals.js approvalsForMatches: the active account approvals the
- *   admin lists attach to each match (none without it)
  * @param {(userId: string, o: { inTransaction: (client: object) => Promise<void> }) => Promise<{ deleted: boolean }>} [o.eraseAccount]
  *   lib/auth.js eraseAccount: what an admin's delete / reject runs (the
  *   account's own delete-account runs it too). Without it both answer 404
  *   and the accounts list says can_delete: false.
  */
-export function createAccounts ({ pool, db, restore, access, approvalsForMatches = null, clubs: clubsOf = () => null, teams: teamsOf = () => null, requests: requestsOf = () => null, eraseAccount = null, mailer = null, pins = null, onGamePinChanged = null, logger = console } = {}) {
+export function createAccounts ({ pool, db, restore, access, clubs: clubsOf = () => null, teams: teamsOf = () => null, requests: requestsOf = () => null, eraseAccount = null, mailer = null, pins = null, onGamePinChanged = null, logger = console } = {}) {
   const log = logger
   /** lib/pinHash.js of the server (OV_PIN_SECRET); without one PINs are plaintext, as there. */
   const pinHasher = pins || createPinHasher(null)
@@ -309,8 +306,6 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
   const teams = () => (typeof teamsOf === 'function' ? teamsOf() : null)
   /** lib/accountRequests.js (db/025), wired after this module too; null before. */
   const requests = () => (typeof requestsOf === 'function' ? requestsOf() : null)
-  /** Active approvals per match id (empty without lib/approvals.js). Throws on a DB error. */
-  const approvalsOf = async (ids) => (typeof approvalsForMatches === 'function' ? approvalsForMatches(ids) : new Map())
 
   async function withTx (fn) {
     const client = await connectClient(pool, log)
@@ -1441,7 +1436,6 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
           if (!claims.has(key)) claims.set(key, m)
         }
       }
-      const approvals = await approvalsOf([...claims.values()].map((m) => m.id))
       return ok({
         games: games.map((g) => {
           const m = claims.get(`${Number(g.game_number)}|${seasonOf(g.datetime)}`)
@@ -1468,8 +1462,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
                   sheet_scorer_name: m.sheet_scorer_name ?? null,
                   editors: m.editors,
                   closed_at: iso(m.closed_at),
-                  updated_at: iso(m.updated_at),
-                  approvals: approvals.get(m.id) || []
+                  updated_at: iso(m.updated_at)
                 }
               : null
           }
@@ -1516,7 +1509,6 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
           WHERE ${where.join(' AND ')}
           ORDER BY coalesce(m.closed_at, m.updated_at) DESC NULLS LAST, m.id
           LIMIT ${lim}`, values)
-      const approvals = await approvalsOf(rows.map((r) => r.id))
       return ok({
         matches: rows.map((r) => ({
           id: r.id,
@@ -1535,8 +1527,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
           closed_by_name: r.closed_by_name ?? null,
           official_game_exempt: r.official_game_exempt === true,
           updated_at: iso(r.updated_at),
-          sport: r.is_beach === true ? 'beach' : 'indoor',
-          approvals: approvals.get(r.id) || []
+          sport: r.is_beach === true ? 'beach' : 'indoor'
         }))
       })
     })

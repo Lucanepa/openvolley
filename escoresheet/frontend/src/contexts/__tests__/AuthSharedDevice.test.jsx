@@ -52,7 +52,6 @@ vi.mock('../../lib/accountApi', () => ({
 vi.mock('../../components/auth/PasskeyOfferHost', () => ({ default: () => null }))
 
 import { AuthProvider, useAuth } from '../AuthContext'
-import { rememberApprovalEmail, recallApprovalEmail } from '../../domain/accountApproval'
 
 const profileA = { user_id: 'user-A', first_name: 'Anna', last_name: 'Admin', dob: '1990-02-03', country: 'CHE', roles: ['admin', 'scorer'] }
 const profileB = { user_id: 'user-B', first_name: 'Ben', last_name: 'Beginner', dob: '2008-05-06', country: 'CHE', roles: [] }
@@ -63,7 +62,8 @@ function leaveDataOfA() {
   localStorage.setItem('cachedProfile', JSON.stringify(profileA))
   localStorage.setItem('ov:clubs', JSON.stringify({ userId: 'user-A', clubs: [{ id: 'c1', name: 'VBC Example' }], clubRule: true }))
   localStorage.setItem('ov:todayGames', JSON.stringify({ userId: 'user-A', day: '2026-11-14', data: { games: [{ game_number: '930001', referee_1_first_name: 'Rita' }] } }))
-  rememberApprovalEmail('Ref Rita', 'rita@example.test')
+  // what an older version kept (approval with a PIN): it goes too
+  localStorage.setItem('ov.approvalEmails', JSON.stringify([{ k: 'ref rita', e: 'rita@example.test', t: Date.now() }]))
 }
 const accountKeys = () => ['cachedProfile', 'ov:clubs', 'ov:todayGames', 'ov.approvalEmails'].filter((k) => localStorage.getItem(k) !== null)
 
@@ -118,7 +118,6 @@ describe('AuthProvider on a shared device: a session that ends', () => {
     expect(ctx.user).toBeNull()
     expect(ctx.profile).toBeNull()
     expect(accountKeys()).toEqual([])
-    expect(recallApprovalEmail('Ref Rita')).toBe('')
     expect(caches.savedTeams).toHaveBeenCalled()
     expect(caches.rosters).toHaveBeenCalled()
     expect(caches.club).toHaveBeenCalled()

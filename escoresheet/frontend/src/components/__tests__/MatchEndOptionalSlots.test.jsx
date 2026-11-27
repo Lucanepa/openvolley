@@ -36,11 +36,6 @@ vi.mock('../../hooks/useScaledLayout', () => ({ useScaledLayout: () => ({ vmin: 
 vi.mock('../../utils/comprehensiveLogger', () => ({ exportLogsAsNDJSON: async () => '', downloadLogs: async () => {} }))
 vi.mock('../../utils/backendConfig', async (orig) => ({ ...(await orig()), getCloudApiUrl: (p) => `https://api.test${p}` }))
 vi.mock('../../utils/askConfirm.js', () => ({ askConfirm: async () => true, default: async () => true }))
-const api = vi.hoisted(() => ({ list: null }))
-vi.mock('../../lib/accountApi', async (orig) => ({
-  ...(await orig()),
-  approvalsApi: { approve: vi.fn(), list: (...a) => api.list(...a), undo: vi.fn(async () => ({ data: null, error: null, status: 200 })) }
-}))
 vi.mock('../../lib/apiClient', () => {
   const chain = () => {
     const b = new Proxy({}, { get: (_, prop) => (prop === 'then' ? (r) => Promise.resolve({ data: null, error: null }).then(r) : () => b) })
@@ -183,9 +178,8 @@ async function settled() {
     for (const version of store.shown.values()) expect(version).toBe(store.version)
   })
 }
-// The mount refresh (list) writes the match row: wait for it and its re-render
+// The page has rendered its latest write
 async function refreshed() {
-  await waitFor(() => expect(row()).toHaveProperty('accountApprovals'))
   await settled()
 }
 async function signVia(role) {
@@ -197,7 +191,6 @@ async function signVia(role) {
 beforeEach(() => {
   seed()
   alerts.showAlert = vi.fn()
-  api.list = vi.fn(async () => ({ data: { match: { status: 'ended', closed_at: null, result_key: null }, approvals: [] }, error: null, status: 200 }))
   auth.value = { user: { id: 'u-scorer', email: 'scorer@club.ch' }, access: { roles: ['scorer'], isAdmin: false } }
   Object.defineProperty(window.navigator, 'onLine', { configurable: true, get: () => true })
   globalThis.ResizeObserver ||= class { observe() {} unobserve() {} disconnect() {} }

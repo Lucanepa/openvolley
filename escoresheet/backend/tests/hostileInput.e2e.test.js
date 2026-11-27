@@ -148,12 +148,13 @@ const POST_ROUTES_SINCE_1411 = [
   '/api/auth/passkey/login-options', '/api/auth/passkey/login', '/api/auth/reset-password/confirm'
 ]
 // One route of each authenticated family: refused without an account, and
-// the refusal must not throw on what it was sent either
+// the refusal must not throw on what it was sent either (the removed
+// approval paths answer 410 to everyone)
 const AUTH_FAMILY_ROUTES = [
   '/api/admin/:x', '/api/admin/activity/export', '/api/beach/:x', '/api/club/v1', '/api/club/v1/:x', '/api/club/:x',
   '/api/club-licences', '/api/club-licences/:x', '/api/game-rosters', '/api/game-rosters/:x', '/api/saved-teams',
   '/api/saved-teams/:x', '/api/scoresheets', '/api/scoresheets/:x', '/api/approvals', '/api/approvals/:x',
-  '/api/account/approvals', '/api/account/approval-pin', '/api/account/approval-pin/remove', '/api/match-editors/:x',
+  '/api/account/approvals', '/api/account/approval-pin', '/api/account/approval-pin/remove', '/api/admin/approvals', '/api/match-editors/:x',
   '/api/team/:x', '/api/notifications/read', '/api/match/claim', '/api/match/scorer'
 ]
 

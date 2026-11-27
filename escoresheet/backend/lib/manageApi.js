@@ -32,12 +32,9 @@
  *                                                     lib/savedTeams.js mayManageCompetition)
  *   *      /api/beach/*                               beach canReadTeams (beach:scorer, beach:competition_manager,
  *                                                     admin); lib/beachTournaments.js decides the rest (T1)
- *   GET/POST /api/account/approval-pin[/remove]      any signed-in account (lib/approvals.js)
- *   GET    /api/account/approvals                    any signed-in account: its own approvals
- *   POST/GET /api/approvals, DELETE /api/approvals/:id  any signed-in account; the
- *                                                    handlers check match ownership and the
- *                                                    official's role in the match's sport
- *   GET    /api/admin/approvals[?app=indoor|beach]   isAdmin
+ *   *      /api/approvals[/:id], /api/account/approvals, /api/account/approval-pin[/remove],
+ *          /api/admin/approvals                      410 OV_APPROVAL_REMOVED (approval with a PIN was
+ *                                                    removed 27.11.2026; server.js answers before the session)
  *   *      /api/admin/data/*                         isSuperAdmin: the Data tab, every table of the
  *                                                    public schema one row at a time (lib/dataAdmin.js)
  *   GET    /api/admin/sql/schema, POST /api/admin/sql isSuperAdmin: the SQL tab (lib/sqlWorkspace.js)
@@ -163,8 +160,9 @@ import { LICENCE_LISTS } from './licences.js'
 import { SPORTS, accessForSport, sportsWith } from './access.js'
 import { mayManageCompetition } from './savedTeams.js'
 
-// Before lib/approvals.js is wired (or on a server built without it)
-const APPROVALS_OFF = () => fail(503, 'OV_APPROVAL_UNAVAILABLE', 'Approval with an account is not available on this server')
+// Approval with a PIN was removed (owner 27.11.2026: officials sign by hand).
+// Its old paths answer 410 so apps still installed get a clean error.
+export const APPROVAL_REMOVED = () => fail(410, 'OV_APPROVAL_REMOVED', 'Approval with a PIN was removed. Officials sign by hand.')
 
 const FORBIDDEN = () => fail(403, 'OV_FORBIDDEN', 'You do not have access to this')
 const SCORER_REQUIRED = () => fail(403, 'OV_SCORER_REQUIRED', 'Your account is not approved for official matches yet')
@@ -191,11 +189,12 @@ export function manageFamilyOf (pathname) {
   if (pathname === '/api/account/join') return 'join'
   if (pathname === '/api/account/redeem-invite' || pathname === '/api/account/invite-preview') return 'account'
   if (pathname === '/api/match/official-check') return 'officialCheck'
+  // the removed approval paths (APPROVAL_REMOVED), the admin search included
+  if (pathname === '/api/approvals' || pathname.startsWith('/api/approvals/') || pathname === '/api/account/approvals' ||
+    pathname === '/api/account/approval-pin' || pathname === '/api/account/approval-pin/remove' || pathname === '/api/admin/approvals') return 'approvals'
   if (pathname.startsWith('/api/admin/')) return 'admin'
   if (pathname === '/api/saved-teams' || pathname.startsWith('/api/saved-teams/')) return 'savedTeams'
   if (pathname.startsWith('/api/beach/')) return 'beach'
-  if (pathname === '/api/account/approval-pin' || pathname === '/api/account/approval-pin/remove') return 'approvalPin'
-  if (pathname === '/api/approvals' || pathname.startsWith('/api/approvals/') || pathname === '/api/account/approvals') return 'approvals'
   if (pathname === '/api/scoresheets' || pathname.startsWith('/api/scoresheets/')) return 'scoresheets'
   if (pathname.startsWith('/api/club/')) return 'club'
   if (pathname === '/api/games/today') return 'games'
@@ -208,9 +207,7 @@ export function manageFamilyOf (pathname) {
   return null
 }
 
-export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null, revisions = null, activity = null, scoresheets = null, clubs = null, finalMail = null, teams = null, licences = null, requests = null, notices = null, clubApi = null, dataAdmin = null, sqlWorkspace = null, errors = null, saveBack = null }) {
-  // approvals?.x, or 503 when the module is not there
-  const ap = (name) => (args) => (approvals && typeof approvals[name] === 'function' ? approvals[name](args) : APPROVALS_OFF())
+export function createManageApi ({ accounts, savedTeams, beach = null, revisions = null, activity = null, scoresheets = null, clubs = null, finalMail = null, teams = null, licences = null, requests = null, notices = null, clubApi = null, dataAdmin = null, sqlWorkspace = null, errors = null, saveBack = null }) {
   const q = (query, k) => {
     const v = query?.get?.(k)
     return v == null ? undefined : v
@@ -445,16 +442,6 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     // Undone / edited events of a match (db/015, lib/eventRevisions.js)
     ['GET', new RegExp(`^/api/admin/matches/${ID}/revisions$`), 'admin', (m) => (revisions ? revisions.listForMatch({ matchId: m[1] }) : notFound())],
     ['GET', /^\/api\/admin\/audit$/, 'admin', (m, c) => accounts.listAudit({ limit: q(c.query, 'limit'), before: q(c.query, 'before'), action: q(c.query, 'action'), app: q(c.query, 'app') })],
-    ['GET', /^\/api\/admin\/approvals$/, 'admin', (m, c) => ap('adminSearch')({ q: q(c.query, 'q') ?? '', includeRevoked: q(c.query, 'include_revoked'), limit: q(c.query, 'limit'), app: q(c.query, 'app') })],
-
-    // Account approvals (docs/account-approval-spec.md section 3)
-    ['GET', /^\/api\/account\/approval-pin$/, 'any', (m, c) => ap('getPinStatus')({ userId: c.user.id })],
-    ['POST', /^\/api\/account\/approval-pin$/, 'any', (m, c) => ap('setPin')({ userId: c.user.id, body: c.body })],
-    ['POST', /^\/api\/account\/approval-pin\/remove$/, 'any', (m, c) => ap('removePin')({ userId: c.user.id, body: c.body })],
-    ['POST', /^\/api\/approvals$/, 'any', (m, c) => ap('approve')({ callerId: c.user.id, access: c.access, body: c.body, ip: c.ip, lang: c.lang })],
-    ['GET', /^\/api\/account\/approvals$/, 'any', (m, c) => ap('listMine')({ callerId: c.user.id, limit: q(c.query, 'limit') })],
-    ['GET', /^\/api\/approvals$/, 'any', (m, c) => ap('listForMatch')({ callerId: c.user.id, access: c.access, externalId: q(c.query, 'external_id') })],
-    ['DELETE', new RegExp(`^/api/approvals/${ID}$`), 'any', (m, c) => ap('revoke')({ callerId: c.user.id, access: c.access, id: m[1] })],
 
     // the saved team editor's VolleyManager team names (svrz_games), each with its club
     ['GET', /^\/api\/saved-teams\/vm-teams$/, manageIndoorTeams, (m, c) => club((cl) => cl.vmTeams({ q: q(c.query, 'q') ?? '' }))],
@@ -570,6 +557,7 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
   async function route ({ method, pathname, query, body, user, access, ip, lang }) {
     const family = manageFamilyOf(pathname)
     if (!family) return notFound()
+    if (family === 'approvals') return APPROVAL_REMOVED()
     const early = familyRefusal(family, method, access, pathname)
     if (early) return early
     if (family === 'beach') return beach ? beach.route({ method, pathname, query, body, user, access }) : notFound()

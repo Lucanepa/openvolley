@@ -46,11 +46,6 @@ vi.mock('../../utils/askConfirm.js', () => {
   const ask = async (opts) => { confirm.calls.push(opts); return confirm.answer }
   return { askConfirm: ask, default: ask }
 })
-const api = vi.hoisted(() => ({ list: null, undo: null }))
-vi.mock('../../lib/accountApi', async (orig) => ({
-  ...(await orig()),
-  approvalsApi: { approve: vi.fn(), list: (...a) => api.list(...a), undo: (...a) => api.undo(...a) }
-}))
 vi.mock('../../lib/apiClient', () => {
   const chain = () => {
     const b = new Proxy({}, { get: (_, prop) => (prop === 'then' ? (r) => Promise.resolve({ data: null, error: null }).then(r) : () => b) })
@@ -153,7 +148,6 @@ vi.mock('../../db/db', () => {
 })
 
 import MatchEnd from '../MatchEnd'
-import { resultKey } from '../../domain/accountApproval'
 
 const SEED = 'match_post_1'
 const SETS = [
@@ -169,8 +163,6 @@ const SIGNED = {
   homePostGameCaptainSignature: 'data:cap-a', awayPostGameCaptainSignature: 'data:cap-b',
   scorerSignature: 'data:scorer', ref1Signature: 'data:ref1'
 }
-const APPROVAL_ID = '11111111-1111-4111-8111-111111111111'
-const approval = { id: APPROVAL_ID, short_id: '11111111', slot: 'referee1', name: 'Anna Example', approved_at: '2026-11-09T20:00:00Z', result_key: resultKey(SETS) }
 
 function seed(matchOver = {}, { sets = SETS, events = [] } = {}) {
   store.tables = {}
@@ -202,8 +194,6 @@ beforeEach(() => {
   cloud.on = false
   auth.value = null
   alerts.showAlert = vi.fn()
-  api.list = vi.fn(async () => ({ data: { match: { status: 'ended', closed_at: null }, approvals: [] }, error: null, status: 200 }))
-  api.undo = vi.fn(async () => ({ data: {}, error: null, status: 200 }))
   pdf.wait = vi.fn(async () => ({ blob: new Blob(['%PDF-1.4'], { type: 'application/pdf' }), filename: 'sheet.pdf' }))
   URL.createObjectURL = vi.fn(() => 'blob:x')
   HTMLAnchorElement.prototype.click = () => {}
@@ -220,8 +210,8 @@ async function editRemarks(text) {
 }
 
 describe('logic-matchend-sheet-3: remarks after the signatures', () => {
-  it('a remarks change after every signature asks, then clears the signatures and approvals here and on the server', async () => {
-    seed({ ...SIGNED, ref1Signature: null, accountApprovals: { referee1: approval } })
+  it('a remarks change after every signature asks, then clears the signatures here and on the server', async () => {
+    seed(SIGNED)
     render(<MatchEnd matchId={1} />)
     await settle()
     await waitFor(() => expect(approveButton()).toBeEnabled())
@@ -229,13 +219,12 @@ describe('logic-matchend-sheet-3: remarks after the signatures', () => {
     await waitFor(() => expect(row().remarks).toBe(''))
     expect(confirm.calls.map(c => c.title)).toEqual([en.matchEnd.signedSheetChange.title])
     for (const f of ['homePostGameCaptainSignature', 'awayPostGameCaptainSignature', 'scorerSignature', 'ref1Signature']) expect(row()[f]).toBeNull()
-    expect(row().accountApprovals).toBeNull()
     // logged as a change after the match (printed in REMARKS) and sent with the cleared signatures
     expect(row().manualChanges.at(-1)).toMatchObject({ category: 'correction', action: 'editRemarks', afterMatch: true, before: 'Protest of team B at 12:10 in set 2.', after: '' })
     const sigJob = jobs().find(j => j.resource === 'match' && j.payload?.signatures)
     expect(sigJob.payload.signatures).toMatchObject({ home_captain_post_game: null, away_captain_post_game: null, scorer: null, ref1: null })
     expect(sigJob.payload.manual_changes).toHaveLength(1)
-    expect(jobs().filter(j => j.resource === 'approval').map(j => [j.action, j.payload.id])).toEqual([['undo', APPROVAL_ID]])
+    expect(jobs().some(j => j.resource === 'approval')).toBe(false)
     await settle()
     expect(approveButton()).toBeDisabled()
   })
@@ -271,20 +260,6 @@ describe('logic-matchend-sheet-3: remarks after the signatures', () => {
     expect(confirm.calls).toHaveLength(1)
     expect(row().ref1Signature).toBeNull()
     expect(row().manualChanges.at(-1)).toMatchObject({ action: 'removeRemarksSignature', afterMatch: true })
-  })
-})
-
-describe('fe-home-options-1: an approval whose undo is still queued', () => {
-  it('is not copied back from the server', async () => {
-    cloud.on = true
-    auth.value = { user: { id: 'u-scorer', email: 'scorer@example.org' }, access: { roles: ['scorer'], isAdmin: false } }
-    seed()
-    store.tables.sync_queue.set(700, { id: 700, resource: 'approval', action: 'undo', status: 'queued', payload: { id: APPROVAL_ID, match_external_id: SEED } })
-    api.list = vi.fn(async () => ({ data: { match: { status: 'ended', closed_at: null }, approvals: [{ ...approval, revoked_at: null }] }, error: null, status: 200 }))
-    render(<MatchEnd matchId={1} />)
-    await waitFor(() => expect(api.list).toHaveBeenCalled())
-    await settle()
-    expect(row().accountApprovals ?? null).toBeNull()
   })
 })
 
@@ -441,8 +416,8 @@ describe('technical remarks at the match end', () => {
     expect(screen.queryByTestId('matchend-technical-remarks')).toBeNull()
   })
 
-  it('"Add technical remark" after the signatures: logged and queued, no question, every signature and approval stays', async () => {
-    seed({ ...SIGNED, accountApprovals: { referee1: approval }, remarksModel: 2 })
+  it('"Add technical remark" after the signatures: logged and queued, no question, every signature stays', async () => {
+    seed({ ...SIGNED, remarksModel: 2 })
     render(<MatchEnd matchId={1} />)
     await settle()
     fireEvent.click(await screen.findByTestId('matchend-technical-remark-add'))
@@ -453,7 +428,6 @@ describe('technical remarks at the match end', () => {
     expect(confirm.calls).toHaveLength(0)
     expect(row().remarks).toBe('Protest of team B at 12:10 in set 2.')
     for (const f of Object.keys(SIGNED)) expect(row()[f]).toBe(SIGNED[f])
-    expect(row().accountApprovals).toEqual({ referee1: approval })
     expect(jobs().map(j => j.payload)).toEqual([{ id: SEED, manual_changes: row().manualChanges }])
     await waitFor(() => expect(technicalLines()).toEqual(['Ball pump broken in set 2']))
   })

@@ -19,8 +19,8 @@
  *   - a page of an outside name re-pointed at a venue relay (DNS rebinding)
  *     is no page of the server's own
  *   - the cloud's /api/server/status names no counts
- *   - DATABASE_URL: approvals, the approval PIN and the test mail count in
- *     counters of their own; anonymous /api/db reads, and those of an account
+ *   - DATABASE_URL: the removed approval paths answer 410 without a session
+ *     and the test mail counts in a counter of its own; anonymous /api/db reads, and those of an account
  *     without a role, count at most 1000 rows and scan at most 100 of events;
  *     a scorer whose room the database proved is not held back by its
  *     address's frame budget; backups need a role and fit a total
@@ -389,11 +389,12 @@ describe('transport limits: DATABASE_URL mode', { skip: SKIP }, () => {
     if (statusDir) await rm(statusDir, { recursive: true, force: true })
   })
 
-  it('approvals, the approval PIN and the test mail count in counters of their own', async () => {
+  it('the removed approval paths answer 410 without a session; the test mail counts in a counter of its own', async () => {
     const u = await account('counters', ['scorer'])
-    for (let i = 0; i < 11; i++) {
-      const r = await api(srv.base, '/api/approvals', { method: 'GET', token: u.token, proto: null })
-      assert.notEqual(r.status, 429, r.text)
+    for (const path of ['/api/approvals', '/api/account/approval-pin', '/api/admin/approvals']) {
+      const r = await api(srv.base, path, { method: 'GET', proto: null })
+      assert.equal(r.status, 410, r.text)
+      assert.equal(r.json.error.code, 'OV_APPROVAL_REMOVED')
     }
     const mail = await api(srv.base, '/api/scoresheet/test-mail', { token: u.token, body: { pdf: Buffer.from('%PDF-1.4').toString('base64') } })
     assert.notEqual(mail.status, 429, mail.text)

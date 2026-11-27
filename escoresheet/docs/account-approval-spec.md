@@ -1,5 +1,12 @@
 # Approval with an account (referees and scorer): implementation spec
 
+> **Removed 27.11.2026 (owner decision: signatures only).** Approval with an
+> account and a personal PIN is gone: officials sign by hand. The app no longer
+> offers it, the server answers its paths 410 `OV_APPROVAL_REMOVED`, and
+> `db/061_remove_approval_pins.sql` deletes the stored PINs. The tables
+> `auth.approval_pins` and `public.match_approvals` stay until a later
+> migration drops them. This document is kept as the record of the design.
+
 Status: implemented; the review fixes R1–R9 (end of section 0) are built. Branch `feat/account-approval`, from `main`
 (b4068cb1). This document is the contract between the backend agent (owns
 `escoresheet/backend/**`) and the frontend agent (owns `escoresheet/frontend/**`). They work in

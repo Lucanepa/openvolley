@@ -140,8 +140,8 @@ export const SCORESHEET_UPLOAD_RESOURCE = 'scoresheet'
 
 /**
  * sync_queue resource of an account approval undone on the server (action
- * 'undo', payload { id, match_external_id }): domain/accountApproval
- * approvalUndoJobs, when the sheet changes after it was approved.
+ * 'undo', payload { id, match_external_id }). Only an older version queued
+ * it (approval with a PIN, removed 27.11.2026): useSyncQueue drops it.
  */
 export const APPROVAL_RESOURCE = 'approval'
 

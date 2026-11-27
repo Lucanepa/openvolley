@@ -153,10 +153,9 @@ Deploy to Render for cloud backup, also run locally when available. The frontend
 | `IS_CLOUD` | Strict cloud CORS/HSTS/CSP without a database (relay-only cloud). Implied by `DATABASE_URL`. | - |
 | `PG_POOL_MAX` | Max Postgres connections of the one shared pool (pgQuery + auth). | `5` |
 | `CONTACT_EMAIL` | The support mailbox (FreeScout reads it): the only recipient of `/api/contact`; also named in the "password reset unavailable" message | `support@openvolley.app` |
-| `OV_PIN_SECRET` | Secret (at least 32 characters) for the PINs at rest: `game_pin` and every `connection_pins` value are stored as an HMAC with it (`lib/pinHash.js`). Unset: stored in plaintext as before (the server warns at startup). Also keys the approval PINs: unset turns approval with an account off ("Approval PINs"). **Never change or lose it** while matches stored with it are in use (see "Security model"). | - |
+| `OV_PIN_SECRET` | Secret (at least 32 characters) for the PINs at rest: `game_pin` and every `connection_pins` value are stored as an HMAC with it (`lib/pinHash.js`). Unset: stored in plaintext as before (the server warns at startup). **Never change or lose it** while matches stored with it are in use (see "Security model"). | - |
 | `OV_SIGNUP_LICENCE` | `optional`: sign-up takes an account without a licence number (the e2e test servers). Anything else, or unset: sign-up needs the licence number, 4 to 7 digits (owner 23.11.2026; 422 `licence_required` without one). | required |
 | `OV_PIN_ONLY_LOOKUP` | `on` \| `beach` \| `off`: which sports still get the referee and bench PIN checks that name no match ("lookups without a match" under the rate limits below); a refused one answers 409 `match-required`. Anything else stops the start. | `on` |
-| `OV_BEACH_REFEREE_ADDRESS` | `required`: a beach referee slot's account approval needs the address its match setup stored, as an indoor slot does (`lib/approvals.js`, PERM-08); `optional` or unset keeps the older rule for a slot without one. | `optional` |
 | `OV_SIGN_IN_CEILING_SLOTS` | `account` \| `lane`: past an address's ceiling of failed sign-ins, one try per interval for all its unknown sources, or one per client lane ("Account-wide ceiling" below). | `account` |
 | `OV_MATCH_TOKEN_SECRET` | Secret (at least 32 characters; a shorter one stops the start) for the match access tokens the PIN checks answer with (`lib/matchAccess.js`). Unset: derived from `OV_PIN_SECRET`; both unset: a random one per process (tokens end with a restart; the apps re-check their stored PIN on reload). | derived / random |
 | `STORAGE_BACKUP_MIN_FREE_MB`, `STORAGE_SCORESHEETS_MIN_FREE_MB`, `STORAGE_MAX_FILE_MB`, `STORAGE_BACKUP_ACCOUNT_MAX_MB`, `STORAGE_SCORESHEETS_ACCOUNT_MAX_MB`, `STORAGE_OWNER_SCOPE`, `STORAGE_OWNER_SCOPE_BUCKETS` | See "Self-hosted storage" below | |
@@ -182,8 +181,8 @@ Rate limits in cloud mode (per minute unless noted; sized for a venue NAT).
 "Per IP" is per address bucket on the cloud: IPv4 as is, **IPv6 by /64** (one
 subscriber holds a whole /64; a venue relay counts per address, as its socket
 cap does). Each category has its own counters, at most 10,000 keys each (a
-flood of new addresses evicts the oldest windows). `/api/approvals*` 60,
-`/api/account/approval-pin*` 30 and `/api/scoresheet/test-mail` 10 per user.
+flood of new addresses evicts the oldest windows). `/api/scoresheet/test-mail`
+10 per user.
 `/api/db` 1200 per IP before the body is read, then reads 600 per IP, writes
 600 per user (and 1200 per IP before the token lookup); `/api/storage/*` 600 per
 IP plus the per-user write quota of `lib/storage.js`; `validate-connection-pin`
@@ -705,50 +704,15 @@ unknown columns), so the order of deploy and app release does not matter.
   checks answer the match, never a PIN; the server logs no PIN (asserted by the
   e2e suites).
 
-### Approval PINs (`lib/approvals.js`, `db/011`)
+### Approval PINs (removed 27.11.2026)
 
-The 1st referee, the 2nd referee and the scorer may approve a match result
-with their account instead of a drawn signature (the signature pads stay, as
-the offline fallback). They confirm with a personal approval PIN of 4 to 6
-digits, set once in the profile with the account password
-(`../docs/account-approval-spec.md`).
-
-- **`OV_PIN_SECRET` is required.** The PIN is stored in
-  `auth.approval_pins` as HMAC-SHA256 with a key derived (HKDF,
-  `ov-approval-pin-v1`) from `OV_PIN_SECRET`, plus a random salt per row and
-  the user id in the input. A dump alone reveals nothing; bcrypt would only
-  slow a dump-plus-secret attack over 10^6 values from seconds to hours and
-  cost main-thread CPU on every attempt. Without the secret the feature is off:
-  every endpoint answers 503 `OV_APPROVAL_UNAVAILABLE` (the status answers
-  `available: false`), never a plaintext fallback.
-- **Rotating the secret** (or `key_id` bumped in a later release) makes every
-  approval PIN read as "not set". Officials set a new one with their password.
-  Approvals already given stay valid: the PIN only gates new approvals.
-- **Wrong PINs** are counted per approver in the database, under the row lock
-  of the approve transaction. The count is rolling: a right PIN keeps it, 30
-  days without a failure restart it. Every 5th failure locks the PIN for 15
-  minutes, the 10th disables it until its owner sets a new one. A locked or
-  disabled PIN answers like a wrong one (no oracle). A caller may send 10
-  wrong PINs per 10 minutes (per account and per IP /64), 5 wrong passwords
-  per 15 minutes on set/remove PIN, and the password check counts in the
-  sign-in lockout. Weak PINs (dates, years, pairs, keypad patterns) are
-  refused when set.
-- **Who may approve what.** Only a scorer, referee or admin account sends
-  approvals. A referee slot is never filled by the match's creator, an
-  editor or the sending account (403 `OV_APPROVAL_SCORER_NOT_REFEREE`).
-- **The official is told.** With the account mailer (SMTP), the official
-  gets an email for every approval made with their PIN and when it locks;
-  `GET /api/account/approvals` (profile, "Your approvals") lists them with an
-  undo while the match is open.
-- **An admin cannot read or reset a PIN.** The admin console shows the
-  approvals (`GET /api/admin/approvals`, the ID printed on the PDF), with the
-  approver's address and the first 8 hex characters of the IP and device
-  hashes. A blocked official signs by hand or sets a new PIN with their
-  password.
-- `match_approvals` is not on the `/api/db` allowlist and never goes to live
-  sockets; a closed match freezes its approvals, a reopen or a team rename
-  after the end voids them (trigger, audit `match.approval_void`), deleting
-  an account keeps them with the name.
+Approval with an account and a personal PIN (`db/011`) was removed: officials
+sign by hand. `/api/approvals*`, `/api/account/approvals`,
+`/api/account/approval-pin*` and `/api/admin/approvals` answer 410
+`OV_APPROVAL_REMOVED`, with or without a session. `db/061` deleted the stored
+PINs; the tables `auth.approval_pins` and `public.match_approvals` stay until a
+later migration drops them. `OV_PIN_SECRET` stays required (game PINs, match
+tokens). The design is in `../docs/account-approval-spec.md`.
 
 ### Backups (`backup/` bucket)
 
@@ -1380,9 +1344,7 @@ Errors: 401 no session, 403 `OV_FORBIDDEN` (role), 400 `OV_INVALID_REQUEST`
 | `GET /api/admin/matches/:id/pin` | admin | `{ pin, stored: 'plain'\|'hashed'\|'none', game_n }`: the game PIN the scorer app's Restore match asks for with the game number. A PIN stored as its HMAC (`OV_PIN_SECRET`, every PIN in production) cannot be read back: `pin` is `null`, then a new one is the way. Every read is audited (`match.pin_viewed` `{ external_id, game_n, shown }`, never the PIN); no audit row, no answer. No list or other read carries a PIN |
 | `POST /api/admin/matches/:id/pin` | admin | `{ pin, stored, game_n }`: a new random game PIN, answered once, stored as every PIN (closed matches too). As a game PIN change by the scorer: the editors by the old PIN are editors no more (an admin's stay), the old PIN's failure count ends, a device with the old PIN needs the new one. Never one of the match's connection PINs. Audited `match.pin_reset` `{ external_id, game_n }` |
 | `GET /api/admin/audit?limit=&before=&action=` | admin | `{ entries, next_before }`, newest first |
-| `GET /api/admin/approvals?q=&include_revoked=0\|1&limit=` | admin | account approvals by short id, game number or `external_id`, with email, hash prefixes and the match. `GET /api/admin/matches` and `official-games` (`claim`) carry the active `approvals` |
-| `GET /api/account/approval-pin`, `POST /api/account/approval-pin {password, pin}`, `POST /api/account/approval-pin/remove {password}` | any account (set: referee or scorer, confirmed address) | approval PIN status / set / remove ("Approval PINs"); 403 `OV_PASSWORD_INVALID`, 400 `OV_APPROVAL_PIN_FORMAT`/`_WEAK` |
-| `POST /api/approvals {external_id, slot, email, pin, result, device_id?}`, `GET /api/approvals?external_id=`, `DELETE /api/approvals/:id` | owner, editors, admins (GET and undo: also the approver) | approve, list, undo; error codes in `../docs/account-approval-spec.md` 3.4 |
+| `/api/approvals*`, `/api/account/approvals`, `/api/account/approval-pin*`, `/api/admin/approvals` | anyone | 410 `OV_APPROVAL_REMOVED` (approval with a PIN removed 27.11.2026, "Approval PINs") |
 | `GET /api/saved-teams?sport=indoor\|beach\|all` | scorer, competition manager, admin | `{ version, fetched_at, sport, competitions, teams: [{ …, sport, players, staff }] }` (archived competitions included). Owner decision 1: an account without the indoor competition manager right (a scorer) gets of indoor only the teams of its own matches in the current season, of competitions that are not archived: its clubs' teams, the teams they meet at home (`svrz_games`), the teams of the official games of the matches it created or edits (`lib/savedTeams.js` `getBundle` `scope`). No `sport` (or `''`) = **indoor only**, so a 2.1.0 client never sees a beach row; any other value is 400. `version` is the newest `updated_at` of the filtered rows (`'0'` when none). Every competition and team carries `sport`, every player `country` (`null` for indoor). |
 | `POST /api/saved-teams/competitions`, `PATCH`/`DELETE …/competitions/:id[?confirm=<name>]` | competition manager, admin | `{ competition }` (201 on create) / `{ deleted: true }` (cascades; a competition with teams only with its name as `confirm`, else 400 `OV_CONFIRM_NAME`; audited `saved_teams.competition_delete` with the name and the counts). Create takes `sport: 'indoor'\|'beach'` (absent/`null` = indoor); it is fixed: any `sport` in a PATCH is 400 `sport: cannot be changed`. Season: indoor `'2026/27'` (consecutive years), beach `'2026'` (2000-2100). `vm_leagues` (VolleyManager) is indoor only: a non-empty list on beach is 400. |
 | `POST /api/saved-teams/teams`, `PATCH`/`DELETE …/teams/:id[?confirm=<name>]` | competition manager, admin | `{ team }` (201; 409 `OV_DUPLICATE` for a name already in the competition) / `{ deleted: true }` (a team with players or officials only with its name as `confirm`; audited `saved_teams.team_delete`) |
@@ -1509,7 +1471,7 @@ Password-reset links, confirmation links for new accounts and the "your password
 - **Scoresheet mails** (`lib/finalMail.js`, db/021 + db/040): the final scoresheets have their own budget (`scoresheet`, 300 an hour, `MAIL_BUDGET_FINAL`) and so have the test scoresheets scorers send themselves (`scoresheet_test`, 50, `MAIL_BUDGET_TEST`, and 5 per inbox), so test mails cannot use up the real ones; the sizes come from the environment (`budgetsFromEnv`; a value that is not a whole number above 0 keeps the default and logs a warning at start). A final scoresheet the budget holds back is not dropped: its close is deferred and the sweep sends it later to the addresses it missed (`match_final_mails.outcome` `deferred`, never `sent`); failed sends are tried again for about 3 hours and then recorded as `failed` / `partial`. The notices of a missing PDF and of an admin reopen go on the `notify` budget. A test mail goes only to an account that may score, at its confirmed address (403 `OV_SCORER_REQUIRED`, 409 `OV_EMAIL_UNCONFIRMED`), with a fixed subject (the caller's text in the body only). An address typed in the match setup that belongs to no confirmed account (nor is a club's contact) gets the official mail and the PDF with a fixed text, without the technical remarks, and the sweep mails at most 40 such addresses per closing account and day (an admin's closes are not capped; SEC-11); a close's typed addresses over that wait for the closing account's next day (its round stays `deferred`, the others get the mail at once, up to 7 days after the close; 2611 review, SR-2). The switch's `changed_at` moves only when it goes from off to on, and a close already on its way is finished whatever the switch did since (SEC-12).
 - **Mails a scorer asks for** (`sendUser`: the game PIN and the match information, `POST /api/match/send-pin` and `/send-info`): rendered by server.js, plain text from `MAIL_FROM`, to the account's own confirmed address only. Their own budget (`user`, 100 an hour, `MAIL_BUDGET_USER`) and at most 5 an hour per delivered inbox (`inboxKey`), counted apart from the reset and confirmation mails, so asking for a PIN never uses up the inbox's password resets. Over a limit the route answers 429 `OV_MAIL_LIMIT` (the address is the caller's own: nothing to hide, and a silent "sent" would leave the scorer waiting for a PIN). Without SMTP they go over Resend (`RESEND_API_KEY`). (Until 23.11.2026 they went over Resend only, so production, which has no key, answered every one 503.)
 - **Sign-in attempts notice**: the mail to an account whose address is past its ceiling of failed sign-ins (`sign_in_attempts`, once per 24 h window) has a budget of its own (`sign_in`, 50 an hour, `MAIL_BUDGET_SIGN_IN`): a guesser who knows many addresses could use up the `account` budget with these notices, and every password reset of that hour went without its mail (2611 review, SIGNIN-NOTICE-SHARES-RESET-BUDGET).
-- **Approval and sign-up notices**: "your approval PIN was used" (`security`, 50) and a locked or blocked PIN (`pin_lock`, 50, `MAIL_BUDGET_PIN_LOCK`) have budgets of their own, so wrong PINs cannot use up the first; per inbox and hour at most 10 and 2 of them, a lock notice once an hour per approver, naming the game by its number and the schedule's teams; a caller with 30 wrong PINs within a day gets 429 `OV_TOO_MANY_ATTEMPTS` (SEC-32). A sign-up notice mails the admins and only the managers of the club of the sign-up's first part (at most 5, 3 sign-ups per club and day, 30 manager mails an hour; the others see it in the bell), and self-chosen names in these mails are letters, spaces, hyphens and apostrophes only (SEC-34).
+- **Sign-up notices**: A sign-up notice mails the admins and only the managers of the club of the sign-up's first part (at most 5, 3 sign-ups per club and day, 30 manager mails an hour; the others see it in the bell), and self-chosen names in these mails are letters, spaces, hyphens and apostrophes only (SEC-34).
 
 - **Brands**: `sign-up`, `reset-password`, `reset-password/confirm` and `resend-confirmation` take an optional `app` (`'beach'` = OpenBeach; anything else or nothing = OpenVolley, as before). It chooses the sender (`MAIL_FROM` / `MAIL_FROM_BEACH`), the name in the texts and the link host (`MANAGER_URL` / `MANAGER_URL_BEACH`), never a URL from the client (`redirectTo` stays ignored). The OpenBeach reset and password-changed mails add "This changes the password of your account for OpenVolley and OpenBeach" (one login). On `sign-up`, a given `app` also records the account's first membership (`auth.app_memberships`, `joined_via = 'signup'`); without one no row is written and the account counts as indoor (docs/app-separation-spec.md). `app` grants no role. Budgets and inbox caps are shared by both brands. The tokens work on either manager (one backend).
 - **Links**: `MANAGER_URL/#reset?token=<43 chars>&lang=de` and `#confirm?token=...` (the token sits in the fragment, so it reaches no server log; the manager page removes it from the address bar at once). 32 random bytes; only `SHA-256(token)` is stored in `auth.app_tokens` (`purpose` reset|confirm, `user_id`, `expires_at`, `used_at`). Reset: 60 minutes, single use; a new request and every password change (also `set-password.mjs`) spend all open reset links of the account. Confirm: 24 hours, single use, a new one replaces the older ones. Rows go with the account (FK cascade) and are swept hourly a week after they were used or expired.

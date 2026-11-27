@@ -479,15 +479,9 @@ const redeemLimiter = createAttemptLimiter(REDEEM_FAILURES)
 const redeemIpLimiter = createAttemptLimiter(REDEEM_IP_FAILURES)
 /** A redeem / preview answer that counts as a failed attempt: a code refused (4xx), not a bad body or a 429. */
 const isRedeemFailure = (r) => !!r && r.status >= 401 && r.status < 500 && r.status !== 429
-// Account approvals (docs/account-approval-spec.md 3.0, lib/approvals.js)
-const APPROVAL_PIN_RATE_LIMIT_MAX = 30   // /api/account/approval-pin* per user and minute
-const APPROVALS_RATE_LIMIT_MAX = 60      // /api/approvals* per user and minute
-// Wrong passwords on set/remove PIN and wrong PINs on approve, per account and
-// per IP (/64); every other answer is refunded.
-const APPROVAL_PASSWORD_FAILURES = { max: 5, windowMs: 15 * 60 * 1000 }
-const APPROVAL_PIN_FAILURES = { max: 10, windowMs: 10 * 60 * 1000 }
-const approvalPasswordLimiter = createAttemptLimiter(APPROVAL_PASSWORD_FAILURES)
-const approvalPinFailLimiter = createAttemptLimiter(APPROVAL_PIN_FAILURES)
+// Approval with a PIN was removed (owner 27.11.2026: officials sign by hand).
+// Its old paths answer 410 at once, without a session (lib/manageApi.js APPROVAL_REMOVED).
+const APPROVAL_REMOVED_BODY = { data: null, error: { message: 'Approval with a PIN was removed. Officials sign by hand.', code: 'OV_APPROVAL_REMOVED' } }
 // /api/club/v1/* (lib/clubApi.js): refused tokens per IP (/64), counted BEFORE
 // the token lookup (a refused token costs no query once the address is over),
 // every other answer refunded
@@ -501,11 +495,11 @@ function manageFamilyOf(pathname) {
   if (pathname === '/api/account/join') return 'join'
   if (pathname === '/api/account/redeem-invite' || pathname === '/api/account/invite-preview') return 'account'
   if (pathname === '/api/match/official-check') return 'officialCheck'
+  if (pathname === '/api/approvals' || pathname.startsWith('/api/approvals/') || pathname === '/api/account/approvals' ||
+    pathname === '/api/account/approval-pin' || pathname === '/api/account/approval-pin/remove' || pathname === '/api/admin/approvals') return 'approvals'
   if (pathname.startsWith('/api/admin/')) return 'admin'
   if (pathname === '/api/saved-teams' || pathname.startsWith('/api/saved-teams/')) return 'savedTeams'
   if (pathname.startsWith('/api/beach/')) return 'beach'
-  if (pathname === '/api/account/approval-pin' || pathname === '/api/account/approval-pin/remove') return 'approvalPin'
-  if (pathname === '/api/approvals' || pathname.startsWith('/api/approvals/') || pathname === '/api/account/approvals') return 'approvals'
   if (pathname === '/api/scoresheets' || pathname.startsWith('/api/scoresheets/')) return 'scoresheets'
   if (pathname.startsWith('/api/club/')) return 'club'
   if (pathname === '/api/games/today') return 'games'
@@ -667,7 +661,6 @@ function getDataLayer() {
     import('./lib/manageApi.js'),
     import('./lib/officialGame.js'),
     import('./lib/mailer.js'),
-    import('./lib/approvals.js'),
     import('./lib/beachTournaments.js'),
     import('./lib/eventRevisions.js'),
     import('./lib/activityLog.js'),
@@ -688,7 +681,7 @@ function getDataLayer() {
     import('./lib/errorTracker.js'),
     import('./lib/errorAlerts.js'),
     import('./lib/sourceMaps.js')
-  ]).then(([pgq, mr, au, st, ph, ac, acc, svt, mg, og, ml, apv, bt, evr, act, ss, cl, sd, fm, tms, lic, arq, sn, pub, ret, cla, dta, sqw, rsb, ert, era, smp]) => {
+  ]).then(([pgq, mr, au, st, ph, ac, acc, svt, mg, og, ml, bt, evr, act, ss, cl, sd, fm, tms, lic, arq, sn, pub, ret, cla, dta, sqw, rsb, ert, era, smp]) => {
     const poolMax = Number(process.env.PG_POOL_MAX) > 0 ? Math.floor(Number(process.env.PG_POOL_MAX)) : undefined
     const db = pgq.createPgQuery({
       connectionString: DATABASE_URL,
@@ -775,23 +768,6 @@ function getDataLayer() {
     })
     // Roles from public.profiles (never the request), 30 s per process (lib/access.js)
     const access = ac.createAccessResolver({ pool: db.pool })
-    // Account approvals (lib/approvals.js) are OFF (owner 27.11.2026: signatures
-    // only, the approval PIN is being removed): secret null makes every endpoint
-    // answer 503 OV_APPROVAL_UNAVAILABLE and getPinStatus { available: false },
-    // so apps already installed show "feature off on the server" next to the
-    // signature. OV_PIN_SECRET stays set: it also hashes the game PINs
-    // (lib/pinHash.js) and signs match tokens (lib/matchAccess.js). OpenBeach
-    // approves with accounts too (beachApprovals): a beach match needs the
-    // beach roles (beach:referee / beach:scorer), an indoor match the indoor
-    // ones, and either kind makes an account eligible for an approval PIN.
-    // OV_BEACH_REFEREE_ADDRESS=required binds a beach referee slot to the
-    // address its match setup stored (PERM-08), once the OpenBeach release
-    // that stores it has replaced the older builds (deploy/README.md checklist).
-    const beachAddress = apv.beachRefereeAddressFromEnv(process.env)
-    if (beachAddress.warning) console.warn(`⚠️  [Config] ${beachAddress.warning}`)
-    else if (beachAddress.required) console.log('[Config] OV_BEACH_REFEREE_ADDRESS=required: a beach referee slot needs the address stored with its match')
-    const approvals = apv.createApprovals({ pool: db.pool, auth, mailer, secret: null, beachApprovals: true, beachOfficialAddressRequired: beachAddress.required })
-    if (!approvals.enabled) console.log('[Config] approval with an account is off (signatures only, 503 OV_APPROVAL_UNAVAILABLE)')
     // Clubs (db/018, lib/clubs.js) audit through accounts, which asks them for /api/me
     let clubs = null
     // An admin's delete / reject of an account runs delete-account's own deletion (files included)
@@ -799,7 +775,7 @@ function getDataLayer() {
     let teams = null
     // Sign-up requests and who approves them (db/025, lib/accountRequests.js), the same way
     let requests = null
-    const accounts = acc.createAccounts({ pool: db.pool, db, restore, access, approvalsForMatches: approvals.approvalsForMatches, clubs: () => clubs, teams: () => teams, requests: () => requests, eraseAccount: auth.eraseAccount, mailer,
+    const accounts = acc.createAccounts({ pool: db.pool, db, restore, access, clubs: () => clubs, teams: () => teams, requests: () => requests, eraseAccount: auth.eraseAccount, mailer,
       // an admin's new game PIN (POST /api/admin/matches/:id/pin): hashed like every PIN, its old count ends
       pins, onGamePinChanged: (externalId) => pinFailureLimiter.pinChanged(externalId, ['game']) })
     // db/029: a club manager link for someone not linked to the club, mailed
@@ -829,7 +805,6 @@ function getDataLayer() {
     const scoresheets = ss.createScoresheets({
       pool: db.pool, db, storage, accounts,
       readMatch: (id) => restore.readWhole(id),
-      readApprovals: (id) => approvals.recordsForMatch(id),
       vector,
       // a refused vector copy is an ops error (the error tracker), the device's PDF staying official (LOG-09)
       captureError: (err, opts) => captureServerError(err, opts),
@@ -871,12 +846,12 @@ function getDataLayer() {
       // tests only: a shorter cooldown than the hour
       ...(process.env.NODE_ENV !== 'production' && Number(process.env.ERROR_ALERT_COOLDOWN_MS) >= 0 && process.env.ERROR_ALERT_COOLDOWN_MS ? { cooldownMs: Number(process.env.ERROR_ALERT_COOLDOWN_MS) } : {})
     })
-    const manage = mg.createManageApi({ accounts, savedTeams, beach, approvals, revisions, activity, scoresheets, clubs, finalMail, teams, licences, requests, notices, clubApi, dataAdmin, sqlWorkspace, errors, saveBack })
+    const manage = mg.createManageApi({ accounts, savedTeams, beach, revisions, activity, scoresheets, clubs, finalMail, teams, licences, requests, notices, clubApi, dataAdmin, sqlWorkspace, errors, saveBack })
     // The active scoring device of each match (db/019, the scoring-device handover)
     const scorer = sd.createScorerDevices({ pool: db.pool, db, audit: accounts.audit })
     // The end of the match records (db/042, lib/retention.js): the daily sweep below
     const retention = ret.createRetention({ pool: db.pool, storage, audit: accounts.audit })
-    dataLayer = { errors, errorAlerts, publicApi, clubApi, retention, db, restore, auth, storage, pins, access, accounts, savedTeams, licences, teams, saveBack, beach, approvals, manage, requests, revisions, activity, scoresheets, scorer, finalMail, isScoresheetPdf: ss.isScoresheetPdf, isMatchScoresheetFile: ss.isMatchScoresheetFile, isScoresheetUploadPath: ss.isScoresheetUploadPath, activityCsvLine: act.csvLine, activityCsvColumns: act.CSV_COLUMNS, publicClaim: og.publicClaim, sendAuthResult: au.sendAuthResult, AUTH_ACTIONS: au.AUTH_ACTIONS, ipKey: au.ipBucketKey }
+    dataLayer = { errors, errorAlerts, publicApi, clubApi, retention, db, restore, auth, storage, pins, access, accounts, savedTeams, licences, teams, saveBack, beach, manage, requests, revisions, activity, scoresheets, scorer, finalMail, isScoresheetPdf: ss.isScoresheetPdf, isMatchScoresheetFile: ss.isMatchScoresheetFile, isScoresheetUploadPath: ss.isScoresheetUploadPath, activityCsvLine: act.csvLine, activityCsvColumns: act.CSV_COLUMNS, publicClaim: og.publicClaim, sendAuthResult: au.sendAuthResult, AUTH_ACTIONS: au.AUTH_ACTIONS, ipKey: au.ipBucketKey }
     return dataLayer
   })
   return dataLayerPromise
@@ -2290,8 +2265,6 @@ const rateLimitMaps = {
   restorePin: new Map(), // /api/match/restore-by-pin, per IP
   manage: new Map(),    // /api/admin/*, /api/saved-teams*, per user id
   officialCheck: new Map(), // /api/match/official-check, per user id
-  approvalPin: new Map(), // /api/account/approval-pin*, per user id
-  approvals: new Map(), // /api/approvals*, per user id
   testMail: new Map(),  // /api/scoresheet/test-mail, per user id
   publicBeach: new Map(), // /api/public/beach/t/:slug, per IP
   publicClubs: new Map(), // /api/public/clubs, per IP
@@ -2729,7 +2702,7 @@ function getSignSessions() {
   return signSessions
 }
 
-/** May this account start phone signing (spec D2)? Same callers as account approval. */
+/** May this account start phone signing (spec D2)? A scorer or referee account, or an admin. */
 function mayStartPhoneSign(access) {
   if (access?.isAdmin === true) return true
   const roles = Array.isArray(access?.roles) ? access.roles : []
@@ -5116,6 +5089,11 @@ Generated by eScoresheet
   // needs a session; the roles come from the database (lib/access.js). The
   // UI hides what an account may not do, but the check is here.
   const manageFamily = manageFamilyOf(url.pathname)
+  if (manageFamily === 'approvals') {
+    req.resume()
+    sendJson(res, 410, APPROVAL_REMOVED_BODY, { 'Cache-Control': 'no-store' })
+    return
+  }
   if (manageFamily) {
     if (!DB_MODE) {
       sendNoDb()
@@ -5132,11 +5110,7 @@ Generated by eScoresheet
           ? isRateLimited(user.id, OFFICIAL_CHECK_RATE_LIMIT_MAX, 'officialCheck')
           : manageFamily === 'account'
             ? isRateLimited(user.id, ACCOUNT_RATE_LIMIT_MAX, 'account')
-          : manageFamily === 'approvalPin'
-            ? isRateLimited(user.id, APPROVAL_PIN_RATE_LIMIT_MAX, 'approvalPin')
-            : manageFamily === 'approvals'
-              ? isRateLimited(user.id, APPROVALS_RATE_LIMIT_MAX, 'approvals')
-              : (manageFamily === 'admin' || manageFamily === 'savedTeams' || manageFamily === 'me' || manageFamily === 'join' || manageFamily === 'beach' || manageFamily === 'scoresheets' || manageFamily === 'club' || manageFamily === 'games' || manageFamily === 'settings' || manageFamily === 'team' || manageFamily === 'gameRosters' || manageFamily === 'clubLicences' || manageFamily === 'notifications' || manageFamily === 'matchEditors') &&
+            : (manageFamily === 'admin' || manageFamily === 'savedTeams' || manageFamily === 'me' || manageFamily === 'join' || manageFamily === 'beach' || manageFamily === 'scoresheets' || manageFamily === 'club' || manageFamily === 'games' || manageFamily === 'settings' || manageFamily === 'team' || manageFamily === 'gameRosters' || manageFamily === 'clubLicences' || manageFamily === 'notifications' || manageFamily === 'matchEditors') &&
                 isRateLimited(user.id, MANAGE_RATE_LIMIT_MAX, 'manage')
         if (limited) {
           req.resume()
@@ -5167,26 +5141,6 @@ Generated by eScoresheet
             return
           }
         }
-        // Approval PIN set/remove (wrong passwords) and approve (wrong PINs):
-        // failed attempts per account AND per IP (/64), counted before the
-        // body is read; every answer but the failure is refunded.
-        const failure = req.method !== 'POST'
-          ? null
-          : manageFamily === 'approvalPin'
-            ? { limiter: approvalPasswordLimiter, code: 'OV_PASSWORD_INVALID', retryAfter: String(APPROVAL_PASSWORD_FAILURES.windowMs / 1000) }
-            : manageFamily === 'approvals' && url.pathname === '/api/approvals'
-              ? { limiter: approvalPinFailLimiter, code: 'OV_APPROVAL_PIN_INVALID', retryAfter: String(APPROVAL_PIN_FAILURES.windowMs / 1000) }
-              : null
-        const failureKeys = failure ? [`u:${user.id}`, `ip:${ipBucketKey(clientIp)}`] : []
-        if (failure) {
-          const overUser = failure.limiter.isLimited(failureKeys[0])
-          const overIp = failure.limiter.isLimited(failureKeys[1])
-          if (overUser || overIp) {
-            req.resume()
-            sendJson(res, 429, { data: null, error: { message: 'Too many attempts. Please wait a few minutes.', code: 'OV_TOO_MANY_ATTEMPTS' } }, { 'Retry-After': failure.retryAfter, ...noStore })
-            return
-          }
-        }
         let body = {}
         if (req.method !== 'GET' && req.method !== 'DELETE' && req.method !== 'HEAD') {
           // An admin's rebuilt scoresheet PDF (POST /api/scoresheets/:id/rebuild)
@@ -5197,7 +5151,6 @@ Generated by eScoresheet
               ? await readJsonBody(req, layer.storage.maxBodyBytes)
               : await readJsonBody(req)
           } catch (err) {
-            if (failure) for (const k of failureKeys) failure.limiter.refund(k)
             refundRedeem()
             sendBodyError(res, err, rebuild ? { tooLargeBody: layer.storage.bodyTooLarge().body } : undefined)
             return
@@ -5209,9 +5162,6 @@ Generated by eScoresheet
         try {
           r = await layer.manage.route({ method: req.method, pathname: url.pathname, query: url.searchParams, body, user, access, ip: clientIp, lang: String(req.headers['accept-language'] || '').slice(0, 512) })
         } finally {
-          if (failure && !(r?.status === 403 && r.body?.error?.code === failure.code)) {
-            for (const k of failureKeys) failure.limiter.refund(k)
-          }
           if (!isRedeemFailure(r)) refundRedeem()
         }
         if (r.status === 200 && r.changes?.length) publishChanges(r.changes)

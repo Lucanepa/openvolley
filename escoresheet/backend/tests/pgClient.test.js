@@ -56,7 +56,7 @@ describe('connectClient', () => {
   })
 
   it('every pool.connect() of the backend goes through connectClient', () => {
-    const files = ['pgQuery', 'accountRequests', 'accounts', 'approvals', 'clubs', 'activityLog', 'finalMail', 'auth', 'scoresheets', 'teams', 'licences', 'beachTournaments', 'savedTeams']
+    const files = ['pgQuery', 'accountRequests', 'accounts', 'clubs', 'activityLog', 'finalMail', 'auth', 'scoresheets', 'teams', 'licences', 'beachTournaments', 'savedTeams']
     for (const f of files) {
       const src = readFileSync(new URL(`../lib/${f}.js`, import.meta.url), 'utf8')
       assert.ok(!/await pool\.connect\(\)/.test(src), `lib/${f}.js checks a client out without connectClient`)

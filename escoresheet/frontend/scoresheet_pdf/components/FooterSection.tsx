@@ -1,7 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CircleLetter } from './CircleLetter';
 import { SanctionRecord, Player } from '../types_scoresheet';
-import { isApprovalValid, formatApprovalStamp } from '../../src/domain/accountApproval.js';
 import { FitText } from './FitText';
 import { findOfficial, formatDob, formatPersonName, idHeadingOf, roleLabelOf, type SheetOfficial } from '../utils/sheetFormat';
 import { propsEqual } from '../utils/propsEqual';
@@ -476,17 +475,7 @@ interface ApprovalsProps {
   match?: any;
   teamAKey?: 'home' | 'away';
   lineJudges?: string[];
-  /** The match's sets: an account approval prints only while it matches their result. */
-  sets?: any[];
 }
-
-// Rows that may be approved with an account instead of a drawn signature
-// (docs/account-approval-spec.md 4.6). The assistant scorer signs only.
-const APPROVAL_SLOT_OF_ROLE: Record<string, string> = {
-    '1st Referee': 'referee1',
-    '2nd Referee': 'referee2',
-    'Scorer': 'scorer'
-};
 
 // The approval grid's fixed columns (the signature takes the rest) and the
 // x of the rule at the right of each (88, 88+120, +72, +72).
@@ -498,7 +487,7 @@ const APPROVAL_COL = {
 };
 const APPROVAL_RULES_PX = [88, 208, 280, 352];
 
-const ApprovalsView: React.FC<ApprovalsProps> = ({ officials = [], match, teamAKey = 'home', lineJudges = [], sets = [] }) => {
+const ApprovalsView: React.FC<ApprovalsProps> = ({ officials = [], match, teamAKey = 'home', lineJudges = [] }) => {
     const roles = ["1st Referee", "2nd Referee", "Scorer", "Assistant Scorer"];
 
     // Line judges are stored as one name, as typed: printed as entered (splitting it
@@ -512,13 +501,6 @@ const ApprovalsView: React.FC<ApprovalsProps> = ({ officials = [], match, teamAK
         if (role === 'Scorer') return match?.scorerSignature || null;
         if (role === 'Assistant Scorer') return match?.asstScorerSignature || null;
         return null;
-    };
-
-    // A valid account approval of the role, printed as text when no signature was drawn
-    const getApprovalStamp = (role: string): string | null => {
-        const slot = APPROVAL_SLOT_OF_ROLE[role];
-        const record = slot ? match?.accountApprovals?.[slot] : null;
-        return record && isApprovalValid(record, sets) ? formatApprovalStamp(record) : null;
     };
 
     // Post-game captain signatures (separate from pre-game coin toss signatures)
@@ -585,8 +567,7 @@ const ApprovalsView: React.FC<ApprovalsProps> = ({ officials = [], match, teamAK
                             {fullName ? (formatDob(official?.dob) || official?.licence || '') : ''}
                         </div>
                         <div className="flex-1 relative flex items-center justify-center min-h-0 min-w-0">
-                            {/* Signature space - read-only in PDF. A drawn signature wins;
-                                else the stamp of a valid account approval; else empty. */}
+                            {/* Signature space - read-only in PDF: the drawn signature, else empty. */}
                             {getSignatureForRole(role) ? (
                                 <img
                                     src={getSignatureForRole(role)!}
@@ -594,16 +575,6 @@ const ApprovalsView: React.FC<ApprovalsProps> = ({ officials = [], match, teamAK
                                     className="w-full h-5 object-contain"
                                     style={{ maxHeight: '20px' }}
                                 />
-                            ) : getApprovalStamp(role) ? (
-                                <FitText
-                                    max={7.5}
-                                    min={5}
-                                    multiline
-                                    className="w-full h-5 text-center leading-[1.15] text-black px-0.5 flex items-center justify-center"
-                                    data-testid={`approval-stamp-${APPROVAL_SLOT_OF_ROLE[role]}`}
-                                >
-                                    {getApprovalStamp(role)}
-                                </FitText>
                             ) : null}
                         </div>
                     </div>

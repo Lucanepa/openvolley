@@ -7,7 +7,6 @@ import { RowList, Row, DateRail, EmptyInset, SkeletonRows, Notice, Button, dayLa
 
 const PAGE = 50
 
-const APPROVAL_ACTIONS = new Set(['match.approve', 'match.approval_revoke', 'match.approval_void'])
 // The activity log (db/016): rows deleted on request, an admin's read of a match or an account, an export
 const ACTIVITY_ACTIONS = new Set(['activity.delete', 'activity.read', 'activity.export'])
 // The entries about one club (db/018, db/020): the club's name leads their line
@@ -39,8 +38,7 @@ export function auditActionLabel(action, t = null) {
  * The second argument is `{ roleLabel, t }` (or `t` alone):
  * - `roleLabel` names a role (OpenBeach's console: "Scorer" for beach:scorer,
  *   as everywhere else there); without it roles show as stored;
- * - `t` words the approval entries ("1st referee · ID 6F1C2A9B") and the
- *   switches, counts and clubs of the others.
+ * - `t` words the switches, counts and clubs.
  * `entry.club_name` is the club of details.club_id as the backend lists it
  * (GET /api/admin/audit): a club entry, an invite code of a club.
  */
@@ -50,14 +48,6 @@ export function auditDetailsLine(entry, opts = {}) {
   const role = (r) => (roleLabel ? roleLabel(String(r)) : String(r))
   const parts = []
   const tr = (key, fallback, opts) => (t ? t(key, { defaultValue: fallback, ...opts }) : fallback)
-  if (APPROVAL_ACTIONS.has(entry?.action)) {
-    if (d.slot) parts.push(tr(`manage.approvals.slots.${d.slot}`, d.slot))
-    if (d.short_id) parts.push(`ID ${d.short_id}`)
-    if (d.game_n) parts.push(`#${d.game_n}`)
-    if (Number.isFinite(d.count)) parts.push(`× ${d.count}`)
-    if (d.reason) parts.push(tr(`manage.approvals.reasons.${d.reason}`, String(d.reason)))
-    return parts.join(' · ')
-  }
   // An account an admin deleted (or a sign-up rejected): no name or address
   // is kept, only its roles, the official matches that stay, its short id
   if (entry?.action === 'account.delete' || entry?.action === 'account.reject') {
@@ -65,11 +55,6 @@ export function auditDetailsLine(entry, opts = {}) {
     parts.push(roles.length ? roles.map(role).join(', ') : tr('manage.audit.noRole', 'No role'))
     if (Number.isFinite(d.matches_kept) && d.matches_kept > 0) parts.push(tr('manage.audit.matchesKept', `${d.matches_kept} matches kept`, { count: d.matches_kept }))
     if (typeof d.account_id === 'string') parts.push(`ID ${d.account_id.slice(0, 8)}`)
-    return parts.join(' · ')
-  }
-  if (entry?.action === 'approval_pin.locked' || entry?.action === 'approval_pin.failed') {
-    if (Number.isFinite(d.failures)) parts.push(tr('manage.approvals.wrongPins', `${d.failures} wrong PINs`, { failures: d.failures }))
-    if (d.disabled) parts.push(tr('manage.approvals.blocked', 'blocked'))
     return parts.join(' · ')
   }
   const club = entry?.club_name ? String(entry.club_name) : null

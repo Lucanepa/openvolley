@@ -23,7 +23,7 @@ export const SheetPage = React.memo(function SheetPage({ model, readOnly, onRema
   onRemarksClipped: (clipped: boolean) => void;
 }) {
   const {
-    match, sets, officials, teamAKey, coinTossConfirmed, bestOf, isBestOf3, bestOf3ExtraSets,
+    match, officials, teamAKey, coinTossConfirmed, bestOf, isBestOf3, bestOf3ExtraSets,
     sheetHomeTeam, sheetAwayTeam, teamAName, teamBName, homeName, awayName,
     set1ServeIsA, set5SwitchAt,
     set1Data, set2Data, set3Data, set4Data, emptySetData, emptyGrid,
@@ -285,7 +285,6 @@ export const SheetPage = React.memo(function SheetPage({ model, readOnly, onRema
                 <Approvals
                   officials={officials}
                   match={match}
-                  sets={sets}
                   teamAKey={teamAKey}
                   lineJudges={lineJudges}
                 />

@@ -38,10 +38,6 @@ vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => ({ user: null, acc
 vi.mock('../../hooks/useScaledLayout', () => ({ useScaledLayout: () => ({ vmin: (n) => `${n}vmin` }), default: () => ({ vmin: (n) => `${n}vmin` }) }))
 vi.mock('../../utils/comprehensiveLogger', () => ({ exportLogsAsNDJSON: async () => '', downloadLogs: async () => {} }))
 vi.mock('../../utils/askConfirm.js', () => ({ askConfirm: async () => true, default: async () => true }))
-vi.mock('../../lib/accountApi', async (orig) => ({
-  ...(await orig()),
-  approvalsApi: { approve: vi.fn(), list: vi.fn(async () => ({ data: null, error: { status: 0, network: true } })), undo: vi.fn() }
-}))
 vi.mock('../../lib/apiClient', () => {
   const chain = () => {
     const b = new Proxy({}, { get: (_, prop) => (prop === 'then' ? (r) => Promise.resolve({ data: null, error: null }).then(r) : () => b) })

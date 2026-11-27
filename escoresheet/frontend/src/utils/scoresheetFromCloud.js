@@ -11,9 +11,7 @@
  * rosters with the log's libero re-designations, the sets, the events, and
  * the line-up rows an older log lacks rebuilt from its entries. The match's
  * manual-change log comes along (match.manualChanges), so the sheet keeps its
- * "Corrected after the match" remarks, and so do the officials' account
- * approvals (match.accountApprovals, read by the panel from GET
- * /api/approvals), so a slot approved with a PIN keeps its stamp.
+ * "Corrected after the match" remarks.
  *
  * Set starts as the scorer's device printed them (rebuildSetStart): the
  * cloud's sets.start_time held the row's creation time (coin toss, end of the
@@ -22,7 +20,6 @@
 
 import { cloudDataFromServer, localMatchRowFromCloud, rosterWithRedesignations } from './backupManager'
 import { recomputeMatch } from '../domain/recompute'
-import { approvalsBySlot } from '../domain/accountApproval'
 import { normalizeMatchData } from '../../scoresheet_pdf/utils/matchData'
 import { rebuildSetStart } from '../domain/sheetTimes'
 
@@ -51,9 +48,8 @@ const teamRow = (id, team) => (team?.name
   : null)
 
 /**
- * @param {{ match: object, sets?: object[], events?: object[], liveState?: object|null, approvals?: object[] }} record
- *   GET /api/scoresheets/:id/match (lib/scoresheets.js matchForRebuild), with
- *   `approvals` from GET /api/approvals (the non-revoked records)
+ * @param {{ match: object, sets?: object[], events?: object[], liveState?: object|null }} record
+ *   GET /api/scoresheets/:id/match (lib/scoresheets.js matchForRebuild)
  * @returns {import('../../scoresheet_pdf/utils/matchData').MatchData}
  */
 export function scoresheetDataFromCloud(record) {
@@ -62,15 +58,11 @@ export function scoresheetDataFromCloud(record) {
   const homeTeam = teamRow(HOME_TEAM_ID, row.home_team)
   const awayTeam = teamRow(AWAY_TEAM_ID, row.away_team)
   const manualChanges = Array.isArray(row.manual_changes) ? row.manual_changes : []
-  const approvals = approvalsBySlot(record.approvals)
   const match = {
     ...localMatchRowFromCloud(cloud, { homeTeamId: homeTeam ? HOME_TEAM_ID : null, awayTeamId: awayTeam ? AWAY_TEAM_ID : null }),
     id: REBUILD_MATCH_ID,
     // the sheet's "Corrected after the match" remarks (scoresheet_pdf/utils/sheetRemarks)
-    manualChanges,
-    // the APPROVAL stamps of the slots approved with a PIN (FooterSection
-    // prints each one only while it matches the result, as at the approval)
-    accountApprovals: Object.keys(approvals).length ? approvals : null
+    manualChanges
   }
   const homePlayers = homeTeam ? rosterWithRedesignations(row.players_home, events, 'home').map(playerRow(HOME_TEAM_ID)) : []
   const awayPlayers = awayTeam ? rosterWithRedesignations(row.players_away, events, 'away').map(playerRow(AWAY_TEAM_ID)) : []

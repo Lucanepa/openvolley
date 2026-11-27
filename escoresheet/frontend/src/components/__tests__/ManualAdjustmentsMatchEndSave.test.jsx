@@ -18,20 +18,14 @@ vi.mock('../../ui/uiStore.js', async (orig) => ({
   ...(await orig()),
   confirmDialog: async (opts) => { dialog.calls.push(opts); return dialog.answer }
 }))
-const undo = vi.hoisted(() => ({ fn: null }))
-vi.mock('../../lib/accountApi', async (orig) => {
-  const real = await orig()
-  return { ...real, approvalsApi: { ...real.approvalsApi, undo: (...a) => undo.fn(...a) } }
-})
 
 import '../../i18n'
 import { db } from '../../db/db'
 import ManualAdjustments from '../ManualAdjustments'
-import { resultKey } from '../../domain/accountApproval'
 
 let saved
 // The editor's onSave: called once a save has written everything (the
-// local rows, the approvals' undo, the cloud update). A test that saves waits
+// local rows, the cloud update). A test that saves waits
 // for it, or the rest of its save ran into the next test's database (CI
 // 2026-11-20: the approvals test read the queue before the cloud update was
 // in it, and the next test found that update in its empty queue)
@@ -48,7 +42,6 @@ beforeEach(async () => {
   cleanup()
   dialog.answer = true
   dialog.calls = []
-  undo.fn = vi.fn(async () => ({ data: {}, error: null }))
   onSaved = vi.fn()
   await db.open()
   await Promise.all(db.tables.map(t => t.clear()))
@@ -146,21 +139,16 @@ describe('ManualAdjustments: Save at the match end', () => {
     })
   }, 30000)
 
-  it('after the sheet was signed or approved: asks, clears both, and queues the approvals\' undo', async () => {
-    const approval = { id: '44444444-4444-4444-8444-444444444444', slot: 'referee1', name: 'Ref One', result_key: resultKey(SETS) }
-    const matchId = await seed({ homePostGameCaptainSignature: 'data:a', accountApprovals: { referee1: approval } })
+  it('after the sheet was signed: asks, clears the signatures and queues them', async () => {
+    const matchId = await seed({ homePostGameCaptainSignature: 'data:a' })
     const hall = await openInfo(matchId)
     fireEvent.change(hall, { target: { value: 'South Hall' } })
-    // (the signatures go first; the approvals' undo and the cloud update are
-    // queued after them)
+    // (the signatures go first; the cloud update is queued after them)
     await save()
     expect((await db.matches.get(matchId)).homePostGameCaptainSignature).toBeNull()
     expect(dialog.calls).toHaveLength(1)
-    expect((await db.matches.get(matchId)).accountApprovals).toBeNull()
-    const jobs = await db.sync_queue.toArray()
-    expect(jobs.filter(j => j.resource === 'approval').map(j => [j.action, j.payload.id])).toEqual([['undo', approval.id]])
+    expect((await db.sync_queue.toArray()).some(j => j.resource === 'approval')).toBe(false)
     expect((await matchJob()).payload.signatures).toMatchObject({ home_captain_post_game: null, ref1: null })
-    expect(undo.fn).not.toHaveBeenCalled()
   }, 30000)
 
   it('declined: nothing is saved', async () => {
