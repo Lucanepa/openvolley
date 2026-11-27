@@ -44,6 +44,7 @@
  */
 
 import { createRedactedMatcher, loadRegister, redactedPeopleKey, withholdRedacted } from './redactedPeople.js'
+import { parseLeagueCalendar } from './vmIcal.js'
 
 export const VM_BASE = 'https://volleymanager.volleyball.ch'
 export const ZURICH_TZ = 'Europe/Zurich'
@@ -1150,6 +1151,161 @@ export function prepareRows(items, opts = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// League calendars (no login): VM_ICAL_FEEDS
+// ---------------------------------------------------------------------------
+
+export const ICAL_SCHEDULE_PATH = '/iCal/schedule/'
+const ROOKIE_FUTURE_RE = /\b(rookie|future)\b/i
+
+/**
+ * VM_ICAL_FEEDS -> the calendars' https links. Entries are separated by
+ * spaces, commas or new lines; each is a 40-hex token or a webcal:// /
+ * https:// link to VolleyManager. An empty or unset value -> [].
+ */
+export function icalFeedsFromEnv(env = process.env, { baseUrl = VM_BASE } = {}) {
+  const raw = String(env.VM_ICAL_FEEDS ?? '').trim()
+  if (!raw) return []
+  return [...new Set(raw.split(/[\s,]+/).filter(Boolean).map((entry) => {
+    if (/^[0-9a-f]{40}$/i.test(entry)) return `${baseUrl}${ICAL_SCHEDULE_PATH}${entry.toLowerCase()}`
+    const url = entry.replace(/^webcal:\/\//i, 'https://')
+    if (!url.startsWith(`${baseUrl}${ICAL_SCHEDULE_PATH}`)) throw new Error(`VM_ICAL_FEEDS: not a VolleyManager league calendar: ${entry.slice(0, 80)}`)
+    return url
+  }))]
+}
+
+/** VolleyManager's own datetime shape, so a calendar row compares equal to a login-sync row. */
+function vmIsoDateTime(instant) {
+  return `${instant.toISOString().slice(0, 19)}.000000+00:00`
+}
+
+/**
+ * One calendar game -> a svrz_games row. The calendar has no referees, line
+ * judges, licences, supervision marks, group or number of win sets: those are
+ * null / '' here (mergeWithStored keeps what the schedule already knows).
+ */
+export function icalGameToRow(game, calendar, { syncedAt = new Date() } = {}) {
+  const s = game.start
+  const kickoff = s.tz === 'UTC'
+    ? new Date(Date.UTC(+s.ymd.slice(0, 4), +s.ymd.slice(5, 7) - 1, +s.ymd.slice(8, 10), s.hour, s.minute))
+    : zonedTimeToUtc(s.ymd, s.hour, s.minute, s.tz)
+  const { date, time } = formatZurichDateTime(kickoff)
+  const league = calendar.league
+  const junior = AGE_CLASS_RE.test(league) || JUNIOR_WORDS_RE.test(league) || ROOKIE_FUTURE_RE.test(league)
+  const senior1L = /^1l\b|1\. liga/i.test(league) && !junior
+  return {
+    game_number: game.game_number,
+    date, time,
+    datetime: vmIsoDateTime(kickoff),
+    city: game.city,
+    hall: game.hall,
+    match_type: /cup|pokal/i.test(league) ? 'cup' : 'championship',
+    championship_type: senior1L ? 'national' : 'regional',
+    gender: calendar.gender,
+    match_level: junior ? 'junior' : 'senior',
+    league,
+    league_category: league,
+    junior_category: junior,
+    match_format: null,
+    team_home: game.team_home,
+    team_away: game.team_away,
+    referee_1: null, referee_1_first_name: null, referee_1_last_name: null, referee_1_licence: null,
+    referee_2: null, referee_2_first_name: null, referee_2_last_name: null, referee_2_licence: null,
+    hall_address: game.street,
+    hall_postal_code: game.postalCode,
+    group_display: '',
+    phase_name: '',
+    linesman_1: null, linesman_2: null,
+    is_supervised: false, has_supervised_referee: false, convocations: [],
+    synced_at: (syncedAt instanceof Date ? syncedAt : new Date(syncedAt)).toISOString()
+  }
+}
+
+/** "3L B" belongs to the calendar league "3L"; "2L" to "2L". */
+const sameLeague = (stored, league) => !!stored && (stored === league || stored.startsWith(`${league} `))
+
+/**
+ * Keeps what the schedule already knows and a calendar does not say:
+ *  - the group letter ("3L B": the calendar says "3L"), for a game already
+ *    stored or, for a new one, from either team's other games in that league
+ *  - the street with its number (the calendar drops the number)
+ *  - the number of win sets, else the league's usual one
+ *  - group / phase texts and the VolleyManager category
+ * Referees and line judges are NOT kept: the calendar cannot say whether a
+ * crew changed, and a stale name would be pre-filled on an official sheet.
+ *
+ * `stored`: [{ game_number, league, gender, team_home, team_away, hall_address,
+ * match_format, group_display, phase_name, league_category }].
+ */
+export function mergeWithStored(rows, stored) {
+  const byNumber = new Map(stored.map((r) => [r.game_number, r]))
+  const groupOfTeam = new Map() // "women|3L|team" -> "3L B"
+  const formats = new Map() // "women|3L" -> { 5: n, 3: m }
+  for (const r of stored) {
+    if (!r.league) continue
+    const base = r.league.replace(/\s+[A-Z]$/, '') // group letters: "3L B"; not "Rookie 2"
+    if (base !== r.league) {
+      for (const t of [r.team_home, r.team_away]) if (t) groupOfTeam.set(`${r.gender}|${base}|${t.trim()}`, r.league)
+    }
+    if (r.match_format != null) {
+      const k = `${r.gender}|${base}`
+      const counts = formats.get(k) ?? {}
+      counts[r.match_format] = (counts[r.match_format] ?? 0) + 1
+      formats.set(k, counts)
+    }
+  }
+  const usualFormat = (gender, league) => {
+    const counts = formats.get(`${gender}|${league}`)
+    if (!counts) return null
+    return Number(Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0])
+  }
+  return rows.map((row) => {
+    const old = byNumber.get(row.game_number)
+    const out = { ...row }
+    if (old && sameLeague(old.league, row.league)) out.league = old.league
+    else {
+      const group = groupOfTeam.get(`${row.gender}|${row.league}|${row.team_home}`) ?? groupOfTeam.get(`${row.gender}|${row.league}|${row.team_away}`)
+      if (group) out.league = group
+    }
+    if (old?.hall_address && row.hall_address && old.hall_address.startsWith(row.hall_address)) out.hall_address = old.hall_address
+    out.match_format = old?.match_format ?? usualFormat(row.gender, row.league)
+    if (old?.group_display) out.group_display = old.group_display
+    if (old?.phase_name) out.phase_name = old.phase_name
+    if (old?.league_category) out.league_category = old.league_category
+    return out
+  })
+}
+
+/**
+ * Fetches and parses every calendar. Never throws for one calendar: a failed
+ * or empty one is listed in `failed`, and the run must then remove nothing.
+ * -> { rows, covered: Set("gender|league"), failed: [{ url, error }], skipped }
+ */
+export async function fetchIcalFeeds(urls, { fetch: fetchImpl, http = {}, logger = null, syncedAt = new Date(), sleep = defaultSleep, delayMs = 500 } = {}) {
+  const rows = []
+  const covered = new Set()
+  const failed = []
+  let skipped = 0
+  for (const [i, url] of urls.entries()) {
+    if (i && delayMs) await sleep(delayMs) // a calendar client's pace, not a burst
+    const label = `calendar ${url.slice(-8)}`
+    try {
+      const resp = await fetchWithRetry(fetchImpl, url, { headers: { 'User-Agent': USER_AGENT, Accept: 'text/calendar' } }, { label, logger, ...http })
+      if (!resp.ok) throw new VmHttpError(`${label}: HTTP ${resp.status}`, { status: resp.status })
+      const parsed = parseLeagueCalendar(resp.body)
+      if (!parsed.calendar.league || !parsed.calendar.gender) throw new Error(`${label}: no league name / gender in the calendar`)
+      if (!parsed.games.length) throw new Error(`${label}: no games (${parsed.calendar.league})`)
+      skipped += parsed.skipped
+      covered.add(`${parsed.calendar.gender}|${parsed.calendar.league}`)
+      for (const g of parsed.games) rows.push(icalGameToRow(g, parsed.calendar, { syncedAt }))
+    } catch (err) {
+      failed.push({ url, error: err?.message ?? String(err) })
+      logger?.warn?.(`vm-sync: ${err?.message ?? err}`)
+    }
+  }
+  return { rows, covered, failed, skipped }
+}
+
+// ---------------------------------------------------------------------------
 // Database
 // ---------------------------------------------------------------------------
 
@@ -1240,7 +1396,7 @@ export async function closeStaleRunningRows(client, { olderThanMs = STALE_RUNNIN
  */
 async function storedUpcoming(client, win, from) {
   const { rows } = await client.query(
-    'SELECT game_number, datetime FROM public.svrz_games WHERE datetime >= $1 AND datetime < $2',
+    'SELECT game_number, datetime, league, gender FROM public.svrz_games WHERE datetime >= $1 AND datetime < $2',
     [addDaysYmd(win.fromDay, -1), addDaysYmd(win.toDay, 2)])
   const to = Date.parse(win.dateTo)
   const start = Math.max(from, Date.parse(win.dateFrom))
@@ -1249,6 +1405,18 @@ async function storedUpcoming(client, win, from) {
     return t != null && t >= start && t <= to
   })
 }
+
+/** The season's stored games, for mergeWithStored (group letters, streets, formats). */
+async function storedForMerge(client, win) {
+  const { rows } = await client.query(
+    `SELECT game_number, league, gender, team_home, team_away, hall_address, match_format, group_display, phase_name, league_category
+       FROM public.svrz_games WHERE datetime >= $1`, [addDaysYmd(win.fromDay, -365)])
+  return rows
+}
+
+/** A stored game of a league one of the calendars covers ("3L B" -> "3L"). */
+const coveredByCalendars = (row, covered) =>
+  covered.has(`${row.gender}|${row.league}`) || covered.has(`${row.gender}|${String(row.league ?? '').replace(/\s+[A-Z]$/, '')}`)
 
 /** Moves the games out of svrz_games into svrz_games_removed (db/041); returns their numbers. */
 async function removeGames(client, numbers, logId) {
@@ -1325,8 +1493,12 @@ export async function runVmSync({
   pageDelayMs = 100,
   dryRun = false,
   staleRunningMs = STALE_RUNNING_MS,
-  redactionSecret = null
+  redactionSecret = null,
+  feeds = [],
+  calendarDelayMs = 500
 } = {}) {
+  // League calendars (VM_ICAL_FEEDS): no login, no role, no referees
+  const icalMode = Array.isArray(feeds) && feeds.length > 0
   const clock = typeof now === 'function' ? now : () => new Date(now)
   const startedAt = clock()
   const win = resolveWindow(window, { now: startedAt })
@@ -1378,17 +1550,36 @@ export async function runVmSync({
     }
 
     log.log(`vm-sync: window ${dateLabel} (Europe/Zurich) = ${win.dateFrom} → ${win.dateTo}`)
-    ;({ jar, csrfToken } = await vmLogin(credentials, { fetch: fetchImpl, baseUrl, http, logger: log, roleAttribute }))
-
-    const fetched = await fetchAllGames(jar, csrfToken, win.dateFrom, win.dateTo, {
-      fetch: fetchImpl, baseUrl, http, logger: log, batchSize: pageSize, pageDelayMs, sleep: http.sleep
-    })
+    let fetched
+    let prepared
+    let covered = null
+    if (icalMode) {
+      log.log(`vm-sync: reading ${feeds.length} league calendar(s), no login`)
+      const cal = await fetchIcalFeeds(feeds, { fetch: fetchImpl, http, logger: log, syncedAt: clock(), sleep: http.sleep, delayMs: calendarDelayMs })
+      const from = Date.parse(win.dateFrom)
+      const to = Date.parse(win.dateTo)
+      const inWindow = cal.rows.filter((r) => { const t = Date.parse(r.datetime); return t >= from && t <= to })
+      const rows = dryRun ? inWindow : mergeWithStored(inWindow, await storedForMerge(client, win))
+      const byNumber = new Map(rows.map((r) => [r.game_number, r]))
+      covered = cal.covered
+      prepared = { rows: [...byNumber.values()], numbers: new Set(byNumber.keys()), transformed: rows.length, excluded: 0, excludedLeagues: [], duplicates: rows.length - byNumber.size }
+      fetched = {
+        items: rows, total: rows.length, incomplete: cal.failed.length > 0,
+        pageError: cal.failed.length ? `${cal.failed.length} of ${feeds.length} calendar(s) failed, first: ${cal.failed[0].error}` : null
+      }
+      if (cal.skipped) log.warn(`vm-sync: ${cal.skipped} calendar event(s) without a game number or start skipped`)
+    } else {
+      ;({ jar, csrfToken } = await vmLogin(credentials, { fetch: fetchImpl, baseUrl, http, logger: log, roleAttribute }))
+      fetched = await fetchAllGames(jar, csrfToken, win.dateFrom, win.dateTo, {
+        fetch: fetchImpl, baseUrl, http, logger: log, batchSize: pageSize, pageDelayMs, sleep: http.sleep
+      })
+    }
     result.fetched = fetched.items.length
     result.total = fetched.total
 
     // Raw startingDateTime shapes (no secrets in them), so a dry run shows
     // whether VM sends Z/offsets or Zurich wall-clock times.
-    const rawTimes = fetched.items.map((it) => it?.game?.startingDateTime).filter((v) => typeof v === 'string' && v.trim())
+    const rawTimes = icalMode ? [] : fetched.items.map((it) => it?.game?.startingDateTime).filter((v) => typeof v === 'string' && v.trim())
     result.datetimeSamples = [...new Set(rawTimes)].slice(0, 5)
     result.offsetlessDatetimes = rawTimes.filter(isOffsetlessVmDateTime).length
     result.unparsedDatetimes = rawTimes.filter((v) => !parseVmDateTime(v)).length
@@ -1399,7 +1590,7 @@ export async function runVmSync({
       log.warn(`vm-sync: ${result.unparsedDatetimes} startingDateTime value(s) not ISO 8601, stored with empty date/time`)
     }
 
-    const prepared = prepareRows(fetched.items, { syncedAt: clock() })
+    if (!icalMode) prepared = prepareRows(fetched.items, { syncedAt: clock() })
     result.kept = prepared.rows.length
     result.excluded = prepared.excluded
     result.excludedLeagues = prepared.excludedLeagues
@@ -1414,7 +1605,8 @@ export async function runVmSync({
       // People erased on request (db/052): their places stay empty. Read under
       // the run's lock, right before the writes; entries without the key to
       // check them would let the names back in, so the run writes nothing.
-      const register = await loadRegister(client)
+      // a calendar run writes no referee or line judge: nothing to withhold
+      const register = icalMode ? new Map() : await loadRegister(client)
       let rows = prepared.rows
       if (register.size) {
         let key
@@ -1448,7 +1640,7 @@ export async function runVmSync({
 
     // LOG-24: club_teams, saved teams and older schedule rows follow the
     // region's names the run wrote; never fails the run
-    if (!dryRun) {
+    if (!dryRun && !icalMode) {
       try {
         const renamed = await followTeamRenames(client, teamNameRenames(fetched.items))
         result.renamedTeams = renamed
@@ -1465,7 +1657,7 @@ export async function runVmSync({
     // skip another while the count still adds up. Fewer distinct games than
     // the total means some were skipped: nothing is removed, the run is partial.
     const distinct = prepared.numbers.size + (fetched.items.length - prepared.transformed)
-    const overlap = !fetched.incomplete && distinct < fetched.total
+    const overlap = !icalMode && !fetched.incomplete && distinct < fetched.total
       ? `${distinct} distinct of ${fetched.total} games (pages overlapped), none removed`
       : null
     if (overlap) log.warn(`vm-sync: ${overlap}`)
@@ -1473,11 +1665,13 @@ export async function runVmSync({
     // the cancelled, renumbered or moved games: only after a complete run
     let suspicious = overlap
     if (!dryRun && !fetched.incomplete && !overlap && result.errors === 0) {
-      const gone = upcoming.filter((r) => !prepared.numbers.has(r.game_number)).map((r) => r.game_number)
+      // a calendar run answers only for its leagues: 1L or cup games stored by the login sync stay
+      const inScope = covered ? upcoming.filter((r) => coveredByCalendars(r, covered)) : upcoming
+      const gone = inScope.filter((r) => !prepared.numbers.has(r.game_number)).map((r) => r.game_number)
       if (gone.length && !fetched.items.length) {
-        suspicious = `VolleyManager returned no games; the schedule holds ${upcoming.length} upcoming in this window, none removed`
-      } else if (gone.length > Math.max(REMOVAL_GUARD_MIN, Math.floor(upcoming.length / 2))) {
-        suspicious = `${gone.length} of ${upcoming.length} upcoming games not returned, none removed (check the account's role)`
+        suspicious = `VolleyManager returned no games; the schedule holds ${inScope.length} upcoming in this window, none removed`
+      } else if (gone.length > Math.max(REMOVAL_GUARD_MIN, Math.floor(inScope.length / 2))) {
+        suspicious = `${gone.length} of ${inScope.length} upcoming games not returned, none removed (${icalMode ? 'check the calendars' : "check the account's role"})`
       } else if (gone.length) {
         result.removedGames = await removeGames(client, gone, result.logId)
         result.removed = result.removedGames.length
@@ -1485,7 +1679,7 @@ export async function runVmSync({
       if (suspicious) log.warn(`vm-sync: ${suspicious}`)
     }
 
-    const parts = [`[${dateLabel}] ${dryRun ? 'Dry run: fetched' : 'Synced'} ${prepared.rows.length} games in ${elapsed()}s`]
+    const parts = [`[${dateLabel}] ${dryRun ? 'Dry run: fetched' : 'Synced'} ${prepared.rows.length} games${icalMode ? ` from ${feeds.length} league calendar(s)` : ''} in ${elapsed()}s`]
     if (!dryRun) parts.push(`(${result.created} created, ${result.updated} updated, ${result.unchanged} unchanged, ${result.errors} errors)`)
     if (result.withoutFormat) parts.push(`${result.withoutFormat} without a format`)
     if (result.withheld) parts.push(`${result.withheld} referee / line judge place(s) left empty (erased on request)`)

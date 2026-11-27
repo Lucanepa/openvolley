@@ -262,6 +262,7 @@ services:
       MAIL_BUDGET_SIGN_IN: ${MAIL_BUDGET_SIGN_IN:-}
       # sign-up needs a licence number unless `optional` (empty in production)
       OV_SIGNUP_LICENCE: ${OV_SIGNUP_LICENCE:-}
+      VM_ICAL_FEEDS: ${VM_ICAL_FEEDS:-}
       VM_USERNAME: ${VM_USERNAME:-}
       VM_PASSWORD: ${VM_PASSWORD:-}
       VM_SYNC: ${VM_SYNC:-on}

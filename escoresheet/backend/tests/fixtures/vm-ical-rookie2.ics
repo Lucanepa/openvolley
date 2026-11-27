@@ -1,0 +1,323 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:VolleyManager V2
+NAME:#7351 | Rookie 2 | ♂ (SVRZ)
+X-WR-CALNAME:#7351 | Rookie 2 | ♂ (SVRZ)
+DESCRIPTION:#7351 | Rookie 2 | ♂ (SVRZ)
+X-WR-CALDESC:#7351 | Rookie 2 | ♂ (SVRZ)
+BEGIN:VTIMEZONE
+TZID:Europe/Zurich
+BEGIN:DAYLIGHT
+DTSTART:19700329T020000
+TZOFFSETFROM:+0100
+TZOFFSETTO:+0200
+TZNAME:CEST
+RRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=3
+END:DAYLIGHT
+BEGIN:STANDARD
+DTSTART:19701025T030000
+TZOFFSETFROM:+0200
+TZOFFSETTO:+0100
+TZNAME:CET
+RRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=10
+END:STANDARD
+END:VTIMEZONE
+BEGIN:VEVENT
+UID:game-422684
+DTSTAMP:20261127T082837Z
+SUMMARY:VC Tornado Adliswil Rookie HU14  - VC Tornado Adliswil Rookie HU14-
+ 2  (Rookie 2)
+DESCRIPTION:#422684 | 12.09.2026 09:00 | VC Tornado Adliswil Rookie HU14  
+ — VC Tornado Adliswil Rookie HU14-2 \n\nRisultato: -\n\nLega: #7351 | Ro
+ okie 2 | ♂\n\nPalestra: Sporthalle Ruebisbach Feld 1-3\nIndirizzo: Talac
+ herstrasse\, 8302 Kloten\nhttps://maps.google.com/?q=8FVCFH6H%2BV5&hl=it
+LOCATION:Talacherstrasse\, 8302 Kloten
+DTSTART;TZID=Europe/Zurich:20260912T090000
+DTEND;TZID=Europe/Zurich:20260912T110000
+GEO:47.4621939;8.577942
+X-APPLE-STRUCTURED-LOCATION;VALUE=URI;X-ADDRESS=Talacherstrasse\, 8302 Klot
+ en;X-APPLE-RADIUS=72;X-TITLE=Sporthalle Ruebisbach Feld 1-3:geo:47.4621939
+ ,8.577942
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:VC Tornado Adliswil Rookie HU14  - VC Tornado Adliswil Rookie H
+ U14-2  (Rookie 2)
+TRIGGER:-PT60M
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:game-422686
+DTSTAMP:20261127T082837Z
+SUMMARY:VBC Züri Unterland - Volley Dübi (Rookie 2)
+DESCRIPTION:#422686 | 12.09.2026 09:00 | VBC Züri Unterland — Volley Dü
+ bi\n\nRisultato: -\n\nLega: #7351 | Rookie 2 | ♂\n\nPalestra: Sporthalle
+  Ruebisbach Feld 1-3\nIndirizzo: Talacherstrasse\, 8302 Kloten\nhttps://ma
+ ps.google.com/?q=8FVCFH6H%2BV5&hl=it
+LOCATION:Talacherstrasse\, 8302 Kloten
+DTSTART;TZID=Europe/Zurich:20260912T090000
+DTEND;TZID=Europe/Zurich:20260912T110000
+GEO:47.4621939;8.577942
+X-APPLE-STRUCTURED-LOCATION;VALUE=URI;X-ADDRESS=Talacherstrasse\, 8302 Klot
+ en;X-APPLE-RADIUS=72;X-TITLE=Sporthalle Ruebisbach Feld 1-3:geo:47.4621939
+ ,8.577942
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:VBC Züri Unterland - Volley Dübi (Rookie 2)
+TRIGGER:-PT60M
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:game-422685
+DTSTAMP:20261127T082837Z
+SUMMARY:VBC Züri Unterland - VBC Züri Unterland HU14-3 (Rookie 2)
+DESCRIPTION:#422685 | 12.09.2026 09:00 | VBC Züri Unterland — VBC Züri 
+ Unterland HU14-3\n\nRisultato: -\n\nLega: #7351 | Rookie 2 | ♂\n\nPalest
+ ra: Sporthalle Ruebisbach Feld 1-3\nIndirizzo: Talacherstrasse\, 8302 Klot
+ en\nhttps://maps.google.com/?q=8FVCFH6H%2BV5&hl=it
+LOCATION:Talacherstrasse\, 8302 Kloten
+DTSTART;TZID=Europe/Zurich:20260912T090000
+DTEND;TZID=Europe/Zurich:20260912T110000
+GEO:47.4621939;8.577942
+X-APPLE-STRUCTURED-LOCATION;VALUE=URI;X-ADDRESS=Talacherstrasse\, 8302 Klot
+ en;X-APPLE-RADIUS=72;X-TITLE=Sporthalle Ruebisbach Feld 1-3:geo:47.4621939
+ ,8.577942
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:VBC Züri Unterland - VBC Züri Unterland HU14-3 (Rookie 2)
+TRIGGER:-PT60M
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:game-424521
+DTSTAMP:20261127T082837Z
+SUMMARY:VBC Züri Unterland HU14-3 - Neutral Kids (Rookie 2)
+DESCRIPTION:#424521 | 01.11.2026 09:00 | VBC Züri Unterland HU14-3 — Neu
+ tral Kids\n\nRisultato: -\n\nLega: #7351 | Rookie 2 | ♂\n\nPalestra: Spo
+ rtzentrum Schachen 2\nIndirizzo: Schachenstrasse\, 8906 Bonstetten\nhttps:
+ //maps.google.com/?q=8FVC8FFC%2B3M&hl=it
+LOCATION:Schachenstrasse\, 8906 Bonstetten
+DTSTART;TZID=Europe/Zurich:20261101T090000
+DTEND;TZID=Europe/Zurich:20261101T110000
+GEO:47.3227437;8.4716986
+X-APPLE-STRUCTURED-LOCATION;VALUE=URI;X-ADDRESS=Schachenstrasse\, 8906 Bons
+ tetten;X-APPLE-RADIUS=72;X-TITLE=Sportzentrum Schachen 2:geo:47.3227437,8.
+ 4716986
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:VBC Züri Unterland HU14-3 - Neutral Kids (Rookie 2)
+TRIGGER:-PT60M
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:game-424520
+DTSTAMP:20261127T082837Z
+SUMMARY:VBC Züri Unterland - VBC Züri Unterland (Rookie 2)
+DESCRIPTION:#424520 | 01.11.2026 09:00 | VBC Züri Unterland — VBC Züri 
+ Unterland\n\nRisultato: -\n\nLega: #7351 | Rookie 2 | ♂\n\nPalestra: Spo
+ rtzentrum Schachen 2\nIndirizzo: Schachenstrasse\, 8906 Bonstetten\nhttps:
+ //maps.google.com/?q=8FVC8FFC%2B3M&hl=it
+LOCATION:Schachenstrasse\, 8906 Bonstetten
+DTSTART;TZID=Europe/Zurich:20261101T090000
+DTEND;TZID=Europe/Zurich:20261101T110000
+GEO:47.3227437;8.4716986
+X-APPLE-STRUCTURED-LOCATION;VALUE=URI;X-ADDRESS=Schachenstrasse\, 8906 Bons
+ tetten;X-APPLE-RADIUS=72;X-TITLE=Sportzentrum Schachen 2:geo:47.3227437,8.
+ 4716986
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:VBC Züri Unterland - VBC Züri Unterland (Rookie 2)
+TRIGGER:-PT60M
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:game-424518
+DTSTAMP:20261127T082837Z
+SUMMARY:VC Tornado Adliswil Rookie HU14-2  - VBC Voléro Zürich (Rookie 2)
+DESCRIPTION:#424518 | 01.11.2026 09:00 | VC Tornado Adliswil Rookie HU14-2 
+  — VBC Voléro Zürich\n\nRisultato: -\n\nLega: #7351 | Rookie 2 | ♂\n
+ \nPalestra: Sportzentrum Schachen 2\nIndirizzo: Schachenstrasse\, 8906 Bon
+ stetten\nhttps://maps.google.com/?q=8FVC8FFC%2B3M&hl=it
+LOCATION:Schachenstrasse\, 8906 Bonstetten
+DTSTART;TZID=Europe/Zurich:20261101T090000
+DTEND;TZID=Europe/Zurich:20261101T110000
+GEO:47.3227437;8.4716986
+X-APPLE-STRUCTURED-LOCATION;VALUE=URI;X-ADDRESS=Schachenstrasse\, 8906 Bons
+ tetten;X-APPLE-RADIUS=72;X-TITLE=Sportzentrum Schachen 2:geo:47.3227437,8.
+ 4716986
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:VC Tornado Adliswil Rookie HU14-2  - VBC Voléro Zürich (Rooki
+ e 2)
+TRIGGER:-PT60M
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:game-424519
+DTSTAMP:20261127T082837Z
+SUMMARY:Turnverein Horgen - Turnverein Horgen (Rookie 2)
+DESCRIPTION:#424519 | 01.11.2026 09:00 | Turnverein Horgen — Turnverein H
+ orgen\n\nRisultato: -\n\nLega: #7351 | Rookie 2 | ♂\n\nPalestra: Sportze
+ ntrum Schachen 2\nIndirizzo: Schachenstrasse\, 8906 Bonstetten\nhttps://ma
+ ps.google.com/?q=8FVC8FFC%2B3M&hl=it
+LOCATION:Schachenstrasse\, 8906 Bonstetten
+DTSTART;TZID=Europe/Zurich:20261101T090000
+DTEND;TZID=Europe/Zurich:20261101T110000
+GEO:47.3227437;8.4716986
+X-APPLE-STRUCTURED-LOCATION;VALUE=URI;X-ADDRESS=Schachenstrasse\, 8906 Bons
+ tetten;X-APPLE-RADIUS=72;X-TITLE=Sportzentrum Schachen 2:geo:47.3227437,8.
+ 4716986
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:Turnverein Horgen - Turnverein Horgen (Rookie 2)
+TRIGGER:-PT60M
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:game-424515
+DTSTAMP:20261127T082837Z
+SUMMARY:Volley Dübi - VBC Furttal (Rookie 2)
+DESCRIPTION:#424515 | 01.11.2026 09:00 | Volley Dübi — VBC Furttal\n\nRi
+ sultato: -\n\nLega: #7351 | Rookie 2 | ♂\n\nPalestra: Sportzentrum Schac
+ hen 2\nIndirizzo: Schachenstrasse\, 8906 Bonstetten\nhttps://maps.google.c
+ om/?q=8FVC8FFC%2B3M&hl=it
+LOCATION:Schachenstrasse\, 8906 Bonstetten
+DTSTART;TZID=Europe/Zurich:20261101T090000
+DTEND;TZID=Europe/Zurich:20261101T110000
+GEO:47.3227437;8.4716986
+X-APPLE-STRUCTURED-LOCATION;VALUE=URI;X-ADDRESS=Schachenstrasse\, 8906 Bons
+ tetten;X-APPLE-RADIUS=72;X-TITLE=Sportzentrum Schachen 2:geo:47.3227437,8.
+ 4716986
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:Volley Dübi - VBC Furttal (Rookie 2)
+TRIGGER:-PT60M
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:game-424516
+DTSTAMP:20261127T082837Z
+SUMMARY:VBC Furttal - S 9 (Rookie 2)
+DESCRIPTION:#424516 | 01.11.2026 09:00 | VBC Furttal — S 9\n\nRisultato: 
+ -\n\nLega: #7351 | Rookie 2 | ♂\n\nPalestra: Sportzentrum Schachen 2\nIn
+ dirizzo: Schachenstrasse\, 8906 Bonstetten\nhttps://maps.google.com/?q=8FV
+ C8FFC%2B3M&hl=it
+LOCATION:Schachenstrasse\, 8906 Bonstetten
+DTSTART;TZID=Europe/Zurich:20261101T090000
+DTEND;TZID=Europe/Zurich:20261101T110000
+GEO:47.3227437;8.4716986
+X-APPLE-STRUCTURED-LOCATION;VALUE=URI;X-ADDRESS=Schachenstrasse\, 8906 Bons
+ tetten;X-APPLE-RADIUS=72;X-TITLE=Sportzentrum Schachen 2:geo:47.3227437,8.
+ 4716986
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:VBC Furttal - S 9 (Rookie 2)
+TRIGGER:-PT60M
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:game-424517
+DTSTAMP:20261127T082837Z
+SUMMARY:S 9 - VC Tornado Adliswil Rookie HU14  (Rookie 2)
+DESCRIPTION:#424517 | 01.11.2026 09:00 | S 9 — VC Tornado Adliswil Rookie
+  HU14 \n\nRisultato: -\n\nLega: #7351 | Rookie 2 | ♂\n\nPalestra: Sportz
+ entrum Schachen 2\nIndirizzo: Schachenstrasse\, 8906 Bonstetten\nhttps://m
+ aps.google.com/?q=8FVC8FFC%2B3M&hl=it
+LOCATION:Schachenstrasse\, 8906 Bonstetten
+DTSTART;TZID=Europe/Zurich:20261101T090000
+DTEND;TZID=Europe/Zurich:20261101T110000
+GEO:47.3227437;8.4716986
+X-APPLE-STRUCTURED-LOCATION;VALUE=URI;X-ADDRESS=Schachenstrasse\, 8906 Bons
+ tetten;X-APPLE-RADIUS=72;X-TITLE=Sportzentrum Schachen 2:geo:47.3227437,8.
+ 4716986
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:S 9 - VC Tornado Adliswil Rookie HU14  (Rookie 2)
+TRIGGER:-PT60M
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:game-425116
+DTSTAMP:20261127T082837Z
+SUMMARY:Volley Dübi - VBC Furttal (Rookie 2)
+DESCRIPTION:#425116 | 21.11.2026 09:00 | Volley Dübi — VBC Furttal\n\nRi
+ sultato: -\n\nLega: #7351 | Rookie 2 | ♂\n\nPalestra: Sportzentrum Schac
+ hen 3\nIndirizzo: Schachenstr.\, 8906 Bonstetten\nhttps://maps.google.com/
+ ?q=8FVC8FFC%2B3M&hl=it
+LOCATION:Schachenstr.\, 8906 Bonstetten
+DTSTART;TZID=Europe/Zurich:20261121T090000
+DTEND;TZID=Europe/Zurich:20261121T110000
+GEO:47.3227437;8.4716986
+X-APPLE-STRUCTURED-LOCATION;VALUE=URI;X-ADDRESS=Schachenstr.\, 8906 Bonstet
+ ten;X-APPLE-RADIUS=72;X-TITLE=Sportzentrum Schachen 3:geo:47.3227437,8.471
+ 6986
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:Volley Dübi - VBC Furttal (Rookie 2)
+TRIGGER:-PT60M
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:game-425117
+DTSTAMP:20261127T082837Z
+SUMMARY:VC Tornado Adliswil Rookie HU14-2  - VBC Voléro Zürich (Rookie 2)
+DESCRIPTION:#425117 | 21.11.2026 09:00 | VC Tornado Adliswil Rookie HU14-2 
+  — VBC Voléro Zürich\n\nRisultato: -\n\nLega: #7351 | Rookie 2 | ♂\n
+ \nPalestra: Sportzentrum Schachen 3\nIndirizzo: Schachenstr.\, 8906 Bonste
+ tten\nhttps://maps.google.com/?q=8FVC8FFC%2B3M&hl=it
+LOCATION:Schachenstr.\, 8906 Bonstetten
+DTSTART;TZID=Europe/Zurich:20261121T090000
+DTEND;TZID=Europe/Zurich:20261121T110000
+GEO:47.3227437;8.4716986
+X-APPLE-STRUCTURED-LOCATION;VALUE=URI;X-ADDRESS=Schachenstr.\, 8906 Bonstet
+ ten;X-APPLE-RADIUS=72;X-TITLE=Sportzentrum Schachen 3:geo:47.3227437,8.471
+ 6986
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:VC Tornado Adliswil Rookie HU14-2  - VBC Voléro Zürich (Rooki
+ e 2)
+TRIGGER:-PT60M
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:game-425118
+DTSTAMP:20261127T082837Z
+SUMMARY:S 9 - VBC Züri Unterland (Rookie 2)
+DESCRIPTION:#425118 | 21.11.2026 09:00 | S 9 — VBC Züri Unterland\n\nRis
+ ultato: -\n\nLega: #7351 | Rookie 2 | ♂\n\nPalestra: Sportzentrum Schach
+ en 3\nIndirizzo: Schachenstr.\, 8906 Bonstetten\nhttps://maps.google.com/?
+ q=8FVC8FFC%2B3M&hl=it
+LOCATION:Schachenstr.\, 8906 Bonstetten
+DTSTART;TZID=Europe/Zurich:20261121T090000
+DTEND;TZID=Europe/Zurich:20261121T110000
+GEO:47.3227437;8.4716986
+X-APPLE-STRUCTURED-LOCATION;VALUE=URI;X-ADDRESS=Schachenstr.\, 8906 Bonstet
+ ten;X-APPLE-RADIUS=72;X-TITLE=Sportzentrum Schachen 3:geo:47.3227437,8.471
+ 6986
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:S 9 - VBC Züri Unterland (Rookie 2)
+TRIGGER:-PT60M
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:game-425119
+DTSTAMP:20261127T082837Z
+SUMMARY:VBC Züri Unterland - VBC Züri Unterland HU14-3 (Rookie 2)
+DESCRIPTION:#425119 | 21.11.2026 09:00 | VBC Züri Unterland — VBC Züri 
+ Unterland HU14-3\n\nRisultato: -\n\nLega: #7351 | Rookie 2 | ♂\n\nPalest
+ ra: Sportzentrum Schachen 3\nIndirizzo: Schachenstr.\, 8906 Bonstetten\nht
+ tps://maps.google.com/?q=8FVC8FFC%2B3M&hl=it
+LOCATION:Schachenstr.\, 8906 Bonstetten
+DTSTART;TZID=Europe/Zurich:20261121T090000
+DTEND;TZID=Europe/Zurich:20261121T110000
+GEO:47.3227437;8.4716986
+X-APPLE-STRUCTURED-LOCATION;VALUE=URI;X-ADDRESS=Schachenstr.\, 8906 Bonstet
+ ten;X-APPLE-RADIUS=72;X-TITLE=Sportzentrum Schachen 3:geo:47.3227437,8.471
+ 6986
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:VBC Züri Unterland - VBC Züri Unterland HU14-3 (Rookie 2)
+TRIGGER:-PT60M
+END:VALARM
+END:VEVENT
+END:VCALENDAR

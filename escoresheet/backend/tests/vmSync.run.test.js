@@ -26,7 +26,7 @@ function memLogger() {
  * svrz_games rows ({ game_number, datetime }) the window holds before the run;
  * `register` the rows of public.redacted_people ({ kind, hash: hex }, db/052).
  */
-function fakePool({ failUpsert = null, failLogInsert = false, failClose = false, stored = [], register = [] } = {}) {
+function fakePool({ failUpsert = null, failLogInsert = false, failClose = false, stored = [], register = [], season = [] } = {}) {
   const state = { lockHeldBy: null, log: new Map(), nextId: 1, queries: [], released: [], staleClosed: 0, clients: [], stored, removed: [], upserted: [] }
   let clientSeq = 0
   const closeRow = (params) => {
@@ -75,7 +75,9 @@ function fakePool({ failUpsert = null, failLogInsert = false, failClose = false,
           }
           if (/to_regclass\('public\.redacted_people'\)/.test(text)) return { rows: [{ ok: true }] }
           if (/FROM public\.redacted_people/.test(text)) return { rows: register }
-          if (/SELECT game_number, datetime FROM public\.svrz_games/.test(text)) return { rows: state.stored }
+          if (/SELECT game_number, datetime(, league, gender)? FROM public\.svrz_games/.test(text)) return { rows: state.stored }
+          // the season's games a calendar run merges with (storedForMerge)
+          if (/SELECT game_number, league, gender, team_home/.test(text)) return { rows: season }
           if (/DELETE FROM public\.svrz_games_removed/.test(text)) return { rowCount: 0 }
           if (/DELETE FROM public\.svrz_games g/.test(text)) {
             state.removed.push(...params[0])
@@ -553,5 +555,104 @@ describe('scripts/vm-sync.mjs', () => {
     const locked = fakePool()
     locked.state.lockHeldBy = 1234
     assert.equal((await quiet(() => cliMain([], env, { ...deps, createPool: async () => locked }))).code, EXIT.skipped)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// League calendars (VM_ICAL_FEEDS): no login, no referees
+// ---------------------------------------------------------------------------
+
+/** A league calendar as VolleyManager serves it (folded lines, an alarm, Italian labels). */
+function leagueCalendar(name, games) {
+  const ev = (g) => [
+    'BEGIN:VEVENT',
+    `UID:game-${g.n}`,
+    `SUMMARY:${g.home} - ${g.away} (${name.split(' | ')[1]})`,
+    `DESCRIPTION:#${g.n} | ${g.when} | ${g.home} — ${g.away}\\n\\nRisultato: -\\n\\nLega: ${name}\\n\\nPa`,
+    ` lestra: ${g.hall}\\nIndirizzo: ${g.street}\\, ${g.zip} ${g.city}`,
+    `LOCATION:${g.street}\\, ${g.zip} ${g.city}`,
+    `DTSTART;TZID=Europe/Zurich:${g.start}`,
+    `X-APPLE-STRUCTURED-LOCATION;VALUE=URI;X-ADDRESS=${g.street}\\, ${g.zip} ${g.city};X-APPLE-RADIUS=72;X-TITLE=${g.hall}:geo:47.3,8.5`,
+    'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:not the game', 'TRIGGER:-PT60M', 'END:VALARM',
+    'END:VEVENT'
+  ].join('\r\n')
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', `X-WR-CALNAME:${name} (SVRZ)`, ...games.map(ev), 'END:VCALENDAR'].join('\r\n')
+}
+const g3l = (n, start, home, away) => ({ n, start, when: 'x', home, away, hall: 'Gloriarank', street: 'Gloriastrasse', zip: '8006', city: 'Zürich' })
+
+describe('runVmSync with league calendars', () => {
+  const TOKEN_A = 'a'.repeat(40)
+  const TOKEN_B = 'b'.repeat(40)
+  const feeds = [`https://vm.test/iCal/schedule/${TOKEN_A}`, `https://vm.test/iCal/schedule/${TOKEN_B}`]
+  const cal3L = leagueCalendar('#7125 | 3L | ♀', [
+    g3l('406020', '20261006T203000', 'VBC Spada Academica D2', 'Volley Züri Nord'),
+    g3l('406099', '20261010T180000', 'Volley Züri Nord', 'New Team D1')
+  ])
+  const cal2L = leagueCalendar('#7127 | 2L | ♂', [g3l('406171', '20261009T200000', 'VBC Einsiedeln H1', 'VBC Swiss')])
+  const fetchFor = (bodies) => {
+    const calls = []
+    return {
+      calls,
+      fetch: async (url) => {
+        calls.push(url)
+        const body = bodies[url.slice(-40)]
+        return body == null ? new Response('Forbidden', { status: 403 }) : new Response(body, { status: 200 })
+      }
+    }
+  }
+
+  it('writes the calendars\' games without logging in, keeps the group letter, street and format, removes only its leagues', async () => {
+    const f = fetchFor({ [TOKEN_A]: cal3L, [TOKEN_B]: cal2L })
+    const season = [
+      { game_number: '406020', league: '3L B', gender: 'women', team_home: 'VBC Spada Academica D2', team_away: 'Volley Züri Nord', hall_address: 'Gloriastrasse 32', match_format: 5, group_display: 'Gruppe B', phase_name: 'Vorrunde', league_category: '3L' }
+    ]
+    const stored = [
+      { game_number: '406020', datetime: '2026-10-06T18:30:00.000000+00:00', league: '3L B', gender: 'women' },
+      { game_number: '406555', datetime: '2026-10-07T18:30:00.000000+00:00', league: '3L A', gender: 'women' }, // gone from the 3L calendar
+      { game_number: '400001', datetime: '2026-10-08T18:30:00.000000+00:00', league: '1L D', gender: 'men' } // no calendar: stays
+    ]
+    const pool = fakePool({ stored, season })
+    const logger = memLogger()
+    const r = await runVmSync({ pool, fetch: f.fetch, http, now: NOW, logger, feeds, calendarDelayMs: 0 })
+    assert.equal(r.status, 'success', r.message)
+    assert.equal(f.calls.length, 2, 'one request per calendar, nothing else')
+    assert.ok(f.calls.every((u) => u.includes('/iCal/schedule/')), 'no login page, no search')
+    const byNumber = Object.fromEntries(pool.state.upserted.map((row) => [row.game_number, row]))
+    assert.deepEqual(Object.keys(byNumber).sort(), ['406020', '406099', '406171'])
+    const known = byNumber['406020']
+    assert.equal(known.league, '3L B', 'the stored group letter stays')
+    assert.equal(known.hall_address, 'Gloriastrasse 32', 'the street keeps its number')
+    assert.equal(known.match_format, 5)
+    assert.equal(known.group_display, 'Gruppe B')
+    assert.equal(known.datetime, '2026-10-06T18:30:00.000000+00:00')
+    assert.equal(known.date, '06/10/2026')
+    assert.equal(known.time, '20:30')
+    assert.equal(known.referee_1, null, 'a calendar names no referee')
+    assert.equal(byNumber['406099'].league, '3L B', 'a new game takes its team\'s group')
+    assert.equal(byNumber['406099'].match_format, 5, 'and the league\'s usual format')
+    assert.equal(byNumber['406171'].league, '2L')
+    assert.equal(byNumber['406171'].gender, 'men')
+    assert.equal(byNumber['406171'].match_format, null, 'no format known for 2L men: Match setup asks')
+    assert.deepEqual(pool.state.removed, ['406555'], 'only a game of a covered league that the calendar dropped')
+    assert.match(pool.state.log.get(r.logId).message, /Synced 3 games from 2 league calendar\(s\)/)
+  })
+
+  it('a calendar that fails makes the run partial and removes nothing', async () => {
+    const f = fetchFor({ [TOKEN_A]: cal3L }) // TOKEN_B answers 403
+    const stored = [{ game_number: '406555', datetime: '2026-10-07T18:30:00.000000+00:00', league: '3L A', gender: 'women' }]
+    const pool = fakePool({ stored })
+    const r = await runVmSync({ pool, fetch: f.fetch, http, now: NOW, logger: memLogger(), feeds, calendarDelayMs: 0 })
+    assert.equal(r.status, 'partial')
+    assert.deepEqual(pool.state.removed, [])
+    assert.match(r.message, /INCOMPLETE: .*1 of 2 calendar\(s\) failed/)
+  })
+
+  it('the CLI runs on VM_ICAL_FEEDS without VolleyManager credentials', async () => {
+    const f = fetchFor({ [TOKEN_A]: cal3L, [TOKEN_B]: cal2L })
+    const env = { VM_ICAL_FEEDS: `${TOKEN_A}, webcal://vm.test/iCal/schedule/${TOKEN_B}` }
+    const quiet = async (fn) => { const e = console.error, l = console.log; console.error = () => {}; console.log = () => {}; try { return await fn() } finally { console.error = e; console.log = l } }
+    const code = await quiet(() => cliMain(['--dry-run', '--from', '2026-10-01', '--to', '2026-10-31'], env, { fetch: f.fetch, baseUrl: 'https://vm.test', http }))
+    assert.equal(code, EXIT.success)
+    assert.equal(f.calls.length, 2)
   })
 })
