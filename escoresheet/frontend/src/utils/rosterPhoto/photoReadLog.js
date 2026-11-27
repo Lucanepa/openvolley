@@ -1,7 +1,7 @@
 /**
  * A photo reading in the activity log (kind `photo.read`, docs/activity-log-spec.md):
  * owner 27.11, the times of real tablets reach the server. One entry when a reading
- * ends (RosterPhotoImport: the check screen or the error; a cancelled one is not
+ * ends (RosterPhotoImport: the roster read, or the error; a cancelled one is not
  * logged): `ms` from the tap on "Read the list", `outcome` ('ok' or the error code
  * shown), on success `rows` (players read), `toCheck` (fields shown amber or red) and
  * `struck` (rows left out as struck), the device's `cores` and `memory`, `workers`
@@ -18,7 +18,7 @@ import { fieldIssues } from '../../domain/importedRoster'
 
 export const PHOTO_READ_KIND = 'photo.read'
 
-/** Fields the check screen shows amber or red (RosterConfirmStep: to check + to fix). */
+/** Fields marked amber or red in the roster after the photo (photoMarks: to check + to fix). */
 function fieldsToCheck (roster) {
   const issues = fieldIssues(roster)
   return [...issues.players, ...Object.values(issues.officials)]
@@ -30,7 +30,7 @@ const positive = (v) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? 
 /**
  * The entry's data.
  * @param {{ ms: number, outcome: string, roster?: object, stats?: { workers?: number, turned?: boolean }, nav?: Navigator }} reading
- *   roster: the one shown on the check screen (outcome 'ok'); stats: what readRosterPhoto noted
+ *   roster: the one read (outcome 'ok'), as it goes into the roster; stats: what readRosterPhoto noted
  */
 export function photoReadData ({ ms, outcome, roster = null, stats = {}, nav = typeof navigator !== 'undefined' ? navigator : undefined } = {}) {
   const ok = outcome === 'ok'

@@ -6,7 +6,7 @@
  * whose SV number is no one's there but whose name the saved team knows
  * (accents and case aside, either order; one person only) gets the saved
  * team's number (amber when the read one looked right). Nothing else
- * changes: the confirm screen shows the rest as read.
+ * changes: the roster shows the rest as read (unsure fields marked).
  *
  * savedTeam: a saved team row (domain/savedTeams: players and staff with
  * first_name, last_name, license_number); null for none.

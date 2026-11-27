@@ -73,7 +73,7 @@ export const HELP_SECTIONS = [
     q('matchSetup', 'choosePlayers'),
     q('matchSetup', 'importPdf', 'setup-pdf-import'),
     q('matchSetup', 'importPhoto', 'setup-photo-import'),
-    q('matchSetup', 'rosterUpload'),
+    q('matchSetup', 'rosterUpload', 'setup-remote-import'),
     q('matchSetup', 'sentRoster'),
     q('matchSetup', 'clubPlayers')
   ]),

@@ -15,6 +15,8 @@
 //   prepare   brings the app there (walkthroughFlow.js)
 //   leave     closes what the step opened, when the walkthrough goes on
 //   action    a button on the card: 'fastForward' (Skip to set 5)
+//   inert     the target takes no tap while the step shows (the Photo way:
+//             no camera and no reading in the walkthrough)
 import { closeDialogs, resolveTarget, clickTarget, waitForTarget } from './targets'
 import { writeDemoUpload } from './demoData'
 import { writeDemoLineups } from './fastForward'
@@ -55,7 +57,14 @@ export const STEPS = [
 
   // ---- 2 Rosters: every way -------------------------------------------------
   S(2, 'rosterType', { screen: 'rosterEditor', target: { helpId: 'setup-add-player' }, prepare: (ctx) => toRosterEditor(ctx) }),
-  S(2, 'rosterPdf', { screen: 'rosterEditor', target: { helpId: 'setup-pdf-import' }, prepare: (ctx) => toRosterEditor(ctx) }),
+  S(2, 'rosterPdf', { screen: 'rosterEditor', target: { helpId: 'setup-pdf-import' }, prepare: (ctx) => toRosterEditor(ctx, { mode: 'pdf' }) }),
+  // Photo: shown and explained, never used here (no camera, nothing read): its buttons take no tap
+  S(2, 'rosterPhoto', {
+    screen: 'rosterEditor',
+    target: T.photoWay,
+    inert: true,
+    prepare: (ctx) => toRosterEditor(ctx, { mode: 'photo' })
+  }),
   S(2, 'rosterRemote', {
     screen: 'rosterEditor',
     target: T.remote,

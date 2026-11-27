@@ -18,6 +18,10 @@ that ships this).
 - "captain can be either C or K, libero L. if a number is circled, then it means captain".
 - "coaches can write next (left) or between name and licence, kinda everywhere".
 - "can a screenshot be used also?": yes ("Choose a picture" takes any image, a screenshot too).
+- 2026-11-27, after testing on the A7 Lite: "just already import them in the official roster and fix
+  there". Since then there is no check screen: the reading goes straight into the roster (the PDF
+  import's path), the unsure fields are marked on the roster's own rows, and the roster offers Undo
+  (section 3.4). This replaces "nothing applied without the scorer's confirmation" above.
 - Bundle the recognition in the Android and desktop apps; the web loads it on first use.
 
 Earlier rules that still hold: an Einsatzliste names only the coach and two assistants, exists in
@@ -45,8 +49,8 @@ camera / picture ──► scan.js ──► ocr.js (Tesseract.js) ──► ocr
                      warp, light, PSM 6, app's own files     reader's items →      spelling by
                      rules out                               parseRosterContent    SV number
                                                                     │
-            MatchSetup.applyImportedRoster ◄── "Use" ◄── confirm screen (every field editable,
-            (the PDF import's own path)                   red = fix, amber = check)
+            MatchSetup.applyImportedRoster ◄── the roster editor: unsure fields marked on its rows
+            (the PDF import's own path)        (red = fix, amber = check), banner with Undo
 ```
 
 ### 3.1 One structure for every reader (`src/domain/importedRoster.js`)
@@ -136,23 +140,34 @@ team has the saved spelling (sure), and a player whose SV number is no one's the
 is (one person only) the saved number: amber when the read one looked right ("10031", a digit
 lost).
 
-### 3.4 The screen (`src/components/rosterPhoto/`)
+### 3.4 The screen (`src/components/rosterPhoto/`, Match setup)
 
-"Photo of the list" under "Upload PDF" (Local) on both sides. Steps: tips + Take a photo / Choose a
-picture → corners → reading (progress) → confirm. The confirm screen: players (number, last and
-first name, licence, C, L, remove) and the three official rows, the method ("Read on this device"),
-how many names came from the saved team, how many fields to fix / check. "Use" is off while a red
-field is left. Cancel at any step changes nothing. Lists with names carry `data-sensitive` (no name
-in the interaction log).
+Match setup › Edit roster › Roster import › Photo (since 27.11.2026 one switch: Remote · PDF ·
+Photo): "Take a photo" / "Choose a picture" open their source at once, then the dialog: corners →
+reading (progress). Cancel before the reading ends changes nothing.
 
-It fits its dialog **without scrolling sideways** (owner, 2026-11-27, Galaxy Tab A7 Lite with a
-large system font: the table scrolled and long names were cut off in their boxes): each row is a
-grid of its own (a container query on the dialog's width), one line from 42 rem, below that two
-(number and names, then SV number, C, L, remove); a name is a text box that grows a line instead of
-cutting the name off (CSS `field-sizing: content`, measured where the browser lacks it); every
-control is 44 px. `e2e-ui/photo-check-fit.mjs` checks it with made-up names at the A7 Lite's sizes
-(1005 x 600, 893 x 533, 600 x 1005, 1340 x 800, 800 x 1340) and a phone (393 x 852), at the
-default text and 1.5x (Android's system font grows the text, not px or rem lengths).
+**No check screen** (owner, 2026-11-27: "just already import them in the official roster and fix
+there"). The reading goes straight into the roster through `applyImportedRoster`, as a PDF does:
+it replaces the players and the bench officials, with more than 14 players the scorer ticks who
+plays first, numbers left blank come from the saved team. Then, in the roster editor:
+- every field `fieldIssues` names is marked on the editor's own rows: red = must fix, amber =
+  check, with the reason as the field's title, in the table and the stacked (upright, phone)
+  layouts, the coach and assistants too. A field's mark goes as soon as the field is changed;
+- the marks are UI state only (`src/utils/rosterPhoto/photoMarks.js`): Match setup's state, keyed
+  by a Symbol token on each row the photo gave (JSON and IndexedDB's structured clone skip symbol
+  keys, and the players are written field by field). Nothing of them reaches the match, the
+  roster, a sync job or the scoresheet. They go when the editor closes (Save or Back);
+- a banner on top of the roster: "From the photo: n players · n fields to fix (red) · n fields to
+  check (amber)", the rows struck out on the list by name, the reading's time ("Read in 11.4 s ·
+  version …") and **Undo import** (the roster and bench officials as they were before the photo).
+  It goes when dismissed, when every mark is fixed, or when the photo's rows are replaced.
+
+The photo.read activity entry (#372) is written when the reading ends, as before. The banner
+carries `data-sensitive` (it names people).
+
+The check screen of 26–27.11 (a grid per row that fit the A7 Lite with a large system font, and its
+fit script `e2e-ui/photo-check-fit.mjs`) went with it: the roster editor's own rows, which already
+fit those sizes, are where the photo's rows are fixed now.
 
 ### 3.5 Platforms
 
@@ -186,11 +201,13 @@ default text and 1.5x (Android's system font grows the text, not px or rem lengt
 photo and as a phone screenshot, a ruled table in German and Italian; marks, circles, LFP, wrapped
 names; and the marks spread over the row), `scan.test.js` (homography, corners, light, rules, rings), `ocr.test.js` (files from the
 app, load error, timeout, empty, cancel), `savedTeamNames.test.js`, `RosterPhotoImport.test.jsx`
-(nothing applied before "Use", red blocks, edits applied, remove, error and retry; the recognition
-started when the dialog opens, ended on close and while the page is hidden). Since 2026-11-27 also
+(the reading handed straight on with its time, struck rows, cancel, error and retry; the recognition
+started when the dialog opens, ended on close and while the page is hidden), `photoMarks.test.js`
+and `MatchSetupPhotoImport.test.jsx` (applied at once, the marks shown and cleared on edit, Undo, a
+Save stores no mark, more than 14 players). Since 2026-11-27 also
 the workers (one language each, merged line by line, PGM), struck rows drawn on made-up rows, made-up
-officials in the three languages, and `e2e-ui/photo-check-fit.mjs` (the check screen at the A7
-Lite's sizes and a phone, 1x and 1.5x text). The fixtures and
+officials in the three languages (the check screen's fit script went with the check screen,
+27.11.2026). The fixtures and
 their sources: `src/utils/rosterPhoto/__tests__/fixtures/`.
 
 ### 3.7 Tuned on real photos (2026-11-26)
@@ -302,8 +319,8 @@ privacy policy needs no new processor. Candidates, in order:
 ## 5. Files
 
 `src/domain/importedRoster.js`, `src/utils/rosterPhoto/{scan,ocr,ocrFiles,ocrWarmup,ocrRoster,savedTeamNames,photoReadLog}.js`,
-`src/components/rosterPhoto/{RosterPhotoImport,PhotoCropStep,RosterConfirmStep}.jsx`, `e2e-ui/photo-check-fit.mjs`,
-`src/components/MatchSetup.jsx` (`applyImportedRoster`, the button), `vite-plugin-ocr-assets.js`,
+`src/components/rosterPhoto/{RosterPhotoImport,PhotoCropStep}.jsx`, `src/utils/rosterPhoto/photoMarks.js`,
+`src/components/MatchSetup.jsx` (`applyImportedRoster`, the marks, the banner, Roster import › Photo), `vite-plugin-ocr-assets.js`,
 `pwa-workbox.js` (`ocr/**`, `OCR_FILES_ROUTE`), `scripts/build-subdomains.js`, the Android manifest
 and `MainActivity`, iOS `Info.plist`, locales (`rosterPhoto.*`, help `importPhoto`), legal texts
 (privacy 1.28, open-source notices, data map).

@@ -8,6 +8,7 @@ import deCH from '../../../i18n/locales/de-CH.json'
 import fr from '../../../i18n/locales/fr.json'
 import it_ from '../../../i18n/locales/it.json'
 import { CHAPTERS, STEPS, firstStepOfChapter, stepsOfChapter } from '../walkthroughSteps'
+import { T } from '../walkthroughFlow'
 
 const LOCALES = { en, de, 'de-CH': deCH, fr, it: it_ }
 const SCREENS = ['home', 'matchSetup', 'rosterEditor', 'coinToss', 'scoreboard', 'matchEnd']
@@ -76,5 +77,26 @@ describe('walkthrough steps', () => {
     expect(w.set1Lineups.text).toContain(en.scoreboard.lineup)
     expect(w.set5Switch.text).toContain(en.scoreboard.buttons.switchCourts)
     expect(w.endComplete.title).toBe(en.matchEnd.title)
+  })
+
+  // Roster import's switch (owner 27.11.2026): Remote · PDF · Photo, found by
+  // the labels the app shows; the PDF step brings its way up first
+  it('finds the ways of Roster import by their labels in every language', () => {
+    const tOf = (lng) => (key) => key.split('.').reduce((o, k) => o?.[k], LOCALES[lng])
+    for (const lng of Object.keys(LOCALES)) {
+      expect(T.remote.name(tOf(lng)), lng).toBe(LOCALES[lng].matchSetup.remote)
+      expect(T.pdf.name(tOf(lng)), lng).toBe(LOCALES[lng].matchSetup.rosterImport.pdf)
+      expect(T.photo.name(tOf(lng)), lng).toBe(LOCALES[lng].matchSetup.rosterImport.photo)
+      for (const way of [T.remote, T.pdf, T.photo]) expect(way.role).toBe('radio')
+    }
+    // the Photo step (owner 27.11.2026): the segment and its buttons, shown, never tapped
+    const photo = STEPS.find(s => s.id === 'rosterPhoto')
+    expect(STEPS.indexOf(photo)).toBe(STEPS.findIndex(s => s.id === 'rosterPdf') + 1)
+    expect(photo).toMatchObject({ chapter: 2, screen: 'rosterEditor', advance: 'next', inert: true, target: T.photoWay })
+    expect(T.photoWay.union.map(u => u.testId)).toEqual(['roster-import-photo-home', 'roster-import-photo-panel-home'])
+    for (const lng of Object.keys(LOCALES)) expect(LOCALES[lng].walkthrough.steps.rosterPhoto.title, lng).toBe(LOCALES[lng].rosterPhoto.button)
+    const pdf = STEPS.find(s => s.id === 'rosterPdf')
+    expect(pdf.target).toEqual({ helpId: 'setup-pdf-import' })
+    expect(en.walkthrough.steps.rosterPdf.text).toContain(en.matchSetup.rosterImport.title)
   })
 })

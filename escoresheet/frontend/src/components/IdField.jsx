@@ -26,7 +26,9 @@ export default function IdField({ idMode = 'dob', rawValue = '', onRawChange, ..
     size = 'md', wrapperClassName, className, style, onKeyDown, onBlur, onFocus, disabled, readOnly, id,
     placeholder, title,
     'aria-label': ariaLabel, 'aria-describedby': ariaDescribedBy, 'aria-invalid': ariaInvalid,
-    'data-testid': testId
+    'data-testid': testId,
+    // a photo import's mark on the field (MatchSetup; UI only)
+    'data-photo-mark': photoMark
   } = dateProps
   const licence = idMode === 'licence'
   const text = rawValue == null || isPlaceholderValue(rawValue) ? '' : String(rawValue)
@@ -44,6 +46,7 @@ export default function IdField({ idMode = 'dob', rawValue = '', onRawChange, ..
         aria-describedby={ariaDescribedBy}
         aria-invalid={ariaInvalid}
         data-testid={testId}
+        data-photo-mark={photoMark}
         disabled={disabled}
         readOnly={readOnly}
         placeholder={placeholder}

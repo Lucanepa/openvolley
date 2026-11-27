@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key, opts) => (opts && typeof opts === 'object' && 'count' in opts ? `${key}:${opts.count}` : (typeof opts === 'string' ? key : key)), i18n: { language: 'en' } })
@@ -55,7 +55,8 @@ async function toCrop () {
 describe('RosterPhotoImport', () => {
   it('the recognition starts when the dialog opens, the reading uses it, and it ends after the reading and on close', async () => {
     readRosterPhoto.mockResolvedValue(read())
-    render(<RosterPhotoImport side="home" teamLabel="VBC Seewiese" onApply={() => {}} />)
+    const onApply = vi.fn()
+    render(<RosterPhotoImport side="home" teamLabel="VBC Seewiese" onApply={onApply} />)
     fireEvent.click(screen.getByTestId('roster-photo-home'))
     await waitFor(() => expect(startOcrEngine).toHaveBeenCalledTimes(1))
     fireEvent.change(screen.getByTestId('roster-photo-file-home'), { target: { files: [new File(['x'], 'list.jpg', { type: 'image/jpeg' })] } })
@@ -63,13 +64,12 @@ describe('RosterPhotoImport', () => {
     // (still the one started at the opening)
     expect(startOcrEngine).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByTestId('roster-photo-read'))
-    await screen.findByTestId('roster-photo-players')
+    await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1))
     expect(readRosterPhoto.mock.calls[0][1].engine).toBe(engines[0])
     await waitFor(() => expect(engines[0].terminate).toHaveBeenCalled())
 
     // another photo: a new one, ended when the dialog closes
     readRosterPhoto.mockReset()
-    fireEvent.click(screen.getByTestId('roster-photo-cancel'))
     fireEvent.click(screen.getByTestId('roster-photo-home'))
     await waitFor(() => expect(startOcrEngine).toHaveBeenCalledTimes(2))
     fireEvent.click(screen.getByText('common.cancel'))
@@ -89,76 +89,51 @@ describe('RosterPhotoImport', () => {
     state.mockRestore()
   })
 
-  it('nothing is applied until the scorer fixes the red fields and taps Use; the edits are what is applied', async () => {
+  // owner 27.11.2026: "just already import them in the official roster and fix there"
+  it('the list read goes straight to onApply, with its time: no check screen; the saved team\'s spelling and the confidence (the roster\'s marks) come along', async () => {
     readRosterPhoto.mockResolvedValue(read())
     const onApply = vi.fn()
     render(<RosterPhotoImport side="home" teamLabel="VBC Seewiese" savedTeam={savedTeam} onApply={onApply} />)
     await toCrop()
     fireEvent.click(screen.getByTestId('roster-photo-read'))
-    const table = await screen.findByTestId('roster-photo-players')
-
-    // the saved team's spelling for the known SV number; the method shown
-    const lasts = within(table).getAllByTestId('roster-photo-last')
-    expect(lasts.map(i => i.value)).toEqual(['Exempel', 'Muster'])
-    // how long it took, with the version (owner 27.11); no "read on this device" note (in the privacy policy)
-    expect(screen.getByTestId('roster-photo-method').textContent).toContain('rosterPhoto.confirm.readIn')
-    expect(screen.getByTestId('roster-photo-method').textContent).toContain('rosterPhoto.confirm.fromSaved:1')
-
-    // 7 twice: red, and "Use" stays off
-    const numbers = within(table).getAllByTestId('roster-photo-number')
-    expect(numbers.map(i => i.getAttribute('data-issue'))).toEqual(['invalid', 'invalid'])
-    expect(screen.getByTestId('roster-photo-apply')).toBeDisabled()
-    expect(screen.getByTestId('roster-photo-issues').textContent).toContain('rosterPhoto.confirm.toFix:2')
-    expect(onApply).not.toHaveBeenCalled()
-
-    // the scorer corrects the second number and marks a libero
-    fireEvent.change(numbers[1], { target: { value: '12' } })
-    fireEvent.click(within(table).getAllByTestId('roster-photo-libero')[1])
-    expect(screen.getByTestId('roster-photo-apply')).not.toBeDisabled()
-    fireEvent.click(screen.getByTestId('roster-photo-apply'))
-
-    expect(onApply).toHaveBeenCalledTimes(1)
-    const applied = onApply.mock.calls[0][0]
+    await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1))
+    const [applied, meta] = onApply.mock.calls[0]
     expect(applied.source).toBe('ocr')
-    expect(applied.players.map(p => [p.number, p.lastName, p.isCaptain, p.isLibero])).toEqual([[7, 'Exempel', true, false], [12, 'Muster', false, true]])
+    // the saved team's spelling for the known SV number, marked as such; 7 twice as read (fixed in the roster)
+    expect(applied.players.map(p => [p.number, p.lastName, p.isCaptain, !!p.fromSavedTeam])).toEqual([[7, 'Exempel', true, false], [7, 'Muster', false, true]])
+    expect(applied.players[0].confidence).toMatchObject({ number: 0.7 })
     expect(applied.coach).toMatchObject({ lastName: 'Muster', licence: '10001' })
-    // the dialog is gone
+    expect(meta.readMs).toBeGreaterThanOrEqual(0)
+    // the dialog is gone, and it never showed a check screen
+    expect(screen.queryByRole('dialog')).toBeNull()
     expect(screen.queryByTestId('roster-photo-players')).toBeNull()
   })
 
-  it('a row struck out on the list is named on the confirm screen and never applied (real photos, 2026-11-26)', async () => {
+  it('a row struck out on the list goes along as struck, never as a player (real photos, 2026-11-26)', async () => {
     readRosterPhoto.mockResolvedValue({ ...read(), struck: [{ firstName: 'Rita', lastName: 'Probst', licence: '123459' }] })
     const onApply = vi.fn()
     render(<RosterPhotoImport side="home" teamLabel="VBC" onApply={onApply} />)
     await toCrop()
     fireEvent.click(screen.getByTestId('roster-photo-read'))
-    expect(await screen.findByTestId('roster-photo-struck')).toHaveTextContent('rosterPhoto.confirm.struck:1')
-    expect(screen.getAllByTestId('roster-photo-row')).toHaveLength(2)
+    await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1))
+    const [applied] = onApply.mock.calls[0]
+    expect(applied.struck).toEqual([{ firstName: 'Rita', lastName: 'Probst', licence: '123459' }])
+    expect(applied.players.map(p => p.lastName)).not.toContain('Probst')
   })
 
-  it('Cancel on the confirm screen applies nothing', async () => {
-    readRosterPhoto.mockResolvedValue(read())
+  it('Cancel while reading applies nothing', async () => {
+    readRosterPhoto.mockImplementation((page, opts) => new Promise((resolve, reject) => {
+      opts.signal.addEventListener('abort', () => reject(Object.assign(new Error('cancelled'), { code: 'ocr-cancelled' })))
+    }))
     const onApply = vi.fn()
     render(<RosterPhotoImport side="home" teamLabel="VBC" onApply={onApply} />)
     await toCrop()
     fireEvent.click(screen.getByTestId('roster-photo-read'))
-    await screen.findByTestId('roster-photo-players')
+    await waitFor(() => expect(readRosterPhoto).toHaveBeenCalled())
     fireEvent.click(screen.getByTestId('roster-photo-cancel'))
+    await new Promise((resolve) => setTimeout(resolve, 20))
     expect(onApply).not.toHaveBeenCalled()
-    expect(screen.queryByTestId('roster-photo-players')).toBeNull()
-  })
-
-  it('a row can be removed before it is used', async () => {
-    readRosterPhoto.mockResolvedValue(read())
-    const onApply = vi.fn()
-    render(<RosterPhotoImport side="away" teamLabel="VBC" onApply={onApply} />)
-    fireEvent.click(screen.getByTestId('roster-photo-away'))
-    fireEvent.change(screen.getByTestId('roster-photo-file-away'), { target: { files: [new File(['x'], 'list.png', { type: 'image/png' })] } })
-    fireEvent.click(await screen.findByTestId('roster-photo-read'))
-    const table = await screen.findByTestId('roster-photo-players')
-    fireEvent.click(within(table).getAllByTestId('roster-photo-remove')[1])
-    fireEvent.click(screen.getByTestId('roster-photo-apply'))
-    expect(onApply.mock.calls[0][0].players.map(p => p.licence)).toEqual(['123451'])
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('a reading that fails says why, and offers the same photo again', async () => {
@@ -181,27 +156,29 @@ describe('RosterPhotoImport', () => {
     expect(screen.getByTestId('roster-photo-corner-0').getAttribute('aria-valuetext')).not.toBe(before)
   })
 
-  it('the bar never shows 100 % while reading, even if the reading says 1: only the check screen ends it (owner 27.11)', async () => {
+  it('the bar never shows 100 % while reading, even if the reading says 1: only the end of the reading does (owner 27.11)', async () => {
     let finish
     readRosterPhoto.mockImplementation((page, opts) => new Promise((resolve) => {
       opts.onProgress(0.5, 'recognizing text')
       opts.onProgress(1, 'reading marks')
       finish = () => resolve(read())
     }))
-    render(<RosterPhotoImport side="home" teamLabel="VBC Seewiese" onApply={() => {}} />)
+    const onApply = vi.fn()
+    render(<RosterPhotoImport side="home" teamLabel="VBC Seewiese" onApply={onApply} />)
     await toCrop()
     fireEvent.click(screen.getByTestId('roster-photo-read'))
     const now = () => Number(screen.getByRole('progressbar').getAttribute('aria-valuenow'))
     await waitFor(() => expect(now()).toBeGreaterThan(50))
     expect(now()).toBeLessThan(100)
     finish()
-    await screen.findByTestId('roster-photo-players')
+    await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1))
   })
 
   it('shows the time while reading and no "read on this device" note anywhere (owner 27.11)', async () => {
     let finish
     readRosterPhoto.mockImplementation((page, opts) => new Promise((resolve) => { opts.onProgress(0.5, 'recognizing text'); finish = () => resolve(read()) }))
-    render(<RosterPhotoImport side="home" teamLabel="VBC Seewiese" onApply={() => {}} />)
+    const onApply = vi.fn()
+    render(<RosterPhotoImport side="home" teamLabel="VBC Seewiese" onApply={onApply} />)
     fireEvent.click(screen.getByTestId('roster-photo-home'))
     expect(screen.queryByText('rosterPhoto.source.private')).toBeNull()
     fireEvent.change(screen.getByTestId('roster-photo-file-home'), { target: { files: [new File(['x'], 'list.jpg', { type: 'image/jpeg' })] } })
@@ -211,8 +188,9 @@ describe('RosterPhotoImport', () => {
     expect(screen.queryByText('rosterPhoto.source.private')).toBeNull()
     await waitFor(() => expect(readRosterPhoto).toHaveBeenCalled())
     finish()
-    await screen.findByTestId('roster-photo-players')
-    expect(screen.getByTestId('roster-photo-method').textContent).toContain('rosterPhoto.confirm.readIn')
+    // the total time goes with the roster (its banner shows it)
+    await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1))
+    expect(onApply.mock.calls[0][1].readMs).toBeGreaterThanOrEqual(0)
   })
 
   // owner 27.11: the tablets' reading times reach the server (activity log, kind photo.read)
@@ -238,7 +216,7 @@ describe('RosterPhotoImport', () => {
     render(<RosterPhotoImport side="home" teamLabel="VBC Seewiese" onApply={onApply} />)
     await toCrop()
     fireEvent.click(screen.getByTestId('roster-photo-read'))
-    await screen.findByTestId('roster-photo-players')
+    await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1))
     expect(photoReads()).toHaveLength(1)
     const [, data, opts] = photoReads()[0]
     expect(opts).toEqual({ level: 'info' })
@@ -247,10 +225,8 @@ describe('RosterPhotoImport', () => {
     expect(data.ms).toBeGreaterThanOrEqual(0)
     expect(Object.keys(data).sort()).toEqual(['cores', 'memory', 'ms', 'outcome', 'rows', 'struck', 'toCheck', 'turned', 'workers'])
     onlyCounts(data)
-    // correcting and using the list writes nothing more
-    fireEvent.change(within(screen.getByTestId('roster-photo-players')).getAllByTestId('roster-photo-number')[1], { target: { value: '12' } })
-    fireEvent.click(screen.getByTestId('roster-photo-apply'))
-    expect(onApply).toHaveBeenCalledTimes(1)
+    // written once, when the reading ended
+    await new Promise((resolve) => setTimeout(resolve, 20))
     expect(photoReads()).toHaveLength(1)
   })
 

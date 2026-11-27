@@ -22,8 +22,12 @@ export const T = {
   rosterEditor: { testId: 'choose-players-home' },
   rosterBack: { testId: 'roster-back-home' },
   rosterConfirm: { testId: 'roster-confirm-home' },
+  // Roster import's switch (Remote · PDF · Photo)
   remote: { role: 'radio', name: (t) => t('matchSetup.remote') },
-  local: { role: 'radio', name: (t) => t('matchSetup.local') },
+  pdf: { role: 'radio', name: (t) => t('matchSetup.rosterImport.pdf') },
+  photo: { role: 'radio', name: (t) => t('matchSetup.rosterImport.photo') },
+  // the Photo segment and its buttons (Take a photo, Choose a picture) with their tips
+  photoWay: { union: [{ testId: 'roster-import-photo-home' }, { testId: 'roster-import-photo-panel-home' }] },
   pendingCard: { testId: 'pending-roster-home' },
   savedPicker: { dialog: { has: '[data-testid="saved-team-results"]' } },
   clubPicker: { dialog: { has: '[data-testid="club-picker"]' } },
@@ -140,8 +144,12 @@ export async function toSetup(ctx) {
   return m
 }
 
-/** The home team's roster editor, Local, with the demo club list on the device. */
-export async function toRosterEditor(ctx, { mode = 'local' } = {}) {
+/**
+ * The home team's roster editor, with the demo club list on the device; `mode`
+ * ('remote' | 'pdf' | 'photo'): that way chosen in Roster import (else it stays
+ * as the scorer left it: the choice is kept on the device).
+ */
+export async function toRosterEditor(ctx, { mode = null } = {}) {
   await userDialogsDone(ctx)
   let m = await walkthroughMatch(ctx)
   if (!m || m.coinTossConfirmed === true || ctx.page() !== 'matchSetup' || !resolveTarget(T.rosterEditor, ctx).length) {
@@ -150,8 +158,8 @@ export async function toRosterEditor(ctx, { mode = 'local' } = {}) {
     await waitForTarget(T.rosterEditor, ctx, { timeoutMs: 15000 })
   }
   await seedDemoClub(m.id, ctx.db)
-  const want = mode === 'remote' ? T.remote : T.local
-  const radio = resolveTarget(want, ctx)[0]
+  const want = mode ? T[mode] : null
+  const radio = want ? resolveTarget(want, ctx)[0] : null
   if (radio && radio.getAttribute('aria-checked') !== 'true') {
     radio.click()
     await sleep(200)

@@ -38,7 +38,8 @@ const JOINED = {
 
 /**
  * @param {object} props
- * @param {Array<{value: string, label?: any, icon?: any, title?: string}>} props.options
+ * @param {Array<{value: string, label?: any, icon?: any, title?: string, testId?: string, helpId?: string}>} props.options
+ *   track only: `testId` / `helpId` set the segment's data-testid / data-help-id
  * @param {string} props.value
  * @param {(value: string) => void} props.onChange
  * @param {string} props.ariaLabel  name of the group (required: segments alone don't say what they choose).
@@ -73,6 +74,8 @@ export function SegmentedControl({ options, value, onChange, ariaLabel: ariaLabe
               aria-checked={on}
               tabIndex={on ? 0 : -1}
               title={o.title}
+              data-testid={o.testId}
+              data-help-id={o.helpId}
               onClick={() => onChange(o.value)}
               onKeyDown={(e) => onKeyDown(e, i)}
               className={cn('h-9 rounded-lg px-3 text-xs font-medium whitespace-nowrap transition-colors', FOCUS_RING, on ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-600 hover:bg-stone-200/60', o.icon && 'inline-flex items-center justify-center gap-1.5')}

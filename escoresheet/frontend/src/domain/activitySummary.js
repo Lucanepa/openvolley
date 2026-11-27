@@ -62,7 +62,7 @@ export const ACTIVITY_KINDS = Object.freeze({
   'activity.overflow': { cat: 'app', keys: ['dropped'] }
 })
 
-// How a photo reading ended: 'ok' (the check screen) or the error the scorer saw
+// How a photo reading ended: 'ok' (the roster read) or the error the scorer saw
 // (utils/rosterPhoto/ocr.js codes; 'other' for any other)
 export const PHOTO_READ_OUTCOMES = Object.freeze(['ok', 'ocr-load', 'ocr-timeout', 'ocr-empty', 'ocr-blurry', 'other'])
 

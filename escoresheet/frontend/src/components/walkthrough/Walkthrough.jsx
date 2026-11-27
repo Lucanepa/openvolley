@@ -215,6 +215,20 @@ export default function Walkthrough({ appCtx }) {
     return () => document.removeEventListener('click', onClick, true)
   }, [step, phase, ctx])
 
+  // A step whose control is shown, never used (inert: the Photo way, no camera
+  // in the walkthrough): a tap on it is stopped before the app sees it
+  useEffect(() => {
+    if (!step?.inert || phase !== 'ready') return undefined
+    const stop = (e) => {
+      if (e.target?.closest?.(`[${WALKTHROUGH_ROOT_ATTR}]`)) return
+      if (!resolveTarget(step.target, ctx).some(el => el.contains(e.target))) return
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    document.addEventListener('click', stop, true)
+    return () => document.removeEventListener('click', stop, true)
+  }, [step, phase, ctx])
+
   // the full card's height (not the small one beside a dialog)
   const compactRef = useRef(false)
   useLayoutEffect(() => {

@@ -53,7 +53,20 @@ describe('walkthrough: the Rosters chapter, tapped', () => {
     render(<div className="ov-kit ov-kit-host"><UiHost /></div>)
     await waitFor(() => expect(button('Restore match')).toBeTruthy())
     act(() => startWalkthrough({ chapter: 2 }))
-    for (const id of ['rosterType', 'rosterPdf', 'rosterRemote', 'rosterUploaded', 'rosterSaved']) {
+    for (const id of ['rosterType', 'rosterPdf']) {
+      await readyAt(id)
+      next()
+    }
+    // Photo: shown and explained, its buttons take no tap (no camera in the walkthrough)
+    await readyAt('rosterPhoto')
+    expect(document.querySelector('[data-testid="roster-import-home"]').dataset.mode).toBe('photo')
+    const camera = document.querySelector('[data-testid="roster-photo-camera-home"]')
+    const opened = vi.spyOn(camera, 'click').mockImplementation(() => {})
+    fireEvent.click(document.querySelector('[data-testid="roster-photo-take-home"]'))
+    expect(opened).not.toHaveBeenCalled()
+    expect(card()?.dataset.step).toBe('rosterPhoto')
+    next()
+    for (const id of ['rosterRemote', 'rosterUploaded', 'rosterSaved']) {
       await readyAt(id)
       next()
     }

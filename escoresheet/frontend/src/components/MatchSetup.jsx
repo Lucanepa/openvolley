@@ -52,7 +52,7 @@ import { deriveTeamShortLabel } from '../domain/teamIdentity'
 import { missingConnectionPins, connectionPinsSyncJob, fetchPendingRoster, clearPendingRosterJob, isKnownDob, cleanLicence, scorerIdentified } from '../utils/remoteRoster'
 import { ClipboardIcon } from './icons'
 import { AlertTriangle, Loader2 } from 'lucide-react'
-import { Button, Checkbox, DateField, Field, Input, Select, TimeField, SegmentedControl, SectionHeader, KeyValue, CountBadge, Switch, ScreenLoading, cn, confirmDialog, toast } from '../ui'
+import { Button, Checkbox, DateField, Field, Input, Select, TimeField, SegmentedControl, SectionHeader, KeyValue, CountBadge, Switch, ScreenLoading, IconButton, cn, confirmDialog, toast } from '../ui'
 import { sponsorsOf, sponsorsToMatchInfo } from '../domain/sponsors'
 import { sheetInputsToMatchInfo } from '../domain/sheetInputs'
 import LongIntervalSwitch from './LongIntervalSwitch'
@@ -65,12 +65,15 @@ import { playersWithoutNumber } from '../domain/coinTossChecks'
 import { checkUploadedRoster, takesUploadedRoster, uploadedSignaturesKept, uploadedSignaturesToTake } from '../domain/uploadedRoster'
 import PlayerPoolModal from './PlayerPoolModal'
 import RosterPhotoImport from './rosterPhoto/RosterPhotoImport'
+import { carryPhotoTokens, marksLeft, officialMarkOf, photoMarksOf, photoRowsIn, playerMarkOf } from '../utils/rosterPhoto/photoMarks'
+import { appVersionWithBuild } from '../utils/identity'
 import { scheduleOcrWarmUp } from '../utils/rosterPhoto/ocrWarmup'
 import { buildPlayerPool, poolToRoster, ROSTER_MAX } from '../domain/playerPool'
 import { officialsFromSchedule, teamContactEmail, withTeamContacts } from '../domain/officials'
 import { rememberedRosters } from '../db/rememberedPlayers'
 import CloudBlockNotice from './CloudBlockNotice'
-import { savedTeamToRoster, findSavedTeamSuggestions, savedNumberFinder } from '../domain/savedTeams'
+import { savedTeamToRoster, findSavedTeamSuggestions, savedNumberFinder, clubOfMatchTeam } from '../domain/savedTeams'
+import { readRosterImportMode, saveRosterImportMode, rosterImportModeFor } from '../utils/rosterImportMode'
 import { getSavedTeams, refreshSavedTeams } from '../db/savedTeams'
 import { markGameRosterAccepted, offeredSentRosters, refreshGameRosters, rosterSearchOutcome, rowToPendingRoster, sentRostersSameAsUsed } from '../db/gameRosters'
 import { REMOTE_PANEL_CHECK_MS, useSentRosterRefresh } from '../hooks/useSentRosterRefresh'
@@ -89,7 +92,7 @@ import { addClubPlayersToRoster, applyClubFill, benchOfficialOfRole, benchRolesO
 import ClubShield from './manage/ClubShield'
 import { officialCheck, OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS } from '../lib/accountApi'
 import { openRestore } from '../utils/manageNav'
-import { Users, Trash2, ListChecks, UserPlus, RefreshCw, FileText } from 'lucide-react'
+import { Users, Trash2, ListChecks, UserPlus, RefreshCw, FileText, Camera, CloudDownload, Undo2, X } from 'lucide-react'
 import CaptainToggle from './CaptainToggle'
 import StackLabel from './StackLabel'
 import TeamShirt from './TeamShirt'
@@ -1026,9 +1029,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
   // Global tool: the Excel uploads of games and rosters ('games' | 'rosters' | null)
   const [globalImportKind, setGlobalImportKind] = useState(null)
 
-  // Upload mode toggle state (local or remote)
-  const [homeUploadMode, setHomeUploadMode] = useState('local') // 'local' | 'remote'
-  const [awayUploadMode, setAwayUploadMode] = useState('local') // 'local' | 'remote'
+  // Edit roster › "Roster import" (owner 27.11.2026): Remote · PDF · Photo.
+  // The way picked for a team in this setup (null: not picked yet), and the
+  // one picked last on this device (utils/rosterImportMode), which a team not
+  // picked yet opens with (else Remote for an official game, else PDF)
+  const [importModeBySide, setImportModeBySide] = useState({ home: null, away: null })
+  const [rememberedImportMode, setRememberedImportMode] = useState(() => readRosterImportMode())
+  // A photo of the list goes straight into the roster (owner 27.11.2026): per
+  // team, the marks on the rows it gave (UI state only, never saved:
+  // utils/rosterPhoto/photoMarks), the roster and bench before it (Undo), the
+  // rows struck out on the list, the reading's time; null when none
+  const [photoImport, setPhotoImport] = useState({ home: null, away: null })
 
   // Remote roster search state
   const [homeRosterSearching, setHomeRosterSearching] = useState(false)
@@ -1246,12 +1257,33 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
   // club's lists, other matches' rosters on the device and the referee
   // directory stay out; the public schedule and the Einsatzliste import stay.
   const guestMatch = isGuestMatch(match)
+  // Roster import: Remote is not offered in a guest match (sent and uploaded
+  // rosters live on the server); an official game with a number opens on it
+  const remoteImportOffered = !guestMatch
+  const officialGameImport = !!match && !isLocalOnly(match) && !!(match.game_n || match.gameNumber || gameN)
+  const importModeOf = (side) => {
+    const picked = importModeBySide[side]
+    if (picked && (picked !== 'remote' || remoteImportOffered)) return picked
+    return rosterImportModeFor({ remembered: rememberedImportMode, remoteOffered: remoteImportOffered, officialGame: officialGameImport })
+  }
+  // the scorer's pick: for this team, and kept on this device for the next roster
+  const chooseImportMode = (side, mode) => {
+    setImportModeBySide((m) => ({ ...m, [side]: mode }))
+    setRememberedImportMode(mode)
+    saveRosterImportMode(mode)
+  }
+  // the photo's marks belong to the open roster editor: gone once it closes (Save or Back)
+  useEffect(() => {
+    setPhotoImport((st) => ((st.home && currentView !== 'home') || (st.away && currentView !== 'away')
+      ? { home: currentView === 'home' ? st.home : null, away: currentView === 'away' ? st.away : null }
+      : st))
+  }, [currentView])
   // The side whose roster editor shows its Remote panel: that panel checks
   // the server itself (every REMOTE_PANEL_CHECK_MS, below), so the screen's
   // own refresh of the sent rosters rests meanwhile
   const remotePanelSide = !match || setupLocked || guestMatch ? null
-    : currentView === 'home' && homeUploadMode === 'remote' ? 'home'
-      : currentView === 'away' && awayUploadMode === 'remote' ? 'away'
+    : currentView === 'home' && importModeOf('home') === 'remote' ? 'home'
+      : currentView === 'away' && importModeOf('away') === 'remote' ? 'away'
         : null
   useSentRosterRefresh(canAskSentRosters && !setupLocked && !remotePanelSide, refreshSentRosters)
   // The team sent the roster used here again, unchanged: nothing to offer
@@ -1293,6 +1325,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
     const suggested = savedSuggestion?.[side] || null
     return byName || (suggested ? rows.find((r) => r.id === suggested.id) || suggested : null)
   }
+  // "Load saved team" offers the saved teams of the club of the team being
+  // edited only (owner 2026-11-27; domain/savedTeams clubOfMatchTeam: the
+  // account's club lists by the team's name, else the club of the saved team
+  // of that name); all of them when its club is not known
+  const savedTeamClubOf = (side) => (guestMatch ? null : clubOfMatchTeam({ teamName: side === 'home' ? home : away, clubTeam: clubTeams[side], savedTeams: savedTeamRows || [] }))
+  const clubIdOfTeamName = (name) => clubOfTeam(clubRows, name, user?.id)?.clubId ?? null
   // What the sheet carries beside a name (Swiss: the licence; Global: birthdate, number or text), kept on the match
   useEffect(() => { if (match) setIdModeState(idModeOf(match)) }, [match?.idMode, match?.global]) // eslint-disable-line react-hooks/exhaustive-deps
   const setIdMode = (mode) => {
@@ -3144,6 +3182,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
       pool,
       savedTeam: opts.savedTeam || null,
       summary: opts.summary || null,
+      photo: opts.photo === true,
       teamLabel: opts.savedTeam?.name || (side === 'home' ? home : away) || t(side === 'home' ? 'matchSetup.homeTeam' : 'matchSetup.awayTeam')
     })
     return pool
@@ -3156,8 +3195,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
     const pending = playerPool
     setPlayerPool(null)
     if (!pending) return
-    const { side, savedTeam, summary } = pending
-    const roster = poolToRoster(entries)
+    const { side, savedTeam, summary, photo } = pending
+    // a photo's list of more than 14: the ticked rows keep the photo's marks
+    const roster = photo ? carryPhotoTokens(poolToRoster(entries), side === 'home' ? homeRoster : awayRoster) : poolToRoster(entries)
     if (savedTeam) applySavedTeam(side, savedTeam, roster)
     else if (side === 'home') setHomeRoster(roster)
     else setAwayRoster(roster)
@@ -3186,7 +3226,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
       }
     }
     if (summary) setImportSummaryModal({ ...summary, players: roster.length, errors: [] })
-    else if (!savedTeam) toast.success(t('playerPool.applied', { count: roster.length }))
+    else if (!savedTeam && !photo) toast.success(t('playerPool.applied', { count: roster.length }))
   }
 
   // db/023: a sent roster becomes the side's roster and team officials, as an
@@ -3888,8 +3928,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
         variant="secondary"
         size="sm"
         onClick={() => {
-          if (team === 'home') setHomeUploadMode('remote')
-          else setAwayUploadMode('remote')
+          // the uploaded roster's card is in Roster import › Remote
+          setImportModeBySide((m) => ({ ...m, [team]: 'remote' }))
           setCurrentView(team)
         }}
       >
@@ -4072,16 +4112,260 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
   // player: with more than 14 the scorer ticks who plays (the summary follows
   // the choice). Not saved here: the roster editor's Save writes it, its
   // Back discards it.
-  const applyImportedRoster = async (side, imported) => {
-    const { players, bench, numbersFilled } = importedToSetup(imported, { idMode, savedTeam: savedTeamOf(side) })
+  // A photo (`photo`: { readMs }) goes the same way, then stays open to fix in
+  // the roster itself (owner 27.11.2026: no check screen): the fields the
+  // reading was unsure of are marked on the rows, and the banner on top of the
+  // roster names the rows struck out and offers Undo (the roster and bench as
+  // they were before the photo).
+  const applyImportedRoster = async (side, imported, photo = null) => {
+    const setup = importedToSetup(imported, { idMode, savedTeam: savedTeamOf(side) })
+    const { bench, numbersFilled } = setup
+    let { players } = setup
     if (numbersFilled) toast.info(t('savedTeams.numbersFilled', { count: numbersFilled }))
+    if (photo) {
+      const marks = photoMarksOf(imported, players, bench)
+      players = marks.players
+      const before = side === 'home' ? { roster: homeRoster, bench: benchHome } : { roster: awayRoster, bench: benchAway }
+      setPhotoImport((st) => ({
+        ...st,
+        [side]: {
+          rowMarks: marks.rowMarks,
+          officialMarks: marks.officialMarks,
+          total: marks.total,
+          before,
+          struck: imported.struck || [],
+          fromSaved: (imported.players || []).filter((p) => p.fromSavedTeam).length,
+          readMs: Number.isFinite(photo.readMs) ? photo.readMs : null,
+          dismissed: false
+        }
+      }))
+    }
     if (side === 'home') { setHomeRoster(players); setBenchHome(bench) } else { setAwayRoster(players); setBenchAway(bench) }
     const summary = { team: side, players: players.length, benchOfficials: bench.length }
     if (players.length > ROSTER_MAX) {
-      await openPlayerPool(side, { imported: players, includeCurrent: false, summary })
-    } else {
+      await openPlayerPool(side, { imported: players, includeCurrent: false, summary: photo ? null : summary, photo: !!photo })
+    } else if (!photo) {
       setImportSummaryModal({ ...summary, errors: [] })
     }
+  }
+
+  // Undo of a photo import: the roster and bench as they were before it
+  const undoPhotoImport = (side) => {
+    const st = photoImport[side]
+    if (!st) return
+    if (side === 'home') { setHomeRoster(st.before.roster); setBenchHome(st.before.bench) } else { setAwayRoster(st.before.roster); setBenchAway(st.before.bench) }
+    setPhotoImport((prev) => ({ ...prev, [side]: null }))
+    toast.info(t('rosterPhoto.applied.undone'))
+  }
+
+  // The banner on top of the roster after a photo: how many players, the
+  // fields left to fix and check (marked on the rows), the rows struck out on
+  // the list, the reading's time, Undo. Gone when dismissed, when the marks
+  // there were are all fixed, or when the photo's rows are no longer there.
+  const renderPhotoBanner = (side) => {
+    const st = photoImport[side]
+    if (!st || st.dismissed) return null
+    const roster = side === 'home' ? homeRoster : awayRoster
+    const bench = side === 'home' ? benchHome : benchAway
+    const rows = photoRowsIn(roster)
+    if (!rows) return null
+    const left = marksLeft(st, roster, bench)
+    if (st.total > 0 && left.invalid + left.low === 0) return null
+    const summary = [
+      t('rosterPhoto.applied.summary', { count: rows }),
+      left.invalid ? t('rosterPhoto.confirm.toFix', { count: left.invalid }) : null,
+      left.low ? t('rosterPhoto.confirm.toCheck', { count: left.low }) : null
+    ].filter(Boolean).join(' · ')
+    const method = [
+      st.readMs != null ? t('rosterPhoto.confirm.readIn', { seconds: (st.readMs / 1000).toFixed(1), build: appVersionWithBuild() }) : null,
+      st.fromSaved ? t('rosterPhoto.confirm.fromSaved', { count: st.fromSaved }) : null
+    ].filter(Boolean).join(' · ')
+    const struckNames = st.struck.map((p) => [p.lastName, p.firstName].filter(Boolean).join(' ') || p.licence).join(', ')
+    return (
+      <div
+        role="status"
+        data-sensitive=""
+        data-testid={`photo-import-banner-${side}`}
+        className={cn('flex flex-wrap items-start gap-x-3 gap-y-2 rounded-xl border px-3 py-2.5 text-sm',
+          left.invalid ? 'border-red-200 bg-red-50 text-red-900' : left.low ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-sky-200 bg-sky-50 text-sky-900')}
+      >
+        <Camera size={16} aria-hidden className="mt-0.5 shrink-0" />
+        <div className="min-w-0 flex-[1_1_16rem] space-y-1">
+          <p className="m-0 font-semibold" data-testid={`photo-import-summary-${side}`}>{summary}</p>
+          {st.struck.length > 0 && (
+            // rows struck out on the list: not playing, never taken (named so the scorer knows)
+            <p className="m-0" data-testid={`photo-import-struck-${side}`}>{t('rosterPhoto.confirm.struck', { count: st.struck.length, names: struckNames })}</p>
+          )}
+          {method && <p className="m-0 text-xs tabular-nums opacity-80" data-testid={`photo-import-method-${side}`}>{method}</p>}
+        </div>
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <Button variant="secondary" size="lg" className="bg-white" icon={<Undo2 size={16} aria-hidden />} onClick={() => undoPhotoImport(side)} data-testid={`photo-import-undo-${side}`}>
+            {t('rosterPhoto.applied.undo')}
+          </Button>
+          <IconButton label={t('common.close', 'Close')} icon={X} className="bg-white" onClick={() => setPhotoImport((prev) => ({ ...prev, [side]: prev[side] && { ...prev[side], dismissed: true } }))} data-testid={`photo-import-dismiss-${side}`} />
+        </div>
+      </div>
+    )
+  }
+
+  // ---- Edit roster: the header's ways and "Roster import" (owner 27.11.2026) ----
+  // The ways that take players the app already has (saved team, known
+  // players, the club's lists, the test roster) sit in the header row, with
+  // Delete roster at its side; the three ways a list comes in (Remote, PDF,
+  // Photo) are one switch under the bold title "Roster import", with only the
+  // chosen way's controls below it.
+  // a photo's mark on a roster or bench field: red = must fix, amber = check (with its reason as the title)
+  const markClass = (m) => (m ? PHOTO_MARK_CLASS[m.level] || PHOTO_MARK_CLASS.low : undefined)
+  const markRing = (m) => (m ? cn('rounded-lg ring-2 ring-inset', PHOTO_MARK_RING[m.level] || PHOTO_MARK_RING.low) : undefined)
+  const markAttrs = (m) => (m ? { 'data-photo-mark': m.level, title: t(`rosterPhoto.issue.${m.reason}`) } : {})
+
+  const importSideOf = (side) => (side === 'home'
+    ? { team: home, fileRef: homeFileInputRef, onFileSelect: handleHomeFileSelect, pdfFile: homePdfFile, pdfLoading: homePdfLoading, pdfError: homePdfError, onImport: handleHomeImportClick, onSearch: handleSearchHomeRoster, searching: homeRosterSearching, pin: match?.homeTeamUploadPin }
+    : { team: away, fileRef: awayFileInputRef, onFileSelect: handleAwayFileSelect, pdfFile: awayPdfFile, pdfLoading: awayPdfLoading, pdfError: awayPdfError, onImport: handleAwayImportClick, onSearch: handleSearchAwayRoster, searching: awayRosterSearching, pin: match?.awayTeamUploadPin })
+
+  const renderRosterHeader = (side) => (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <h1 className="m-0 text-xl sm:text-2xl font-bold tracking-tight text-stone-900">{t('roster.title')}</h1>
+      {/* the other ways: beside the title on a wide screen, their own line below it otherwise */}
+      <div role="group" aria-label={t('matchSetup.rosterWays')} className="order-3 flex basis-full flex-wrap gap-2 lg:order-2 lg:basis-auto" data-testid={`roster-ways-${side}`}>
+        {access?.canReadTeams && !guestMatch && (
+          <Button variant="secondary" size="xl" icon={<Users size={16} aria-hidden />} onClick={() => setSavedPicker(side)} data-testid={`load-saved-team-${side}`}>
+            {t('savedTeams.load')}
+          </Button>
+        )}
+        <Button variant="secondary" size="xl" icon={<ListChecks size={16} aria-hidden />} onClick={() => openPlayerPool(side, { withClub: true })} data-testid={`choose-players-${side}`}>
+          {t('playerPool.open')}
+        </Button>
+        {clubTeams[side] && !guestMatch && (
+          <Button variant="secondary" size="xl" icon={<UserPlus size={16} aria-hidden />} onClick={() => setClubPicker(side)} data-testid={`add-from-club-${side}`}>
+            {t('clubPlayers.add')}
+          </Button>
+        )}
+        {/* practice only: a test or Easy match (an official, guest or Global one never) */}
+        {match?.test === true && (
+          <Button variant="dark" size="xl" data-testid={`load-test-roster-${side}`} onClick={() => setTestRosterConfirm(side)}>
+            {t('roster.loadTestRoster')}
+          </Button>
+        )}
+      </div>
+      <Button
+        variant="danger-soft"
+        size="xl"
+        icon={<Trash2 size={16} aria-hidden />}
+        className="order-2 ml-auto lg:order-3"
+        data-testid={`delete-roster-${side}`}
+        onClick={() => {
+          const coachOnly = [{ role: 'Coach', firstName: '', lastName: '', dob: '' }]
+          if (side === 'home') { setHomeRoster([]); setBenchHome(coachOnly) } else { setAwayRoster([]); setBenchAway(coachOnly) }
+        }}
+      >
+        {t('roster.deleteRoster')}
+      </Button>
+    </div>
+  )
+
+  const renderRosterImport = (side) => {
+    const s = importSideOf(side)
+    const mode = importModeOf(side)
+    // "Show me" (help) and the walkthrough point at a way's controls, or at
+    // its segment while another way is chosen
+    const options = [
+      ...(remoteImportOffered ? [{ value: 'remote', label: t('matchSetup.remote'), icon: CloudDownload, testId: `roster-import-remote-${side}`, helpId: mode === 'remote' ? undefined : 'setup-remote-import' }] : []),
+      { value: 'pdf', label: t('matchSetup.rosterImport.pdf'), icon: FileText, testId: `roster-import-pdf-${side}`, helpId: mode === 'pdf' ? undefined : 'setup-pdf-import' },
+      { value: 'photo', label: t('matchSetup.rosterImport.photo'), icon: Camera, testId: `roster-import-photo-${side}`, helpId: mode === 'photo' ? undefined : 'setup-photo-import' }
+    ]
+    return (
+      <section className="min-w-0 flex-1 rounded-xl border border-stone-200 bg-stone-50/60 p-3" aria-labelledby={`roster-import-title-${side}`} data-testid={`roster-import-${side}`} data-mode={mode}>
+        <div className="flex flex-col gap-3">
+          {/* the owner: "write in bold 'Roster import'": a section heading, one step under the page's "Roster" */}
+          <h3 id={`roster-import-title-${side}`} className="m-0 text-lg sm:text-xl font-bold tracking-tight text-stone-900">{t('matchSetup.rosterImport.title')}</h3>
+          <SegmentedControl
+            ariaLabel={t('matchSetup.rosterImport.title')}
+            className="[&_button]:h-11 [&_button]:min-w-0 [&_button]:px-2 [&_button]:text-sm"
+            value={mode}
+            onChange={(m) => chooseImportMode(side, m)}
+            options={options}
+          />
+          {/* the PDF picker stays mounted: a file chosen is kept while another way is looked at */}
+          <input ref={s.fileRef} type="file" accept=".pdf" onChange={s.onFileSelect} style={{ display: 'none' }} />
+          {mode === 'remote' && (
+            <div className="flex flex-col gap-1.5" data-help-id="setup-remote-import" data-testid={`roster-import-remote-panel-${side}`}>
+              {/* a refresh from the server (the panel's own check spins the icon) */}
+              <Button
+                variant="secondary"
+                size="xl"
+                block
+                onClick={s.onSearch}
+                icon={<RefreshCw size={16} aria-hidden className={cn('shrink-0', rosterCheck[side].auto && 'animate-spin')} />}
+                loading={s.searching}
+                disabled={s.pdfLoading || s.searching}
+                data-testid={`check-server-roster-${side}`}
+              >
+                {s.searching ? t('matchSetup.rosterCheck.checking') : t('matchSetup.rosterCheck.button')}
+              </Button>
+              {/* what the check looks in (the upload with this PIN and the manager site's sent roster), and when it last asked */}
+              <p className="m-0 text-xs text-stone-500" data-testid={`search-roster-hint-${side}`}>{t('matchSetup.rosterCheck.hint')}</p>
+              <RosterCheckStatus side={side} state={rosterCheck[side]} online={browserOnline} />
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-medium text-stone-500">{t('matchSetup.gameNumber')}:</span>
+                <span className="font-mono text-sm font-semibold tabular-nums text-stone-900">
+                  {match?.game_n || match?.gameNumber || gameN || 'N/A'}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-medium text-stone-500">{t('matchSetup.uploadPin')}:</span>
+                {s.pin && (
+                  <span className="font-mono text-base font-bold tracking-[0.3em] text-stone-900">{s.pin}</span>
+                )}
+                <Button variant="ghost" size="sm" className="bg-white" onClick={() => regenerateUploadPin(side)}>
+                  {s.pin ? t('matchSetup.regenerate') : t('matchSetup.generatePin')}
+                </Button>
+              </div>
+              {renderPendingRosterCard(side)}
+            </div>
+          )}
+          {mode === 'pdf' && (
+            <div className="flex flex-col gap-2" data-testid={`roster-import-pdf-panel-${side}`}>
+              <Button
+                variant="secondary"
+                size="xl"
+                block
+                icon={<FileText size={16} aria-hidden />}
+                onClick={() => s.fileRef.current?.click()}
+                disabled={s.pdfLoading}
+                data-help-id="setup-pdf-import"
+                data-testid={`upload-pdf-${side}`}
+              >
+                {t('matchSetup.uploadPdf')}
+              </Button>
+              <p className="m-0 text-xs text-stone-500">{t('matchSetup.rosterImport.pdfHint')}</p>
+              {s.pdfFile && (
+                <>
+                  <span className="truncate text-xs text-stone-700">{s.pdfFile.name}</span>
+                  <Button variant="primary" size="xl" block onClick={s.onImport} loading={s.pdfLoading}>
+                    {s.pdfLoading ? t('matchSetup.importing') : t('matchSetup.importPdf')}
+                  </Button>
+                </>
+              )}
+              {s.pdfError && <span className="text-xs font-medium text-red-600">{s.pdfError}</span>}
+            </div>
+          )}
+          {/* An Einsatzliste from a photo, read on this device and checked by
+              the scorer before it is taken (docs/roster-photo-spec.md): each
+              button opens its source at once, then the photo dialog */}
+          {mode === 'photo' && (
+            <div className="flex flex-col gap-2" data-testid={`roster-import-photo-panel-${side}`}>
+              <RosterPhotoImport entry="sources" side={side} teamLabel={s.team} savedTeam={savedTeamOf(side)} disabled={s.pdfLoading} onApply={(roster, meta) => applyImportedRoster(side, roster, meta || {})} />
+              <ul className="m-0 list-disc space-y-0.5 pl-5 text-xs text-stone-500">
+                <li>{t('rosterPhoto.source.tipFlat')}</li>
+                <li>{t('rosterPhoto.source.tipLight')}</li>
+                <li>{t('rosterPhoto.source.tipWhole')}</li>
+              </ul>
+            </div>
+          )}
+        </div>
+      </section>
+    )
   }
 
   // PDF upload handlers - must be defined before conditional returns
@@ -4812,169 +5096,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
           <h2 className="m-0 min-w-0 text-center text-base font-semibold text-stone-700 [overflow-wrap:anywhere]">{home || t('matchSetup.homeTeam')}</h2>
           <div />
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="m-0 text-xl sm:text-2xl font-bold tracking-tight text-stone-900">{t('roster.title')}</h1>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="danger-soft"
-              size="xl"
-              onClick={() => {
-                setHomeRoster([])
-                setBenchHome([{ role: 'Coach', firstName: '', lastName: '', dob: '' }])
-                  }}
-                >
-                  {t('roster.deleteRoster')}
-                </Button>
-                {/* practice only: a test or Easy match (an official, guest or Global one never) */}
-                {match?.test === true && (
-                  <Button variant="dark" size="xl" data-testid="load-test-roster-home" onClick={() => setTestRosterConfirm('home')}>
-                  {t('roster.loadTestRoster')}
-                </Button>
-                )}
-                {access?.canReadTeams && !guestMatch && (
-                  <Button variant="secondary" size="xl" icon={<Users size={16} aria-hidden />} onClick={() => setSavedPicker('home')} data-testid="load-saved-team-home">
-                    {t('savedTeams.load')}
-                  </Button>
-                )}
-                <Button variant="secondary" size="xl" icon={<ListChecks size={16} aria-hidden />} onClick={() => openPlayerPool('home', { withClub: true })} data-testid="choose-players-home">
-                  {t('playerPool.open')}
-                </Button>
-                {clubTeams.home && !guestMatch && (
-                  <Button variant="secondary" size="xl" icon={<UserPlus size={16} aria-hidden />} onClick={() => setClubPicker('home')} data-testid="add-from-club-home">
-                    {t('clubPlayers.add')}
-                  </Button>
-                )}
-          </div>
-        </div>
+        {renderRosterHeader('home')}
+        {renderPhotoBanner('home')}
         {/* db/023: the roster the team sent ahead (the device's copy) */}
         <SentRosterCard row={sentRosters.home} side="home" newVersion={!!match?.sentRosterUsed?.home} onUse={() => applySentRoster('home')} onDismiss={() => dismissSentRoster('home')} />
         {/* db/024: a player the club's list has with the other gender */}
         <ClubGenderNotice warnings={clubWarnings.home} gender={clubGender} />
         {/* born on 1 January: a placeholder or a bad import? A note here, never at the coin toss (owner 2026-11-15) */}
         <JanuaryDobNotice roster={homeRoster} bench={benchHome} idMode={idMode} />
-        {/* Upload Methods for Home Team + Player Stats */}
+        {/* Roster import for the home team + player stats */}
         <div className="flex gap-3 stack:flex-col">
-          {/* Left: Upload section */}
-          <div className="flex-1 rounded-xl border border-stone-200 bg-stone-50/60 p-3">
-            <div className="flex flex-col gap-2">
-              {/* Upload button row with Local/Remote toggle. It wraps: Local /
-                  Remote goes under the button (and takes the line) when both
-                  do not fit, as at 130 % font on a phone, where its min-content
-                  widened the whole roster section past the card. */}
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  ref={homeFileInputRef}
-                  type="file"
-                  accept=".pdf"
-                  onChange={handleHomeFileSelect}
-                  style={{ display: 'none' }}
-                />
-                <Button
-                  variant="secondary"
-                  size="xl"
-                  data-help-id="setup-pdf-import"
-                  onClick={() => {
-                    if (homeUploadMode === 'local') {
-                      homeFileInputRef.current?.click()
-                    } else {
-                      handleSearchHomeRoster()
-                    }
-                  }}
-                  // Remote: a refresh from the server (the panel's own check spins the icon)
-                  icon={homeUploadMode === 'remote' ? <RefreshCw size={16} aria-hidden className={cn('shrink-0', rosterCheck.home.auto && 'animate-spin')} /> : undefined}
-                  loading={homeUploadMode === 'remote' && homeRosterSearching}
-                  disabled={homePdfLoading || homeRosterSearching}
-                  data-testid={homeUploadMode === 'remote' ? 'check-server-roster-home' : undefined}
-                    className="min-w-0 flex-[999_1_auto]"
-                  >
-                  {homeUploadMode === 'local' ? t('matchSetup.uploadPdf') : (homeRosterSearching ? t('matchSetup.rosterCheck.checking') : t('matchSetup.rosterCheck.button'))}
-                  </Button>
-                {/* Local/Remote Toggle */}
-                {/* a guest match: the PDF on this device only (remote = sent and uploaded rosters, on the server) */}
-                {!guestMatch && (
-                  <SegmentedControl
-                    ariaLabel={t('matchSetup.uploadPdf')}
-                    className="w-44 max-w-full shrink-0 grow [&_button]:p-0 stack:[&_button]:h-11"
-                    value={homeUploadMode}
-                    onChange={setHomeUploadMode}
-                    options={[
-                      { value: 'local', label: t('matchSetup.local') },
-                      { value: 'remote', label: t('matchSetup.remote') }
-                    ]}
-                  />
-                )}
-              </div>
-              {/* Local upload - file selected */}
-              {/* An Einsatzliste from a photo, read on this device and checked
-                  by the scorer before it is taken (docs/roster-photo-spec.md) */}
-              {homeUploadMode === 'local' && (
-                <RosterPhotoImport side="home" teamLabel={home} savedTeam={savedTeamOf('home')} disabled={homePdfLoading} onApply={(roster) => applyImportedRoster('home', roster)} />
-              )}
-              {homeUploadMode === 'local' && homePdfFile && (
-                <>
-                  <span className="truncate text-xs text-stone-700">
-                    {homePdfFile.name}
-                  </span>
-                  <Button
-                    variant="primary"
-                    size="xl"
-                    block
-                    onClick={handleHomeImportClick}
-                    loading={homePdfLoading}
-                  >
-                    {homePdfLoading ? t('matchSetup.importing') : t('matchSetup.importPdf')}
-                  </Button>
-                </>
-              )}
-              {homeUploadMode === 'local' && homePdfError && (
-                <span className="text-xs font-medium text-red-600">
-                  {homePdfError}
-                </span>
-              )}
-              {/* Remote Upload */}
-              {homeUploadMode === 'remote' && (
-                <div className="flex flex-col gap-1.5">
-                  {/* what the check looks in (the upload with this PIN and the manager site's sent roster), and when it last asked */}
-                  <p className="m-0 text-xs text-stone-500" data-testid="search-roster-hint-home">{t('matchSetup.rosterCheck.hint')}</p>
-                  <RosterCheckStatus side="home" state={rosterCheck.home} online={browserOnline} />
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs font-medium text-stone-500">{t('matchSetup.gameNumber')}:</span>
-                    <span className="font-mono text-sm font-semibold tabular-nums text-stone-900">
-                      {match?.game_n || match?.gameNumber || gameN || 'N/A'}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs font-medium text-stone-500">{t('matchSetup.uploadPin')}:</span>
-                    {match?.homeTeamUploadPin ? (
-                      <>
-                        <span className="font-mono text-base font-bold tracking-[0.3em] text-stone-900">
-                          {match.homeTeamUploadPin}
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="bg-white"
-                          onClick={() => regenerateUploadPin('home')}
-                          >
-                            {t('matchSetup.regenerate')}
-                          </Button>
-                      </>
-                    ) : (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="bg-white"
-                        onClick={() => regenerateUploadPin('home')}
-                        >
-                          {t('matchSetup.generatePin')}
-                        </Button>
-                    )}
-                  </div>
-                  {renderPendingRosterCard('home')}
-                </div>
-              )}
-            </div>
-          </div>
+          {/* Left: Roster import (Remote · PDF · Photo) */}
+          {renderRosterImport('home')}
           {/* Right: Player Stats */}
           {(() => {
             const homeCaptain = homeRoster.find(p => p.isCaptain)
@@ -5121,6 +5254,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
               homeRoster.some((other, idx) => idx !== i && other.number === p.number)
             // saved without a number: its # asks for one (no coin toss until then)
             const missingNumber = (p.number == null || p.number === '') && !!(p.firstName || p.lastName)
+            // a photo import's marks on this row (UI only; utils/rosterPhoto/photoMarks)
+            const mk = (field) => playerMarkOf(photoImport.home, p, field)
+            const numberMark = mk('number')
 
             // Determine border style based on captain/libero status
             const isCaptain = p.isCaptain || false
@@ -5158,9 +5294,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                   min="1"
                   max="99"
                   value={p.number ?? ''}
-                  className={cn('cell-head', isDuplicate && 'border-red-400 bg-red-50 text-red-700', missingNumber && 'border-amber-400 bg-amber-50 placeholder:text-amber-700')}
+                  className={cn('cell-head', markClass(numberMark), isDuplicate && 'border-red-400 bg-red-50 text-red-700', missingNumber && 'border-amber-400 bg-amber-50 placeholder:text-amber-700')}
                   aria-invalid={isDuplicate || missingNumber || undefined}
-                  title={isDuplicate ? t('scoreboard.duplicateJersey') : missingNumber ? t('matchSetup.numberNeeded') : undefined}
+                  title={isDuplicate ? t('scoreboard.duplicateJersey') : missingNumber ? t('matchSetup.numberNeeded') : markAttrs(numberMark).title}
+                  data-photo-mark={numberMark?.level}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                   onKeyPress={e => {
                     if (!/[0-9]/.test(e.key) && e.key !== 'Backspace' && e.key !== 'Delete' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Tab') {
@@ -5179,7 +5316,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 <StackLabel>{t('matchSetup.lastName')}</StackLabel>
                 <input
                   aria-label={t('matchSetup.lastName')}
-                  className="capitalize cell-last"
+                  className={cn('capitalize cell-last', markClass(mk('lastName')))}
+                  {...markAttrs(mk('lastName'))}
                   placeholder={t('matchSetup.placeholders.lastName')}
                   value={p.lastName || ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
@@ -5192,7 +5330,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
                 <input
                   aria-label={t('matchSetup.firstName')}
-                  className="capitalize cell-first"
+                  className={cn('capitalize cell-first', markClass(mk('firstName')))}
+                  {...markAttrs(mk('firstName'))}
                   placeholder={t('matchSetup.placeholders.firstName')}
                   value={p.firstName || ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
@@ -5213,6 +5352,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                   }}
                   size="bare"
                   wrapperClassName={DOB_CELL}
+                  className={markClass(mk('dob'))}
+                  {...markAttrs(mk('dob'))}
                   aria-label={idLabel}
                   placeholder={idPlaceholder}
                   value={p.dob ? formatDateToISO(p.dob) : ''}
@@ -5226,7 +5367,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 <StackLabel>{t('matchSetup.roleLibero')} · {t('matchSetup.captain')}</StackLabel>
                 <select
                   aria-label={t('matchSetup.libero', 'Libero')}
-                  className={`cell-libero${p.libero ? '' : ' libero-unset'}`}
+                  className={cn(`cell-libero${p.libero ? '' : ' libero-unset'}`, markClass(mk('libero')))}
+                  {...markAttrs(mk('libero'))}
                   value={liberoValueOf(p)}
                   onChange={e => {
                     const updated = [...homeRoster]
@@ -5239,7 +5381,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 >
                   {liberoOptions(homeRoster, i)}
                 </select>
-                <div className="cell-captain">
+                <div className={cn('cell-captain', markRing(mk('isCaptain')))} {...markAttrs(mk('isCaptain'))}>
                   <CaptainToggle
                     pressed={!!p.isCaptain}
                     number={p.number}
@@ -5308,6 +5450,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
           </div>
           {sortBenchByHierarchy(benchHome).map((m, i) => {
             const originalIdx = benchHome.findIndex(b => b === m)
+            // a photo import's marks on this official (by role; UI only)
+            const bm = (field) => officialMarkOf(photoImport.home, m, field)
             return (
               <div key={`bh-${originalIdx}`} className="bench-grid-row">
                 <StackLabel head>{t('matchSetup.role')}</StackLabel>
@@ -5333,11 +5477,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 </select>
                 </BenchRoleCell>
                 <StackLabel>{t('matchSetup.lastName')}</StackLabel>
-                <input aria-label={t('matchSetup.lastName')} className="capitalize cell-last" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
+                <input aria-label={t('matchSetup.lastName')} className={cn('capitalize cell-last', markClass(bm('lastName')))} {...markAttrs(bm('lastName'))} placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
-                <input aria-label={t('matchSetup.firstName')} className="capitalize cell-first" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
+                <input aria-label={t('matchSetup.firstName')} className={cn('capitalize cell-first', markClass(bm('firstName')))} {...markAttrs(bm('firstName'))} placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
                 <StackLabel>{idLabel}</StackLabel>
-                <IdField idMode={idMode} rawValue={m.dob} onRawChange={v => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v }; return a })} size="bare" wrapperClassName={DOB_CELL} aria-label={idLabel} placeholder={idPlaceholder} value={m.dob ? formatDateToISO(m.dob) : ''} onChange={v => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v ? formatDateToDDMMYYYY(v) : '' }; return a })} />
+                <IdField idMode={idMode} rawValue={m.dob} onRawChange={v => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v }; return a })} size="bare" wrapperClassName={DOB_CELL} className={markClass(bm('dob'))} {...markAttrs(bm('dob'))} aria-label={idLabel} placeholder={idPlaceholder} value={m.dob ? formatDateToISO(m.dob) : ''} onChange={v => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v ? formatDateToDDMMYYYY(v) : '' }; return a })} />
                 {/* A player who is also this official (a playing coach,
                     domain/playerOfficials): found by licence or name, or
                     the scorer's choice */}
@@ -5818,6 +5962,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
         {/* Saved teams: load into this roster, or save it as a saved team */}
         <SavedTeamPickerModal
           open={savedPicker === 'home'}
+          club={savedPicker === 'home' ? savedTeamClubOf('home') : null}
+          clubIdOf={clubIdOfTeamName}
           onClose={() => setSavedPicker(null)}
           onPick={(team) => { setSavedPicker(null); pickSavedTeam('home', team) }}
           userId={user?.id ?? null}
@@ -5858,167 +6004,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
           <h2 className="m-0 min-w-0 text-center text-base font-semibold text-stone-700 [overflow-wrap:anywhere]">{away || t('matchSetup.awayTeam')}</h2>
           <div />
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="m-0 text-xl sm:text-2xl font-bold tracking-tight text-stone-900">{t('roster.title')}</h1>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="danger-soft"
-              size="xl"
-              onClick={() => {
-                setAwayRoster([])
-                setBenchAway([{ role: 'Coach', firstName: '', lastName: '', dob: '' }])
-                  }}
-                >
-                  {t('roster.deleteRoster')}
-                </Button>
-                {match?.test === true && (
-                  <Button variant="dark" size="xl" data-testid="load-test-roster-away" onClick={() => setTestRosterConfirm('away')}>
-                  {t('roster.loadTestRoster')}
-                </Button>
-                )}
-                {access?.canReadTeams && !guestMatch && (
-                  <Button variant="secondary" size="xl" icon={<Users size={16} aria-hidden />} onClick={() => setSavedPicker('away')} data-testid="load-saved-team-away">
-                    {t('savedTeams.load')}
-                  </Button>
-                )}
-                <Button variant="secondary" size="xl" icon={<ListChecks size={16} aria-hidden />} onClick={() => openPlayerPool('away', { withClub: true })} data-testid="choose-players-away">
-                  {t('playerPool.open')}
-                </Button>
-                {clubTeams.away && !guestMatch && (
-                  <Button variant="secondary" size="xl" icon={<UserPlus size={16} aria-hidden />} onClick={() => setClubPicker('away')} data-testid="add-from-club-away">
-                    {t('clubPlayers.add')}
-                  </Button>
-                )}
-          </div>
-        </div>
+        {renderRosterHeader('away')}
+        {renderPhotoBanner('away')}
         {/* db/023: the roster the team sent ahead (the device's copy) */}
         <SentRosterCard row={sentRosters.away} side="away" newVersion={!!match?.sentRosterUsed?.away} onUse={() => applySentRoster('away')} onDismiss={() => dismissSentRoster('away')} />
         {/* db/024: a player the club's list has with the other gender */}
         <ClubGenderNotice warnings={clubWarnings.away} gender={clubGender} />
         {/* born on 1 January: a placeholder or a bad import? A note here, never at the coin toss (owner 2026-11-15) */}
         <JanuaryDobNotice roster={awayRoster} bench={benchAway} idMode={idMode} />
-        {/* Upload Methods for Away Team + Player Stats */}
+        {/* Roster import for the away team + player stats */}
         <div className="flex gap-3 stack:flex-col">
-          {/* Left: Upload section */}
-          <div className="flex-1 rounded-xl border border-stone-200 bg-stone-50/60 p-3">
-            <div className="flex flex-col gap-2">
-              {/* Upload button row with Local/Remote toggle. It wraps: Local /
-                  Remote goes under the button (and takes the line) when both
-                  do not fit, as at 130 % font on a phone, where its min-content
-                  widened the whole roster section past the card. */}
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  ref={awayFileInputRef}
-                  type="file"
-                  accept=".pdf"
-                  onChange={handleAwayFileSelect}
-                  style={{ display: 'none' }}
-                />
-                <Button
-                  variant="secondary"
-                  size="xl"
-                  onClick={() => {
-                    if (awayUploadMode === 'local') {
-                      awayFileInputRef.current?.click()
-                    } else {
-                      handleSearchAwayRoster()
-                    }
-                  }}
-                  // Remote: a refresh from the server (the panel's own check spins the icon)
-                  icon={awayUploadMode === 'remote' ? <RefreshCw size={16} aria-hidden className={cn('shrink-0', rosterCheck.away.auto && 'animate-spin')} /> : undefined}
-                  loading={awayUploadMode === 'remote' && awayRosterSearching}
-                  disabled={awayPdfLoading || awayRosterSearching}
-                  data-testid={awayUploadMode === 'remote' ? 'check-server-roster-away' : undefined}
-                    className="min-w-0 flex-[999_1_auto]"
-                  >
-                  {awayUploadMode === 'local' ? t('matchSetup.uploadPdf') : (awayRosterSearching ? t('matchSetup.rosterCheck.checking') : t('matchSetup.rosterCheck.button'))}
-                  </Button>
-                {/* Local/Remote Toggle */}
-                {/* a guest match: the PDF on this device only (remote = sent and uploaded rosters, on the server) */}
-                {!guestMatch && (
-                  <SegmentedControl
-                    ariaLabel={t('matchSetup.uploadPdf')}
-                    className="w-44 max-w-full shrink-0 grow [&_button]:p-0 stack:[&_button]:h-11"
-                    value={awayUploadMode}
-                    onChange={setAwayUploadMode}
-                    options={[
-                      { value: 'local', label: t('matchSetup.local') },
-                      { value: 'remote', label: t('matchSetup.remote') }
-                    ]}
-                  />
-                )}
-              </div>
-              {/* Local upload - file selected */}
-              {/* An Einsatzliste from a photo, read on this device and checked
-                  by the scorer before it is taken (docs/roster-photo-spec.md) */}
-              {awayUploadMode === 'local' && (
-                <RosterPhotoImport side="away" teamLabel={away} savedTeam={savedTeamOf('away')} disabled={awayPdfLoading} onApply={(roster) => applyImportedRoster('away', roster)} />
-              )}
-              {awayUploadMode === 'local' && awayPdfFile && (
-                <>
-                  <span className="truncate text-xs text-stone-700">
-                    {awayPdfFile.name}
-                  </span>
-                  <Button
-                    variant="primary"
-                    size="xl"
-                    block
-                    onClick={handleAwayImportClick}
-                    loading={awayPdfLoading}
-                  >
-                    {awayPdfLoading ? t('matchSetup.importing') : t('matchSetup.importPdf')}
-                  </Button>
-                </>
-              )}
-              {awayUploadMode === 'local' && awayPdfError && (
-                <span className="text-xs font-medium text-red-600">
-                  {awayPdfError}
-                </span>
-              )}
-              {/* Remote Upload */}
-              {awayUploadMode === 'remote' && (
-                <div className="flex flex-col gap-1.5">
-                  {/* what the check looks in (the upload with this PIN and the manager site's sent roster), and when it last asked */}
-                  <p className="m-0 text-xs text-stone-500" data-testid="search-roster-hint-away">{t('matchSetup.rosterCheck.hint')}</p>
-                  <RosterCheckStatus side="away" state={rosterCheck.away} online={browserOnline} />
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs font-medium text-stone-500">{t('matchSetup.gameNumber')}:</span>
-                    <span className="font-mono text-sm font-semibold tabular-nums text-stone-900">
-                      {match?.game_n || match?.gameNumber || gameN || 'N/A'}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs font-medium text-stone-500">{t('matchSetup.uploadPin')}:</span>
-                    {match?.awayTeamUploadPin ? (
-                      <>
-                        <span className="font-mono text-base font-bold tracking-[0.3em] text-stone-900">
-                          {match.awayTeamUploadPin}
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="bg-white"
-                          onClick={() => regenerateUploadPin('away')}
-                          >
-                            {t('matchSetup.regenerate')}
-                          </Button>
-                      </>
-                    ) : (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="bg-white"
-                        onClick={() => regenerateUploadPin('away')}
-                        >
-                          {t('matchSetup.generatePin')}
-                        </Button>
-                    )}
-                  </div>
-                  {renderPendingRosterCard('away')}
-                </div>
-              )}
-            </div>
-          </div>
+          {/* Left: Roster import (Remote · PDF · Photo) */}
+          {renderRosterImport('away')}
           {/* Right: Player Stats */}
           {(() => {
             const awayCaptain = awayRoster.find(p => p.isCaptain)
@@ -6174,6 +6171,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
               awayRoster.some((other, idx) => idx !== i && other.number === p.number)
             // saved without a number: its # asks for one (no coin toss until then)
             const missingNumber = (p.number == null || p.number === '') && !!(p.firstName || p.lastName)
+            // a photo import's marks on this row (UI only; utils/rosterPhoto/photoMarks)
+            const mk = (field) => playerMarkOf(photoImport.away, p, field)
+            const numberMark = mk('number')
 
             const isCaptain = p.isCaptain || false
             const isLibero = !!p.libero
@@ -6210,9 +6210,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                   min="1"
                   max="99"
                   value={p.number ?? ''}
-                  className={cn('cell-head', isDuplicate && 'border-red-400 bg-red-50 text-red-700', missingNumber && 'border-amber-400 bg-amber-50 placeholder:text-amber-700')}
+                  className={cn('cell-head', markClass(numberMark), isDuplicate && 'border-red-400 bg-red-50 text-red-700', missingNumber && 'border-amber-400 bg-amber-50 placeholder:text-amber-700')}
                   aria-invalid={isDuplicate || missingNumber || undefined}
-                  title={isDuplicate ? t('scoreboard.duplicateJersey') : missingNumber ? t('matchSetup.numberNeeded') : undefined}
+                  title={isDuplicate ? t('scoreboard.duplicateJersey') : missingNumber ? t('matchSetup.numberNeeded') : markAttrs(numberMark).title}
+                  data-photo-mark={numberMark?.level}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                   onKeyPress={e => {
                     if (!/[0-9]/.test(e.key) && e.key !== 'Backspace' && e.key !== 'Delete' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Tab') {
@@ -6231,7 +6232,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 <StackLabel>{t('matchSetup.lastName')}</StackLabel>
                 <input
                   aria-label={t('matchSetup.lastName')}
-                  className="capitalize cell-last"
+                  className={cn('capitalize cell-last', markClass(mk('lastName')))}
+                  {...markAttrs(mk('lastName'))}
                   placeholder={t('matchSetup.placeholders.lastName')}
                   value={p.lastName || ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
@@ -6244,7 +6246,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
                 <input
                   aria-label={t('matchSetup.firstName')}
-                  className="capitalize cell-first"
+                  className={cn('capitalize cell-first', markClass(mk('firstName')))}
+                  {...markAttrs(mk('firstName'))}
                   placeholder={t('matchSetup.placeholders.firstName')}
                   value={p.firstName || ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
@@ -6265,6 +6268,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                   }}
                   size="bare"
                   wrapperClassName={DOB_CELL}
+                  className={markClass(mk('dob'))}
+                  {...markAttrs(mk('dob'))}
                   aria-label={idLabel}
                   placeholder={idPlaceholder}
                   value={p.dob ? formatDateToISO(p.dob) : ''}
@@ -6278,7 +6283,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 <StackLabel>{t('matchSetup.roleLibero')} · {t('matchSetup.captain')}</StackLabel>
                 <select
                   aria-label={t('matchSetup.libero', 'Libero')}
-                  className={`cell-libero${p.libero ? '' : ' libero-unset'}`}
+                  className={cn(`cell-libero${p.libero ? '' : ' libero-unset'}`, markClass(mk('libero')))}
+                  {...markAttrs(mk('libero'))}
                   value={liberoValueOf(p)}
                   onChange={e => {
                     const updated = [...awayRoster]
@@ -6289,7 +6295,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 >
                   {liberoOptions(awayRoster, i)}
                 </select>
-                <div className="cell-captain">
+                <div className={cn('cell-captain', markRing(mk('isCaptain')))} {...markAttrs(mk('isCaptain'))}>
                   <CaptainToggle
                     pressed={!!p.isCaptain}
                     number={p.number}
@@ -6358,6 +6364,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
           </div>
           {sortBenchByHierarchy(benchAway).map((m, i) => {
             const originalIdx = benchAway.findIndex(b => b === m)
+            // a photo import's marks on this official (by role; UI only)
+            const bm = (field) => officialMarkOf(photoImport.away, m, field)
             return (
               <div key={`ba-${originalIdx}`} className="bench-grid-row">
                 <StackLabel head>{t('matchSetup.role')}</StackLabel>
@@ -6383,11 +6391,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 </select>
                 </BenchRoleCell>
                 <StackLabel>{t('matchSetup.lastName')}</StackLabel>
-                <input aria-label={t('matchSetup.lastName')} className="capitalize cell-last" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
+                <input aria-label={t('matchSetup.lastName')} className={cn('capitalize cell-last', markClass(bm('lastName')))} {...markAttrs(bm('lastName'))} placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
-                <input aria-label={t('matchSetup.firstName')} className="capitalize cell-first" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
+                <input aria-label={t('matchSetup.firstName')} className={cn('capitalize cell-first', markClass(bm('firstName')))} {...markAttrs(bm('firstName'))} placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
                 <StackLabel>{idLabel}</StackLabel>
-                <IdField idMode={idMode} rawValue={m.dob} onRawChange={v => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v }; return a })} size="bare" wrapperClassName={DOB_CELL} aria-label={idLabel} placeholder={idPlaceholder} value={m.dob ? formatDateToISO(m.dob) : ''} onChange={v => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v ? formatDateToDDMMYYYY(v) : '' }; return a })} />
+                <IdField idMode={idMode} rawValue={m.dob} onRawChange={v => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v }; return a })} size="bare" wrapperClassName={DOB_CELL} className={markClass(bm('dob'))} {...markAttrs(bm('dob'))} aria-label={idLabel} placeholder={idPlaceholder} value={m.dob ? formatDateToISO(m.dob) : ''} onChange={v => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v ? formatDateToDDMMYYYY(v) : '' }; return a })} />
                 {/* A player who is also this official (a playing coach,
                     domain/playerOfficials): found by licence or name, or
                     the scorer's choice */}
@@ -6869,6 +6877,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
         {/* Saved teams: load into this roster, or save it as a saved team */}
         <SavedTeamPickerModal
           open={savedPicker === 'away'}
+          club={savedPicker === 'away' ? savedTeamClubOf('away') : null}
+          clubIdOf={clubIdOfTeamName}
           onClose={() => setSavedPicker(null)}
           onPick={(team) => { setSavedPicker(null); pickSavedTeam('away', team) }}
           userId={user?.id ?? null}
@@ -8372,6 +8382,9 @@ const setupViewStyle = {
 // all of DD.MM.YYYY and its calendar button (styles.css .setup-roster; the
 // input itself has an inline min-width 0)
 const DOB_CELL = 'cell-dob min-w-32'
+// a photo import's marks on the roster's fields (utils/rosterPhoto/photoMarks)
+const PHOTO_MARK_CLASS = { invalid: 'border-red-500 bg-red-50', low: 'border-amber-400 bg-amber-50' }
+const PHOTO_MARK_RING = { invalid: 'ring-red-500 bg-red-50', low: 'ring-amber-400 bg-amber-50' }
 
 const SETUP_VIEW = cn(
   'setup content-start',

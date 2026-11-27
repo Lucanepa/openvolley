@@ -690,6 +690,8 @@ describe('MatchSetup smoke render', () => {
       expect(el).toBeTruthy()
       return el
     })
+    // an official game opens Roster import on Remote: the PDF way
+    fireEvent.click(screen.getByRole('radio', { name: 'matchSetup.rosterImport.pdf' }))
     fireEvent.change(input, { target: { files: [new File(['%PDF'], 'einsatzliste.pdf', { type: 'application/pdf' })] } })
     fireEvent.click(await screen.findByRole('button', { name: 'matchSetup.importPdf' }))
     const lastNames = () => [...document.querySelectorAll('.roster-grid:not(.roster-add) input.cell-last')].map((i) => i.value)
