@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { render, screen, fireEvent, within, cleanup } from '@testing-library/react'
 
 // "Edit home / away roster" after the coin toss: one row per player and
 // official (2026-10-20). Save still hands the Scoreboard the edited lists with
@@ -148,5 +148,102 @@ describe('ReopenRosterModal', () => {
     fireEvent.change(playsAs, { target: { value: 'none' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
     expect(onSave.mock.calls[0][2][0].plays).toBe(false)
+  })
+})
+
+// The libero select (owner 27.11.2026): "it is either nothing, Libero 1,
+// Libero 2. one libero -> only Libero 1" (domain/liberoChoices)
+describe('ReopenRosterModal: the libero select', () => {
+  const team = [
+    { id: 1, number: 1, lastName: 'Keller', firstName: 'Luca', dob: '', libero: '', isCaptain: true },
+    { id: 9, number: 9, lastName: 'Brunner', firstName: 'Nico', dob: '', libero: 'libero1', isCaptain: false },
+    { id: 10, number: 10, lastName: 'Meier', firstName: 'Tim', dob: '', libero: 'libero2', isCaptain: false }
+  ]
+  function openTeam(props = {}) {
+    const onSave = vi.fn()
+    render(
+      <ReopenRosterModal
+        teamKey="home" teamName="VBC Musterdorf" players={props.players || team} bench={[]}
+        onSave={onSave} onClose={() => {}} t={tr} benchRoles={benchRoles}
+        toISODate={(d) => (d ? d.split('.').reverse().join('-') : '')}
+        {...props}
+      />
+    )
+    return onSave
+  }
+  const rows = () => within(screen.getAllByRole('list')[0]).getAllByRole('listitem')
+  const liberoOf = (n) => within(rows().find(r => within(r).getByLabelText('Player number').value === String(n))).getByLabelText('Libero')
+  const options = (select) => [...select.options].map(o => [o.value, o.textContent])
+  const save = (onSave) => {
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    return onSave.mock.calls[0][1]
+  }
+
+  it('offers none, L1 and L2 only: L1 keeps L1, L2 keeps L2, the others none; the none option reads "No libero" without the column head', () => {
+    openTeam()
+    expect(options(liberoOf(9))).toEqual([['', 'No libero'], ['libero1', 'L1']])
+    expect(options(liberoOf(10))).toEqual([['', 'No libero'], ['libero2', 'L2']])
+    expect(options(liberoOf(1))).toEqual([['', 'No libero']])
+  })
+
+  it('an added player: L2 only once the team has its L1, none when it has both', () => {
+    openTeam({ players: team.slice(0, 2) })
+    fireEvent.click(screen.getByRole('button', { name: '+ Add player' }))
+    expect(options(within(rows()[2]).getByLabelText('Libero'))).toEqual([['', 'No libero'], ['libero2', 'L2']])
+    cleanup()
+    openTeam()
+    fireEvent.click(screen.getByRole('button', { name: '+ Add player' }))
+    expect(options(within(rows()[3]).getByLabelText('Libero'))).toEqual([['', 'No libero']])
+  })
+
+  it('the none option by the list width: blank under the column head (560 px and wider), "No libero" without it, "–" in the narrow phone column', () => {
+    const saved = { RO: globalThis.ResizeObserver, rect: HTMLElement.prototype.getBoundingClientRect }
+    let listWidth = 700
+    globalThis.ResizeObserver = class { observe () {} disconnect () {} }
+    HTMLElement.prototype.getBoundingClientRect = function () { return { width: this.getAttribute('role') === 'list' ? listWidth : 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 } }
+    try {
+      for (const [width, none] of [[700, ''], [560, ''], [520, 'No libero'], [400, '–']]) {
+        listWidth = width
+        openTeam()
+        expect(options(liberoOf(1))).toEqual([['', none]])
+        expect(options(liberoOf(9))).toEqual([['', none], ['libero1', 'L1']])
+        cleanup()
+      }
+    } finally {
+      globalThis.ResizeObserver = saved.RO
+      HTMLElement.prototype.getBoundingClientRect = saved.rect
+    }
+  })
+
+  it('no libero recorded yet: the L1 set to none or removed, the L2 left becomes L1', () => {
+    let onSave = openTeam({ liberosInRecord: false })
+    fireEvent.change(liberoOf(9), { target: { value: '' } })
+    expect(liberoOf(10)).toHaveValue('libero1')
+    expect(options(liberoOf(9))).toEqual([['', 'No libero'], ['libero2', 'L2']])
+    expect(screen.queryByTestId('libero-slots-kept')).toBeNull()
+    expect(save(onSave).map(p => [p.number, p.libero])).toEqual([[1, ''], [9, ''], [10, 'libero1']])
+    cleanup()
+
+    onSave = openTeam({ liberosInRecord: false })
+    fireEvent.click(within(rows()[1]).getByRole('button', { name: 'Remove' }))
+    expect(liberoOf(10)).toHaveValue('libero1')
+    expect(save(onSave).map(p => [p.number, p.libero])).toEqual([[1, ''], [10, 'libero1']])
+  })
+
+  it('the record names the liberos: L1 / L2 stay as they are and a line says so', () => {
+    const onSave = openTeam({ liberosInRecord: true })
+    fireEvent.change(liberoOf(9), { target: { value: '' } })
+    expect(liberoOf(10)).toHaveValue('libero2')
+    // the lone L2 keeps its own value and may still become L1 by hand
+    expect(options(liberoOf(10))).toEqual([['', 'No libero'], ['libero1', 'L1'], ['libero2', 'L2']])
+    expect(screen.getByTestId('libero-slots-kept').textContent).toMatch(/keep L1 and L2: the match record already refers to them/)
+    expect(save(onSave).map(p => [p.number, p.libero])).toEqual([[1, ''], [9, ''], [10, 'libero2']])
+  })
+
+  it('no line while the team keeps its L1', () => {
+    openTeam({ liberosInRecord: true })
+    fireEvent.change(liberoOf(10), { target: { value: '' } })
+    expect(liberoOf(9)).toHaveValue('libero1')
+    expect(screen.queryByTestId('libero-slots-kept')).toBeNull()
   })
 })

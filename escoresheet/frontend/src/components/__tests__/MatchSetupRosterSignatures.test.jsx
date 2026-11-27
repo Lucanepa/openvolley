@@ -6,7 +6,8 @@
  *  - Confirm sends no partial `signatures` object; Clear writes null at once
  *    (the whole object queued);
  *  - the libero select changes the editor only: Back discards it, Confirm
- *    writes it;
+ *    writes it; it offers none, Libero 1 first, Libero 2 once another player
+ *    is L1, and a team's only libero is L1 (owner 27.11.2026);
  *  - Confirm saves a named player without a shirt number (the coin toss
  *    waits for the number; owner 23.11.2026);
  *  - a sent-ahead roster used in the editor is stored and marked used only by
@@ -132,6 +133,8 @@ vi.mock('../SignaturePad', () => ({
 }))
 
 import MatchSetup from '../MatchSetup'
+import { FORM_STACK_QUERY } from '../../utils/formLayout'
+import { PHONE_WIDTH_QUERY } from '../../hooks/usePhoneWidth'
 import { ScaleProvider } from '../../contexts/ScaleContext'
 
 const Setup = (props) => <ScaleProvider><MatchSetup onStart={() => {}} onReturn={() => {}} {...props} /></ScaleProvider>
@@ -226,6 +229,100 @@ describe('Match Setup roster editor: libero select', () => {
     const byNumber = (n) => teamPlayers(11).find((p) => p.number === n)
     expect(byNumber(10).libero).toBe('')
     expect(byNumber(11).libero).toBe('libero1')
+  })
+})
+
+// Owner 27.11.2026: "why Libero, Libero 1 and Libero 2 in the dropdown? it
+// is either nothing, Libero 1, Libero 2. one libero -> only Libero 1"
+// (domain/liberoChoices). Home: #10 L1, #11 L2; away: no libero.
+describe('Match Setup roster editor: libero choices', () => {
+  const libero = () => [...document.querySelectorAll('.roster-grid:not(.roster-add) select.cell-libero')]
+  const addLibero = () => document.querySelector('.roster-grid.roster-add select.cell-libero')
+  const options = (select) => [...select.options].map(o => [o.value, o.textContent])
+  const deleteRow = (select) => fireEvent.click(select.closest('.roster-grid-row').querySelector('.cell-action button[title="common.delete"]'))
+  const L1 = 'matchSetup.libero1'
+  const L2 = 'matchSetup.libero2'
+
+  it('table layout: a blank none option; the L1 row offers L1, the L2 row L2, the others and the add row nothing more', async () => {
+    storeMatch()
+    render(<Setup matchId={1} />)
+    await openEditor(0, 5)
+    expect(libero().map(s => s.value)).toEqual(['', '', '', 'libero1', 'libero2'])
+    expect(options(libero()[0])).toEqual([['', '']])
+    expect(options(libero()[3])).toEqual([['', ''], ['libero1', L1]])
+    expect(options(libero()[4])).toEqual([['', ''], ['libero2', L2]])
+    expect(options(addLibero())).toEqual([['', '']])
+  })
+
+  it('a team without a libero: none or Libero 1 only, in a row and in the add row (its only libero is never L2)', async () => {
+    storeMatch()
+    render(<Setup matchId={1} />)
+    await openEditor(1, 2)
+    expect(options(libero()[0])).toEqual([['', ''], ['libero1', L1]])
+    expect(options(addLibero())).toEqual([['', ''], ['libero1', L1]])
+  })
+
+  it('the L1 set to none: the L2 left becomes L1, the former L1 may then be L2', async () => {
+    storeMatch()
+    render(<Setup matchId={1} />)
+    await openEditor(0, 5)
+    fireEvent.change(libero()[3], { target: { value: '' } })
+    await waitFor(() => expect(libero()[4]).toHaveValue('libero1'))
+    expect(options(libero()[3])).toEqual([['', ''], ['libero2', L2]])
+    expect(options(libero()[4])).toEqual([['', ''], ['libero1', L1]])
+  })
+
+  it('the L1 deleted: the L2 left becomes L1; a second libero added can only be L2', async () => {
+    storeMatch()
+    render(<Setup matchId={1} />)
+    await openEditor(0, 5)
+    deleteRow(libero()[3])
+    await waitFor(() => expect(editorRows()).toHaveLength(4))
+    expect(libero().map(s => s.value)).toEqual(['', '', '', 'libero1'])
+    expect(options(addLibero())).toEqual([['', ''], ['libero2', L2]])
+    fireEvent.change(addLibero(), { target: { value: 'libero2' } })
+    addPlayer({ number: '14', last: 'Foxtrot', first: 'F' })
+    await waitFor(() => expect(editorRows()).toHaveLength(5))
+    expect(libero().map(s => s.value)).toEqual(['', '', '', 'libero1', 'libero2'])
+    confirm()
+    await waitFor(() => expect(queued().some((j) => j.payload?.players_home)).toBe(true))
+    const byNumber = (n) => teamPlayers(11).find((p) => p.number === n)
+    expect(byNumber(11).libero).toBe('libero1')
+    expect(byNumber(14).libero).toBe('libero2')
+    expect(byNumber(10)).toBeUndefined()
+  })
+
+  describe('stacked (portrait) rows', () => {
+    let savedMatchMedia
+    const stubMedia = (matching) => {
+      window.matchMedia = (query) => ({
+        matches: matching.includes(query), media: query, onchange: null,
+        addEventListener () {}, removeEventListener () {}, addListener () {}, removeListener () {}, dispatchEvent: () => false
+      })
+    }
+    beforeEach(() => { savedMatchMedia = window.matchMedia })
+    afterEach(() => { window.matchMedia = savedMatchMedia })
+
+    it('the none option reads "No libero" (no column head names the select there), never "Libero"', async () => {
+      stubMedia([FORM_STACK_QUERY])
+      storeMatch()
+      render(<Setup matchId={1} />)
+      await openEditor(0, 5)
+      expect(options(libero()[0])).toEqual([['', 'No libero']])
+      expect(options(libero()[3])).toEqual([['', 'No libero'], ['libero1', L1]])
+      expect(options(addLibero())).toEqual([['', 'No libero']])
+      for (const s of [...libero(), addLibero()]) expect([...s.options].map(o => o.textContent)).not.toContain('matchSetup.libero')
+    })
+
+    it('a phone with LFP tracking: "–" / L1 / L2', async () => {
+      stubMedia([FORM_STACK_QUERY, PHONE_WIDTH_QUERY])
+      storeMatch()
+      render(<Setup matchId={1} lfpTrackingEnabled />)
+      await openEditor(0, 5)
+      expect(options(libero()[3])).toEqual([['', '–'], ['libero1', 'L1']])
+      expect(options(libero()[4])).toEqual([['', '–'], ['libero2', 'L2']])
+      expect(options(addLibero())).toEqual([['', '–']])
+    })
   })
 })
 

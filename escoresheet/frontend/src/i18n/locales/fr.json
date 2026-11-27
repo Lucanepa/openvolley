@@ -902,7 +902,8 @@
       "lastName": "Nom",
       "players": "Joueurs",
       "benchOfficials": "Officiels de banc",
-      "liberoUnable": "Inapte"
+      "liberoUnable": "Inapte",
+      "liberoSlotsKept": "Les libéros gardent L1 et L2 : le journal du match les mentionne déjà."
     },
     "help": {
       "recordingPoints": "Enregistrer les points",

@@ -896,7 +896,8 @@
       "lastName": "Nachname",
       "players": "Spieler",
       "benchOfficials": "Offizielle",
-      "liberoUnable": "Spielunfähig"
+      "liberoUnable": "Spielunfähig",
+      "liberoSlotsKept": "Die Liberos behalten L1 und L2: Das Spielprotokoll nennt sie schon."
     },
     "help": {
       "recordingPoints": "Punkte erfassen",

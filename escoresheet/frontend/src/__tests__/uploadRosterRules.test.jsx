@@ -69,6 +69,29 @@ describe('roster upload: the roster rules', () => {
     expect(offered).toEqual(['', 'libero2'])
   })
 
+  // owner 27.11.2026: "it is either nothing, Libero 1, Libero 2. one libero
+  // -> only Libero 1" (domain/liberoChoices)
+  it('Libero 1 first: Libero 2 only once another player is Libero 1', async () => {
+    await openImportedRoster()
+    const offered = (i) => within(liberoSelects()[i]).getAllByRole('option').map(o => [o.value, o.textContent])
+    expect(offered(1)).toEqual([['', ''], ['libero1', 'Libero 1']])
+    fireEvent.change(liberoSelects()[0], { target: { value: 'libero1' } })
+    fireEvent.change(liberoSelects()[1], { target: { value: 'libero2' } })
+    expect(offered(2)).toEqual([['', '']])
+    expect(offered(0)).toEqual([['', ''], ['libero1', 'Libero 1']])
+  })
+
+  it('a team\'s only libero is Libero 1: the L1 set to none or deleted, the L2 left becomes L1', async () => {
+    await openImportedRoster()
+    fireEvent.change(liberoSelects()[0], { target: { value: 'libero1' } })
+    fireEvent.change(liberoSelects()[1], { target: { value: 'libero2' } })
+    fireEvent.change(liberoSelects()[0], { target: { value: '' } })
+    expect(liberoSelects().map(s => s.value)).toEqual(['', 'libero1', ''])
+    fireEvent.change(liberoSelects()[2], { target: { value: 'libero2' } })
+    fireEvent.click(screen.getAllByRole('button', { name: 'common.delete' })[1])
+    expect(liberoSelects().map(s => s.value)).toEqual(['', 'libero1'])
+  })
+
   it('a number twice is not sent', async () => {
     await openImportedRoster()
     fireEvent.change(screen.getAllByLabelText('Number')[1], { target: { value: '4' } })

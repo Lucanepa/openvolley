@@ -904,7 +904,8 @@
       "lastName": "Last name",
       "players": "Players",
       "benchOfficials": "Bench officials",
-      "liberoUnable": "Unable"
+      "liberoUnable": "Unable",
+      "liberoSlotsKept": "The liberos keep L1 and L2: the match record already refers to them."
     },
     "help": {
       "recordingPoints": "Recording points",

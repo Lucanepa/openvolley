@@ -43,6 +43,7 @@ import { useFormStack } from '../hooks/useFormStack'
 import { usePhoneWidth } from '../hooks/usePhoneWidth'
 import { focusLeaves, steadyOrder } from '../utils/rosterOrder'
 import { isShirtNumber, shirtNumberDigits } from '../domain/roster'
+import { liberoChoices, liberoValueOf, newPlayerLibero, withLoneLiberoAsL1 } from '../domain/liberoChoices'
 import { isWalkthroughMatch } from './walkthrough/walkthroughStore'
 
 // volleyui (RESTYLE-SPEC P3b). Sign A/B and the coach/captain sign buttons are
@@ -175,13 +176,16 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
   // "VBC Muster…", Back over the title, buttons on three lines, the ball in a
   // tall empty middle (the owner, 2026-10-21).
   const phone = usePhoneWidth()
-  // The libero select's empty option in a portrait row (its column head is
-  // hidden there): "Libero", small and grey while nothing is chosen
-  // (.libero-unset, as the setup roster). Keyed on the text: see formStack
-  // above.
+  // The roster rows' libero select: no libero, L1, L2 (domain/liberoChoices
+  // says which a row offers). Its empty option in a portrait row (its column
+  // head is hidden there): "No libero", small and grey while nothing is
+  // chosen (.libero-unset, as the setup roster); it read "Libero", which
+  // made "Libero / L1 / L2" look like three kinds (the owner, 27.11.2026).
+  // Keyed on the text: see formStack above.
   const liberoNone = !formStack
     ? { key: 'blank', text: '' }
-    : { key: 'stack', text: t('roster.libero') }
+    : { key: 'stack', text: t('matchSetup.noLibero', 'No libero') }
+  const LIBERO_SHORT = { libero1: 'L1', libero2: 'L2' }
 
   // Compact mode disabled - always use full layout
   const isCompact = false
@@ -1976,31 +1980,22 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: '1 1 0' }}>
                               <select
                                 aria-label={t('roster.libero')}
-                                value={p.libero || ''}
+                                value={liberoValueOf(p)}
                                 onChange={e => {
                                   const updated = [...roster]
-                                  const oldValue = updated[originalIdx].libero
                                   updated[originalIdx] = { ...updated[originalIdx], libero: e.target.value }
-                                  if (e.target.value === 'libero2') {
-                                    const hasL1 = updated.some((player, idx) => idx !== originalIdx && player.libero === 'libero1')
-                                    if (!hasL1) updated[originalIdx] = { ...updated[originalIdx], libero: 'libero1' }
-                                  }
-                                  if (oldValue === 'libero1' && !e.target.value) {
-                                    const l2Idx = updated.findIndex((player, idx) => idx !== originalIdx && player.libero === 'libero2')
-                                    if (l2Idx !== -1) updated[l2Idx] = { ...updated[l2Idx], libero: 'libero1' }
-                                  }
-                                  setRoster(updated)
+                                  // the L1 set to none: the L2 left becomes L1
+                                  // (a team's only libero is Libero 1)
+                                  setRoster(withLoneLiberoAsL1(updated))
                                 }}
                                 style={{ padding: '0', background: 'transparent', border: 'none', ...(p.libero ? { color: 'var(--text)', fontSize: '12px' } : {}) }}
                                 className={`coin-toss-select${p.libero ? '' : ' libero-unset'}`}
                               >
-                                <option key={liberoNone.key} value="" style={{ background: 'var(--bg)', color: 'var(--text)' }}>{liberoNone.text}</option>
-                                {!roster.some((player, idx) => idx !== originalIdx && player.libero === 'libero1') && (
-                                  <option value="libero1" style={{ background: 'var(--bg)', color: 'var(--text)' }}>L1</option>
-                                )}
-                                {!roster.some((player, idx) => idx !== originalIdx && player.libero === 'libero2') && (
-                                  <option value="libero2" style={{ background: 'var(--bg)', color: 'var(--text)' }}>L2</option>
-                                )}
+                                {liberoChoices(roster, originalIdx).map(value => (
+                                  value
+                                    ? <option key={value} value={value} style={{ background: 'var(--bg)', color: 'var(--text)' }}>{LIBERO_SHORT[value] || value}</option>
+                                    : <option key={liberoNone.key} value="" style={{ background: 'var(--bg)', color: 'var(--text)' }}>{liberoNone.text}</option>
+                                ))}
                               </select>
                               <div
                                 role="button"
@@ -2359,19 +2354,14 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                 <select
                   aria-label={t('roster.libero')}
                   value={libero}
-                  onChange={e => {
-                    let newValue = e.target.value
-                    if (newValue === 'libero2') {
-                      const hasL1 = roster.some(p => p.libero === 'libero1')
-                      if (!hasL1) newValue = 'libero1'
-                    }
-                    currentTeam === 'home' ? setHomeLibero(newValue) : setAwayLibero(newValue)
-                  }}
+                  onChange={e => currentTeam === 'home' ? setHomeLibero(e.target.value) : setAwayLibero(e.target.value)}
                   style={{ width: '100%', minHeight: 44, padding: '8px 12px', fontSize: '14px' }}
                 >
-                  <option value="">{t('roster.none')}</option>
-                  {!roster.some(p => p.libero === 'libero1') && <option value="libero1">{t('roster.liberoFull1')}</option>}
-                  {!roster.some(p => p.libero === 'libero2') && <option value="libero2">{t('roster.liberoFull2')}</option>}
+                  {/* none, Libero 1 first, Libero 2 once the team has its L1 (domain/liberoChoices) */}
+                  {liberoChoices(roster, null, libero).map(value => (value
+                    ? <option key={value} value={value}>{value === 'libero1' ? t('roster.liberoFull1') : value === 'libero2' ? t('roster.liberoFull2') : value}</option>
+                    : <option key="none" value="">{t('matchSetup.noLibero', 'No libero')}</option>
+                  ))}
                 </select>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -2416,19 +2406,18 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                     showAlert(t('matchSetup.validation.invalidNumbers', { numbers: num }), 'warning')
                     return
                   }
-                  const newPlayer = { number: num ? Number(num) : null, lastName: last, firstName: first, dob, libero, isCaptain: captain }
+                  // the new player joins the roster; a team's only libero is Libero 1
+                  const withNewPlayer = (list) => {
+                    const cleared = captain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
+                    const newPlayer = { number: num ? Number(num) : null, lastName: last, firstName: first, dob, libero: newPlayerLibero(cleared, libero), isCaptain: captain }
+                    return withLoneLiberoAsL1([...cleared, newPlayer].sort((a, b) => (a.number ?? 999) - (b.number ?? 999)))
+                  }
 
                   if (currentTeam === 'home') {
-                    setHomeRoster(list => {
-                      const cleared = captain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
-                      return [...cleared, newPlayer].sort((a, b) => (a.number ?? 999) - (b.number ?? 999))
-                    })
+                    setHomeRoster(withNewPlayer)
                     setHomeNum(''); setHomeFirst(''); setHomeLast(''); setHomeDob(''); setHomeLibero(''); setHomeCaptain(false)
                   } else {
-                    setAwayRoster(list => {
-                      const cleared = captain ? list.map(p => ({ ...p, isCaptain: false })) : [...list]
-                      return [...cleared, newPlayer].sort((a, b) => (a.number ?? 999) - (b.number ?? 999))
-                    })
+                    setAwayRoster(withNewPlayer)
                     setAwayNum(''); setAwayFirst(''); setAwayLast(''); setAwayDob(''); setAwayLibero(''); setAwayCaptain(false)
                   }
                   setAddPlayerModal(null)
@@ -2461,10 +2450,12 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               <div className="ov-kit" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <Button variant="secondary" size="xl" className="font-medium" onClick={() => setDeletePlayerModal(null)}>Cancel</Button>
                 <Button variant="danger" size="xl" onClick={() => {
+                  // the L1 deleted: the L2 left becomes L1 (a team's only libero is Libero 1)
+                  const without = (list) => withLoneLiberoAsL1(list.filter((_, idx) => idx !== deletePlayerModal.index))
                   if (currentTeam === 'home') {
-                    setHomeRoster(list => list.filter((_, idx) => idx !== deletePlayerModal.index))
+                    setHomeRoster(without)
                   } else {
-                    setAwayRoster(list => list.filter((_, idx) => idx !== deletePlayerModal.index))
+                    setAwayRoster(without)
                   }
                   setDeletePlayerModal(null)
                 }}>Delete</Button>

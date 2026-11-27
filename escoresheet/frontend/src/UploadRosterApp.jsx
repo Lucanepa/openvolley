@@ -7,6 +7,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import { parseRosterPdf, rosterPdfErrorText } from './utils/parseRosterPdf'
 import { shirtNumberDigits } from './domain/roster'
+import { liberoChoices, liberoValueOf, withLoneLiberoAsL1 } from './domain/liberoChoices'
 import { BENCH_ROLES, checkUploadedRoster, UPLOADED_NAME_MAX, UPLOADED_ROSTER_MAX_PLAYERS } from './domain/uploadedRoster'
 import Modal from './components/Modal'
 import SimpleHeader from './components/SimpleHeader'
@@ -774,7 +775,9 @@ export default function UploadRosterApp() {
   }
 
   // Handle player edit. One captain and one player per libero slot, as in the
-  // scorer's editor: choosing them for one player takes them from the others
+  // scorer's editor: choosing them for one player takes them from the others.
+  // A team's only libero is Libero 1 (domain/liberoChoices): the L1 set to
+  // none, the L2 left becomes L1
   const handlePlayerChange = (index, field, value) => {
     if (!parsedData) return
     const updatedPlayers = parsedData.players.map((p, i) => {
@@ -783,7 +786,7 @@ export default function UploadRosterApp() {
       if (field === 'libero' && value && p.libero === value) return { ...p, libero: '' }
       return p
     })
-    setParsedData({ ...parsedData, players: updatedPlayers })
+    setParsedData({ ...parsedData, players: field === 'libero' ? withLoneLiberoAsL1(updatedPlayers) : updatedPlayers })
   }
 
   // Handle bench official edit
@@ -811,7 +814,8 @@ export default function UploadRosterApp() {
   // Delete player
   const handleDeletePlayer = (index) => {
     if (!parsedData) return
-    const updatedPlayers = parsedData.players.filter((_, i) => i !== index)
+    // the L1 deleted: the L2 left becomes L1
+    const updatedPlayers = withLoneLiberoAsL1(parsedData.players.filter((_, i) => i !== index))
     setParsedData({ ...parsedData, players: updatedPlayers })
   }
 
@@ -1308,14 +1312,15 @@ export default function UploadRosterApp() {
                           placeholder={idPlaceholder}
                         />
                         <Select
-                          value={player.libero}
+                          value={liberoValueOf(player)}
                           onChange={(e) => handlePlayerChange(index, 'libero', e.target.value)}
                           aria-label={t('rosterSetup.libero', 'Libero')}
                           block
                         >
-                          <option value=""></option>
-                          {['libero1', 'libero2'].filter(slot => player.libero === slot || !parsedData.players.some(p => p.libero === slot)).map(slot => (
-                            <option key={slot} value={slot}>{t('rosterSetup.libero', 'Libero')} {slot.slice(-1)}</option>
+                          {/* blank under the Libero column head; Libero 1 first,
+                              Libero 2 once another player is L1 (domain/liberoChoices) */}
+                          {liberoChoices(parsedData.players, index).map(slot => (
+                            <option key={slot || 'none'} value={slot}>{slot ? `${t('rosterSetup.libero', 'Libero')} ${slot.slice(-1)}` : ''}</option>
                           ))}
                         </Select>
                         <button

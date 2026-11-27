@@ -200,7 +200,7 @@ describe('option labels', () => {
 
   it('finds the Match setup options', () => {
     const keys = optionKeys();
-    for (const k of ['matchSetup.bestOf5', 'matchSetup.championship', 'matchSetup.regional', 'roster.none']) expect(keys).toContain(k);
+    for (const k of ['matchSetup.bestOf5', 'matchSetup.championship', 'matchSetup.regional', 'matchSetup.noLibero']) expect(keys).toContain(k);
   });
 
   it('start with a capital letter in all five locales', () => {
