@@ -161,7 +161,9 @@ describe('the recognition started ahead (startOcrEngine)', () => {
   it('ocrWorkerCount: one core left for the page, one worker a language, one alone on little memory', () => {
     expect(ocrWorkerCount({ cores: 8, memory: 8 })).toBe(3)
     // a Galaxy Tab A7 Lite: 8 cores, 3 GB (Chrome says 2)
-    expect(ocrWorkerCount({ cores: 8, memory: 2 })).toBe(3)
+    // a Galaxy Tab A7 Lite (Chrome reports 2 GB): one worker (3 took 36-42 s there, 1 ~20 s)
+    expect(ocrWorkerCount({ cores: 8, memory: 2 })).toBe(1)
+    expect(ocrWorkerCount({ cores: 8, memory: 4 })).toBe(3)
     expect(ocrWorkerCount({ cores: 8, memory: 1 })).toBe(1)
     expect(ocrWorkerCount({ cores: 3 })).toBe(2)
     expect(ocrWorkerCount({ cores: 2 })).toBe(1)
