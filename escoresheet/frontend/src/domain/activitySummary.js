@@ -54,10 +54,45 @@ export const ACTIVITY_KINDS = Object.freeze({
   'backup.error': { cat: 'error', keys: ['message'] },
   // the match-end scoresheet PDF: asked for, received, failed, approved without it (utils/scoresheetPdfLog)
   'scoresheet.pdf': { cat: 'match', keys: ['step', 'purpose', 'attempt', 'reason', 'bytes', 'ms'] },
+  // a photo of an Einsatzliste read in Match Setup (utils/rosterPhoto/photoReadLog): counts
+  // and timings only, typed (ACTIVITY_TYPES)
+  'photo.read': { cat: 'match', keys: ['ms', 'outcome', 'rows', 'toCheck', 'struck', 'cores', 'memory', 'workers', 'turned'] },
   'auth.sign_in': { cat: 'app', keys: [] },
   'auth.sign_out': { cat: 'app', keys: [] },
   'activity.overflow': { cat: 'app', keys: ['dropped'] }
 })
+
+// How a photo reading ended: 'ok' (the check screen) or the error the scorer saw
+// (utils/rosterPhoto/ocr.js codes; 'other' for any other)
+export const PHOTO_READ_OUTCOMES = Object.freeze(['ok', 'ocr-load', 'ocr-timeout', 'ocr-empty', 'ocr-blurry', 'other'])
+
+// Kinds whose keys are typed: 'int' (rounded) and 'num' (2 decimals) are numbers
+// clamped to min..max, 'bool' a boolean, 'oneOf' one of `values`; a null only where
+// `nullable`. Any other value (a string where a number belongs, a name, a text read
+// from a photo) is dropped, so nothing else passes.
+const countType = (max, nullable = false) => Object.freeze({ type: 'int', min: 0, max, nullable })
+export const ACTIVITY_TYPES = Object.freeze({
+  'photo.read': Object.freeze({
+    ms: countType(3600000),
+    outcome: Object.freeze({ type: 'oneOf', values: PHOTO_READ_OUTCOMES }),
+    rows: countType(99),
+    toCheck: countType(999),
+    struck: countType(99),
+    cores: countType(256, true),
+    memory: Object.freeze({ type: 'num', min: 0, max: 1024, nullable: true }),
+    workers: countType(16),
+    turned: Object.freeze({ type: 'bool' })
+  })
+})
+
+function typedValue(type, value) {
+  if (value === null || value === undefined) return type.nullable ? null : undefined
+  if (type.type === 'bool') return typeof value === 'boolean' ? value : undefined
+  if (type.type === 'oneOf') return typeof value === 'string' && type.values.includes(value) ? value : undefined
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
+  const v = type.type === 'int' ? Math.round(value) : Math.round(value * 100) / 100
+  return Math.min(type.max, Math.max(type.min, v))
+}
 
 export const ACTIVITY_KIND_RE = /^[a-z_]+(\.[a-z_]+)+$/
 export const ACTIVITY_LEVELS = Object.freeze(['info', 'warn', 'error'])
@@ -155,15 +190,22 @@ const byteLength = (s) => {
 /**
  * The data an entry of `kind` may carry: allowlisted keys, no denied key,
  * no data URL or JWT, no PIN or long number in free text (redactFreeText),
- * strings <= 200 characters, depth <= 3, <= 4 KB.
+ * strings <= 200 characters, depth <= 3, <= 4 KB; a typed kind's keys only
+ * with their type (ACTIVITY_TYPES).
  * Unknown kinds keep nothing. Never throws.
  */
 export function sanitizeActivityData(kind, data) {
   const spec = ACTIVITY_KINDS[kind]
   if (!spec || !data || typeof data !== 'object' || Array.isArray(data)) return {}
+  const types = ACTIVITY_TYPES[kind]
   const out = {}
   for (const key of spec.keys) {
     if (!(key in data) || DENIED_KEY.test(key)) continue
+    if (types?.[key]) {
+      const v = typedValue(types[key], data[key])
+      if (v !== undefined) out[key] = v
+      continue
+    }
     const raw = FREE_TEXT_KEYS.includes(key) ? redactDeep(data[key], key === 'frames') : data[key]
     const v = cleanValue(raw, 1)
     if (v !== undefined) out[key] = v
@@ -416,6 +458,16 @@ export function activityLine(entry) {
     case 'backup.error': return d.message || ''
     case 'activity.overflow': return `${d.dropped} entries dropped`
     case 'scoresheet.pdf': return [d.step, d.purpose, d.reason, d.attempt > 1 ? `attempt ${d.attempt}` : null, d.bytes != null ? `${d.bytes} bytes` : null, d.ms != null ? `${d.ms} ms` : null].filter(v => v != null && v !== '').join(' · ')
+    case 'photo.read': {
+      // "read in 11.4 s: 13 rows, 9 to check · 8 cores, 4 GB, 3 workers"
+      const n = (count, one, many) => `${count ?? 0} ${count === 1 ? one : many}`
+      const took = Number.isFinite(d.ms) ? `${(d.ms / 1000).toFixed(1)} s` : '? s'
+      const head = d.outcome === 'ok'
+        ? `read in ${took}: ${n(d.rows, 'row', 'rows')}, ${d.toCheck ?? 0} to check${d.struck ? `, ${d.struck} struck` : ''}${d.turned ? ', turned' : ''}`
+        : `not read (${d.outcome || '?'}) after ${took}`
+      const device = [d.cores != null ? n(d.cores, 'core', 'cores') : null, d.memory != null ? `${d.memory} GB` : null, d.workers ? n(d.workers, 'worker', 'workers') : null].filter(Boolean).join(', ')
+      return device ? `${head} · ${device}` : head
+    }
     default: return ''
   }
 }

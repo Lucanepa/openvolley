@@ -217,7 +217,8 @@ describe('diagnostics report: the timeline', () => {
       act(T, 'sync.error', { resource: 'event', action: 'insert', status: 409, code: 'OV_MATCH_CLOSED', requestId: 'r-1', attempt: 2 }, { level: 'warn' }),
       act(T, 'app.error', { message: 'TypeError: x is undefined', source: 'window.error' }, { level: 'error' }),
       act(T, 'auth.sign_in'),
-      act(T, 'activity.overflow', { dropped: 12 }, { level: 'warn' })
+      act(T, 'activity.overflow', { dropped: 12 }, { level: 'warn' }),
+      act(T, 'photo.read', { ms: 11384, outcome: 'ok', rows: 13, toCheck: 9, struck: 0, cores: 8, memory: 4, workers: 3, turned: false })
     ]
     expect(tl({ activity: rows }).slice(1).map(l => l.slice(14))).toEqual([
       'undo    Point seq 40 (set 1) undone',
@@ -228,7 +229,8 @@ describe('diagnostics report: the timeline', () => {
       'sync    refused: event insert 409 OV_MATCH_CLOSED, attempt 2, request r-1',
       'error   TypeError: x is undefined [window.error]',
       'auth    signed in',
-      'app     12 activity entries dropped (the device\'s log was full)'
+      'app     12 activity entries dropped (the device\'s log was full)',
+      'photo   roster photo read in 11.4 s: 13 rows, 9 to check · 8 cores, 4 GB, 3 workers'
     ])
   })
 

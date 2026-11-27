@@ -502,6 +502,8 @@ export function activityItem(row, matches = new Map()) {
       return { ...base, kind: 'match', text: `match created (local id ${row.matchId ?? '?'}${d.test ? ', test' : ''})` }
     case 'activity.overflow':
       return { ...base, kind: 'app', level: 'warn', text: `${d.dropped} activity entries dropped (the device's log was full)` }
+    case 'photo.read':
+      return { ...base, kind: 'photo', text: `roster photo ${oneLine(activityLine(row), 160)}` }
     default: {
       const line = oneLine(activityLine(row), 160)
       const kind = String(row.kind || '').split('.')[0] || 'act'

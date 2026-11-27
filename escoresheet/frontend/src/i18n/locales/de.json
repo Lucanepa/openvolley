@@ -6757,7 +6757,8 @@
       "scoresheet_pdf": "eScoresheet-PDF",
       "auth_sign_in": "Angemeldet",
       "auth_sign_out": "Abgemeldet",
-      "activity_overflow": "Alte Einträge verworfen"
+      "activity_overflow": "Alte Einträge verworfen",
+      "photo_read": "Foto der Liste"
     }
   },
   "phoneSign": {

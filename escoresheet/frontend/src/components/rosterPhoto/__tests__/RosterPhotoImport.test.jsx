@@ -16,9 +16,13 @@ vi.mock('../../../utils/rosterPhoto/scan', async (orig) => ({
 const readRosterPhoto = vi.fn()
 const startOcrEngine = vi.fn()
 vi.mock('../../../utils/rosterPhoto/ocr', () => ({ readRosterPhoto: (...args) => readRosterPhoto(...args), startOcrEngine: (...args) => startOcrEngine(...args) }))
+// the activity log (utils/activity/bus): what the photo import writes there
+const emitActivity = vi.fn()
+vi.mock('../../../utils/activity/bus', () => ({ emitActivity: (...args) => emitActivity(...args) }))
 
 import RosterPhotoImport, { readingTime } from '../RosterPhotoImport'
 import { importedRosterOf } from '../../../domain/importedRoster'
+import { ACTIVITY_KINDS, sanitizeActivityData } from '../../../domain/activitySummary'
 
 // Made-up people
 const read = () => importedRosterOf({
@@ -33,6 +37,7 @@ const savedTeam = { players: [{ number: 9, first_name: 'Noé', last_name: 'Muste
 const engines = []
 beforeEach(() => {
   readRosterPhoto.mockReset()
+  emitActivity.mockReset()
   engines.length = 0
   startOcrEngine.mockReset()
   startOcrEngine.mockImplementation(() => { const e = { terminate: vi.fn(async () => {}), ready: Promise.resolve([]) }; engines.push(e); return e })
@@ -208,6 +213,77 @@ describe('RosterPhotoImport', () => {
     finish()
     await screen.findByTestId('roster-photo-players')
     expect(screen.getByTestId('roster-photo-method').textContent).toContain('rosterPhoto.confirm.readIn')
+  })
+
+  // owner 27.11: the tablets' reading times reach the server (activity log, kind photo.read)
+  const photoReads = () => emitActivity.mock.calls.filter(([kind]) => kind === 'photo.read')
+  const ROSTER_STRINGS = ['Exempel', 'Musler', 'Muster', 'Luca', 'Noé', 'Hans', '12345', '10001', 'Rita', 'Probst', 'VBC']
+  const onlyCounts = (data) => {
+    expect(Object.keys(data).every((k) => ACTIVITY_KINDS['photo.read'].keys.includes(k))).toBe(true)
+    // the one text is the outcome; nothing read from the photo
+    expect(Object.entries(data).filter(([, v]) => typeof v === 'string').map(([k]) => k)).toEqual(['outcome'])
+    const json = JSON.stringify(data)
+    for (const s of ROSTER_STRINGS) expect(json).not.toContain(s)
+    // what the server keeps is all of it
+    expect(sanitizeActivityData('photo.read', data)).toEqual(data)
+  }
+
+  it('a reading that worked writes one photo.read entry: its time and counts only', async () => {
+    readRosterPhoto.mockImplementation(async (page, opts) => {
+      opts.stats.workers = 3
+      opts.stats.turned = true
+      return { ...read(), struck: [{ firstName: 'Rita', lastName: 'Probst', licence: '123459' }] }
+    })
+    const onApply = vi.fn()
+    render(<RosterPhotoImport side="home" teamLabel="VBC Seewiese" onApply={onApply} />)
+    await toCrop()
+    fireEvent.click(screen.getByTestId('roster-photo-read'))
+    await screen.findByTestId('roster-photo-players')
+    expect(photoReads()).toHaveLength(1)
+    const [, data, opts] = photoReads()[0]
+    expect(opts).toEqual({ level: 'info' })
+    // 7 twice (red), a last name hard to read (amber); the struck row counted, not named
+    expect(data).toMatchObject({ outcome: 'ok', rows: 2, toCheck: 3, struck: 1, workers: 3, turned: true })
+    expect(data.ms).toBeGreaterThanOrEqual(0)
+    expect(Object.keys(data).sort()).toEqual(['cores', 'memory', 'ms', 'outcome', 'rows', 'struck', 'toCheck', 'turned', 'workers'])
+    onlyCounts(data)
+    // correcting and using the list writes nothing more
+    fireEvent.change(within(screen.getByTestId('roster-photo-players')).getAllByTestId('roster-photo-number')[1], { target: { value: '12' } })
+    fireEvent.click(screen.getByTestId('roster-photo-apply'))
+    expect(onApply).toHaveBeenCalledTimes(1)
+    expect(photoReads()).toHaveLength(1)
+  })
+
+  it('a reading that fails writes one entry with its code, as a warning', async () => {
+    readRosterPhoto.mockImplementation(async (page, opts) => {
+      opts.stats.workers = 1
+      throw Object.assign(new Error('blurry'), { code: 'ocr-blurry' })
+    })
+    render(<RosterPhotoImport side="home" teamLabel="VBC" onApply={() => {}} />)
+    await toCrop()
+    fireEvent.click(screen.getByTestId('roster-photo-read'))
+    await screen.findByTestId('roster-photo-error')
+    expect(photoReads()).toHaveLength(1)
+    const [, data, opts] = photoReads()[0]
+    expect(opts).toEqual({ level: 'warn' })
+    expect(data).toMatchObject({ outcome: 'ocr-blurry', workers: 1, turned: false })
+    expect(data).not.toHaveProperty('rows')
+    onlyCounts(data)
+  })
+
+  it('a reading the scorer cancels writes nothing', async () => {
+    readRosterPhoto.mockImplementation((page, opts) => new Promise((resolve, reject) => {
+      opts.signal.addEventListener('abort', () => reject(Object.assign(new Error('cancelled'), { code: 'ocr-cancelled' })))
+    }))
+    render(<RosterPhotoImport side="home" teamLabel="VBC" onApply={() => {}} />)
+    await toCrop()
+    fireEvent.click(screen.getByTestId('roster-photo-read'))
+    await waitFor(() => expect(readRosterPhoto).toHaveBeenCalled())
+    fireEvent.click(screen.getByTestId('roster-photo-cancel'))
+    await waitFor(() => expect(screen.queryByTestId('roster-photo-reading')).toBeNull())
+    // (the rejection after the abort has run)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(photoReads()).toHaveLength(0)
   })
 
   it('readingTime: the elapsed seconds, and the time left once a tenth is read', () => {

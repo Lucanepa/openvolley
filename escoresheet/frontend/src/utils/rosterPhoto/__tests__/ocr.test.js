@@ -124,8 +124,11 @@ describe('the recognition started ahead (startOcrEngine)', () => {
     const workers = await engine.ready
     expect(createWorker).toHaveBeenCalledTimes(3)
     expect(workers).toHaveLength(3)
-    const roster = await readRosterPhoto(new Blob(['page']), { engine, createWorker })
+    // what it notes for the activity log (photoReadLog): counts only
+    const stats = { workers: 0, turned: false }
+    const roster = await readRosterPhoto(new Blob(['page']), { engine, createWorker, stats })
     expect(roster.players).toHaveLength(10)
+    expect(stats).toEqual({ workers: 3, turned: false })
     // no second start, not ended by the reading
     expect(createWorker).toHaveBeenCalledTimes(3)
     expect(calls.terminated).toBe(0)

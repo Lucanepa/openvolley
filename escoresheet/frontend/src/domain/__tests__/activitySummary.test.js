@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   sanitizeActivityData, matchUpdateEntries, setUpdateEntry, stackFrames, eventActivityData, historyKind,
-  activityCategory, ACTIVITY_KINDS, ACTIVITY_KIND_RE, activityLine, redactFreeText, REDACTED
+  activityCategory, ACTIVITY_KINDS, ACTIVITY_KIND_RE, ACTIVITY_TYPES, PHOTO_READ_OUTCOMES, activityLine, redactFreeText, REDACTED
 } from '../activitySummary'
 
 describe('sanitizeActivityData', () => {
@@ -138,5 +138,46 @@ describe('events and errors', () => {
     // review 6a: one set, one player (not "1 players")
     expect(activityLine({ kind: 'match.local_remove', data: { sets: 1, players: 1 } })).toBe('1 set, 1 player')
     expect(activityLine({ kind: 'match.local_remove', data: { sets: 2, players: 0 } })).toBe('2 sets, 0 players')
+  })
+})
+
+describe('photo.read (a photo of the list read in Match Setup)', () => {
+  const ok = { ms: 11384, outcome: 'ok', rows: 13, toCheck: 9, struck: 1, cores: 8, memory: 4, workers: 3, turned: false }
+
+  it('keeps its typed keys only: numbers rounded and clamped, outcome from the fixed list, booleans', () => {
+    expect(ACTIVITY_KINDS['photo.read'].keys).toEqual(Object.keys(ACTIVITY_TYPES['photo.read']))
+    expect(sanitizeActivityData('photo.read', ok)).toEqual(ok)
+    // extra keys dropped (whatever their names)
+    expect(sanitizeActivityData('photo.read', { ...ok, names: ['Muster Anna'], text: 'Exempel Luca 123451', photo: 'data:image/jpeg;base64,AAAA', firstName: 'Lea' })).toEqual(ok)
+    // rounded, clamped
+    expect(sanitizeActivityData('photo.read', { ms: 1234.6, rows: -3, toCheck: 5000, struck: 2.4, cores: 9999, memory: 0.256, workers: 40 }))
+      .toEqual({ ms: 1235, rows: 0, toCheck: 999, struck: 2, cores: 256, memory: 0.26, workers: 16 })
+    expect(sanitizeActivityData('photo.read', { ms: 9e12 }).ms).toBe(3600000)
+    // memory and cores may be unknown (null); the others not
+    expect(sanitizeActivityData('photo.read', { memory: null, cores: null, rows: null, turned: null })).toEqual({ memory: null, cores: null })
+  })
+
+  it('a value of the wrong type is dropped: a name, a licence number or any text never passes', () => {
+    const out = sanitizeActivityData('photo.read', {
+      ms: '11384', outcome: 'Muster Anna', rows: '13', toCheck: [9], struck: { n: 1 }, cores: '8', memory: '4', workers: true, turned: 'yes'
+    })
+    expect(out).toEqual({})
+    for (const bad of ['Exempel', '123451', 'OK', 'ok ', 'ocr-blurry Muster', '']) {
+      expect(sanitizeActivityData('photo.read', { outcome: bad })).toEqual({})
+    }
+    for (const code of PHOTO_READ_OUTCOMES) expect(sanitizeActivityData('photo.read', { outcome: code })).toEqual({ outcome: code })
+    expect(sanitizeActivityData('photo.read', { ms: NaN, rows: Infinity, turned: 1 })).toEqual({})
+    // idempotent (the upload sanitizes again)
+    expect(sanitizeActivityData('photo.read', sanitizeActivityData('photo.read', ok))).toEqual(ok)
+  })
+
+  it('its line in the activity log: the time and the counts; a failure says why', () => {
+    expect(activityCategory('photo.read')).toBe('match')
+    expect(activityLine({ kind: 'photo.read', data: ok })).toBe('read in 11.4 s: 13 rows, 9 to check, 1 struck · 8 cores, 4 GB, 3 workers')
+    expect(activityLine({ kind: 'photo.read', data: { ...ok, rows: 1, toCheck: 0, struck: 0, turned: true, memory: null, workers: 1 } }))
+      .toBe('read in 11.4 s: 1 row, 0 to check, turned · 8 cores, 1 worker')
+    expect(activityLine({ kind: 'photo.read', data: { ms: 8150, outcome: 'ocr-blurry', cores: 4, memory: 2, workers: 1, turned: false } }))
+      .toBe('not read (ocr-blurry) after 8.2 s · 4 cores, 2 GB, 1 worker')
+    expect(activityLine({ kind: 'photo.read', data: { outcome: 'ocr-load', workers: 0 } })).toBe('not read (ocr-load) after ? s')
   })
 })

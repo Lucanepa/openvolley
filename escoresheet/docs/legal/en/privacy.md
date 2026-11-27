@@ -160,7 +160,10 @@ device: points and other match events, undo and corrections (what was
 changed, when and why), sets and match status, signatures (only
 the role and that they happened), remarks (only their length), roster changes
 (only the shirt number), results of uploads to the server, app errors
-(message and place in the program), the app starting, updating and quitting,
+(message and place in the program), how long reading a photo of a roster
+took and whether it worked (with the number of rows, of fields to check and
+of struck rows, and the device's number of processor cores and memory; never
+the photo or what was read from it), the app starting, updating and quitting,
 and signing in and out. Each entry carries a random identifier of the device
 (created by the app, not linked to the hardware), the app version, the
 platform and, when you are signed in, your account. **Never recorded** are

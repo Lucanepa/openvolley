@@ -6769,7 +6769,8 @@
       "scoresheet_pdf": "eScoresheet-PDF",
       "auth_sign_in": "Aagmäldet",
       "auth_sign_out": "Abgmäldet",
-      "activity_overflow": "Alti Iiträg verworfe"
+      "activity_overflow": "Alti Iiträg verworfe",
+      "photo_read": "Foto vo de Liste"
     }
   },
   "phoneSign": {
