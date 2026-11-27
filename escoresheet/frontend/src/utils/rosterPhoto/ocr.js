@@ -581,6 +581,13 @@ export function startOcrEngine ({ size = ocrWorkerCount(), createWorker, dir, st
   return engine
 }
 
+// The progress bar's shares (owner 27.11: when it shows 100 % it is finished): the page
+// takes most of it, each step after it (SV numbers, handwriting, struck rows, circled
+// numbers) moves it on; readRosterPhoto never reports more than OCR_LAST_SHARE, the
+// dialog shows 100 % only together with the check screen.
+export const SHARE_PAGE = 0.8
+export const OCR_LAST_SHARE = 0.98
+
 /**
  * The roster in the flat page of a photo (scan.js scanPage, as a canvas or
  * a Blob).
@@ -604,7 +611,7 @@ export async function readRosterPhoto (page, { engine = null, onProgress, signal
     shares.set(m.workerId ?? 0, m.progress)
     let sum = 0
     for (const v of shares.values()) sum += v
-    report(sum / Math.max(1, phaseCount), 'recognizing text')
+    report(SHARE_PAGE * sum / Math.max(1, phaseCount), 'recognizing text')
   }
   let phaseCount = 1
   eng.listeners.add(listener)
@@ -672,28 +679,31 @@ export async function readRosterPhoto (page, { engine = null, onProgress, signal
       throw coded('ocr-load', `The text recognition stopped (${err?.message || err})`, err)
     }
     phase = null
-    report(1, 'recognizing text')
+    report(SHARE_PAGE, 'recognizing text')
     const confidence = Number(data?.confidence)
     if (Number.isFinite(confidence) && confidence < BLURRY_CONFIDENCE) throw coded('ocr-blurry', 'The photo is too blurry to read')
     const px = pixelsOf(page)
     const parsed = rosterFromOcr(data, circlesOn(px))
     if (parsed.players.some((p) => p.licenceAt) && isCanvas(page) && !signal?.aborted) {
+      report(0.83, 'reading marks')
       try {
         parsed.players = await withTimeout(readLicencesAgain(workers, page, parsed.players), HAND_TIMEOUT_MS)
       } catch { /* the SV numbers as first read (to check) */ }
     }
     if (px && parsed.players.some((p) => p.handAt) && !signal?.aborted) {
-      report(0.5, 'reading marks')
+      report(0.86, 'reading marks')
       try {
         parsed.players = await withTimeout(readHandwriting(workers, page, px, parsed.players, debug), HAND_TIMEOUT_MS)
       } catch { /* the first reading's marks stay (all of them to check) */ }
     }
+    report(0.92, 'reading marks')
     if (px && !signal?.aborted) {
       try {
         const lost = (await withTimeout(lostStruckRows(workers, page, px, parsed.players), HAND_TIMEOUT_MS)).filter((r) => r.firstName || r.lastName || r.licence)
         if (lost.length) parsed.struck = [...(parsed.struck || []), ...lost]
       } catch { /* a lost row stays lost (it is not imported either way) */ }
     }
+    report(0.95, 'reading marks')
     const ringed = parsed.players.filter((p) => p.ringAt).slice(0, 4)
     if (ringed.length && !signal?.aborted) {
       try {
@@ -709,7 +719,8 @@ export async function readRosterPhoto (page, { engine = null, onProgress, signal
       } catch { /* the captain stays marked; the number is the scorer's (or the saved team's) */ }
     }
     if (signal?.aborted) throw cancelled()
-    report(1, 'reading marks')
+    // never 1: the bar shows 100 % only with the check screen (owner 27.11: "100 % = finished")
+    report(OCR_LAST_SHARE, 'reading marks')
     const roster = importedRosterOf(parsed, 'ocr')
     if (!roster.players.length && !roster.struck?.length) {
       // a page read without much certainty and no row: the photo, not the list
@@ -720,6 +731,7 @@ export async function readRosterPhoto (page, { engine = null, onProgress, signal
     signal?.removeEventListener?.('abort', onAbort)
     eng.listeners.delete(listener)
     // its memory (the three languages) back at once; a worker that never answers is ended too
-    if (own) await own.terminate()
+    // ended without holding the result back (its memory still comes back at once)
+    if (own) Promise.resolve(own.terminate()).catch(() => {})
   }
 }

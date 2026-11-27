@@ -19,6 +19,10 @@ import RosterConfirmStep from './RosterConfirmStep'
  *
  * Steps: source → (loading) → crop → reading → confirm, or error.
  */
+// The bar's top while reading: 100 % only together with the check screen (owner 27.11:
+// "100 % = finished"); ocr.js reports at most OCR_LAST_SHARE (0.98) itself.
+const READ_CAP = 0.98
+
 export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, disabled = false, onApply }) {
   const { t } = useTranslation()
   const [step, setStep] = useState(null)
@@ -110,14 +114,16 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
       const result = await readRosterPhoto(page, {
         engine,
         signal: controller.signal,
-        // one bar for the whole reading: the page (most of it), then the handwriting read again
+        // one bar for the whole reading (shares in ocr.js): the page, then each step after it;
+        // it never reaches 100 % before the check screen (owner 27.11: "100 % = finished")
         onProgress: (share, status) => {
           if (controller.signal.aborted) return
-          setProgress(status === 'reading marks' ? { share: 0.85 + 0.15 * share, phase: 'marks' } : { share: 0.85 * share, phase: 'read' })
+          setProgress({ share: Math.min(share, READ_CAP), phase: status === 'reading marks' ? 'marks' : 'read' })
         }
       })
       if (controller.signal.aborted) return
       setRoster(withSavedTeamNames(result, savedTeam))
+      setProgress({ share: 1, phase: 'marks' })
       setStep('confirm')
     } catch (err) {
       if (controller.signal.aborted || err?.code === 'ocr-cancelled') return

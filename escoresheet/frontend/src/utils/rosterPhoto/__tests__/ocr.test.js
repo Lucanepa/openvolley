@@ -105,11 +105,15 @@ describe('readRosterPhoto (Tesseract on this device)', () => {
     const { createWorker, calls } = fake
     const seen = []
     await readRosterPhoto(new Blob(['page']), { createWorker, dir: '/ocr/x/', onProgress: (share, status) => seen.push([share, status]) })
-    expect(seen).toContainEqual([0.5, 'recognizing text'])
-    expect(seen[seen.length - 1]).toEqual([1, 'reading marks'])
+    expect(seen).toContainEqual([0.4, 'recognizing text'])
+    expect(seen[seen.length - 1]).toEqual([0.98, 'reading marks'])
+    // never 100 % before the result is back (owner 27.11: "100 % = finished"), never backwards
+    expect(seen.every(([share]) => share < 1)).toBe(true)
+    for (let k = 1; k < seen.length; k++) expect(seen[k][0]).toBeGreaterThanOrEqual(seen[k - 1][0])
     // (nothing after the end)
+    const before = seen.length
     calls.create.options.logger({ status: 'recognizing text', progress: 0.7, workerId: 'w1' })
-    expect(seen).not.toContainEqual([0.7, 'recognizing text'])
+    expect(seen.length).toBe(before)
   })
 })
 

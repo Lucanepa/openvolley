@@ -174,4 +174,21 @@ describe('RosterPhotoImport', () => {
     fireEvent.click(screen.getByTestId('roster-photo-turn'))
     expect(screen.getByTestId('roster-photo-corner-0').getAttribute('aria-valuetext')).not.toBe(before)
   })
+
+  it('the bar never shows 100 % while reading, even if the reading says 1: only the check screen ends it (owner 27.11)', async () => {
+    let finish
+    readRosterPhoto.mockImplementation((page, opts) => new Promise((resolve) => {
+      opts.onProgress(0.5, 'recognizing text')
+      opts.onProgress(1, 'reading marks')
+      finish = () => resolve(read())
+    }))
+    render(<RosterPhotoImport side="home" teamLabel="VBC Seewiese" onApply={() => {}} />)
+    await toCrop()
+    fireEvent.click(screen.getByTestId('roster-photo-read'))
+    const now = () => Number(screen.getByRole('progressbar').getAttribute('aria-valuenow'))
+    await waitFor(() => expect(now()).toBeGreaterThan(50))
+    expect(now()).toBeLessThan(100)
+    finish()
+    await screen.findByTestId('roster-photo-players')
+  })
 })
