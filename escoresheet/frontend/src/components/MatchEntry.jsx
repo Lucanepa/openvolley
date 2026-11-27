@@ -844,8 +844,8 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
 
   // Show results when match is finished
   if (isMatchFinished) {
-    const homeName = data?.homeTeam?.name || t('common.home')
-    const awayName = data?.awayTeam?.name || t('common.away')
+    const homeName = data?.homeTeam?.name || t('common.homeTeam')
+    const awayName = data?.awayTeam?.name || t('common.awayTeam')
     const teamAName = data?.match?.coinTossTeamA === 'home' ? homeName : awayName
     const teamBName = data?.match?.coinTossTeamA === 'home' ? awayName : homeName
 

@@ -47,7 +47,9 @@
     "invalid": "non valido",
     "later": "Più tardi",
     "remove": "Rimuovi",
-    "saving": "Salvataggio..."
+    "saving": "Salvataggio...",
+    "homeTeam": "Casa",
+    "awayTeam": "Ospite"
   },
   "alert": {
     "error": "Errore",

@@ -4233,7 +4233,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     await db.matches.update(matchId, matchUpdate)
     await logEventRef.current?.('court_captain_designation', payload)
     const team = teamKey === 'home' ? data?.homeTeam : data?.awayTeam
-    const teamName = team?.name || (teamKey === 'home' ? t('common.home', 'Home') : t('common.away', 'Away'))
+    const teamName = team?.name || (teamKey === 'home' ? t('common.homeTeam', 'Home') : t('common.awayTeam', 'Away'))
     deferUi(() => toast.info(t('scoreboard.captainOnCourt.autoNotice', { team: teamName, n: playerNumber, defaultValue: '{{team}}: #{{n}} game captain' }), { duration: 3000 }))
   })
 
@@ -4423,7 +4423,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const teamKey = leftIsHome ? 'home' : 'away'
     const isTeamA = teamKey === teamAKey
     return {
-      name: team?.name || (leftIsHome ? t('common.home') : t('common.away')),
+      name: team?.name || (leftIsHome ? t('common.homeTeam') : t('common.awayTeam')),
       color: effectiveTeamColour(teamKey, team, data.match),
       playersOnCourt: buildOnCourt(players, true, teamKey),
       isTeamA
@@ -4437,7 +4437,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const teamKey = leftIsHome ? 'away' : 'home'
     const isTeamA = teamKey === teamAKey
     return {
-      name: team?.name || (leftIsHome ? t('common.away') : t('common.home')),
+      name: team?.name || (leftIsHome ? t('common.awayTeam') : t('common.homeTeam')),
       color: effectiveTeamColour(teamKey, team, data.match),
       playersOnCourt: buildOnCourt(players, false, teamKey),
       isTeamA
@@ -6845,8 +6845,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const pointEvent = decisionPoint
       // Simple description for decision change confirmation
       const teamName = pointEvent.payload?.team === 'home'
-        ? (data?.homeTeam?.name || t('common.home'))
-        : (data?.awayTeam?.name || t('common.away'))
+        ? (data?.homeTeam?.name || t('common.homeTeam'))
+        : (data?.awayTeam?.name || t('common.awayTeam'))
       const description = `Point for ${teamName}`
       setReplayRallyConfirm(decisionDialog({ event: pointEvent, description, selectedOption: 'swap' })) // Default to swap (continuous play: none)
       return
@@ -6856,8 +6856,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (rallyStatus === 'idle' && decisionTakeBack) {
       const pointEvent = decisionTakeBack.point
       const teamName = pointEvent.payload?.team === 'home'
-        ? (data?.homeTeam?.name || t('common.home'))
-        : (data?.awayTeam?.name || t('common.away'))
+        ? (data?.homeTeam?.name || t('common.homeTeam'))
+        : (data?.awayTeam?.name || t('common.awayTeam'))
       setReplayRallyConfirm(decisionDialog({ event: pointEvent, description: `Point for ${teamName}`, selectedOption: 'swap', takeBack: decisionTakeBack.requests, takeBackByOption: decisionTakeBack.byOption }))
       return
     }
@@ -12240,7 +12240,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     })
 
     // Send substitution action to referee to show modal
-    const teamName = team === 'home' ? data?.homeTeam?.name || t('common.home') : data?.awayTeam?.name || t('common.away')
+    const teamName = team === 'home' ? data?.homeTeam?.name || t('common.homeTeam') : data?.awayTeam?.name || t('common.awayTeam')
     sendActionToReferee('substitution', {
       team,
       teamName,
@@ -14959,7 +14959,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     editRosterHome: () => setReopenRosterConfirm('home'),
     editRosterAway: () => setReopenRosterConfirm('away'),
     showPins: () => setShowPinsModal(true),
-    pairPhone: data?.match ? () => openPhonePair(phonePairMatchOf(data, { lang: i18n.language, fallbackHome: t('common.home'), fallbackAway: t('common.away') })) : undefined,
+    pairPhone: data?.match ? () => openPhonePair(phonePairMatchOf(data, { lang: i18n.language, fallbackHome: t('common.homeTeam'), fallbackAway: t('common.awayTeam') })) : undefined,
     // the match's scoreboard code (docs/scoreboard-code-spec.md): any board follows by it
     showOnScoreboard: data?.match ? () => openScoreboardCode(scoreboardCodeMatchOf(data)) : undefined,
     scoreboardSettings: scoreboardDisplay.open,
@@ -15128,7 +15128,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (timeoutModal && timeoutModal.started) {
       centre = {
         kind: 'timeout',
-        teamName: timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away')),
+        teamName: timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.homeTeam')) : (data?.awayTeam?.name || t('common.awayTeam')),
         countdown: timeoutModal.countdown,
         countdownText: formatTimeout(timeoutModal.countdown),
         // the phone's digits tick by themselves (CountdownSeconds)
@@ -15310,7 +15310,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const teamData = liberoReentryModal.team === 'home' ? data?.homeTeam : data?.awayTeam
     const teamColor = teamData?.color || (liberoReentryModal.team === 'home' ? '#ef4444' : '#3b82f6')
     const teamLabel = liberoReentryModal.team === teamAKey ? 'A' : 'B'
-    const teamName = teamData?.name || (liberoReentryModal.team === 'home' ? t('common.home') : t('common.away'))
+    const teamName = teamData?.name || (liberoReentryModal.team === 'home' ? t('common.homeTeam') : t('common.awayTeam'))
     // Get the selected libero info
     const selectedLibero = liberoReentryModal.availableLiberos?.[liberoReentryModal.selectedLiberoIndex || 0]
     const liberoNumber = selectedLibero?.number || liberoReentryModal.liberoNumber
@@ -15403,7 +15403,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const teamData = liberoRotationModal.team === 'home' ? data?.homeTeam : data?.awayTeam
     const teamColor = teamData?.color || (liberoRotationModal.team === 'home' ? '#ef4444' : '#3b82f6')
     const teamLabel = liberoRotationModal.team === teamAKey ? 'A' : 'B'
-    const teamName = teamData?.name || (liberoRotationModal.team === 'home' ? t('common.home') : t('common.away'))
+    const teamName = teamData?.name || (liberoRotationModal.team === 'home' ? t('common.homeTeam') : t('common.awayTeam'))
     const liberoLabel = liberoRotationModal.liberoType === 'libero1' ? 'L1' : liberoRotationModal.liberoType === 'redesignated' ? 'LR' : 'L2'
     return (
       <>
@@ -15448,8 +15448,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       <BenchRequestCards
         queue={benchBridge.queue}
         teams={{
-          home: { name: data?.homeTeam?.name || t('common.home'), colour: effectiveTeamColour('home', data?.homeTeam, data?.match) },
-          away: { name: data?.awayTeam?.name || t('common.away'), colour: effectiveTeamColour('away', data?.awayTeam, data?.match) }
+          home: { name: data?.homeTeam?.name || t('common.homeTeam'), colour: effectiveTeamColour('home', data?.homeTeam, data?.match) },
+          away: { name: data?.awayTeam?.name || t('common.awayTeam'), colour: effectiveTeamColour('away', data?.awayTeam, data?.match) }
         }}
         rallyInPlay={rallyStatus === 'in_play'}
         donePairs={benchBridge.donePairs}
@@ -15642,7 +15642,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap'
               }}>
-                {leftTeam.name || (leftIsHome ? t('common.home') : t('common.away'))}
+                {leftTeam.name || (leftIsHome ? t('common.homeTeam') : t('common.awayTeam'))}
               </span>
               <div style={{
                 padding: '0.17cqw 0.51cqw',
@@ -15839,7 +15839,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap'
               }}>
-                {rightTeam.name || (leftIsHome ? t('common.away') : t('common.home'))}
+                {rightTeam.name || (leftIsHome ? t('common.awayTeam') : t('common.homeTeam'))}
               </span>
             </div>
           )}
@@ -16030,7 +16030,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         return (
           <ReopenRosterModal
             teamKey={reopenRosterTeam}
-            teamName={reopenRosterTeam === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))}
+            teamName={reopenRosterTeam === 'home' ? (data?.homeTeam?.name || t('common.homeTeam')) : (data?.awayTeam?.name || t('common.awayTeam'))}
             players={reopenRosterTeam === 'home' ? (data?.homePlayers || []) : (data?.awayPlayers || [])}
             bench={reopenRosterTeam === 'home' ? (data?.match?.bench_home || []) : (data?.match?.bench_away || [])}
             // the record names the team's liberos already: L1 / L2 stay as
@@ -19135,7 +19135,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       overflow: 'hidden',
                       textOverflow: 'ellipsis'
                     }}>
-                      {t('scoreboard.phone.timeoutRunning', { team: timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away')) })}
+                      {t('scoreboard.phone.timeoutRunning', { team: timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.homeTeam')) : (data?.awayTeam?.name || t('common.awayTeam')) })}
                     </div>
                     {/* the digits and the bar tick by themselves (CountdownSeconds) */}
                     <CountdownSeconds clock={timeoutClock} fallback={timeoutModal.countdown}>{(seconds) => (<>
@@ -21323,7 +21323,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 cursor: 'pointer'
               }}
             >
-              {data?.homeTeam?.name || t('common.home', 'Home')} ({homeLabel})
+              {data?.homeTeam?.name || t('common.homeTeam', 'Home')} ({homeLabel})
             </button>
             <button
               onClick={() => {
@@ -21339,7 +21339,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 cursor: 'pointer'
               }}
             >
-              {data?.awayTeam?.name || t('common.away', 'Away')} ({awayLabel})
+              {data?.awayTeam?.name || t('common.awayTeam', 'Away')} ({awayLabel})
             </button>
           </div>
         </Modal>
@@ -21363,14 +21363,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     ? t('scoreboard.stopMatch.confirmIncompleteMessage',
                       '{{team}} is incomplete and loses the match. The opponent is given the points and sets needed to win; {{team}} keeps its points and sets.', {
                       team: stopMatchConfirm.team === 'home'
-                        ? (data?.homeTeam?.name || t('common.home', 'Home'))
-                        : (data?.awayTeam?.name || t('common.away', 'Away'))
+                        ? (data?.homeTeam?.name || t('common.homeTeam', 'Home'))
+                        : (data?.awayTeam?.name || t('common.awayTeam', 'Away'))
                     })
                     : t('scoreboard.stopMatch.confirmForfeitMessage',
                       '{{team}} is declared in default (refused to play or did not appear) and loses the match {{result}}, 0:25 in every set, including the sets already played.', {
                       team: stopMatchConfirm.team === 'home'
-                        ? (data?.homeTeam?.name || t('common.home', 'Home'))
-                        : (data?.awayTeam?.name || t('common.away', 'Away')),
+                        ? (data?.homeTeam?.name || t('common.homeTeam', 'Home'))
+                        : (data?.awayTeam?.name || t('common.awayTeam', 'Away')),
                       result: data?.match?.bestOf === 3 ? '0:2' : '0:3'
                     })}
                 </div>
@@ -21422,8 +21422,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {stopMatchRemarksStep.type === 'forfeit'
                 ? t('scoreboard.stopMatch.finalConfirmForfeit', 'End match with {{winner}} as winner?', {
                   winner: stopMatchRemarksStep.team === 'home'
-                    ? (data?.awayTeam?.name || t('common.away', 'Away'))
-                    : (data?.homeTeam?.name || t('common.home', 'Home'))
+                    ? (data?.awayTeam?.name || t('common.awayTeam', 'Away'))
+                    : (data?.homeTeam?.name || t('common.homeTeam', 'Home'))
                 })
                 : t('scoreboard.stopMatch.finalConfirmImpossibility', 'End match without a winner?')}
             </div>
@@ -21456,7 +21456,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           opened; never from the live time-out count (it changes on confirm). */}
       {timeoutModal && !timeoutModal.started && (
         <Modal
-          title={t('scoreboard.timeoutRequest.title', { team: timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away')) })}
+          title={t('scoreboard.timeoutRequest.title', { team: timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.homeTeam')) : (data?.awayTeam?.name || t('common.awayTeam')) })}
           open={true}
           onClose={cancelTimeout}
           width={400}
@@ -23077,7 +23077,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {t('scoreboard.confirm.pointAwardedQuickly')}
             </p>
             <p style={{ marginBottom: '24px', fontSize: '12px', color: 'var(--muted)' }}>
-              {t('scoreboard.confirm.areYouSureAwardPoint', { team: accidentalPointConfirmModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away')) })}
+              {t('scoreboard.confirm.areYouSureAwardPoint', { team: accidentalPointConfirmModal.team === 'home' ? (data?.homeTeam?.name || t('common.homeTeam')) : (data?.awayTeam?.name || t('common.awayTeam')) })}
             </p>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
               <SbButton variant="positive"
@@ -23099,7 +23099,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const teamData = sanctionConfirmModal.team === 'home' ? data?.homeTeam : data?.awayTeam
         const teamColor = teamData?.color || (sanctionConfirmModal.team === 'home' ? '#ef4444' : '#3b82f6')
         const teamLabel = sanctionConfirmModal.team === teamAKey ? 'A' : 'B'
-        const teamName = teamData?.name || (sanctionConfirmModal.team === 'home' ? t('common.home') : t('common.away'))
+        const teamName = teamData?.name || (sanctionConfirmModal.team === 'home' ? t('common.homeTeam') : t('common.awayTeam'))
 
         return (
           <Modal
@@ -23167,7 +23167,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const teamData = substitutionConfirm.team === 'home' ? data?.homeTeam : data?.awayTeam
         const teamColor = teamData?.color || (substitutionConfirm.team === 'home' ? '#ef4444' : '#3b82f6')
         const teamLabel = substitutionConfirm.team === teamAKey ? 'A' : 'B'
-        const teamName = teamData?.name || (substitutionConfirm.team === 'home' ? t('common.home') : t('common.away'))
+        const teamName = teamData?.name || (substitutionConfirm.team === 'home' ? t('common.homeTeam') : t('common.awayTeam'))
 
         return (
           <Modal
@@ -23274,7 +23274,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const teamData = liberoConfirm.team === 'home' ? data?.homeTeam : data?.awayTeam
         const teamColor = teamData?.color || (liberoConfirm.team === 'home' ? '#ef4444' : '#3b82f6')
         const teamLabel = liberoConfirm.team === teamAKey ? 'A' : 'B'
-        const teamName = teamData?.name || (liberoConfirm.team === 'home' ? t('common.home') : t('common.away'))
+        const teamName = teamData?.name || (liberoConfirm.team === 'home' ? t('common.homeTeam') : t('common.awayTeam'))
 
         // Get libero number from players list
         const teamPlayers = liberoConfirm.team === 'home' ? data?.homePlayers : data?.awayPlayers
@@ -23765,7 +23765,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const teamData = liberoUnableModal.team === 'home' ? data?.homeTeam : data?.awayTeam
         const teamColor = teamData?.color || (liberoUnableModal.team === 'home' ? '#ef4444' : '#3b82f6')
         const teamLabel = liberoUnableModal.team === teamAKey ? 'A' : 'B'
-        const teamName = teamData?.name || (liberoUnableModal.team === 'home' ? t('common.home') : t('common.away'))
+        const teamName = teamData?.name || (liberoUnableModal.team === 'home' ? t('common.homeTeam') : t('common.awayTeam'))
         const liberoLabel = liberoUnableModal.liberoType === 'libero1' ? 'L1' : liberoUnableModal.liberoType === 'redesignated' ? 'LR' : 'L2'
 
         // If reason is already selected, show confirmation
@@ -23990,8 +23990,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             {/* both teams: "Home and Away" */}
             {liberoReminder.teams.length > 1 && (() => {
               const [first, second] = liberoReminder.teams.map(team => team === 'home'
-                ? (data?.homeTeam?.name || t('common.home'))
-                : (data?.awayTeam?.name || t('common.away')))
+                ? (data?.homeTeam?.name || t('common.homeTeam'))
+                : (data?.awayTeam?.name || t('common.awayTeam')))
               return (
                 <p className="text-sm text-stone-500" style={{ marginBottom: '20px' }}>
                   {t('scoreboard.modals.liberoReminderTeams', { first, second })}
@@ -24046,8 +24046,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           teamAKey={teamAKey}
           leftIsHome={leftIsHome}
           isMatchEnd={setEndTimeModal.isMatchEnd}
-          homeTeamName={data?.homeTeam?.name || t('common.home')}
-          awayTeamName={data?.awayTeam?.name || t('common.away')}
+          homeTeamName={data?.homeTeam?.name || t('common.homeTeam')}
+          awayTeamName={data?.awayTeam?.name || t('common.awayTeam')}
           // The team record's colour first, like the header boxes and the
           // discs: Manual Adjustments edits only the team, so match.homeColor
           // can be stale (or missing on an imported match)
@@ -24132,7 +24132,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const opponentKey = teamKey === 'home' ? 'away' : 'home'
         const teamOf = (key) => ({
           label: key === teamAKey ? 'A' : 'B',
-          name: (key === 'home' ? data?.homeTeam?.name : data?.awayTeam?.name) || t(key === 'home' ? 'common.home' : 'common.away'),
+          name: (key === 'home' ? data?.homeTeam?.name : data?.awayTeam?.name) || t(key === 'home' ? 'common.homeTeam' : 'common.awayTeam'),
           paint: teamBoxStyle((key === 'home' ? data?.homeTeam?.color : data?.awayTeam?.color) || (key === 'home' ? '#ef4444' : '#3b82f6'))
         })
         const details = {}
@@ -24179,7 +24179,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             // (not the side, which can swap) and the sanction that will be
             // recorded once the ladder is applied (sanctionConfirm.resolved).
             const teamKey = sanctionConfirm.team
-            const nameOf = key => key === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))
+            const nameOf = key => key === 'home' ? (data?.homeTeam?.name || t('common.homeTeam')) : (data?.awayTeam?.name || t('common.awayTeam'))
             const team = `${teamKey === teamAKey ? 'A' : 'B'} (${nameOf(teamKey)})`
             const opponentKey = teamKey === 'home' ? 'away' : 'home'
             const opponent = `${opponentKey === teamAKey ? 'A' : 'B'} (${nameOf(opponentKey)})`
@@ -24285,9 +24285,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             </p>
             <div style={{ marginBottom: '16px', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
               <span style={{ ...teamBoxStyle(data?.homeTeam?.color || '#ef4444'), padding: '2px 6px', borderRadius: '4px', fontSize: '12px', fontWeight: 700 }}>{teamAKey === 'home' ? 'A' : 'B'}</span>
-              <span>{data?.homeTeam?.name || t('common.home')}</span>
+              <span>{data?.homeTeam?.name || t('common.homeTeam')}</span>
               <strong style={{ fontSize: '20px' }}>{courtSwitchModal.homePoints} : {courtSwitchModal.awayPoints}</strong>
-              <span>{data?.awayTeam?.name || t('common.away')}</span>
+              <span>{data?.awayTeam?.name || t('common.awayTeam')}</span>
               <span style={{ ...teamBoxStyle(data?.awayTeam?.color || '#3b82f6'), padding: '2px 6px', borderRadius: '4px', fontSize: '12px', fontWeight: 700 }}>{teamAKey === 'away' ? 'A' : 'B'}</span>
             </div>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
@@ -24871,8 +24871,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           : decisionChangeOutcomes({ events: data?.events, point: lastEvent, score, match: data?.match })
 
         // Get team names for display
-        const homeTeamName = data?.homeTeam?.name || t('common.home')
-        const awayTeamName = data?.awayTeam?.name || t('common.away')
+        const homeTeamName = data?.homeTeam?.name || t('common.homeTeam')
+        const awayTeamName = data?.awayTeam?.name || t('common.awayTeam')
         const oldTeamName = oldTeam === 'home' ? homeTeamName : awayTeamName
 
         // A/B labels and team colors
@@ -25089,7 +25089,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       <SignaturePad
         open={!!postMatchSignature}
         title={postMatchSignature
-          ? t('scoreboard.captainLabel', { team: postMatchSignature === 'home-captain' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away')) }) + ' ' + t('common.signature')
+          ? t('scoreboard.captainLabel', { team: postMatchSignature === 'home-captain' ? (data?.homeTeam?.name || t('common.homeTeam')) : (data?.awayTeam?.name || t('common.awayTeam')) }) + ' ' + t('common.signature')
           : ''}
         onClose={() => setPostMatchSignature(null)}
         onSave={async (signatureDataUrl, meta) => {
@@ -25111,8 +25111,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             homeCaptain: (data.homePlayers || []).find(p => p.isCaptain || p.captain) || null,
             awayCaptain: (data.awayPlayers || []).find(p => p.isCaptain || p.captain) || null,
             lang: i18n.language,
-            fallbackHome: t('common.home'),
-            fallbackAway: t('common.away')
+            fallbackHome: t('common.homeTeam'),
+            fallbackAway: t('common.awayTeam')
           })
         } : null}
       />
@@ -25775,7 +25775,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     <Modal
       title={
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span>{teamData?.name || (team === 'home' ? t('common.home') : t('common.away'))}</span>
+          <span>{teamData?.name || (team === 'home' ? t('common.homeTeam') : t('common.awayTeam'))}</span>
           <span
             style={{
               padding: '4px 12px',

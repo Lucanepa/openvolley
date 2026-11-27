@@ -53,8 +53,8 @@ export function scorerEmailOf (match) {
  * and away fields), else those stored on the match row, else Home / Away.
  */
 export function teamsLine (t, match, names = {}) {
-  const home = String(names.home || match?.homeName || '').trim() || t('common.home', 'Home')
-  const away = String(names.away || match?.awayName || '').trim() || t('common.away', 'Away')
+  const home = String(names.home || match?.homeName || '').trim() || t('common.homeTeam', 'Home')
+  const away = String(names.away || match?.awayName || '').trim() || t('common.awayTeam', 'Away')
   return `${home} – ${away}`
 }
 

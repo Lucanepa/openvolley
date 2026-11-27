@@ -47,7 +47,9 @@
     "invalid": "invalid",
     "later": "Later",
     "remove": "Remove",
-    "saving": "Saving..."
+    "saving": "Saving...",
+    "homeTeam": "Home",
+    "awayTeam": "Away"
   },
   "alert": {
     "error": "Error",

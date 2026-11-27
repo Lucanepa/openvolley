@@ -1094,8 +1094,8 @@ export default function UploadRosterApp() {
                     key={match.id}
                     match={match}
                     lang={i18n.language}
-                    home={match.homeTeamName || t('common.home')}
-                    away={match.awayTeamName || t('common.away')}
+                    home={match.homeTeamName || t('common.homeTeam')}
+                    away={match.awayTeamName || t('common.awayTeam')}
                     gameLabel={`${t('uploadRoster.game')} ${match.gameNumber || match.id}`}
                     onOpen={() => handleMatchSelect(match)}
                     status={<ChevronRight size={16} className="text-stone-400" aria-hidden />}
@@ -1115,9 +1115,9 @@ export default function UploadRosterApp() {
           <div className="mx-auto mb-6 flex w-full max-w-sm flex-col items-stretch gap-5">
             {/* Match info */}
             <div className="text-center">
-              <p className="text-base font-semibold text-stone-900">{homeTeam?.name || t('common.home')}</p>
+              <p className="text-base font-semibold text-stone-900">{homeTeam?.name || t('common.homeTeam')}</p>
               <p className="text-xs text-stone-500">{t('uploadRoster.vs')}</p>
-              <p className="text-base font-semibold text-stone-900">{awayTeam?.name || t('common.away')}</p>
+              <p className="text-base font-semibold text-stone-900">{awayTeam?.name || t('common.awayTeam')}</p>
             </div>
 
             {matchStatusCheck === 'checking' && (

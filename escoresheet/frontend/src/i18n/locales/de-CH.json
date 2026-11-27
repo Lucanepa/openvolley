@@ -3,7 +3,7 @@
     "showPassword": "Passwort aazeige",
     "hidePassword": "Passwort verstecke",
     "back": "Zrugg",
-    "home": "Heim",
+    "home": "Startsiite",
     "away": "Gascht",
     "close": "Schliesse",
     "dismissNotification": "Meldig schliesse",
@@ -47,7 +47,9 @@
     "invalid": "ungültig",
     "later": "Spöter",
     "remove": "Entferne",
-    "saving": "Speichere..."
+    "saving": "Speichere...",
+    "homeTeam": "Heim",
+    "awayTeam": "Gascht"
   },
   "alert": {
     "error": "Fähler",

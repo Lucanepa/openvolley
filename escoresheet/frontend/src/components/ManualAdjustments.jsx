@@ -472,7 +472,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
   // A team's Sponsors on clothing box: the first tick marks the match; logged
   // as (-) / (+), the way the sheet prints it
   const updateSponsors = useCallback((team, ticked) => {
-    const teamName = (team === 'home' ? editedHomeTeam?.name : editedAwayTeam?.name) || t(team === 'home' ? 'common.home' : 'common.away')
+    const teamName = (team === 'home' ? editedHomeTeam?.name : editedAwayTeam?.name) || t(team === 'home' ? 'common.homeTeam' : 'common.awayTeam')
     setEditedMatch(prev => {
       if (!prev) return prev
       const before = sponsorsOf(prev)[team] ? SPONSOR_MARK_YES : SPONSOR_MARK_NO
@@ -754,7 +754,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
   const teamLabelsOnInfo = !tabs.some(tab => tab.id === 'teams')
   const teamOf = (side) => (side === 'home' ? editedHomeTeam : editedAwayTeam)
   const colourOf = (side) => teamOf(side)?.color || effectiveTeamColour(side, side === 'home' ? data.homeTeam : data.awayTeam, data.match)
-  const teamNameOf = (side) => teamOf(side)?.name || (side === 'home' ? data.match?.homeName : data.match?.awayName) || t(side === 'home' ? 'common.home' : 'common.away')
+  const teamNameOf = (side) => teamOf(side)?.name || (side === 'home' ? data.match?.homeName : data.match?.awayName) || t(side === 'home' ? 'common.homeTeam' : 'common.awayTeam')
   // The game number and the date are fixed after the match: the official
   // PDF is filed under the date the server has, which this editor does not send
   const matchOver = isMatchOverStatus(data.match?.status)
@@ -986,7 +986,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
                         type="text"
                         value={editedHomeTeam?.name || ''}
                         onChange={(e) => updateTeam('name', e.target.value, true)}
-                        aria-label={`${t('common.home', 'Home')} ${t('manualAdjustmentsEditor.name', 'Name')}`}
+                        aria-label={`${t('common.homeTeam', 'Home')} ${t('manualAdjustmentsEditor.name', 'Name')}`}
                         style={{ ...inputStyle, width: '100%' }}
                       />
                     </div>
@@ -995,7 +995,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
                       <select
                         value={editedHomeTeam?.color || '#3b82f6'}
                         onChange={(e) => updateTeam('color', e.target.value, true)}
-                        aria-label={`${t('common.home', 'Home')} ${t('manualAdjustmentsEditor.color', 'Color')}`}
+                        aria-label={`${t('common.homeTeam', 'Home')} ${t('manualAdjustmentsEditor.color', 'Color')}`}
                         style={{ ...inputStyle, width: '100%', background: 'var(--panel)' }}
                       >
                         {isOtherColour(editedHomeTeam?.color) && (
@@ -1039,7 +1039,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
                         type="text"
                         value={editedAwayTeam?.name || ''}
                         onChange={(e) => updateTeam('name', e.target.value, false)}
-                        aria-label={`${t('common.away', 'Away')} ${t('manualAdjustmentsEditor.name', 'Name')}`}
+                        aria-label={`${t('common.awayTeam', 'Away')} ${t('manualAdjustmentsEditor.name', 'Name')}`}
                         style={{ ...inputStyle, width: '100%' }}
                       />
                     </div>
@@ -1048,7 +1048,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
                       <select
                         value={editedAwayTeam?.color || '#ef4444'}
                         onChange={(e) => updateTeam('color', e.target.value, false)}
-                        aria-label={`${t('common.away', 'Away')} ${t('manualAdjustmentsEditor.color', 'Color')}`}
+                        aria-label={`${t('common.awayTeam', 'Away')} ${t('manualAdjustmentsEditor.color', 'Color')}`}
                         style={{ ...inputStyle, width: '100%', background: 'var(--panel)' }}
                       >
                         {isOtherColour(editedAwayTeam?.color) && (
@@ -1265,7 +1265,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
                 </p>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {['home', 'away'].map(team => {
-                    const name = (team === 'home' ? data?.homeTeam?.name : data?.awayTeam?.name) || t(team === 'home' ? 'common.home' : 'common.away')
+                    const name = (team === 'home' ? data?.homeTeam?.name : data?.awayTeam?.name) || t(team === 'home' ? 'common.homeTeam' : 'common.awayTeam')
                     return (
                       <Field key={team} tone="compact" label={name}>
                         <Input
@@ -1296,7 +1296,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
                   </p>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     {['home', 'away'].map(team => {
-                      const name = (team === 'home' ? data?.homeTeam?.name : data?.awayTeam?.name) || t(team === 'home' ? 'common.home' : 'common.away')
+                      const name = (team === 'home' ? data?.homeTeam?.name : data?.awayTeam?.name) || t(team === 'home' ? 'common.homeTeam' : 'common.awayTeam')
                       return (
                         <Checkbox
                           key={team}

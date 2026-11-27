@@ -240,8 +240,8 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
   })
 
   // Team info state (loaded from DB)
-  const [home, setHome] = useState(t('common.home'))
-  const [away, setAway] = useState(t('common.away'))
+  const [home, setHome] = useState(t('common.homeTeam'))
+  const [away, setAway] = useState(t('common.awayTeam'))
 
   // Rosters
   const [homeRoster, setHomeRoster] = useState([])
@@ -514,10 +514,10 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
         setTeamColours({ home: homeTeam?.color || null, away: awayTeam?.color || null })
 
         if (homeTeam) {
-          setHome(homeTeam.name || t('common.home'))
+          setHome(homeTeam.name || t('common.homeTeam'))
         }
         if (awayTeam) {
-          setAway(awayTeam.name || t('common.away'))
+          setAway(awayTeam.name || t('common.awayTeam'))
         }
 
         // Load rosters
@@ -658,8 +658,8 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
         homeCoach: coachOf(benchHome),
         awayCoach: coachOf(benchAway),
         lang: i18n.language,
-        fallbackHome: t('common.home'),
-        fallbackAway: t('common.away')
+        fallbackHome: t('common.homeTeam'),
+        fallbackAway: t('common.awayTeam')
       })
     }
   }
@@ -1285,7 +1285,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
     console.log('[CoinToss] confirmCoinToss called, match:', { id: matchId, test: match?.test })
 
     // The checks (domain/coinTossChecks), in the scorer's language
-    const teamWord = { home: t('common.home'), away: t('common.away') }
+    const teamWord = { home: t('common.homeTeam'), away: t('common.awayTeam') }
     const issueText = ({ key, params }) => t(key, params?.team ? { ...params, team: teamWord[params.team] } : params)
 
     // A test or easy match skips the checks but the shirt numbers: players
