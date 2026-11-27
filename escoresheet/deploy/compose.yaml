@@ -238,6 +238,11 @@ services:
       MAIL_FROM_BEACH: ${MAIL_FROM_BEACH:-}
       MANAGER_URL_BEACH: ${MANAGER_URL_BEACH:-}
       CONTACT_EMAIL: ${CONTACT_EMAIL:-}
+      # Amazon SES over its HTTPS API for the account mails (lib/mailer.js
+      # sesFromEnv); all three or none. SMTP_* above is then the support form's.
+      SES_REGION: ${SES_REGION:-}
+      SES_ACCESS_KEY_ID: ${SES_ACCESS_KEY_ID:-}
+      SES_SECRET_ACCESS_KEY: ${SES_SECRET_ACCESS_KEY:-}
       # Passkeys (backend/lib/passkeys.js): empty = RP openvolley.app and the
       # app's own sites only (lib/cors.js ALLOWED_ORIGINS)
       WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-}

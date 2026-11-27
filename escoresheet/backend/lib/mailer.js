@@ -17,7 +17,12 @@
  *   MANAGER_URL_BEACH base of the OpenBeach links (default: follows
  *                     MANAGER_URL, see beachManagerBase; for the default
  *                     MANAGER_URL https://manager-beach.openvolley.app)
- * Without SMTP_HOST or SMTP_PASS the mailer is disabled: lib/auth.js then
+ * Amazon SES instead of SMTP (a Region without an SMTP endpoint, e.g. Europe
+ * (Zurich)): SES_REGION, SES_ACCESS_KEY_ID, SES_SECRET_ACCESS_KEY, all three.
+ * The mails then go through the SES v2 HTTPS API (sesTransport: nodemailer
+ * still builds the message; the request is signed here, no SDK), and SMTP_*
+ * is the support form's account only (lib/contact.js).
+ * Without SMTP_HOST or SMTP_PASS (and without that SES account) the mailer is disabled: lib/auth.js then
  * answers reset-password with 503 "temporarily unavailable" and confirms new
  * accounts at sign-up, exactly as before this module existed.
  *
@@ -87,6 +92,7 @@
  *   mailErrorReason(err)           -> a value-free word for a send error ('timeout', EAUTH, ..., 'error')
  */
 
+import { createHash, createHmac } from 'node:crypto'
 import nodemailer from 'nodemailer'
 import { legalUrl } from './legalLinks.js'
 
@@ -247,7 +253,7 @@ export function describeMailError(err) {
   const parts = []
   if (err && typeof err === 'object') {
     if (err.code) parts.push(String(err.code).slice(0, 40))
-    if (err.responseCode) parts.push(`SMTP ${String(err.responseCode).slice(0, 5)}`)
+    if (err.responseCode) parts.push(`${err.code === 'ESES' ? 'HTTP' : 'SMTP'} ${String(err.responseCode).slice(0, 5)}`)
   }
   const msg = String((err && typeof err === 'object' ? err.message : err) ?? '')
     .replace(ADDRESS_IN_TEXT, (m) => maskEmail(m))
@@ -1030,6 +1036,89 @@ export function transportOptions({ host, port, user, pass, tls = {}, secure }) {
  * @param {number} [o.maxPerInbox]    reset + confirm mails per inbox and hour (and, counted apart, sendUser's)
  * @param {object} [o.logger]
  */
+const sha256Hex = (data) => createHash('sha256').update(data).digest('hex')
+const hmacSha256 = (key, data) => createHmac('sha256', key).update(data).digest()
+
+/**
+ * AWS Signature Version 4 of one request with an empty query string: the
+ * `authorization` and `x-amz-date` headers (host and x-amz-date are signed).
+ * `path` must already be URI-encoded.
+ */
+export function sigV4({ method, host, path, body = '', region, service, accessKeyId, secretAccessKey, now = new Date() }) {
+  const amzDate = now.toISOString().replace(/[-:]|\.\d{3}/g, '')
+  const day = amzDate.slice(0, 8)
+  const scope = `${day}/${region}/${service}/aws4_request`
+  const canonical = [method, path, '', `host:${host}\nx-amz-date:${amzDate}\n`, 'host;x-amz-date', sha256Hex(body)].join('\n')
+  const toSign = ['AWS4-HMAC-SHA256', amzDate, scope, sha256Hex(canonical)].join('\n')
+  const key = [day, region, service, 'aws4_request'].reduce((k, part) => hmacSha256(k, part), `AWS4${secretAccessKey}`)
+  return {
+    'x-amz-date': amzDate,
+    authorization: `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${scope}, SignedHeaders=host;x-amz-date, Signature=${hmacSha256(key, toSign).toString('hex')}`
+  }
+}
+
+const SES_TIMEOUT_MS = 20_000
+
+/**
+ * A nodemailer transport that hands the finished message (headers, text,
+ * HTML, attachments: nodemailer builds it as for SMTP) to the Amazon SES
+ * HTTPS API (v2 SendEmail, raw content), signed with an IAM key that may
+ * ses:SendRawEmail. For the Regions without an SMTP endpoint (Europe
+ * (Zurich), eu-central-2). Errors: code 'ESES' with the HTTP status as
+ * responseCode, 'ETIMEDOUT' after SES_TIMEOUT_MS.
+ */
+export function sesTransport({ region, accessKeyId, secretAccessKey, fetch = globalThis.fetch, now = () => new Date() }) {
+  const host = `email.${region}.amazonaws.com`
+  const path = '/v2/email/outbound-emails'
+  return {
+    name: 'ses-api',
+    version: '1',
+    send(mail, done) {
+      const chunks = []
+      const stream = mail.message.createReadStream()
+      stream.on('error', done)
+      stream.on('data', (c) => chunks.push(c))
+      stream.on('end', async () => {
+        try {
+          const envelope = mail.message.getEnvelope()
+          const body = JSON.stringify({ Destination: { ToAddresses: envelope.to }, Content: { Raw: { Data: Buffer.concat(chunks).toString('base64') } } })
+          const res = await fetch(`https://${host}${path}`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', ...sigV4({ method: 'POST', host, path, body, region, service: 'ses', accessKeyId, secretAccessKey, now: now() }) },
+            body,
+            signal: AbortSignal.timeout(SES_TIMEOUT_MS)
+          })
+          const text = await res.text()
+          if (!res.ok) throw Object.assign(new Error(`Amazon SES answered ${res.status}: ${text.slice(0, 300)}`), { code: 'ESES', responseCode: res.status })
+          let messageId = null
+          try { messageId = JSON.parse(text).MessageId ?? null } catch { /* sent; the id is only for the log */ }
+          done(null, { messageId, envelope, response: `SES ${res.status}` })
+        } catch (err) {
+          if (err?.name === 'TimeoutError') err.code = 'ETIMEDOUT'
+          done(err)
+        }
+      })
+    }
+  }
+}
+
+/**
+ * The Amazon SES API account of the environment (SES_REGION,
+ * SES_ACCESS_KEY_ID, SES_SECRET_ACCESS_KEY: all three): null when none is
+ * set, { reason } when it is half-set or the Region is not one, else
+ * { region, keyHint, transport }. The Region is checked because it becomes
+ * part of the host name.
+ */
+export function sesFromEnv(env = process.env) {
+  const region = (env.SES_REGION || '').trim()
+  const accessKeyId = (env.SES_ACCESS_KEY_ID || '').trim()
+  const secretAccessKey = env.SES_SECRET_ACCESS_KEY || ''
+  if (!region && !accessKeyId && !secretAccessKey) return null
+  if (!/^[a-z]{2}(-[a-z]+)+-\d$/.test(region)) return { reason: 'SES_REGION is not an AWS Region (for example eu-central-2)' }
+  if (!accessKeyId || !secretAccessKey) return { reason: !accessKeyId ? 'SES_ACCESS_KEY_ID not set' : 'SES_SECRET_ACCESS_KEY not set' }
+  return { region, keyHint: `…${accessKeyId.slice(-4)}`, transport: nodemailer.createTransport(sesTransport({ region, accessKeyId, secretAccessKey })) }
+}
+
 export function createMailer(o = {}) {
   const log = o.logger || console
   const port = Number(o.port)
@@ -1231,7 +1320,9 @@ export function createMailer(o = {}) {
 
 /**
  * The mailer described by the environment, or a disabled one (with the reason)
- * when neither SMTP_HOST nor SMTP_PASS is set. Once either is set, mail is
+ * when neither SMTP_HOST nor SMTP_PASS nor an Amazon SES account (sesFromEnv)
+ * is set. With the SES account the mails go through its HTTPS API and SMTP_*
+ * is not used here (it stays the support form's, lib/contact.js). Once one is set, mail is
  * meant to be on: a missing or unusable setting throws (the server does not
  * start), instead of silently turning mail off, which would also confirm
  * every sign-up at once. Never logs the password.
@@ -1239,21 +1330,24 @@ export function createMailer(o = {}) {
 export function mailerFromEnv(env = process.env, opts = {}) {
   const host = (env.SMTP_HOST || '').trim()
   const pass = env.SMTP_PASS || ''
-  if (!host && !pass) return disabledMailer('SMTP_HOST not set')
+  if (!host && !pass && sesFromEnv(env) === null) return disabledMailer('SMTP_HOST not set')
   const m = mailerFromSettings(env, opts)
   if (!m.enabled) throw new Error(`mail settings unusable: ${m.reason}`)
   return m
 }
 
 function mailerFromSettings(env, { logger, tls, maxPerHour, budgets, maxPerInbox } = {}) {
+  // An Amazon SES account wins: the SMTP settings are then not checked here
+  const ses = sesFromEnv(env)
+  if (ses?.reason) return disabledMailer(ses.reason)
   const host = (env.SMTP_HOST || '').trim()
   const pass = env.SMTP_PASS || ''
-  if (!host || !pass) return disabledMailer(!host ? 'SMTP_HOST not set' : 'SMTP_PASS not set')
+  if (!ses && (!host || !pass)) return disabledMailer(!host ? 'SMTP_HOST not set' : 'SMTP_PASS not set')
   const user = (env.SMTP_USER || '').trim()
-  if (!user) return disabledMailer('SMTP_USER not set')
+  if (!ses && !user) return disabledMailer('SMTP_USER not set')
   const portText = (env.SMTP_PORT || '').trim() || '465'
   const port = Number(portText)
-  if (!/^\d+$/.test(portText) || port < 1 || port > 65535) return disabledMailer(`SMTP_PORT is not a port number: ${portText.slice(0, 20)}`)
+  if (!ses && (!/^\d+$/.test(portText) || port < 1 || port > 65535)) return disabledMailer(`SMTP_PORT is not a port number: ${portText.slice(0, 20)}`)
   const from = (env.MAIL_FROM || '').trim() || (user.includes('@') ? `${DEFAULT_FROM_NAME} <${user}>` : '')
   if (!from) return disabledMailer('MAIL_FROM not set (and SMTP_USER is not an address)')
   const managerRaw = (env.MANAGER_URL || '').trim() || DEFAULT_MANAGER_URL
@@ -1280,7 +1374,9 @@ function mailerFromSettings(env, { logger, tls, maxPerHour, budgets, maxPerInbox
   }
   const sized = budgetsFromEnv(env)
   try {
-    const mailer = createMailer({ host, port, user, pass, from, managerUrl, fromBeach, managerUrlBeach, logger, tls, maxPerHour, budgets: { ...sized.budgets, ...budgets }, maxPerInbox })
+    const mailer = createMailer({ ...(ses ? { transport: ses.transport } : { host, port, user, pass }), from, managerUrl, fromBeach, managerUrlBeach, logger, tls, maxPerHour, budgets: { ...sized.budgets, ...budgets }, maxPerInbox })
+    // for the startup line
+    mailer.route = ses ? `Amazon SES API ${ses.region} (key ${ses.keyHint})` : `SMTP ${host}:${port} as ${user}`
     const warnings = [...(beachNote ? [beachNote] : []), ...sized.warnings]
     if (warnings.length) mailer.warnings = warnings
     return mailer

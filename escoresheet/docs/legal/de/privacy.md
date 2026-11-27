@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.32 · Stand: 27. November 2026
+**OpenVolley und OpenBeach** · Version 1.33 · Stand: 28. November 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
 Massgebend ist die englische Fassung.
@@ -382,7 +382,8 @@ E-Mail-Adresse, Link zum Zurücksetzen des Passworts, Hinweis auf eine
 Passwortänderung und Hinweis, dass jemand immer wieder versucht, sich in dein
 Konto anzumelden (oben). Sie enthalten
 keine Zählpixel und keine nachgeladenen Bilder. Ein Bestätigungslink gilt
-24 Stunden, ein Link zum Zurücksetzen 60 Minuten.
+24 Stunden, ein Link zum Zurücksetzen 60 Minuten. Der Versand läuft über
+Amazon SES (Abschnitt 15).
 
 **Spielberichte per E-Mail:** Den fertigen Spielbericht eines offiziellen
 Spiels und den Spielbericht deines eigenen Testspiels sende ich nach
@@ -544,7 +545,7 @@ Einschalten abgeschlossen wurden, werden nicht versendet. Die E-Mail-Adresse
 einer Schiedsrichterin, eines Schiedsrichters oder eines Teams ist freiwillig,
 gehört zum Spiel und ist nie öffentlich; sie sieht nur, wer das ganze Spiel lesen darf
 (Tabelle oben). Die E-Mail führt im Text auch die technischen Bemerkungen des
-Spiels auf (oben); sie stehen nicht im PDF. Der Versand läuft über Migadu
+Spiels auf (oben); sie stehen nicht im PDF. Der Versand läuft über Amazon SES
 (Abschnitt 15).
 
 **Spielbericht eines Testspiels:** Gibst du am Ende eines Testspiels
@@ -691,8 +692,8 @@ Schreiber- oder Schiedsrichterrolle angemeldet ist.
 Schreiber kann die Spielinfo eines Spiels, das sie oder er erfasst hat oder
 bearbeitet (Spielnummer, Teams, Datum und Ort, kein PIN), an die bestätigte
 E-Mail-Adresse des eigenen Kontos senden lassen; die App tut das beim Anlegen
-eines Spiels. Eine andere Adresse lässt sich nicht eingeben. Für den Versand
-wird der Dienst Resend (USA) eingesetzt (Abschnitt 15).
+eines Spiels. Eine andere Adresse lässt sich nicht eingeben. Der Versand
+läuft über Amazon SES (Abschnitt 15).
 
 **Spiel-PIN per E-Mail:** Direkt nach dem Anlegen eines neuen offiziellen
 Spiels zeigt die App dessen Spiel-PIN einmal an. Eine angemeldete Schreiberin
@@ -701,8 +702,8 @@ die bestätigte E-Mail-Adresse des eigenen Kontos senden lassen, mit
 Spielnummer, Teams, Liga, Datum und Uhrzeit. Gesendet wird nur auf Wunsch,
 eine andere Adresse lässt sich nicht eingeben, und der Server sendet den PIN
 nur, wenn es der für dieses Spiel gespeicherte ist. Sein Protokoll enthält
-weder den PIN noch die Adresse. Für den Versand wird der Dienst Resend (USA)
-eingesetzt (Abschnitt 15). Die App kann auch das E-Mail-Programm des Geräts
+weder den PIN noch die Adresse. Der Versand läuft über Amazon SES
+(Abschnitt 15). Die App kann auch das E-Mail-Programm des Geräts
 mit dem PIN öffnen, für eine beliebige Adresse; diese Nachricht verschickt das
 E-Mail-Programm, sie läuft nicht über meinen Server.
 
@@ -983,7 +984,9 @@ Die Website sendet keine Diagnosedaten.
 Der Server leitet die Anfrage als eine E-Mail an support@openvolley.app
 weiter, mit deiner Adresse als Antwortadresse. Er behält davon nichts ausser
 einer Protokollzeile mit Art, Bereich und einer gekürzten Form deiner
-E-Mail-Adresse (Abschnitt 14). Das Postfach liegt bei Migadu (Abschnitt 15).
+E-Mail-Adresse (Abschnitt 14). Diese E-Mail wird über Migadu versendet; dort
+liegt auch das Postfach. Nur wenn Migadu sie nicht annimmt (zum Beispiel über
+seinem Tageslimit), geht sie stattdessen über Amazon SES (Abschnitt 15).
 Mein Helpdesk (support.openvolley.app), den ich selbst auf meinem Server bei
 Infomaniak in der Schweiz betreibe, liest es, damit ich dir antworten und deine Anfrage
 nachverfolgen kann. Ich verwende deine Adresse nur, um dir zu antworten.
@@ -1056,8 +1059,8 @@ brauche. Sie bearbeiten die Daten in meinem Auftrag.
 |---|---|---|
 | Infomaniak Network SA | Betrieb des Servers: Datenbank, Dateien, Helpdesk und Download-Seite | Schweiz |
 | Cloudflare, Inc. | Auslieferung der Websites, DNS, sichere Verbindung zum Server | USA (weltweites Netz) |
-| Migadu | E-Mail-Versand (noreply@) und Postfach (support@) | Schweiz / Europa |
-| Resend, Inc. | Versand der Spielinfo und des Spiel-PINs per E-Mail (nur diese Funktionen, falls aktiviert) | USA |
+| Amazon Web Services EMEA SARL (Amazon SES) | Versand der E-Mails der Apps: Konto-E-Mails, Spielinfo und Spiel-PIN, fertiger Spielbericht, Hinweise; die E-Mail des Support-Formulars nur, wenn Migadu sie nicht annimmt | Schweiz (Zürich); das Unternehmen sitzt in Luxemburg und gehört zu Amazon (USA) |
+| Migadu | Postfächer (support@, noreply@) und Versand der E-Mail des Support-Formulars | Schweiz / Europa |
 
 **Wichtig zu Cloudflare:** Die verschlüsselte Verbindung deines Geräts endet
 bei Cloudflare; von dort läuft sie verschlüsselt weiter zu meinem Server.

@@ -90,7 +90,7 @@
  */
 
 import nodemailer from 'nodemailer'
-import { transportOptions, maskEmail, describeMailError, DEFAULT_FROM_NAME } from './mailer.js'
+import { transportOptions, maskEmail, describeMailError, sesFromEnv, DEFAULT_FROM_NAME } from './mailer.js'
 import { EMAIL_RE } from './emailAddress.js'
 
 export const DEFAULT_CONTACT_EMAIL = 'support@openvolley.app'
@@ -688,10 +688,12 @@ export function disabledContactMailer(reason = 'not configured') {
  * that is not `trusted` may use CONTACT_PUBLIC_SHARE of it (a `p1` message
  * 1 - CONTACT_SIGNED_IN_SHARE). `sources`: the keys (an account, a network)
  * of which each sends at most perSourcePerHour in the window (skipped
- * 'source'). A mail the SMTP server does not take is given back.
- * @param {{ transport: { sendMail: Function, close?: Function }, from: string, to: string, maxPerHour?: number, perSourcePerHour?: number, now?: () => number }} o
+ * 'source'). A mail the SMTP server does not take is given back. `fallback`:
+ * a second transport that takes a mail the first one refused (its provider's
+ * daily quota, an outage), so a support request is not lost.
+ * @param {{ transport: { sendMail: Function, close?: Function }, fallback?: { sendMail: Function, close?: Function } | null, from: string, to: string, maxPerHour?: number, perSourcePerHour?: number, now?: () => number, logger?: { warn: Function } }} o
  */
-export function createContactMailer({ transport, from, to, maxPerHour = CONTACT_MAILS_PER_HOUR, perSourcePerHour = CONTACT_PER_SOURCE_PER_HOUR, now = Date.now } = {}) {
+export function createContactMailer({ transport, fallback = null, from, to, maxPerHour = CONTACT_MAILS_PER_HOUR, perSourcePerHour = CONTACT_PER_SOURCE_PER_HOUR, now = Date.now, logger = console } = {}) {
   if (!transport || typeof transport.sendMail !== 'function') throw new Error('createContactMailer: transport is required')
   if (!from) throw new Error('createContactMailer: from is required')
   if (!isContactEmail(to)) throw new Error('createContactMailer: to must be one address')
@@ -712,8 +714,15 @@ export function createContactMailer({ transport, from, to, maxPerHour = CONTACT_
       if (keys.some((k) => (perSource.get(k) || 0) >= perSourcePerHour)) return { sent: false, skipped: 'source' }
       used++
       for (const k of keys) perSource.set(k, (perSource.get(k) || 0) + 1)
+      const message = { ...mail, from, to, disableFileAccess: true, disableUrlAccess: true }
       try {
-        await transport.sendMail({ ...mail, from, to, disableFileAccess: true, disableUrlAccess: true })
+        try {
+          await transport.sendMail(message)
+        } catch (err) {
+          if (!fallback) throw err
+          logger.warn(`[Contact] the SMTP account did not take the support mail (${describeMailError(err)}): sending it through the account mails' Amazon SES account`)
+          await fallback.sendMail(message)
+        }
       } catch (err) {
         if (used > 0) used--
         for (const k of keys) perSource.set(k, Math.max(0, (perSource.get(k) || 1) - 1))
@@ -721,16 +730,19 @@ export function createContactMailer({ transport, from, to, maxPerHour = CONTACT_
       }
       return { sent: true }
     },
-    close() { try { transport.close?.() } catch { /* already closed */ } }
+    close() { for (const t of [transport, fallback]) { try { t?.close?.() } catch { /* already closed */ } } }
   }
 }
 
 /**
- * The support mailer of the environment: the SMTP account of the account
- * mails (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS; From MAIL_FROM, with
- * the same default as lib/mailer.js), To CONTACT_EMAIL. A disabled one, with
- * the reason, when that is not configured. Never throws, never logs the
- * password. One connection per mail (no pool): the form sends rarely.
+ * The support mailer of the environment: the SMTP account (SMTP_HOST,
+ * SMTP_PORT, SMTP_USER, SMTP_PASS; From MAIL_FROM, with the same default as
+ * lib/mailer.js), To CONTACT_EMAIL. With an Amazon SES account set
+ * (lib/mailer.js sesFromEnv) the account mails leave through that, and this
+ * SMTP account is the support form's alone; a mail it refuses then goes
+ * through SES (fallbackHost). A disabled one, with the reason, when the SMTP
+ * account is not configured. Never throws, never logs the password. One
+ * connection per mail (no pool): the form sends rarely.
  */
 export function contactMailerFromEnv(env = process.env, { tls, maxPerHour } = {}) {
   const host = (env.SMTP_HOST || '').trim()
@@ -747,7 +759,12 @@ export function contactMailerFromEnv(env = process.env, { tls, maxPerHour } = {}
   if (!isContactEmail(to)) return disabledContactMailer('CONTACT_EMAIL is not one address')
   try {
     const transport = nodemailer.createTransport({ ...transportOptions({ host, port, user, pass, tls }), pool: false })
-    return createContactMailer({ transport, from, to, maxPerHour })
+    // A support mail the SMTP account refuses (its provider's daily quota, an
+    // outage) goes through the account mails' Amazon SES account, when one is set
+    const ses = sesFromEnv(env)
+    const fallback = ses?.transport ?? null
+    // host, fallbackHost: for the startup line only
+    return Object.assign(createContactMailer({ transport, fallback, from, to, maxPerHour }), { host, fallbackHost: fallback ? `Amazon SES ${ses.region}` : null })
   } catch (err) {
     return disabledContactMailer(err.message)
   }

@@ -47,10 +47,15 @@ all four languages); until then the pages show them highlighted.
 ## Statements that depend on owner facts (check before go-live)
 
 1. Server location is Switzerland, run by the operator (privacy 15, "In short"; since 16.10.2026, before: Hetzner, Germany).
-2. Migadu: "Switzerland / Europe" for the company and mail servers.
-3. Resend is listed for "match info by email" because the code can use it
-   (`RESEND_API_KEY`). If the key is not set, or the code is removed (F13),
-   drop the row and the sentence in privacy 7.
+2. Mail (privacy 15, since 1.33): the apps' mails go through Amazon SES in
+   Zurich (`SES_*`), contracting entity Amazon Web Services EMEA SARL
+   (check it on the AWS invoice); the support form's mail and the mailboxes
+   are at Migadu (`SMTP_*`), "Switzerland / Europe" for the company
+   and mail servers. A support mail Migadu does not take goes through Amazon
+   SES (privacy 13 and 15 say so).
+3. Resend is not listed (since 1.33): `RESEND_API_KEY` is not set in
+   production and the code only uses it on a server without a mail account. List
+   it again (privacy 7 and 15) before setting the key.
 4. Support form: privacy 13 says the report "may be forwarded" to support@,
    because with `SMTP_LEGACY_ROUTES` unset it is only logged (F12). Once the
    form delivers to support@, say so plainly.

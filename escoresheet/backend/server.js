@@ -709,7 +709,7 @@ function getDataLayer() {
     // With either set, an unusable mail setting stops the startup (throws).
     const mailer = ml.mailerFromEnv(process.env)
     if (mailer.enabled) {
-      console.log(`[Mail] account emails on: SMTP ${process.env.SMTP_HOST}:${process.env.SMTP_PORT || 465} as ${process.env.SMTP_USER}, from ${mailer.from}, links to ${mailer.managerUrl}; OpenBeach from ${mailer.fromFor('beach')}, links to ${mailer.managerUrlFor('beach')}`)
+      console.log(`[Mail] account emails on: ${mailer.route}, from ${mailer.from}, links to ${mailer.managerUrl}; OpenBeach from ${mailer.fromFor('beach')}, links to ${mailer.managerUrlFor('beach')}`)
       for (const w of mailer.warnings || []) console.warn(`[Mail] ${w}`)
     } else {
       console.log(`[Mail] account emails off (${mailer.reason}): password reset answers 503, sign-up confirms accounts at once`)
@@ -1941,7 +1941,7 @@ const contactMailer = contactMailerFromEnv(process.env)
 // At most 10 support requests at once, each up to 14 MB in memory for up to 2 min
 const contactSlots = createContactSlots()
 if (contactMailer.enabled) {
-  console.log(`[Contact] support form mails ${contactMailer.to} from ${contactMailer.from}`)
+  console.log(`[Contact] support form mails ${contactMailer.to} from ${contactMailer.from} over ${contactMailer.host}${contactMailer.fallbackHost ? ` (a mail it refuses: over ${contactMailer.fallbackHost})` : ''}`)
 } else if (DB_MODE || process.env.SMTP_HOST) {
   console.warn(`[Contact] support form mail off (${contactMailer.reason}): POST /api/contact answers 503`)
 }

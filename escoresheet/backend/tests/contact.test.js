@@ -524,6 +524,26 @@ describe('contact: the mail', () => {
     assert.match(sent[1].subject, /P1 – match running/)
   })
 
+  it('a mail the SMTP account refused goes over the fallback; both refusing gives it back', async () => {
+    const { body, contentType } = await formBody(VALID)
+    const viaFallback = []
+    const warned = []
+    let fallbackDown = false
+    const mailer = createContactMailer({
+      transport: { async sendMail() { throw new Error('550 daily quota reached') } },
+      fallback: { async sendMail(m) { if (fallbackDown) throw new Error('421 try later'); viaFallback.push(m) } },
+      from: 'OpenVolley <noreply@example.test>', to: 'support@example.test', maxPerHour: 10, logger: { warn: (l) => warned.push(l) }
+    })
+    assert.equal((await handleContact({ body, contentType, mailer, logger: silent })).status, 200)
+    assert.equal(viaFallback.length, 1)
+    assert.deepEqual([viaFallback[0].from, viaFallback[0].to], ['OpenVolley <noreply@example.test>', 'support@example.test'])
+    assert.match(warned[0], /SMTP account did not take the support mail .*550 daily quota reached/)
+    fallbackDown = true
+    for (let i = 0; i < 3; i++) assert.equal((await handleContact({ body, contentType, mailer, logger: silent })).status, 502)
+    fallbackDown = false
+    assert.equal((await handleContact({ body, contentType, mailer, logger: silent })).status, 200, 'the failures used nothing up')
+  })
+
   it('from and to come from the mailer, never from the request', async () => {
     const { mailer, sent } = streamMailer()
     const mail = buildSupportMail(normalizeContact(Object.fromEntries(VALID)), [])
@@ -755,6 +775,21 @@ describe('contact: settings', () => {
     const b = contactMailerFromEnv({ ...smtp, MAIL_FROM: 'OpenVolley <noreply@openvolley.example>', CONTACT_EMAIL: 'help@example.test' })
     assert.deepEqual([b.from, b.to], ['OpenVolley <noreply@openvolley.example>', 'help@example.test'])
     b.close()
+  })
+
+  it('with an Amazon SES account for the account mails, a support mail the SMTP account refuses goes through it', () => {
+    // AWS's documented example key: not a credential
+    const ses = { SES_REGION: 'eu-central-2', SES_ACCESS_KEY_ID: 'AKIDEXAMPLE', SES_SECRET_ACCESS_KEY: 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLE' + 'KEY' }
+    const a = contactMailerFromEnv({ ...smtp, ...ses })
+    assert.deepEqual([a.enabled, a.host, a.fallbackHost], [true, 'smtp.example.test', 'Amazon SES eu-central-2'])
+    a.close()
+    const plain = contactMailerFromEnv(smtp)
+    assert.deepEqual([plain.host, plain.fallbackHost], ['smtp.example.test', null], 'no SES account: no fallback, as before')
+    plain.close()
+    // a half-set SES account gives no fallback here (lib/mailer.js stops the startup for it)
+    const half = contactMailerFromEnv({ ...smtp, ...ses, SES_SECRET_ACCESS_KEY: '' })
+    assert.deepEqual([half.enabled, half.fallbackHost], [true, null])
+    half.close()
   })
 })
 

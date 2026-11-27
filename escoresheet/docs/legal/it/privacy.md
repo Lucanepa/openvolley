@@ -1,6 +1,6 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.32 · Aggiornata al 27 novembre 2026
+**OpenVolley e OpenBeach** · Versione 1.33 · Aggiornata al 28 novembre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
 la versione inglese.
@@ -377,7 +377,7 @@ e-mail, link per reimpostare la password, avviso di cambio password e avviso
 che qualcuno continua a provare ad accedere al tuo account (sopra). Non
 contengono pixel di tracciamento né
 immagini caricate da remoto. Un link di conferma vale 24 ore, un link di
-reimpostazione 60 minuti.
+reimpostazione 60 minuti. L'invio avviene tramite Amazon SES (sezione 15).
 
 **Referti per e-mail:** invio il referto finale di una partita ufficiale e
 il referto della tua partita di prova come descritto nella sezione 7.
@@ -529,7 +529,7 @@ vengono inviate. L'indirizzo e-mail di un arbitro o di una squadra è
 facoltativo, fa parte della partita e non è mai pubblico; lo vede solo chi può leggere tutta la
 partita (tabella sopra). L'e-mail elenca nel testo anche le osservazioni
 tecniche della partita (sopra); non figurano nel PDF. L'invio avviene tramite
-Migadu (sezione 15).
+Amazon SES (sezione 15).
 
 **Referto di una partita di prova:** se alla fine di una partita di prova
 approvi il risultato da connesso, l'app invia il referto in PDF all'indirizzo
@@ -666,8 +666,8 @@ segnapunti o di arbitro.
 effettuato l'accesso può farsi inviare le info di una partita che ha
 registrato o che modifica (numero della partita, squadre, data e luogo, nessun
 PIN) all'indirizzo e-mail confermato del proprio account; l'app lo fa quando
-crea una partita. Non si può inserire nessun altro indirizzo. Per l'invio
-viene utilizzato il servizio Resend (USA) (sezione 15).
+crea una partita. Non si può inserire nessun altro indirizzo. L'invio
+avviene tramite Amazon SES (sezione 15).
 
 **Invio del PIN della partita per e-mail:** subito dopo la creazione di una
 nuova partita ufficiale, l'app mostra una volta il suo PIN della partita. Un
@@ -676,8 +676,8 @@ partita all'indirizzo e-mail confermato del proprio account, con numero della
 partita, squadre, lega, data e ora. Non si invia nulla senza la sua
 richiesta, non si può inserire nessun altro indirizzo e il server invia il
 PIN solo se corrisponde a quello registrato per la partita. Il suo registro
-non contiene né il PIN né l'indirizzo. Per l'invio viene utilizzato il
-servizio Resend (USA) (sezione 15). L'app può anche aprire l'app e-mail del
+non contiene né il PIN né l'indirizzo. L'invio avviene tramite
+Amazon SES (sezione 15). L'app può anche aprire l'app e-mail del
 dispositivo con il PIN, per qualsiasi indirizzo; quel messaggio lo invia l'app
 e-mail e non passa dal mio server.
 
@@ -950,8 +950,9 @@ messaggi d'errore. Il sito web non invia dati diagnostici.
 Il server inoltra la richiesta come un'unica e-mail a support@openvolley.app,
 con il tuo indirizzo come indirizzo di risposta. Non ne conserva nulla, salvo
 una riga di registro con tipo, ambito e una forma abbreviata del tuo
-indirizzo e-mail (sezione 14). La casella postale è presso Migadu
-(sezione 15). Il mio sistema di ticket (support.openvolley.app), che gestisco
+indirizzo e-mail (sezione 14). Questa e-mail è inviata tramite Migadu, che
+ospita anche la casella postale; solo se Migadu non la accetta (per esempio
+oltre il suo limite giornaliero) passa da Amazon SES (sezione 15). Il mio sistema di ticket (support.openvolley.app), che gestisco
 io stesso sul mio server presso Infomaniak in Svizzera, la legge, così posso risponderti e
 seguire la tua richiesta. Uso il tuo indirizzo solo per risponderti. **Per
 richieste sui tuoi dati scrivi direttamente a support@openvolley.app.**
@@ -1022,8 +1023,8 @@ l'esercizio. Essi trattano i dati per mio conto.
 |---|---|---|
 | Infomaniak Network SA | Hosting del server: banca dati, file, sistema di ticket e pagina di download | Svizzera |
 | Cloudflare, Inc. | Distribuzione dei siti, DNS, connessione sicura al server | USA (rete mondiale) |
-| Migadu | Invio di e-mail (noreply@) e casella postale (support@) | Svizzera / Europa |
-| Resend, Inc. | Invio delle info della partita e del PIN della partita per e-mail (solo queste funzioni, se attivate) | USA |
+| Amazon Web Services EMEA SARL (Amazon SES) | Invio delle e-mail delle app: e-mail dell'account, info della partita e PIN della partita, referto finale, avvisi; l'e-mail del modulo di supporto solo se Migadu non la accetta | Svizzera (Zurigo); l'azienda ha sede in Lussemburgo e appartiene ad Amazon (USA) |
+| Migadu | Caselle postali (support@, noreply@) e invio dell'e-mail del modulo di supporto | Svizzera / Europa |
 
 **Importante riguardo a Cloudflare:** la connessione cifrata del tuo
 dispositivo termina presso Cloudflare; da lì prosegue cifrata fino al mio

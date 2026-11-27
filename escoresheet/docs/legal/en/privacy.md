@@ -1,6 +1,6 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.32 · As of 27 November 2026
+**OpenVolley and OpenBeach** · Version 1.33 · As of 28 November 2026
 
 This policy is available in German, English, French and Italian. The English
 version is binding.
@@ -346,7 +346,7 @@ email address, a link to reset your password, a notice that your password
 changed, and a notice that someone keeps trying to sign in to your account
 (above). They contain no tracking pixels and no
 remote images. A confirmation link is valid for 24 hours, a reset link for
-60 minutes.
+60 minutes. They are sent through Amazon SES (section 15).
 
 **Scoresheets by email:** I send the final scoresheet of an official match
 and the scoresheet of your own test match as described in section 7.
@@ -488,7 +488,7 @@ stored, not which ones. Matches closed before the feature was switched on are
 not sent. A referee's or a team's email address is optional, belongs to the match and is
 never public; only those who may read the whole match see it (table above).
 The email's text also lists the match's technical remarks (above); they are
-not in the PDF. Emails are sent through Migadu (section 15).
+not in the PDF. Emails are sent through Amazon SES (section 15).
 
 **Scoresheet of a test match:** if you approve the result at the end of a
 test match while signed in, the app sends its scoresheet as a PDF to your
@@ -613,8 +613,8 @@ requires the scorer to be signed in with a scorer or referee role.
 **Sending match info by email:** a signed-in scorer can have the information
 of a match they recorded or edit (game number, teams, date and venue, no PIN)
 sent to the confirmed email address of their own account; the app does so when
-a match is created. No other address can be entered. The service Resend (USA)
-is used for sending (section 15).
+a match is created. No other address can be entered. The email is sent
+through Amazon SES (section 15).
 
 **Sending the game PIN by email:** right after a new official match is
 created, the app shows its game PIN once. A signed-in scorer can then have
@@ -622,7 +622,7 @@ the game PIN of that match sent to the confirmed email address of their own
 account, with the game number, teams, league, date and time. Nothing is sent
 unless they ask for it, no other address can be entered, and the server sends
 it only if it is the PIN stored for that match. Its log records neither the
-PIN nor the address. The service Resend (USA) is used for sending
+PIN nor the address. The email is sent through Amazon SES
 (section 15). The app can also open the device's own email app with the PIN,
 for any address; that message is sent by the email app and does not pass
 through my server.
@@ -884,7 +884,9 @@ error messages. The website sends no diagnostics.
 The server forwards the request as one email to support@openvolley.app, with
 your address as the reply address. It keeps nothing of it except a log line
 with the type, the area and a shortened form of your email address
-(section 14). The mailbox is hosted by Migadu (section 15). My helpdesk
+(section 14). This email is sent through Migadu, which also hosts the
+mailbox; only if Migadu does not take it (for example over its daily limit)
+is it sent through Amazon SES instead (section 15). My helpdesk
 (support.openvolley.app), which I run myself on my server at Infomaniak in Switzerland,
 reads it so that I can answer you and keep track of your request. I use your
 address only to answer you. **For requests about your data, please write
@@ -951,8 +953,8 @@ They process the data on my behalf.
 |---|---|---|
 | Infomaniak Network SA | Hosting the server: database, files, helpdesk and download page | Switzerland |
 | Cloudflare, Inc. | Delivering the websites, DNS, secure connection to the server | USA (global network) |
-| Migadu | Sending email (noreply@) and mailbox (support@) | Switzerland / Europe |
-| Resend, Inc. | Sending the match info and the game PIN by email (these functions only, if enabled) | USA |
+| Amazon Web Services EMEA SARL (Amazon SES) | Sending the apps' emails: account emails, match info and game PIN, final scoresheet, notices; the support form's email only when Migadu does not take it | Switzerland (Zurich); the company is based in Luxembourg and belongs to Amazon (USA) |
+| Migadu | Mailboxes (support@, noreply@) and sending the support form's email | Switzerland / Europe |
 
 **Important about Cloudflare:** the encrypted connection from your device ends
 at Cloudflare; from there it continues encrypted to my server. Cloudflare can

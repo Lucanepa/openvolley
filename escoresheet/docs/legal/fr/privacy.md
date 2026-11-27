@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.32 · État au 27 novembre 2026
+**OpenVolley et OpenBeach** · Version 1.33 · État au 28 novembre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version anglaise fait foi.
@@ -401,7 +401,8 @@ l'adresse e-mail, lien de réinitialisation du mot de passe, avis de
 changement du mot de passe et avis que quelqu'un essaie sans cesse de se
 connecter à ton compte (ci-dessus). Ils ne contiennent ni pixel
 de suivi ni image chargée à distance. Un lien de confirmation est valable
-24 heures, un lien de réinitialisation 60 minutes.
+24 heures, un lien de réinitialisation 60 minutes. L'envoi passe par
+Amazon SES (section 15).
 
 **Feuilles de match par e-mail :** j'envoie la feuille de match finale d'un
 match officiel et la feuille de ton propre match de test comme décrit à la
@@ -562,7 +563,7 @@ l'activation ne sont pas envoyés. L'adresse e-mail d'un arbitre ou d'une
 peuvent lire tout le match la voient (tableau ci-dessus). L'e-mail liste aussi
 dans son texte les remarques techniques du match (ci-dessus) ; elles ne
 figurent pas dans le PDF. L'envoi passe par
-Migadu (section 15).
+Amazon SES (section 15).
 
 **Feuille d'un match de test :** si tu valides le résultat à la fin d'un
 match de test en étant connecté, l'application envoie sa feuille en PDF à
@@ -708,7 +709,7 @@ avec un rôle de marqueur ou d'arbitre.
 envoyer les infos d'un match qu'il a saisi ou qu'il modifie (numéro du match,
 équipes, date et lieu, sans NIP) à l'adresse e-mail confirmée de son propre
 compte ; l'application le fait à la création d'un match. Aucune autre adresse
-ne peut être saisie. Le service Resend (États-Unis) est utilisé pour l'envoi
+ne peut être saisie. L'envoi passe par Amazon SES
 (section 15).
 
 **Envoi du NIP du match par e-mail :** juste après la création d'un nouveau
@@ -718,7 +719,7 @@ confirmée de son propre compte, avec le numéro du match, les équipes, la
 ligue, la date et l'heure. Rien n'est envoyé sans sa demande, aucune autre
 adresse ne peut être saisie, et le serveur n'envoie le NIP que s'il
 correspond à celui enregistré pour ce match. Son journal ne contient ni le NIP
-ni l'adresse. Le service Resend (États-Unis) est utilisé pour l'envoi
+ni l'adresse. L'envoi passe par Amazon SES
 (section 15). L'application peut aussi ouvrir l'application e-mail de
 l'appareil avec le NIP, pour n'importe quelle adresse ; ce message est envoyé
 par l'application e-mail et ne passe pas par mon serveur.
@@ -1006,8 +1007,10 @@ Le site web n'envoie pas de diagnostics.
 Le serveur transmet la demande sous la forme d'un seul e-mail à
 support@openvolley.app, avec ton adresse comme adresse de réponse. Il n'en
 garde rien, sauf une ligne de journal avec le type, le domaine et une forme
-abrégée de ton adresse e-mail (section 14). La boîte aux lettres est
-hébergée par Migadu (section 15). Mon système de tickets
+abrégée de ton adresse e-mail (section 14). Cet e-mail est envoyé par
+Migadu, qui héberge aussi la boîte aux lettres ; seulement si Migadu ne
+l'accepte pas (par exemple au-delà de sa limite journalière), il passe par
+Amazon SES (section 15). Mon système de tickets
 (support.openvolley.app), que j'exploite moi-même sur mon serveur chez Infomaniak en Suisse,
 la lit, afin que je puisse te répondre et suivre ta demande. J'utilise
 ton adresse uniquement pour te répondre. **Pour les demandes concernant
@@ -1080,8 +1083,8 @@ besoin pour l'exploitation. Ils traitent les données sur mandat.
 |---|---|---|
 | Infomaniak Network SA | Hébergement du serveur : base de données, fichiers, helpdesk et page de téléchargement | Suisse |
 | Cloudflare, Inc. | Diffusion des sites, DNS, connexion sécurisée au serveur | États-Unis (réseau mondial) |
-| Migadu | Envoi d'e-mails (noreply@) et boîte aux lettres (support@) | Suisse / Europe |
-| Resend, Inc. | Envoi des infos du match et du NIP du match par e-mail (seulement ces fonctions, si activées) | États-Unis |
+| Amazon Web Services EMEA SARL (Amazon SES) | Envoi des e-mails des applications : e-mails du compte, infos du match et NIP du match, feuille de match finale, avis ; l'e-mail du formulaire de support seulement si Migadu ne l'accepte pas | Suisse (Zurich) ; l'entreprise a son siège au Luxembourg et appartient à Amazon (États-Unis) |
+| Migadu | Boîtes aux lettres (support@, noreply@) et envoi de l'e-mail du formulaire de support | Suisse / Europe |
 
 **Important concernant Cloudflare :** la connexion chiffrée de ton appareil
 se termine chez Cloudflare ; de là, elle se poursuit chiffrée jusqu'à mon

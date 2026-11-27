@@ -140,6 +140,7 @@ These names are shared with the self-host wiring in `escoresheet/backend` and mu
 | `OV_ADMIT_HEAP_PCT`, `OV_WATCHDOG_FAILURES`, `OV_PID_FILE` | 85, 4, `/tmp/ov-backend.pid` | New sockets get "relay busy" (1013, retried) above 85% of the heap limit; the healthcheck kills a server that failed 4 `/health/live` checks in a row (`init: true`), compose restarts it |
 | `RESEND_API_KEY`, `RESEND_FROM`, `CONTACT_EMAIL` | from `.env` | Unchanged from today. (`REOPEN_PASSWORD_HASH` was replaced by the admin reopen of db/007 and is no longer read.) |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`, `MANAGER_URL` | from `.env`, all optional | Account emails (backend README "Account emails"): reset and confirmation links. Without `SMTP_HOST`/`SMTP_PASS`: none, reset answers 503, sign-up confirms at once. The support form `/api/contact` uses the account too (its only recipient is `CONTACT_EMAIL`). `/api/match/send-info` uses Resend only |
+| `SES_REGION`, `SES_ACCESS_KEY_ID`, `SES_SECRET_ACCESS_KEY` | from `.env`, all three or none | Amazon SES over its HTTPS API for the account mails (backend README "Account emails"); `SMTP_*` then stays the support form's account. |
 | `IS_CLOUD` | `1` | Existing switch for HSTS/CSP in `server.js` |
 | `OV_MIN_MATCHES` | from `.env` | `/health` row-count floor |
 
