@@ -13,7 +13,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
-import { createErrorTracker, RATE_LIMITS } from '../lib/errorTracker.js'
+import { createErrorTracker, RATE_LIMITS, isCrawlerUserAgent, isCrawlerArtifact } from '../lib/errorTracker.js'
 
 const quiet = { log() {}, warn() {}, error() {} }
 const real = (over = {}) => ({
@@ -135,3 +135,49 @@ describe('error tracker: rate limits (SEC-19)', () => {
     assert.deepEqual(dropped.body.data, { accepted: [], rejected: [], dropped: 1 })
   })
 })
+
+describe('error tracker: crawlers are not errors (27.11.2026)', () => {
+  const GOOGLEBOT = 'Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.8103.78 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'
+  const TABLET = 'Mozilla/5.0 (Linux; Android 11; SM-T220) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'
+  const wrs = (over = {}) => real({ kind: 'js.unhandledrejection', message: 'Error: Rejected', frames: ['wrsParams.serviceWorkers.navigator.serviceWorker.register (<anonymous>:13:648)', '/registerSW.js:1:98'], ...over })
+
+  it('knows the crawlers and headless browsers, not a scorer\'s tablet', () => {
+    assert.equal(isCrawlerUserAgent(GOOGLEBOT), true)
+    assert.equal(isCrawlerUserAgent('Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)'), true)
+    assert.equal(isCrawlerUserAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.0.0 Safari/537.36'), true)
+    assert.equal(isCrawlerUserAgent(TABLET), false)
+    assert.equal(isCrawlerUserAgent(null), false)
+    assert.equal(isCrawlerArtifact(wrs()), true)
+    assert.equal(isCrawlerArtifact(real()), false)
+  })
+
+  it('a crawler\'s reports are answered as taken and never stored', async () => {
+    const { pool, t } = tracker()
+    const a = wrs(); const b = real()
+    const r = await t.ingest({ body: { events: [a, b] }, ipKey: '66.249.66.1', userAgent: GOOGLEBOT })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.deepEqual(r.body.data.accepted.sort(), [a.uid, b.uid].sort())
+    assert.equal(pool.stored.length, 0)
+  })
+
+  it('a WRS stack is dropped even without a crawler User-Agent; the real report beside it is stored', async () => {
+    const { pool, t } = tracker()
+    const a = wrs(); const b = real()
+    const r = await t.ingest({ body: { events: [a, b] }, ipKey: '203.0.113.40', userAgent: TABLET })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.deepEqual(r.body.data.accepted.sort(), [a.uid, b.uid].sort())
+    assert.equal(pool.stored.length, 1)
+    const only = await t.ingest({ body: { events: [wrs()] }, ipKey: '203.0.113.41', userAgent: TABLET })
+    assert.equal(only.status, 200)
+    assert.equal(only.body.data.accepted.length, 1)
+    assert.equal(pool.stored.length, 1)
+  })
+
+  it('a scorer\'s tablet report goes in as before', async () => {
+    const { pool, t } = tracker()
+    const r = await t.ingest({ body: { events: [real()] }, ipKey: '203.0.113.42', userAgent: TABLET })
+    assert.equal(r.status, 200)
+    assert.equal(pool.stored.length, 1)
+  })
+})
+

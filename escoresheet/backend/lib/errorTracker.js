@@ -582,6 +582,26 @@ export function deviceLine(e) {
  *           dailyEventsPerGroup?: number, debounceMs?: number, remindAfterMs?: number, rateLimits?: object,
  *           newGroupLimits?: object, maxStoreBytes?: number, anonymousStoreShare?: number, eventsKeptPerGroup?: number }} deps
  */
+// Crawlers render the pages too (Google's Web Rendering Service for the search
+// index, other bots): their "errors" are artifacts of the crawler (e.g. WRS
+// refuses navigator.serviceWorker.register on purpose, so registerSW.js's
+// promise rejects: "Error: Rejected" at wrsParams.serviceWorkers...), not bugs
+// anyone meets. Their reports are answered as accepted (the page drops them)
+// and never stored or alerted (27.11.2026: OpenBeach/OpenVolley alerts from
+// Googlebot, square 400x400 / 1024x1024 screens, never signed in).
+export const CRAWLER_UA_RE = /(Googlebot|Google-InspectionTool|GoogleOther|Google-Read-Aloud|Storebot-Google|AdsBot-Google|Mediapartners-Google|APIs-Google|FeedFetcher-Google|Chrome-Lighthouse|bingbot|BingPreview|AdIdxBot|YandexBot|YandexRenderResourcesBot|DuckDuckBot|Baiduspider|Applebot|facebookexternalhit|meta-externalagent|Twitterbot|LinkedInBot|Slackbot|Discordbot|PetalBot|SemrushBot|AhrefsBot|MJ12bot|DotBot|SeznamBot|Bytespider|GPTBot|ClaudeBot|Amazonbot|HeadlessChrome)/i
+
+/** Whether a request's User-Agent is a known crawler or a headless browser. */
+export function isCrawlerUserAgent(ua) {
+  return typeof ua === 'string' && CRAWLER_UA_RE.test(ua)
+}
+
+/** Whether a report's stack shows a crawler's own stubs (WRS: wrsParams). */
+export function isCrawlerArtifact(e) {
+  const frames = Array.isArray(e?.frames) ? e.frames : []
+  return frames.some((f) => typeof f === 'string' && f.includes('wrsParams'))
+}
+
 export function createErrorTracker({ pool, audit = null, clubsOfMany = null, sourceMaps = null, log = console, now = Date.now, dailyEventsPerGroup = DAILY_EVENTS_PER_GROUP, debounceMs = ALERT_DEBOUNCE_MS, remindAfterMs = REMIND_AFTER_MS, rateLimits = RATE_LIMITS, newGroupLimits = NEW_GROUP_LIMITS, maxStoreBytes = MAX_STORE_BYTES, anonymousStoreShare = ANONYMOUS_STORE_SHARE, eventsKeptPerGroup = EVENTS_KEPT_PER_GROUP } = {}) {
   const rl = { ...RATE_LIMITS, ...rateLimits }
   const ng = { ...NEW_GROUP_LIMITS, ...newGroupLimits }
@@ -594,7 +614,7 @@ export function createErrorTracker({ pool, audit = null, clubsOfMany = null, sou
     newGroupAnonymous: createWindowCounter({ ...ng.anonymous, now }),
     newGroupAccount: createWindowCounter({ ...ng.account, now })
   }
-  const counters = { accepted: 0, rejected: 0, dropped: 0, capped: 0, refusedGroups: 0, tooLarge: 0, failed: 0, lastFailureAt: null, storeFull: false, anonymousFull: false }
+  const counters = { accepted: 0, crawler: 0, rejected: 0, dropped: 0, capped: 0, refusedGroups: 0, tooLarge: 0, failed: 0, lastFailureAt: null, storeFull: false, anonymousFull: false }
   const dbError = (where, err) => {
     counters.failed++
     counters.lastFailureAt = new Date(now()).toISOString()
@@ -814,10 +834,25 @@ export function createErrorTracker({ pool, audit = null, clubsOfMany = null, sou
    * store: those that would have opened a group). A device sends those again
    * later (an app with the SEC-19 retry; older apps drop them as before).
    */
-  async function ingest({ body, accountId = null, ipKey = 'unknown' } = {}) {
+  async function ingest({ body, accountId = null, ipKey = 'unknown', userAgent = null } = {}) {
     if (!isPlainObject(body) || !Array.isArray(body.events)) return invalid('events must be an array')
     if (body.events.length === 0) return answer(200, { accepted: [], rejected: [] })
     if (body.events.length > MAX_EVENTS) return invalid(`at most ${MAX_EVENTS} events`)
+    // a crawler's reports: answered as taken (the page drops them), never stored or alerted
+    const uidOf = (e) => (typeof e?.uid === 'string' && e.uid.length <= 64 ? e.uid : null)
+    if (isCrawlerUserAgent(userAgent)) {
+      counters.crawler += body.events.length
+      return answer(200, { accepted: body.events.map(uidOf).filter(Boolean), rejected: [] })
+    }
+    const crawlerUids = []
+    body = { ...body, events: body.events.filter((e) => {
+      if (!isCrawlerArtifact(e)) return true
+      counters.crawler++
+      const u = uidOf(e)
+      if (u) crawlerUids.push(u)
+      return false
+    }) }
+    if (body.events.length === 0) return answer(200, { accepted: crawlerUids, rejected: [] })
     // only an object can be a report: anything else costs no budget and is never stored
     const objects = body.events.filter(isPlainObject)
     const n = objects.length
@@ -881,6 +916,7 @@ export function createErrorTracker({ pool, audit = null, clubsOfMany = null, sou
       if (!s.duplicate) counters.accepted++
       accepted.push(row.uid)
     }
+    accepted.push(...crawlerUids)
     if (dropped) return answer(202, { accepted, rejected, dropped })
     return answer(200, { accepted, rejected })
   }
