@@ -363,14 +363,19 @@ function roleOfLabel (label) {
  * VolleyManager's, the role in English or the list's language) as read:
  * { label, slot, licence, names } or null. "1." / "2." in front is that
  * assistant, whatever became of the role's words ("2. Allenatore
- * ===}+<nte"): VolleyManager numbers only the assistants.
+ * ===}+<nte"): VolleyManager numbers only the assistants. A role word the
+ * photo blurred past reading ("SOAEN" for "Coach:", real photo, read with
+ * German alone, 2026-11-27) on a line of that shape ("#", an SV number of
+ * five or six digits, two names, the year in brackets): slot 'any', the
+ * first free one (VolleyManager prints the coach first), its names to check.
  */
 function officialOf (text) {
   const m = OFFICIAL_LINE.exec(text) || OFFICIAL_LINE_NO_HASH.exec(text)
   if (!m) return null
   const label = m[1].trim().split(/\s+/).slice(-4).join(' ')
   const nth = /^\s*([12])\s*[.)]/.exec(m[1])
-  const slot = nth ? `ac${nth[1]}` : roleOfLabel(label)
+  const shaped = OFFICIAL_LINE.test(text) && /^\d{5,6}$/.test(m[2]) && !!m[4] && /^\S{1,12}$/.test(m[1].trim())
+  const slot = nth ? `ac${nth[1]}` : (roleOfLabel(label) || (shaped ? 'any' : null))
   if (!slot) return null
   // a name misread with signs in it ("E==mp=!") keeps its letters, so the
   // official is not lost: the confirm screen shows it to check
@@ -719,11 +724,13 @@ export function rosterFromOcr (data, { circled, ringAt, struck } = {}) {
   for (const o of officialsRead) {
     let slot = o.slot
     if (slot === 'ac' || (slot === 'coach' && taken.has('coach'))) slot = ['ac1', 'ac2'].find((k) => !taken.has(k)) || null
+    // (a role not read: the first free slot, in the list's order)
+    if (slot === 'any') slot = ['coach', 'ac1', 'ac2'].find((k) => !taken.has(k)) || null
     if (!slot || taken.has(slot)) continue
     taken.add(slot)
     const player = result.players.find((p) => p.licence === o.licence)
     const { firstName, lastName, sure } = officialNames(o.names, player)
-    result[slot] = { firstName, lastName, dob: '', birthYear: o.year, licence: o.licence, guessedSplit: !sure }
+    result[slot] = { firstName, lastName, dob: '', birthYear: o.year, licence: o.licence, guessedSplit: !sure || o.slot === 'any' }
   }
   for (const k of ['coach', 'ac1', 'ac2']) {
     const o = result[k]
