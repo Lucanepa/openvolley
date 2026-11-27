@@ -137,7 +137,7 @@ describe('Scoresheet archive (standalone site)', () => {
     expect(await screen.findByRole('heading', { name: 'Connecte-toi pour ouvrir cette feuille de match' })).toBeInTheDocument()
     expect(screen.getByRole('form', { name: 'Se connecter' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Retour à la liste/ })).toBeInTheDocument()
-    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'scorer@example.ch' } })
+    fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'scorer@example.ch' } })
     fireEvent.change(screen.getByLabelText('Mot de passe'), { target: { value: 'pw' } })
     fireEvent.click(screen.getByRole('button', { name: 'Se connecter' }))
     // the sheet (mocked here) opens as before

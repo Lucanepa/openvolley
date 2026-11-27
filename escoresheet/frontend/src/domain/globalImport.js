@@ -12,8 +12,9 @@ import { cleanIdValue } from './idMode'
  *                       Home, Away, Best of, 1st referee, 2nd referee
  *   rosterTemplate() / gamesTemplate()  the sheets of the downloadable files
  *
- * Columns are found by name (en, de), loosely: lower case, no accents, no
- * punctuation. Excel dates are day counts (1899-12-30), times day fractions.
+ * Columns and roles are found by name (en, de, fr, it: the words each
+ * language's hint lists), loosely: lower case, no accents, no punctuation.
+ * Excel dates are day counts (1899-12-30), times day fractions.
  */
 
 export const MAX_ROWS = 600
@@ -27,21 +28,22 @@ const ROSTER_COLUMNS = {
   number: ['number', 'no', 'nr', 'nummer', 'trikot', 'shirt', 'numero'],
   first: ['firstname', 'first', 'vorname', 'prenom', 'nome'],
   last: ['lastname', 'last', 'surname', 'nachname', 'name', 'nom', 'cognome'],
-  role: ['role', 'rolle', 'position', 'funktion', 'ruolo'],
-  dob: ['dateofbirth', 'dob', 'birthdate', 'geburtsdatum', 'geboren', 'birthday', 'id', 'idnumber', 'licence', 'license', 'licenceno', 'licenseno', 'info', 'text', 'class', 'klasse', 'schoolclass', 'grade']
+  role: ['role', 'rolle', 'position', 'funktion', 'fonction', 'ruolo'],
+  dob: ['dateofbirth', 'dob', 'birthdate', 'geburtsdatum', 'geboren', 'birthday', 'datedenaissance', 'naissance', 'datadinascita', 'datanascita', 'id', 'idnumber', 'licence', 'license', 'licenceno', 'licenseno', 'info', 'text', 'class', 'klasse', 'schoolclass', 'grade']
 }
 const GAME_COLUMNS = {
-  gameN: ['game', 'gamenumber', 'gameno', 'spiel', 'spielnummer', 'spielnr', 'match', 'matchnumber', 'nr', 'no', 'number'],
-  date: ['date', 'datum'],
-  time: ['time', 'zeit', 'uhrzeit', 'kickoff', 'start'],
-  hall: ['hall', 'halle', 'venue', 'court', 'feld', 'location'],
-  city: ['city', 'ort', 'stadt', 'town'],
-  league: ['league', 'liga', 'category', 'kategorie', 'competition', 'group', 'gruppe', 'pool'],
-  home: ['home', 'hometeam', 'heim', 'heimteam', 'teama', 'team1'],
-  away: ['away', 'awayteam', 'gast', 'gastteam', 'teamb', 'team2', 'guest'],
+  gameN: ['game', 'gamenumber', 'gameno', 'spiel', 'spielnummer', 'spielnr', 'match', 'matchnumber', 'partita', 'nr', 'no', 'number'],
+  date: ['date', 'datum', 'data'],
+  time: ['time', 'zeit', 'uhrzeit', 'kickoff', 'start', 'heure', 'ora'],
+  hall: ['hall', 'halle', 'venue', 'court', 'feld', 'location', 'salle', 'palestra'],
+  city: ['city', 'ort', 'stadt', 'town', 'ville', 'citta'],
+  league: ['league', 'liga', 'category', 'kategorie', 'competition', 'group', 'gruppe', 'pool', 'ligue', 'lega'],
+  home: ['home', 'hometeam', 'heim', 'heimteam', 'teama', 'team1', 'domicile', 'casa'],
+  away: ['away', 'awayteam', 'gast', 'gastteam', 'teamb', 'team2', 'guest', 'visiteur', 'visiteurs', 'ospite', 'ospiti'],
   bestOf: ['bestof', 'sets', 'format', 'modus'],
-  ref1: ['1streferee', 'firstreferee', 'referee1', 'ref1', '1sr', 'referee', 'schiedsrichter', '1schiedsrichter', 'sr1'],
-  ref2: ['2ndreferee', 'secondreferee', 'referee2', 'ref2', '2sr', '2schiedsrichter', 'sr2']
+  ref1: ['1streferee', 'firstreferee', 'referee1', 'ref1', '1sr', 'referee', 'referees', 'schiedsrichter', '1schiedsrichter', 'sr1',
+    'premierarbitre', '1erarbitre', 'arbitre1', 'arbitre', 'arbitres', 'primoarbitro', 'arbitro1', 'arbitro', 'arbitri'],
+  ref2: ['2ndreferee', 'secondreferee', 'referee2', 'ref2', '2sr', '2schiedsrichter', 'sr2', 'secondarbitre', '2earbitre', 'arbitre2', 'secondoarbitro', 'arbitro2']
 }
 
 /** Column index per field from the header row; the first column wins. */
@@ -100,13 +102,19 @@ function toDisplayDob(v, date1904) {
   return iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : ''
 }
 
+// role words, folded: en, de, fr, it
+const CAPTAIN_ROLES = ['captain', 'kapitan', 'kapitaen', 'capitaine', 'capitano', 'c']
+const LIBERO_ROLES = ['libero', 'l']
+const PLAYER_ROLES = ['player', 'spieler', 'spielerin', 'joueur', 'joueuse', 'giocatore', 'giocatrice', ...LIBERO_ROLES, ...CAPTAIN_ROLES]
+
 const BENCH_ROLE = (r) => {
   const f = fold(r)
-  if (['coach', 'headcoach', 'trainer', 'cheftrainer'].includes(f)) return 'Coach'
-  if (['assistantcoach', 'assistantcoach1', 'ac1', 'co-trainer', 'cotrainer', 'assistent', 'assistenztrainer', 'assistenztrainer1'].includes(f)) return 'Assistant Coach 1'
-  if (['assistantcoach2', 'ac2', 'assistenztrainer2'].includes(f)) return 'Assistant Coach 2'
-  if (['physiotherapist', 'physio', 'physiotherapeut', 'p'].includes(f)) return 'Physiotherapist'
-  if (['medic', 'doctor', 'arzt', 'sanitaeter', 'sanitater', 'm'].includes(f)) return 'Medic'
+  if (['coach', 'headcoach', 'trainer', 'cheftrainer', 'entraineur', 'entraineuse', 'allenatore', 'allenatrice'].includes(f)) return 'Coach'
+  if (['assistantcoach', 'assistantcoach1', 'ac1', 'cotrainer', 'assistent', 'assistenztrainer', 'assistenztrainer1', 'trainerassistent', 'trainerassistent1',
+    'coachadjoint', 'coachadjoint1', 'entraineuradjoint', 'viceallenatore', 'secondoallenatore'].includes(f)) return 'Assistant Coach 1'
+  if (['assistantcoach2', 'ac2', 'assistenztrainer2', 'trainerassistent2', 'coachadjoint2'].includes(f)) return 'Assistant Coach 2'
+  if (['physiotherapist', 'physio', 'physiotherapeut', 'physiotherapeute', 'fisioterapista', 'p'].includes(f)) return 'Physiotherapist'
+  if (['medic', 'doctor', 'arzt', 'sanitaeter', 'sanitater', 'medecin', 'medico', 'm'].includes(f)) return 'Medic'
   return ''
 }
 
@@ -132,14 +140,14 @@ export function parseRosters(rows, { date1904 = false, idMode = 'dob' } = {}) {
     const team = teams.get(teamName)
     const role = text(get('role'))
     const roleFold = fold(role)
-    const benchRole = role && !['player', 'spieler', 'spielerin', 'libero', 'captain', 'kapitan', 'kapitaen', 'c', 'l'].includes(roleFold) ? BENCH_ROLE(role) : ''
+    const benchRole = role && !PLAYER_ROLES.includes(roleFold) ? BENCH_ROLE(role) : ''
     // what is printed beside a name: a birthdate, or (Global idMode) the cell as typed
     const idValue = () => (idMode === 'dob' ? toDisplayDob(get('dob'), date1904) : cleanIdValue(idMode, text(get('dob'))))
     if (benchRole) {
       team.bench.push({ role: benchRole, firstName: first, lastName: last, dob: idValue() })
       continue
     }
-    if (role && !benchRole && !['player', 'spieler', 'spielerin', 'libero', 'captain', 'kapitan', 'kapitaen', 'c', 'l'].includes(roleFold)) {
+    if (role && !benchRole && !PLAYER_ROLES.includes(roleFold)) {
       warnings.push(`row ${r + 1}: role "${role}"`)
     }
     const rawNumber = get('number')
@@ -152,8 +160,8 @@ export function parseRosters(rows, { date1904 = false, idMode = 'dob' } = {}) {
       firstName: first,
       lastName: last,
       dob: idValue(),
-      libero: roleFold === 'libero' || roleFold === 'l' ? 'libero1' : '',
-      isCaptain: roleFold === 'captain' || roleFold === 'kapitan' || roleFold === 'kapitaen' || roleFold === 'c',
+      libero: LIBERO_ROLES.includes(roleFold) ? 'libero1' : '',
+      isCaptain: CAPTAIN_ROLES.includes(roleFold),
       isLfp: false
     })
   }
