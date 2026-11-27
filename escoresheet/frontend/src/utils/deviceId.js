@@ -1,7 +1,6 @@
 /**
- * A random id for this device (localStorage 'ov.deviceId'), shared by the
- * account approvals (domain/accountApproval re-exports it) and the activity
- * log. It names an installation, not a person: it is created on first use and
+ * A random id for this device (localStorage 'ov.deviceId'), used by the
+ * activity log. It names an installation, not a person: it is created on first use and
  * goes away with the browser's site data.
  */
 

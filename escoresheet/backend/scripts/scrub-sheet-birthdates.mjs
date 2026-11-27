@@ -44,7 +44,6 @@ import { createScoresheets, SCORESHEETS_BUCKET, SCORESHEET_DAY_RE, isScoresheetP
 import { createVectorPdf } from '../lib/vectorPdf.js'
 import { createPgQuery } from '../lib/pgQuery.js'
 import { createMatchRestore } from '../lib/matchRestore.js'
-import { createApprovals } from '../lib/approvals.js'
 import { createAccounts } from '../lib/accounts.js'
 import { SECRET_COLUMNS } from '../lib/secrets.js'
 import { scrubBirthdates } from '../lib/birthdates.js'
@@ -255,13 +254,11 @@ export function wire ({ connectionString, env = process.env, logger = console, s
   const db = createPgQuery({ connectionString, allowedTables: ['matches', 'sets', 'events', 'match_live_state'], secretColumns: SECRET_COLUMNS, poolMax: 2, logger })
   const restore = createMatchRestore(db, {})
   storage ??= createStorage({ ...storageOptionsFromEnv({ ...env, STORAGE_DIR: env.STORAGE_ROOT || env.STORAGE_DIR || '/data/storage' }), logger })
-  const approvals = createApprovals({ pool: db.pool, secret: env.OV_PIN_SECRET || null, beachApprovals: true, logger })
   const accounts = createAccounts({ pool: db.pool, db, restore, access: null, logger })
   const vector = createVectorPdf({ url: env.OV_RENDER_URL, token: env.OV_RENDER_TOKEN, logger, ...(fetchImpl ? { fetchImpl } : {}) })
   const scoresheets = createScoresheets({
     pool: db.pool, db, storage, accounts, vector, logger,
-    readMatch: (id) => restore.readWhole(id),
-    readApprovals: (id) => approvals.recordsForMatch(id)
+    readMatch: (id) => restore.readWhole(id)
   })
   return { db, pool: db.pool, storage, scoresheets, vector }
 }

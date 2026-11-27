@@ -1,5 +1,12 @@
 # Deploying approval with an account (db/011) to production
 
+> **Removed 27.11.2026 (owner decision: signatures only).** Approval with an
+> account and a personal PIN is gone: officials sign by hand. The app no longer
+> offers it, the server answers its paths 410 `OV_APPROVAL_REMOVED`, and
+> `db/061_remove_approval_pins.sql` deletes the stored PINs. The tables
+> `auth.approval_pins` and `public.match_approvals` stay until a later
+> migration drops them. This document is kept as the record of the design.
+
 > **Host moved, 16.10.2026:** production now runs on lenovoserver. The Hetzner VPS belongs to
 > another owner and must never host OpenVolley again. Run the `hetzner#` steps below on
 > lenovoserver with `sudo` (`/opt/openvolley` is root-only there):

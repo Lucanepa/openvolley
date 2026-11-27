@@ -7,7 +7,6 @@ import { randomUuid } from '../utils/deviceId'
 import { useAlert } from '../contexts/AlertContext'
 import { swapTeamDesignation as swapTeamDesignationPatch } from '../domain/coinToss'
 import { mergeOfficialsEdits, teamContactEmail, withTeamContacts, cleanContactEmail } from '../domain/officials'
-import { approvalUndoJobs } from '../domain/accountApproval'
 import { clearedPostMatchSignatures, isMatchOverStatus } from '../domain/matchEnd'
 import { signaturesPayload } from '../domain/signatureEdits'
 import { matchInfoFromLocal, queueMatchUpdate, toCloudPlayers } from '../db/matchRepository'
@@ -506,7 +505,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
       return
     }
 
-    // After the first post-match signature or account approval every change
+    // After the first post-match signature every change
     // of the sheet asks first, then clears them all (they certified the old
     // sheet), as a correction does (services/corrections/applyCorrectionPlan)
     const signedMatch = await db.matches.get(matchId)
@@ -625,11 +624,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
         await db.players.delete(playerId)
       }
 
-      // Signed or approved: the post-match signatures and the account
-      // approvals go, here and (queued, also offline) on the server
+      // Signed: the post-match signatures go, here and on the server
       if (sheetChanged) {
         await db.matches.update(matchId, clearedPostMatchSignatures())
-        for (const job of approvalUndoJobs(signedMatch)) await db.sync_queue.add(job)
       }
 
       // Sync to Supabase if available
@@ -785,9 +782,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
     await leave(() => onClose?.())
   }
 
-  // After a correction at the match end: the result changed, so the account
-  // approvals (scorer, referees) are undone on the server as well, as Reopen
-  // last set does; the local copy was cleared with the signatures.
+  // After a correction at the match end (the signatures were cleared with it)
   const afterCorrection = async (result, plan) => {
     // A correction that changed the roster (a renumbered player, a libero
     // mark): this page's copy of the players follows, or its Save would
@@ -798,8 +793,6 @@ export default function ManualAdjustments({ matchId, onClose, onSave, initialTab
       setEditedHomePlayers(follow)
       setEditedAwayPlayers(follow)
     }
-    // the account approvals' undo is queued by the correction itself
-    // (applyCorrectionPlan approvalUndoJobs), offline too
   }
   const notifyScoresheet = () => {
     try {

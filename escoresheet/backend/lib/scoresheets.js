@@ -494,7 +494,7 @@ class Refused extends Error {
  * @param {(matchId: string) => Promise<object|null>} [o.readMatch]  the match's whole
  *   record (lib/matchRestore.js readWhole), for matchForRebuild
  */
-export function createScoresheets ({ pool, db = null, storage, accounts, readMatch = null, readApprovals = null, vector = null, vectorTimes = null, captureError = null, logger = console, now = () => Date.now(), setTimer = setTimeout } = {}) {
+export function createScoresheets ({ pool, db = null, storage, accounts, readMatch = null, vector = null, vectorTimes = null, captureError = null, logger = console, now = () => Date.now(), setTimer = setTimeout } = {}) {
   const log = logger
   /**
    * token -> { key, sha256, filename, expires } (insertion order = age): which
@@ -681,7 +681,7 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
 
   const ROW_COLUMNS = `m.id, m.external_id, m.game_n, m.status, m.scheduled_at, m.closed_at, m.updated_at, m.created_at,
                 (m.sport_type IS NOT DISTINCT FROM 'beach') AS is_beach`
-  // The team names by the match's sport, as lib/approvals.js reads them: an
+  // The team names by the match's sport: an
   // indoor match's home_team / away_team, a beach match's team1_data /
   // team2_data (OpenBeach leaves home_team / away_team empty).
   const nameSql = (side) => `CASE WHEN m.sport_type IS NOT DISTINCT FROM 'beach' THEN m.${side === 'home' ? 'team1_data' : 'team2_data'}->>'name' ` +
@@ -1534,16 +1534,14 @@ export function createScoresheets ({ pool, db = null, storage, accounts, readMat
 
   /**
    * What the render service draws match `matchId` from: the whole record as
-   * Rebuild PDF reads it (matchForRebuild) and the officials' account
-   * approvals (their stamps), the non-revoked ones. null: no such match.
+   * Rebuild PDF reads it (matchForRebuild). approvals stays an empty list
+   * (approval with a PIN was removed 27.11.2026; render images read it). null: no such match.
    */
   async function renderRecord (matchId) {
     if (typeof readMatch !== 'function') return null
     const whole = await readMatch(matchId)
     if (!whole?.match) return null
-    let approvals = []
-    if (typeof readApprovals === 'function') approvals = (await readApprovals(matchId)) || []
-    return { match: whole.match, sets: whole.sets || [], events: whole.events || [], liveState: whole.liveState ?? null, approvals }
+    return { match: whole.match, sets: whole.sets || [], events: whole.events || [], liveState: whole.liveState ?? null, approvals: [] }
   }
 
   /**

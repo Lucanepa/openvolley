@@ -171,7 +171,7 @@ Read-only, on the production host, before `deploy.sh` (the release session, with
    effect (2611 review, COMPOSE-ENV-NOW-EFFECTIVE). Read them, and remove a value that is
    left from a test or an incident:
    ```bash
-   sudo grep -nE '^(OV_SIGNUP_LICENCE|MAIL_BUDGET_[A-Z_]+|OV_ALLOW_DEV_ORIGINS|OV_PIN_ONLY_LOOKUP|OV_BEACH_REFEREE_ADDRESS|OV_SIGN_IN_CEILING_SLOTS)=' /opt/openvolley/.env
+   sudo grep -nE '^(OV_SIGNUP_LICENCE|MAIL_BUDGET_[A-Z_]+|OV_ALLOW_DEV_ORIGINS|OV_PIN_ONLY_LOOKUP|OV_SIGN_IN_CEILING_SLOTS)=' /opt/openvolley/.env
    ```
    Expected in production: `OV_SIGNUP_LICENCE` empty (a licence number is required at
    sign-up; `optional` turns that off), every `MAIL_BUDGET_*` empty or sized on purpose (the
@@ -199,7 +199,6 @@ setting at start). Record the date planned for each in the release notes.
 | Switch | Now | Turn on when |
 |---|---|---|
 | `OV_PIN_ONLY_LOOKUP` | `on` (empty): referee / bench PIN checks without their match, both sports | `beach` once the OpenVolley apps that name no match are gone (3.x; 26.11.x sends none only when two picker rows share a game number); `off` once the OpenBeach release that names its match has replaced the current one (SEC-06) |
-| `OV_BEACH_REFEREE_ADDRESS` | `optional` (empty): a beach referee slot without a stored address keeps the older rule | `required` once the OpenBeach release that stores `officials[].email` has replaced the older builds (PERM-08, owner decision 6) |
 
 Settings that wait for the owner's choice (the default is the stricter or the older one):
 

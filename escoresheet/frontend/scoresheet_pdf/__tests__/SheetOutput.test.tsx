@@ -193,15 +193,13 @@ describe('the generated sheet', () => {
 describe('Rebuild PDF: the sheet drawn from the server\'s record', () => {
   afterEach(() => cleanup())
 
-  it('a slot approved with a PIN keeps its stamp; the set starts are the confirmed ones, not the rows\' creation times', async () => {
+  it('the set starts are the confirmed ones, not the rows\' creation times; no approval stamp', async () => {
     const { scoresheetDataFromCloud } = await import('../../src/utils/scoresheetFromCloud')
-    const { resultKey } = await import('../../src/domain/accountApproval')
     const sets = [
       { index: 1, home_points: 25, away_points: 20, finished: true, start_time: '2026-11-15T13:00:00Z', end_time: '2026-11-15T13:52:00Z' },
       { index: 2, home_points: 25, away_points: 18, finished: true, start_time: '2026-11-15T13:55:00Z', end_time: '2026-11-15T14:20:00Z' },
       { index: 3, home_points: 25, away_points: 22, finished: true, start_time: '2026-11-15T14:23:00Z', end_time: '2026-11-15T14:50:00Z' }
     ]
-    const key = resultKey(sets.map(x => ({ index: x.index, homePoints: x.home_points, awayPoints: x.away_points, finished: true })))
     const opened = (i: number, at: string) => ({ external_id: `m:e:s${i}`, set_index: i, type: 'set_start', seq: i * 100, ts: at, payload: { setIndex: i, startTime: at, firstRallyAt: at } })
     const data = scoresheetDataFromCloud({
       match: {
@@ -213,11 +211,10 @@ describe('Rebuild PDF: the sheet drawn from the server\'s record', () => {
       },
       // set 1's row made at the coin toss (13:00), set 2's when set 1 ended (13:52)
       sets: [sets[0], { ...sets[1], start_time: '2026-11-15T13:52:00Z' }, sets[2]],
-      events: [opened(1, '2026-11-15T13:31:00Z'), opened(2, '2026-11-15T13:55:00Z'), opened(3, '2026-11-15T14:23:00Z')],
-      approvals: [{ id: 'a1', short_id: 'K7Q2', slot: 'referee1', name: 'Moser Claudia', approved_at: '2026-11-15T14:55:00Z', result_key: key }]
+      events: [opened(1, '2026-11-15T13:31:00Z'), opened(2, '2026-11-15T13:55:00Z'), opened(3, '2026-11-15T14:23:00Z')]
     })
     const view = render(<App matchData={data} readOnly />)
-    expect(view.getByTestId('approval-stamp-referee1').textContent).toMatch(/^Approved electronically · Moser Claudia · 15\.11\.2026 \d{2}:55 · ID K7Q2$/)
+    expect(view.container.textContent).not.toMatch(/Approved electronically/)
     expect(data.sets.map((x: any) => x.startTime)).toEqual(['2026-11-15T13:31:00.000Z', '2026-11-15T13:55:00.000Z', '2026-11-15T14:23:00Z'])
   })
 })

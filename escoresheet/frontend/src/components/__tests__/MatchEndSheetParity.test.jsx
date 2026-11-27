@@ -43,15 +43,6 @@ vi.mock('../../utils/backendConfig', async (orig) => ({ ...(await orig()), getCl
 const asked = vi.hoisted(() => ({ fn: null }))
 vi.mock('../../utils/askConfirm.js', () => ({ askConfirm: (...a) => asked.fn(...a), default: (...a) => asked.fn(...a) }))
 
-const api = vi.hoisted(() => ({ approve: null, list: null, undo: null }))
-vi.mock('../../lib/accountApi', async (orig) => ({
-  ...(await orig()),
-  approvalsApi: {
-    approve: (...a) => api.approve(...a),
-    list: (...a) => api.list(...a),
-    undo: (...a) => api.undo(...a)
-  }
-}))
 vi.mock('../../lib/apiClient', () => {
   const chain = () => {
     const b = new Proxy({}, { get: (_, prop) => (prop === 'then' ? (r) => Promise.resolve({ data: null, error: null }).then(r) : () => b) })
@@ -156,7 +147,6 @@ beforeEach(() => {
   seq = 0
   alerts.showAlert = vi.fn()
   asked.fn = vi.fn(async () => true)
-  api.list = vi.fn(async () => ({ data: { match: { status: 'ended', closed_at: null }, approvals: [] }, error: null, status: 200 }))
   auth.value = { user: null, access: null }
   Object.defineProperty(window.navigator, 'onLine', { configurable: true, get: () => false })
   globalThis.ResizeObserver ||= class { observe() {} unobserve() {} disconnect() {} }

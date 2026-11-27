@@ -3,7 +3,7 @@
  * signature lands in the right field of every slot (A / B by the coin toss)
  * with its "signed on phone" record in the same update, a later drawing
  * clears the record, the slot shows where it was signed, the pad gets the
- * slot's context, and a stale account approval is dropped as for a drawing.
+ * slot's context.
  * SignaturePad is mocked: its phone / draw buttons call onSave as it does.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -40,15 +40,6 @@ vi.mock('../../utils/backendConfig', async (orig) => ({ ...(await orig()), getCl
 const asked = vi.hoisted(() => ({ fn: null }))
 vi.mock('../../utils/askConfirm.js', () => ({ askConfirm: (...a) => asked.fn(...a), default: (...a) => asked.fn(...a) }))
 
-const api = vi.hoisted(() => ({ approve: null, list: null, undo: null }))
-vi.mock('../../lib/accountApi', async (orig) => ({
-  ...(await orig()),
-  approvalsApi: {
-    approve: (...a) => api.approve(...a),
-    list: (...a) => api.list(...a),
-    undo: (...a) => api.undo(...a)
-  }
-}))
 vi.mock('../../lib/apiClient', () => {
   const chain = () => {
     const b = new Proxy({}, { get: (_, prop) => (prop === 'then' ? (r) => Promise.resolve({ data: null, error: null }).then(r) : () => b) })
@@ -200,9 +191,6 @@ beforeEach(() => {
   logs.calls = []
   alerts.showAlert = vi.fn()
   asked.fn = vi.fn(async () => true)
-  api.list = vi.fn(async () => ({ data: { match: { status: 'ended', closed_at: null, result_key: null }, approvals: [] }, error: null, status: 200 }))
-  api.approve = vi.fn()
-  api.undo = vi.fn()
   pad.phone = null
   store.beforeAdd = null
   auth.value = { user: { id: 'u-scorer', email: 'scorer@club.ch' }, access: { roles: ['scorer'], isAdmin: false } }
@@ -271,19 +259,6 @@ describe('MatchEnd: Sign on phone', () => {
     await screen.findByRole('button', { name: /^phone / })
     expect(pad.phone).toMatchObject({ slot: 'ref1', context: { home: 'Home V', away: 'Away V', name: 'Anna Muster' } })
     expect(pad.phone.context.teamSide).toBeUndefined()
-  })
-
-  it('a phone signature drops a stale account approval, as a drawn one does', async () => {
-    const stale = { id: 'stale-uuid', short_id: 'A1B2C3D4', slot: 'scorer', name: 'Scorer Sam', approved_at: '2026-10-07T19:00:00.000Z', result_key: 'ov-result-v1|1:25:20', result_matches: false }
-    api.list = vi.fn(async () => ({ data: { match: { status: 'ended', closed_at: null, result_key: null }, approvals: [stale] }, error: null, status: 200 }))
-    seed(BEFORE_SCORER)
-    render(<MatchEnd matchId={1} />)
-    await waitFor(() => expect(row().accountApprovals?.scorer?.id).toBe('stale-uuid'))
-    await settle()
-    fireEvent.click(await within(slot('scorer')).findByTestId('account-approval-stale-scorer'))
-    fireEvent.click(await screen.findByRole('button', { name: /^phone / }))
-    await waitFor(() => expect(row().scorerSignature).toBe('data:image/png;base64,PHONE'))
-    await waitFor(() => expect(row().accountApprovals?.scorer).toBeUndefined())
   })
 })
 

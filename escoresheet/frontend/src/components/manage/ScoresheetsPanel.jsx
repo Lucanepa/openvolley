@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Download, Eye, RefreshCw, RotateCcw } from 'lucide-react'
-import { admin, approvalsApi, isApprovalUnavailable, scoresheetsApi } from '../../lib/accountApi'
+import { admin, scoresheetsApi } from '../../lib/accountApi'
 import { openAppWindow, openPendingTab } from '../../utils/openAppWindow'
 import { usePanelData, useOnline, OfflineBanner, PanelHead, MatchStatusPill, ReasonModal, useErrorText } from './common'
 import { SegmentedControl, SearchInput, RowList, Row, RowTool, Chip, EmptyInset, SkeletonRows, Notice, dayTimeLabel, toast } from '../../ui'
@@ -43,7 +43,7 @@ const rebuildable = (m) => !!m?.closed_at && m.sport !== 'beach'
  * PDF (Corrections, the Data or SQL tab; lib/scoresheets.js pdf_stale).
  * `canRebuild` (admins): "Rebuild PDF" draws the sheet again from the
  * server's data, with a "Rebuilt after the match" remark, the stored
- * signatures and the account approvals, and stores it as the match's newest,
+ * signatures, and stores it as the match's newest,
  * a closed match too. Only for a closed indoor match (rebuildable): a beach
  * match's sheet is OpenBeach's own and the sheet drawn here is the indoor one
  * (LOG-02), and a match reopened for a correction gets its PDF from the new
@@ -145,24 +145,10 @@ export default function ScoresheetsPanel({ app = 'indoor', canRebuild = false, s
     if ([400, 401, 403, 404, 409].includes(vec.status ?? vec.error?.status)) return errorText(vec.error)
     const res = await scoresheetsApi.matchRecord(m.id)
     if (res.error) return errorText(res.error)
-    // The officials' account approvals (their own table, match_approvals):
-    // a rebuilt sheet keeps them as it keeps the drawn signatures. Not read,
-    // the new PDF would lose every stamp, so nothing is drawn; a server
-    // without the feature (or a match it does not know) has none.
-    let approvals = []
-    const externalId = res.data?.match?.external_id
-    if (externalId) {
-      const listed = await approvalsApi.list(externalId)
-      if (!listed.error) approvals = listed.data?.approvals || []
-      else if (!isApprovalUnavailable(listed.error) && listed.status !== 404) {
-        console.warn('[Scoresheets] rebuild: the account approvals could not be read', listed.error)
-        return t('manage.scoresheets.rebuildApprovalsFailed')
-      }
-    }
     let matchData
     try {
       const { scoresheetDataFromCloud } = await import('../../utils/scoresheetFromCloud')
-      matchData = scoresheetDataFromCloud({ ...res.data, approvals })
+      matchData = scoresheetDataFromCloud(res.data)
     } catch (err) {
       console.warn('[Scoresheets] rebuild: the match data could not be read', err)
       return t('manage.scoresheets.rebuildFailed')

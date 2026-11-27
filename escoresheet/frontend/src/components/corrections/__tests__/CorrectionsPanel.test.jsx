@@ -158,7 +158,7 @@ describe('CorrectionsPanel: a correction after the sheet was signed (fe-home-opt
   }
 
   it('asks first; declined, nothing is written', async () => {
-    await db.matches.put({ id: 1, status: 'ended', accountApprovals: { referee1: { id: 'a1', slot: 'referee1' } } })
+    await db.matches.put({ id: 1, status: 'ended', scorerSignature: 'data:s' })
     dialog.answer = false
     setup()
     addDelayWarning()

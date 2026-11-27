@@ -8,8 +8,9 @@
  * failed), the PDF of the close's approval (also one stored long before the
  * close; after an admin reopen only one stored since; after the grace the
  * mail goes without it, the scorer and the admins are told, and the PDF
- * follows on its own), the officials of a reopened close are told, a close
- * still waiting holds back no other, released and numberless matches are not
+ * follows on its own), a reopened close sends no separate notice (the
+ * referees' approval accounts went with approval with a PIN), a close still
+ * waiting holds back no other, released and numberless matches are not
  * mailed, the clubs come from the schedule's teams and only real PDFs are
  * attached.
  *
@@ -162,6 +163,7 @@ describe('final mail sweep: one state machine per close (database, fake mailer a
       return m.id
     })
   }
+  // An old approval row (approval with a PIN, removed 27.11.2026): no longer a recipient
   const approve = (matchId, slot, who) => replica(() => sql.query(
     `INSERT INTO public.match_approvals (match_id, slot, user_id, display_name, approved_at, match_status, result_key, result_hash)
      VALUES ($1, $2, $3, 'Official', $4, 'ended', '3:0', $5)`, [matchId, slot, who.id, ts(clock - minutes(30)), createHash('sha256').update('3:0').digest()]))
@@ -330,19 +332,20 @@ describe('final mail sweep: one state machine per close (database, fake mailer a
     refuse = null
   })
 
-  // A close mailed with the first approval's PDF, its referee and scorer approving by account
+  // A close mailed with the first approval's PDF, its referee's address typed in
+  // the match setup; an old approval row of another account is no recipient
   async function mailedClose (gameN) {
     await scheduled(gameN, 'Alpha H1', 'Beta H1')
-    const id = await closed({ gameN, closedMinAgo: 5 })
-    await approve(id, 'referee1', people.ref)
-    await approve(id, 'scorer', people.scorer)
+    const id = await closed({ gameN, closedMinAgo: 5, officials: [{ role: '1st referee', email: 'rita.ref@example.ch' }] })
+    await approve(id, 'referee2', people.ref)
     storePdf(id, PDF, clock - minutes(6))
     await fm.sweep()
-    assert.ok(of(gameN).some((m) => m.to === people.ref.email && m.lang === 'fr'), 'the referee who approved, in the language of its sign-up')
+    assert.ok(of(gameN).some((m) => m.to === 'rita.ref@example.ch'), 'the referee at the typed address')
+    assert.equal(of(gameN).some((m) => m.to === people.ref.email), false, 'an approval account gets nothing')
     return id
   }
 
-  it('after an admin reopen the corrected mail waits for the new approval\'s PDF, and goes to the officials whose approvals were voided', async () => {
+  it('after an admin reopen the corrected mail waits for the new approval\'s PDF, and goes to the typed referee address', async () => {
     const id = await mailedClose(950005)
     const firstCount = of(950005).length
     // a quick correction: the old PDF is 11 minutes older than the new close
@@ -359,20 +362,17 @@ describe('final mail sweep: one state machine per close (database, fake mailer a
     const corrected = of(950005).slice(firstCount)
     assert.ok(corrected.length >= 3, `corrected mails: ${corrected.length}`)
     assert.ok(corrected.every((m) => m.vars.corrected === true && m.attachments[0]?.content.equals(PDF_V2)), 'the new approval\'s PDF')
-    assert.ok(corrected.some((m) => m.to === people.ref.email), 'the referee whose approval was voided gets the corrected sheet')
+    assert.ok(corrected.some((m) => m.to === 'rita.ref@example.ch'), 'the referee gets the corrected sheet')
+    assert.equal(corrected.some((m) => m.to === people.ref.email), false)
   })
 
-  it('an admin reopen of a mailed match: the officials who signed it are told, once', async () => {
+  it('an admin reopen of a mailed match sends no separate notice', async () => {
     const id = await mailedClose(950015)
+    const count = of(950015).length
     clock += minutes(10)
     await reopen(id)
     await fm.sweep()
-    const told = of(950015, 'scoresheet_reopened')
-    assert.deepEqual(told.map((m) => m.to).sort(), [people.ref.email, people.scorer.email].sort(), 'the voided approvals\' officials')
-    assert.equal(told[0].vars.reason, 'wrong final score')
-    clock += minutes(2)
-    await fm.sweep()
-    assert.equal(of(950015, 'scoresheet_reopened').length, 2, 'told once')
+    assert.equal(of(950015).length, count)
   })
 
   it('closes still waiting for their PDF hold back no later one', async () => {

@@ -39,11 +39,6 @@ vi.mock('../../utils/askConfirm.js', () => {
   const ask = async (opts) => { confirm.calls.push(opts); return confirm.answer }
   return { askConfirm: ask, default: ask }
 })
-const api = vi.hoisted(() => ({ list: null, undo: null }))
-vi.mock('../../lib/accountApi', async (orig) => ({
-  ...(await orig()),
-  approvalsApi: { approve: vi.fn(), list: (...a) => api.list(...a), undo: (...a) => api.undo(...a) }
-}))
 vi.mock('../../lib/apiClient', () => {
   const chain = () => {
     const b = new Proxy({}, { get: (_, prop) => (prop === 'then' ? (r) => Promise.resolve({ data: null, error: null }).then(r) : () => b) })
@@ -146,7 +141,6 @@ vi.mock('../../db/db', () => {
 })
 
 import MatchEnd from '../MatchEnd'
-import { resultKey } from '../../domain/accountApproval'
 
 const SEED = 'match_sponsors_1'
 const SETS = [
@@ -162,8 +156,6 @@ const SIGNED = {
   homePostGameCaptainSignature: 'data:cap-a', awayPostGameCaptainSignature: 'data:cap-b',
   scorerSignature: 'data:scorer', ref1Signature: 'data:ref1'
 }
-const APPROVAL_ID = '11111111-1111-4111-8111-111111111111'
-const approval = { id: APPROVAL_ID, short_id: '11111111', slot: 'referee1', name: 'Anna Example', approved_at: '2026-11-09T20:00:00Z', result_key: resultKey(SETS) }
 
 function seed(matchOver = {}, { sets = SETS, events = [] } = {}) {
   store.tables = {}
@@ -195,8 +187,6 @@ beforeEach(() => {
   cloud.on = false
   auth.value = null
   alerts.showAlert = vi.fn()
-  api.list = vi.fn(async () => ({ data: { match: { status: 'ended', closed_at: null }, approvals: [] }, error: null, status: 200 }))
-  api.undo = vi.fn(async () => ({ data: {}, error: null, status: 200 }))
   pdf.wait = vi.fn(async () => ({ blob: new Blob(['%PDF-1.4'], { type: 'application/pdf' }), filename: 'sheet.pdf' }))
   URL.createObjectURL = vi.fn(() => 'blob:x')
   HTMLAnchorElement.prototype.click = () => {}

@@ -13,9 +13,7 @@
  *
  * Official matches: once an indoor, non-test match with a game number is
  * closed (closed_at) and DELAY_MS have passed, its mail goes once to:
- *   - the scorer: the account that closed the match and the scorer's approval account;
- *   - the referees: their approval accounts (a corrected close: also those
- *     whose approvals an admin reopen voided: they signed the sheet it corrects);
+ *   - the scorer: the account that closed the match;
  *   - for a game of the imported schedule (svrz_games) only, the addresses
  *     typed in the match setup (officials[].email, the first 1st and the
  *     first 2nd referee) and the coaches: the contact address of the club of
@@ -43,9 +41,10 @@
  * have passed the mail goes without it (saying that it follows), the closing
  * scorer and the admins are told (kind scoresheet_no_pdf), and the PDF goes
  * out on its own as soon as it is stored (up to LATE_PDF_DAYS after the close).
- * A match reopened and closed again is mailed again, as "corrected"; the
- * officials whose approvals the reopen voided hear of the reopen first
- * (kind scoresheet_reopened).
+ * A match reopened and closed again is mailed again, as "corrected". (The
+ * referees' approval accounts, which also got the mail and a reopen notice,
+ * went with approval with a PIN, removed 27.11.2026: a referee gets the mail
+ * only at the address typed in the match setup.)
  *
  * One row per close in match_final_mails holds the state (db/040: outcome,
  * attempts, next_try_at, delivered). A mail the hourly budget holds back is
@@ -87,7 +86,7 @@
  *
  * Typed addresses (owner decision 4 on SEC-11, audit 26.11): an address that
  * comes only from the match setup (a typed referee or team contact address)
- * and is neither an account of the close (the scorer, an approver), a
+ * and is neither an account of the close (the scorer), a
  * confirmed active account, nor a club's contact gets the official mail and
  * the PDF with a fixed text: no technical remarks (the scorer's free text),
  * the schedule's team names (a game outside the schedule: the typed names
@@ -151,7 +150,7 @@ export const MAIL_PDF_MAX_BYTES = 10 * 1024 * 1024
 // who reads it is not known, so English, the app's binding language (owner,
 // 2026-10-29; FINAL_MAIL_LANG overrides, e.g. de)
 const DEFAULT_LANG = 'en'
-// An address is unconfirmed when the users table tracks confirmation and it is NULL (as lib/approvals.js)
+// An address is unconfirmed when the users table tracks confirmation and it is NULL
 const UNCONFIRMED_SQL = `((to_jsonb(u) ? 'email_confirmed_at') AND (to_jsonb(u) ->> 'email_confirmed_at') IS NULL)`
 // A deactivated account (db/027 banned_until) is told nothing (as lib/signupNotices.js)
 const ACTIVE_SQL = `coalesce((to_jsonb(u) ->> 'banned_until')::timestamptz <= now(), true)`
@@ -289,7 +288,6 @@ const reachedKey = (round, m, address) => createHash('sha256').update(`${round}|
 export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = console, now = () => Date.now(), lang = DEFAULT_LANG } = {}) {
   const log = logger
   const warned = new Set() // matches whose stored file was logged as unusable (once per process)
-  const noticeTries = new Map() // `${matchId}|${closedAt}` -> reopen-notice rounds with a failed send
   let running = false
 
   async function readSettings () {
@@ -371,12 +369,8 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
   async function recipientsOf (m, game) {
     const { rows: accounts } = await pool.query(
       `SELECT lower(u.email) AS email, u.raw_user_meta_data->>'mail_lang' AS lang FROM auth.users u
-        WHERE u.id = $2
-           OR u.id IN (SELECT a.user_id FROM public.match_approvals a
-                        WHERE a.match_id = $1 AND a.slot IN ('scorer', 'referee1', 'referee2')
-                          AND (a.revoked_at IS NULL OR ($3 AND a.revoked_reason = 'match_reopened')))
-        ORDER BY u.id = $2 DESC, u.id`,
-      [m.id, isUuid(m.closed_by) ? m.closed_by : null, m.corrected === true])
+        WHERE u.id = $1`,
+      [isUuid(m.closed_by) ? m.closed_by : null])
     let others = []
     let clubContacts = []
     const typedRaw = []
@@ -704,79 +698,6 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
     return m || null
   }
 
-  /**
-   * The officials who signed a mailed close that an admin reopened since:
-   * the accounts of its approvals the reopen voided (made before the close,
-   * voided as match_reopened after it). Once per close. Every such close was
-   * mailed (a match_final_mails row with recipients), so, as dueCloses does
-   * for a close on its way, when the switch was turned on does not matter:
-   * a reopen within LATE_PDF_DAYS is told (SEC-12).
-   */
-  async function reopenNotices (ctx) {
-    const t = now()
-    const { rows } = await pool.query(
-      `SELECT f.match_id AS id, f.closed_at::text AS closed_at_exact, f.delivered, m.game_n, m.scheduled_at,
-              m.home_team->>'name' AS home_name, m.away_team->>'name' AS away_name, r.details->>'reason' AS reason
-         FROM public.match_final_mails f
-         JOIN public.matches m ON m.id = f.match_id
-         JOIN LATERAL (SELECT a.at, a.details FROM public.audit_log a
-                        WHERE a.action = 'match.reopen' AND a.match_id = f.match_id AND a.at > f.closed_at
-                        ORDER BY a.at LIMIT 1) r ON true
-        WHERE f.reopen_notice IS NULL AND f.recipients > 0 AND r.at >= $1::timestamptz
-        ORDER BY r.at, f.match_id
-        LIMIT ${BATCH}`, [iso(t - LATE_PDF_DAYS * DAY_MS)])
-    const out = []
-    for (const f of rows) {
-      const mark = (notice, delivered = []) => pool.query(
-        'UPDATE public.match_final_mails SET reopen_notice = $3, delivered = $4::text[] WHERE match_id = $1 AND closed_at = $2::timestamptz',
-        [f.id, f.closed_at_exact, notice, delivered])
-      const { rows: officials } = await pool.query(
-        `SELECT lower(u.email) AS email, u.raw_user_meta_data->>'mail_lang' AS lang
-           FROM public.match_approvals a JOIN auth.users u ON u.id = a.user_id
-          WHERE a.match_id = $1 AND a.revoked_reason = 'match_reopened'
-            AND a.approved_at <= $2::timestamptz AND a.revoked_at > $2::timestamptz
-          ORDER BY a.approved_at, a.id`, [f.id, f.closed_at_exact])
-      const to = withLangs(officials)
-      if (!to.length) {
-        await mark('none')
-        continue
-      }
-      const game = await scheduleOf(f.game_n)
-      const vars = {
-        teams: game ? `${game.home} – ${game.away}` : `${f.home_name || '?'} – ${f.away_name || '?'}`,
-        game: String(f.game_n ?? ''),
-        date: zurichDate(f.scheduled_at),
-        reason: f.reason || ''
-      }
-      const done = new Set(f.delivered)
-      const r = await deliver('scoresheet_reopened', to, (x) => {
-        const key = reachedKey('reopen', f, x.address)
-        return done.has(key) ? null : { key, vars }
-      }, done, ctx)
-      const triesKey = `${f.id}|${f.closed_at_exact}`
-      if (to.every((x) => done.has(reachedKey('reopen', f, x.address)))) {
-        noticeTries.delete(triesKey)
-        await mark('sent')
-        out.push('reopen_notice')
-        continue
-      }
-      const tries = (noticeTries.get(triesKey) || 0) + (r.failed ? 1 : 0)
-      if (tries >= MAX_TRIES) {
-        noticeTries.delete(triesKey)
-        log.error?.(`[final-mail] match ${f.id}: the reopen notice did not reach every official after ${tries} tries; given up`)
-        await mark('none')
-        out.push('failed')
-        continue
-      }
-      if (noticeTries.size >= 1000) noticeTries.clear()
-      noticeTries.set(triesKey, tries)
-      // the next sweep: held by the budget, or a send failed
-      await mark(null, [...done])
-      out.push(r.held ? 'deferred' : 'later')
-    }
-    return out
-  }
-
   /** Mail every due close (one sweep at a time). Never throws. */
   async function sweep () {
     if (running || !mailer?.enabled) return { skipped: true }
@@ -797,7 +718,6 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
         }
         if (rows.length < BATCH) break
       }
-      for (const r of await reopenNotices(ctx)) count(r)
       return out
     } catch (err) {
       log.error?.(`[final-mail] sweep failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 200)}`)

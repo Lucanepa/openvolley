@@ -13,15 +13,13 @@ import {
 } from '../lib/mailer.js'
 import { startFakeSmtp, makeTestCert, linkToken, SMTP_USER, SMTP_PASS } from './helpers/fakeSmtp.js'
 
-// The account mails come in both brands; the approval notices and the
-// scoresheet mails (db/021, a PDF attached, no link; and the final mail's
-// notices, db/040) are OpenVolley's only
-const APPROVAL_KINDS = ['approval', 'approval_pin_locked']
-const SCORESHEET_KINDS = ['scoresheet', 'scoresheet_test', 'scoresheet_no_pdf', 'scoresheet_reopened']
+// The account mails come in both brands; the scoresheet mails (db/021, a PDF
+// attached, no link; and the final mail's notice, db/040) are OpenVolley's only
+const SCORESHEET_KINDS = ['scoresheet', 'scoresheet_test', 'scoresheet_no_pdf']
 // The sign-up notice (lib/signupNotices.js) goes to the admins and approvers, not the account: tested on its own
 // (and so are the club manager link and the team manager proposal, db/036)
 const NOTICE_TO_APPROVERS = ['signup', 'club_manager_invite', 'team_manager_proposal']
-const ACCOUNT_KINDS = MAIL_KINDS.filter((k) => !APPROVAL_KINDS.includes(k) && !SCORESHEET_KINDS.includes(k) && !NOTICE_TO_APPROVERS.includes(k))
+const ACCOUNT_KINDS = MAIL_KINDS.filter((k) => !SCORESHEET_KINDS.includes(k) && !NOTICE_TO_APPROVERS.includes(k))
 // Notices that link nothing: the way out is in the app, and a genuine mail
 // can be told by that (password changed, passkey added).
 const NOTICE_KINDS = ['password_changed', 'passkey_added', 'email_changed', 'sign_in_attempts']
@@ -82,28 +80,6 @@ describe('mailer: links and templates', () => {
     assert.throws(() => renderMail('spam', 'en', { link }), /unknown mail kind/)
   })
 
-  it('approval notices: the values on one line, escaped in HTML, in every language', () => {
-    const vars = { slot: 'referee1', game: '#12 Home – Away', result: '25:20, 23:25', id: '6F1C2A9B', time: '07.10.2026 19:42', sender: 'Olga <b>Owner</b>\r\nBcc: evil@example.test' }
-    for (const lang of MAIL_LANGS) {
-      const m = renderMail('approval', lang, { link: DEFAULT_MANAGER_URL, vars })
-      assert.ok(m.subject.includes('#12 Home – Away'), lang)
-      assert.doesNotMatch(m.subject, /[\r\n]/)
-      for (const v of ['25:20, 23:25', '6F1C2A9B', '07.10.2026 19:42']) assert.ok(m.text.includes(v), `${lang}: ${v}`)
-      // SEC-34 (audit 26.11): the sender's self-chosen name used to pass through
-      // as one escaped line; it is letters, spaces and hyphens now (mailName)
-      assert.ok(m.text.includes(' Olga b Owner b Bcc.'), 'one line, letters only')
-      assert.ok(!m.text.includes('evil@example.test'), 'no address')
-      assert.ok(m.html.includes(' Olga b Owner b Bcc.'))
-      assert.ok(!m.html.includes('<b>Owner'))
-      const locked = renderMail('approval_pin_locked', lang, { link: DEFAULT_MANAGER_URL, vars: { game: '#12 A – B', until: '07.10.2026 20:00', disabled: false } })
-      const blocked = renderMail('approval_pin_locked', lang, { link: DEFAULT_MANAGER_URL, vars: { game: '#12 A – B', until: '', disabled: true } })
-      assert.ok(locked.text.includes('07.10.2026 20:00'), lang)
-      assert.notEqual(locked.subject, blocked.subject)
-    }
-    assert.ok(renderMail('approval', 'en', { link: DEFAULT_MANAGER_URL, vars }).text.includes('as 1st referee'))
-    assert.ok(!renderMail('approval', 'en', { link: DEFAULT_MANAGER_URL, vars: { ...vars, sender: '' } }).text.includes('Sent by'))
-  })
-
   it('the final scoresheet mail: without the PDF it says so, the late PDF says what it is; the test mail\'s subject is fixed; its notices', () => {
     for (const lang of MAIL_LANGS) {
       const full = renderMail('scoresheet', lang, { vars: SCORESHEET_VARS })
@@ -119,8 +95,6 @@ describe('mailer: links and templates', () => {
       const scorer = renderMail('scoresheet_no_pdf', lang, { vars: { ...SCORESHEET_VARS, admin: false } })
       const admin = renderMail('scoresheet_no_pdf', lang, { vars: { ...SCORESHEET_VARS, admin: true } })
       assert.notEqual(scorer.text, admin.text, lang)
-      const reopened = renderMail('scoresheet_reopened', lang, { vars: { ...SCORESHEET_VARS, reason: 'Wrong set 3 <b>' } })
-      assert.ok(reopened.text.includes('Wrong set 3 <b>') && reopened.html.includes('Wrong set 3 &lt;b&gt;'), lang)
     }
     assert.match(renderMail('scoresheet', 'en', { vars: { ...SCORESHEET_VARS, pdf: false } }).text, /has not reached the server yet/)
     // the match's technical remarks (owner 2026-11-22): a heading and one line each, plain text in every language
@@ -345,15 +319,12 @@ describe('mailer: budgets and the per-inbox cap (stub transport)', () => {
   }
   const link = 'https://x.test/#t?token=t'
 
-  // SEC-32 (audit 26.11): the lock notices used to share the security budget;
-  // they have their own now (pin_lock), so wrong PINs cannot use it up
-  it('defaults: 50 account and 150 confirmation mails per hour, 100 notices, 100 sign-up notices, 50 security notices of their own, 50 PIN-lock notices of their own, 50 sign-in attempts notices of their own, 300 final and 50 test scoresheets, 100 user mails, 5 per inbox', () => {
-    assert.deepEqual({ ...DEFAULT_BUDGETS }, { account: 50, confirm: 150, notify: 100, signup: 100, security: 50, pin_lock: 50, sign_in: 50, scoresheet: 300, scoresheet_test: 50, user: 100 })
+  it('defaults: 50 account and 150 confirmation mails per hour, 100 notices, 100 sign-up notices, 50 sign-in attempts notices of their own, 300 final and 50 test scoresheets, 100 user mails, 5 per inbox', () => {
+    assert.deepEqual({ ...DEFAULT_BUDGETS }, { account: 50, confirm: 150, notify: 100, signup: 100, sign_in: 50, scoresheet: 300, scoresheet_test: 50, user: 100 })
     // the user mails (sendUser) have no kind: nothing else draws from their budget
     assert.equal(Object.values(MAIL_BUDGET_OF).includes('user'), false)
-    // nothing but the "your PIN was used" notices draws from the security budget
-    assert.deepEqual(MAIL_KINDS.filter((k) => MAIL_BUDGET_OF[k] === 'security'), ['approval'])
-    assert.deepEqual(MAIL_KINDS.filter((k) => MAIL_BUDGET_OF[k] === 'pin_lock'), ['approval_pin_locked'])
+    // the approval notices went with approval with a PIN (removed 27.11.2026)
+    assert.equal(MAIL_KINDS.some((k) => k.startsWith('approval')), false)
     // 2611 review: the sign-in attempts notice no longer draws from the reset mails' budget
     assert.deepEqual(MAIL_KINDS.filter((k) => MAIL_BUDGET_OF[k] === 'sign_in'), ['sign_in_attempts'])
     assert.deepEqual(MAIL_KINDS.filter((k) => MAIL_BUDGET_OF[k] === 'account'), ['reset', 'password_changed', 'passkey_added', 'email_changed'])
@@ -455,19 +426,19 @@ describe('mailer: budgets and the per-inbox cap (stub transport)', () => {
     assert.deepEqual(m.stats().exhausted.sort(), ['scoresheet', 'scoresheet_test'])
   })
 
-  it('sign-up notices cannot use up the approval notices, and a dropped mail alerts the operator once per window', async () => {
+  it('sign-up notices cannot use up the account mails, and a dropped mail alerts the operator once per window', async () => {
     const errors = []
-    const m = createMailer({ ...stub(), from: 'x <x@example.test>', budgets: { signup: 2, security: 2 }, logger: { ...silent, error: (l) => errors.push(l) } })
+    const m = createMailer({ ...stub(), from: 'x <x@example.test>', budgets: { signup: 2, account: 2 }, logger: { ...silent, error: (l) => errors.push(l) } })
     for (let i = 0; i < 5; i++) await m.send('signup', { to: `a${i}@example.ch`, link: 'https://x.test', vars: { email: 'n@example.ch' } })
     assert.equal(errors.length, 1)
     assert.match(errors[0], /ALERT.*signup.*MAIL_BUDGET_SIGNUP/)
     assert.doesNotMatch(errors[0], /@/)
-    assert.deepEqual(await m.send('approval', { to: 'ref@example.ch', link: 'https://x.test', vars: {} }), { sent: true })
+    assert.deepEqual(await m.send('reset', { to: 'ref@example.ch', link: 'https://x.test' }), { sent: true })
   })
 
   it('budgetsFromEnv: the operator sizes the final and the test scoresheet budgets; a bad value keeps the default, with a warning', () => {
-    assert.deepEqual({ ...BUDGET_ENV }, { account: 'MAIL_BUDGET_ACCOUNT', confirm: 'MAIL_BUDGET_CONFIRM', notify: 'MAIL_BUDGET_NOTIFY', signup: 'MAIL_BUDGET_SIGNUP', security: 'MAIL_BUDGET_SECURITY', pin_lock: 'MAIL_BUDGET_PIN_LOCK', sign_in: 'MAIL_BUDGET_SIGN_IN', scoresheet: 'MAIL_BUDGET_FINAL', scoresheet_test: 'MAIL_BUDGET_TEST', user: 'MAIL_BUDGET_USER' })
-    assert.deepEqual(budgetsFromEnv({ MAIL_BUDGET_CONFIRM: '400', MAIL_BUDGET_SECURITY: '80' }).budgets, { confirm: 400, security: 80 })
+    assert.deepEqual({ ...BUDGET_ENV }, { account: 'MAIL_BUDGET_ACCOUNT', confirm: 'MAIL_BUDGET_CONFIRM', notify: 'MAIL_BUDGET_NOTIFY', signup: 'MAIL_BUDGET_SIGNUP', sign_in: 'MAIL_BUDGET_SIGN_IN', scoresheet: 'MAIL_BUDGET_FINAL', scoresheet_test: 'MAIL_BUDGET_TEST', user: 'MAIL_BUDGET_USER' })
+    assert.deepEqual(budgetsFromEnv({ MAIL_BUDGET_CONFIRM: '400', MAIL_BUDGET_NOTIFY: '80' }).budgets, { confirm: 400, notify: 80 })
     assert.deepEqual(budgetsFromEnv({ MAIL_BUDGET_SIGN_IN: '20' }).budgets, { sign_in: 20 })
     assert.deepEqual(budgetsFromEnv({ MAIL_BUDGET_USER: '30' }).budgets, { user: 30 })
     assert.deepEqual(budgetsFromEnv({}), { budgets: {}, warnings: [] })
@@ -713,16 +684,7 @@ describe('mailer: brands (OpenVolley / OpenBeach)', () => {
     assert.equal(mailBrandOf('team_manager_proposal', 'beach'), 'indoor')
   })
 
-  it('the approval notices are OpenVolley\'s only: app beach changes nothing', () => {
-    const vars = { slot: 'referee1', game: '#12 Home – Away', result: '25:20, 25:18, 25:22', id: '6F1C2A9B', time: '01.10.2026 20:15', sender: '', until: '', disabled: true }
-    for (const kind of APPROVAL_KINDS) {
-      assert.equal(mailBrandOf(kind, 'beach'), 'indoor')
-      for (const lang of MAIL_LANGS) {
-        const m = renderMail(kind, lang, { link, app: 'beach', vars })
-        assert.deepEqual(m, renderMail(kind, lang, { link, vars }), `${kind}/${lang}`)
-        assert.doesNotMatch(m.text + m.html + m.subject, /OpenBeach/)
-      }
-    }
+  it('the account mails take the brand of their app; the scoresheet mails are OpenVolley\'s only', () => {
     for (const kind of ACCOUNT_KINDS) assert.equal(mailBrandOf(kind, 'beach'), 'beach')
     for (const kind of SCORESHEET_KINDS) assert.equal(mailBrandOf(kind, 'beach'), 'indoor')
   })

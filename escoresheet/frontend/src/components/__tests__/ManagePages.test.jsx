@@ -18,7 +18,7 @@ vi.mock('react-i18next', () => ({
 const api = vi.hoisted(() => ({
   admin: {
     listAccounts: vi.fn(), setRoles: vi.fn(), setAccountClubs: vi.fn(), deleteAccount: vi.fn(), rejectAccount: vi.fn(), decideRequests: vi.fn(),
-    listMatches: vi.fn(), listRevisions: vi.fn(), listMatchClosures: vi.fn(), reopenMatch: vi.fn(), listApprovals: vi.fn(),
+    listMatches: vi.fn(), listRevisions: vi.fn(), listMatchClosures: vi.fn(), reopenMatch: vi.fn(),
     listOfficialGames: vi.fn(), addMatchEditor: vi.fn(), releaseGame: vi.fn(), readMatchPin: vi.fn(), resetMatchPin: vi.fn(),
     finalMailStatus: vi.fn(), sendFinalMail: vi.fn()
   },
@@ -166,7 +166,7 @@ describe('an account is a page (#accounts/<account id>)', () => {
 
 const GAME = {
   game_number: '4711', datetime: '2026-11-12T19:30:00Z', team_home: 'Home V', team_away: 'Away V', league: '2. Liga', hall: 'Halle Nord', city: 'Musterdorf',
-  claim: { match_id: 'm-1', external_id: 'match_1', status: 'ended', scorer_name: 'Sam Scorer', editors: 2, closed_at: null, approvals: [] }
+  claim: { match_id: 'm-1', external_id: 'match_1', status: 'ended', scorer_name: 'Sam Scorer', editors: 2, closed_at: null }
 }
 const FREE = { game_number: '4712', datetime: '2026-11-13T19:30:00Z', team_home: 'Free H', team_away: 'Free A', league: '3. Liga', hall: null, city: null, claim: null }
 
@@ -240,7 +240,7 @@ describe('an official game is a page (#games/<game number>)', () => {
 const MATCH = {
   id: 'm-1', external_id: 'match_1', game_n: 4711, status: 'final', home_name: 'Home V', away_name: 'Away V', league: '2. Liga',
   scheduled_at: '2026-10-07T17:00:00Z', scorer_name: 'Sam Scorer', editors: 1, closed_at: '2026-10-07T20:00:00Z', closed_by_name: 'Ada Admin',
-  official_game_exempt: false, approvals: []
+  official_game_exempt: false
 }
 const OPEN = { ...MATCH, id: 'm-2', external_id: 'match_2', game_n: 4712, status: 'ended', home_name: 'Open H', away_name: 'Open A', closed_at: null, closed_by_name: null }
 const REVISION = {

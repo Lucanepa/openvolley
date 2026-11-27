@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest'
 import { scoresheetDataFromCloud, rebuildSetStart } from '../scoresheetFromCloud'
-import { resultKey } from '../../domain/accountApproval'
 import { setTargetsOf, courtSwitchPointOf, DEFAULT_SET_TARGETS } from '../../domain/rules'
 
 // The server's record of a closed match (GET /api/scoresheets/:id/match) as
@@ -75,24 +74,9 @@ describe('scoresheetDataFromCloud', () => {
     expect(courtSwitchPointOf(setTargetsOf(d.match))).toBe(8)
   })
 
-  it('the account approvals come along by slot (a PIN approval keeps its stamp); revoked ones and unknown slots do not', () => {
-    const base = record()
-    const key = resultKey([
-      { index: 1, homePoints: 25, awayPoints: 20, finished: true },
-      { index: 2, homePoints: 20, awayPoints: 25, finished: true }
-    ])
-    const scorer = { id: 'a1', short_id: 'K7Q2', slot: 'scorer', name: 'Schneider Sara', approved_at: '2026-11-15T15:52:00Z', result_key: key }
-    const d = scoresheetDataFromCloud({
-      ...base,
-      approvals: [
-        scorer,
-        { id: 'a2', slot: 'referee1', name: 'Moser Claudia', approved_at: '2026-11-15T15:53:00Z', result_key: key, revoked_at: '2026-11-15T16:00:00Z' },
-        { id: 'a3', slot: 'captain', name: 'X', result_key: key }
-      ]
-    })
-    expect(d.match.accountApprovals).toEqual({ scorer })
-    // none: no key at all, as a match approved by hand only
-    expect(scoresheetDataFromCloud(base).match.accountApprovals).toBeNull()
+  it('no account approvals on the rebuilt sheet (approval with a PIN removed 27.11.2026)', () => {
+    const d = scoresheetDataFromCloud({ ...record(), approvals: [{ id: 'a1', slot: 'scorer', name: 'Schneider Sara' }] })
+    expect(d.match.accountApprovals).toBeUndefined()
   })
 
   describe('set starts as the scorer\'s device printed them', () => {

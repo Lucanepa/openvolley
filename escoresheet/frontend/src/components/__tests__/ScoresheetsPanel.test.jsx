@@ -5,10 +5,10 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key, opts) => (typeof opts === 'string' ? opts : key), i18n: { language: 'en' } })
 }))
 
-const api = vi.hoisted(() => ({ list: vi.fn(), pdf: vi.fn(), viewLink: vi.fn(), reopen: vi.fn(), matchRecord: vi.fn(), rebuild: vi.fn(), rebuildVector: vi.fn(), approvals: vi.fn() }))
+const api = vi.hoisted(() => ({ list: vi.fn(), pdf: vi.fn(), viewLink: vi.fn(), reopen: vi.fn(), matchRecord: vi.fn(), rebuild: vi.fn(), rebuildVector: vi.fn() }))
 vi.mock('../../lib/accountApi', async (orig) => {
   const real = await orig()
-  return { ...real, admin: { ...real.admin, reopenMatch: (...a) => api.reopen(...a) }, approvalsApi: { ...real.approvalsApi, list: (...a) => api.approvals(...a) }, scoresheetsApi: { list: (...a) => api.list(...a), pdf: (...a) => api.pdf(...a), viewLink: (...a) => api.viewLink(...a), matchRecord: (...a) => api.matchRecord(...a), rebuild: (...a) => api.rebuild(...a), rebuildVector: (...a) => api.rebuildVector(...a) } }
+  return { ...real, admin: { ...real.admin, reopenMatch: (...a) => api.reopen(...a) }, scoresheetsApi: { list: (...a) => api.list(...a), pdf: (...a) => api.pdf(...a), viewLink: (...a) => api.viewLink(...a), matchRecord: (...a) => api.matchRecord(...a), rebuild: (...a) => api.rebuild(...a), rebuildVector: (...a) => api.rebuildVector(...a) } }
 })
 const toasts = vi.hoisted(() => ({ error: [], success: [] }))
 vi.mock('../../ui', async (orig) => {
@@ -48,7 +48,6 @@ describe('ScoresheetsPanel', () => {
     api.list.mockResolvedValue({ data: { matches: MATCHES }, error: null, status: 200 })
     // a server before the view links (404): View falls back to the file
     api.viewLink.mockResolvedValue({ error: { code: 'OV_NOT_FOUND' }, status: 404 })
-    api.approvals.mockResolvedValue({ data: { match: {}, approvals: [] }, error: null, status: 200 })
     // a server without the render service: the manager draws and captures the sheet itself
     api.rebuildVector.mockResolvedValue({ data: null, error: { code: 'OV_RENDER_UNAVAILABLE', status: 503 }, status: 503 })
     URL.createObjectURL = vi.fn(() => SHEET_URL)
@@ -182,8 +181,6 @@ describe('ScoresheetsPanel', () => {
     const closed = { ...MATCHES[0], closed_at: '2026-10-10T16:40:00Z', pdf_stale: true }
     api.list.mockResolvedValue({ data: { matches: [closed, MATCHES[1]] }, error: null, status: 200 })
     const record = { match: { id: 'm-1', game_n: 402397, external_id: 'match_1_abc' }, sets: [], events: [], liveState: null }
-    const approval = { id: 'a1', slot: 'scorer', name: 'Ada Scorer', result_key: 'ov-result-v1|' }
-    api.approvals.mockResolvedValue({ data: { match: {}, approvals: [approval] }, error: null, status: 200 })
     api.matchRecord.mockResolvedValue({ data: record, error: null, status: 200 })
     const drawn = { match: { id: 1 }, homeTeam: null, awayTeam: null, homePlayers: [], awayPlayers: [], sets: [], events: [] }
     fromCloud.fn.mockReturnValue(drawn)
@@ -203,9 +200,7 @@ describe('ScoresheetsPanel', () => {
     fireEvent.change(await screen.findByRole('textbox'), { target: { value: 'Set start times corrected' } })
     fireEvent.click(screen.getByTestId('reason-confirm'))
     await waitFor(() => expect(api.matchRecord).toHaveBeenCalledWith('m-1'))
-    // with the officials' account approvals: the stamps stay on the rebuilt sheet
-    expect(api.approvals).toHaveBeenCalledWith('match_1_abc')
-    expect(fromCloud.fn).toHaveBeenCalledWith({ ...record, approvals: [approval] })
+    expect(fromCloud.fn).toHaveBeenCalledWith(record)
     // drawn with the match's data and the remark: when and why
     const view = await screen.findByTestId('rebuild-scoresheet')
     expect(rebuildView.props.matchData).toBe(drawn)
@@ -321,29 +316,9 @@ describe('ScoresheetsPanel', () => {
     await screen.findByText('Voléro vs Smash')
     await openRebuild()
     await screen.findByTestId('rebuild-scoresheet')
-    // no external id: no approvals to read
-    expect(api.approvals).not.toHaveBeenCalled()
     rebuildView.props.onDone(null, { timedOut: true })
     await waitFor(() => expect(toasts.error).toEqual(['manage.scoresheets.rebuildTimedOut']))
     expect(screen.queryByTestId('rebuild-scoresheet')).toBeNull()
     expect(api.rebuild).not.toHaveBeenCalled()
-  })
-
-  it('Rebuild PDF: approvals that cannot be read stop it (the stamps would be lost); a server without the feature has none', async () => {
-    closedOnly()
-    api.matchRecord.mockResolvedValue({ data: { match: { id: 'm-1', external_id: 'match_1_abc' }, sets: [], events: [] }, error: null, status: 200 })
-    fromCloud.fn.mockReturnValue({ match: {}, homePlayers: [], awayPlayers: [], sets: [], events: [] })
-    api.approvals.mockResolvedValue({ data: null, error: { message: 'Bad gateway', status: 502 }, status: 502 })
-    render(<ScoresheetsPanel canRebuild />)
-    await screen.findByText('Voléro vs Smash')
-    await openRebuild()
-    expect(await screen.findByText('manage.scoresheets.rebuildApprovalsFailed')).toBeInTheDocument()
-    expect(fromCloud.fn).not.toHaveBeenCalled()
-    expect(screen.queryByTestId('rebuild-scoresheet')).toBeNull()
-
-    api.approvals.mockResolvedValue({ data: null, error: { code: 'OV_APPROVAL_UNAVAILABLE' }, status: 503 })
-    fireEvent.click(screen.getByTestId('reason-confirm'))
-    await screen.findByTestId('rebuild-scoresheet')
-    expect(fromCloud.fn).toHaveBeenCalledWith(expect.objectContaining({ approvals: [] }))
   })
 })

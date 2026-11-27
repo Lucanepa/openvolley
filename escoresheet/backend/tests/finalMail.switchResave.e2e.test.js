@@ -2,7 +2,7 @@
  * SEC-12 (audit 26.11): saving the final-mail switch again, even with the same
  * value, or turning it off and on, must not drop a close that is already on
  * its way: one waiting for its PDF, a round the budget deferred, a mail sent
- * without the PDF whose PDF follows, nor the reopen notice of a mailed close.
+ * without the PDF whose PDF follows.
  * Only a close the sweep has not started must be after the switch was turned
  * on (never the backlog).
  *
@@ -11,7 +11,7 @@
  */
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { createHash, randomBytes } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
 import pg from 'pg'
 import { SKIP_PG, createTestDatabase, grantRoles, quietLogger } from './helpers/pgTestDb.js'
 import { createFinalMail, PDF_GRACE_MS } from '../lib/finalMail.js'
@@ -146,28 +146,5 @@ describe('final mail: the switch saved again keeps the closes on their way (SEC-
     assert.equal(of(960005).length, 2, 'the PDF on its own')
     assert.equal(of(960005)[1].attachments.length, 1)
     assert.equal(await stateOf(id), 'sent')
-  })
-
-  it('a mailed close reopened while the switch was off: its officials are still told once it is on again', async () => {
-    const ref = await person('ref', ['referee'])
-    const id = await closed({ gameN: 960006, closedMinAgo: 3 })
-    await replica(() => sql.query(
-      `INSERT INTO public.match_approvals (match_id, slot, user_id, display_name, approved_at, match_status, result_key, result_hash)
-       VALUES ($1, 'referee1', $2, 'Official', $3, 'ended', '3:0', $4)`, [id, ref.id, ts(clock - minutes(30)), createHash('sha256').update('3:0').digest()]))
-    storePdf(id)
-    await fm.sweep()
-    assert.ok(of(960006).some((m) => m.to === ref.email), 'mailed to the referee')
-    clock += minutes(1)
-    assert.equal((await save(false)).status, 200)
-    await replica(async () => {
-      await sql.query("UPDATE public.matches SET closed_at = NULL, closed_by = NULL, status = 'ended' WHERE id = $1", [id])
-      await sql.query("UPDATE public.match_approvals SET revoked_at = $2, revoked_reason = 'match_reopened' WHERE match_id = $1 AND revoked_at IS NULL", [id, ts(clock)])
-      await sql.query(`INSERT INTO public.audit_log (action, match_id, details, at) VALUES ('match.reopen', $1, '{"reason":"wrong final score"}', $2)`, [id, ts(clock)])
-    })
-    clock += minutes(1)
-    assert.equal((await save(true)).status, 200)
-    await sql.query('UPDATE public.app_settings SET changed_at = $1', [ts(clock)])
-    await fm.sweep()
-    assert.equal(of(960006, 'scoresheet_reopened').length, 1, 'the referee hears of the reopen')
   })
 })

@@ -17,7 +17,6 @@ import { fileURLToPath } from 'node:url'
 import { createTestDatabase, SKIP_PG } from './helpers/pgTestDb.js'
 import { redactPerson, registerPerson, redactValue, matcherOf, nameTextRe, personDigest, parseArgs, dateOf, dropGlobalCopies, globalStoreDirOf, globalStoreDirsByHash, REDACTED } from '../scripts/redact-person.mjs'
 import { redactedPeopleKey, nameHash, licenceHash } from '../lib/redactedPeople.js'
-import { createApprovals } from '../lib/approvals.js'
 import { createScoresheets } from '../lib/scoresheets.js'
 import { keyHash } from '../lib/globalMatches.js'
 
@@ -361,7 +360,7 @@ describe('redact-person: the database', { skip: SKIP_PG }, () => {
     return m.id
   }
 
-  it('the approving account\'s name: "[redacted]" in match_approvals (slot, time, hash kept), so neither the sheet nor GET /api/approvals carries it', async () => {
+  it('the approving account\'s name: "[redacted]" in match_approvals (slot, time, hash kept), so no old sheet record carries it', async () => {
     const id = await approvalMatch('rp-appr-1')
     const before = (await owner.query('SELECT id, slot, approved_at, result_key, encode(result_hash, \'hex\') AS hash FROM public.match_approvals WHERE match_id = $1 ORDER BY slot', [id])).rows
     await owner.query("UPDATE public.match_sheet_changes SET changed_at = now() - interval '1 day' WHERE match_id = $1", [id])
@@ -378,24 +377,19 @@ describe('redact-person: the database', { skip: SKIP_PG }, () => {
     const { rows: [c] } = await owner.query('SELECT changed_at > now() - interval \'1 minute\' AS fresh FROM public.match_sheet_changes WHERE match_id = $1', [id])
     assert.equal(c?.fresh, true)
 
-    // GET /api/approvals and the render record (Rebuild PDF, rebuild-vector) read the approvals from here
-    const approvals = createApprovals({ pool: owner, secret: PIN_SECRET, logger: { warn () {}, error () {} } })
-    const listed = await approvals.listForMatch({ callerId: '00000000-0000-4000-8000-000000000001', access: { isAdmin: true }, externalId: 'rp-appr-1' })
-    assert.equal(listed.status, 200, JSON.stringify(listed.body))
-    assert.deepEqual(listed.body.data.approvals.map((a) => [a.slot, a.name]), [['referee1', REDACTED], ['scorer', 'Other Ada']])
+    // the render record (Rebuild PDF, rebuild-vector) carries no approvals (removed 27.11.2026)
     let printed = null
     const sheets = createScoresheets({
       pool: owner,
       storage: {},
       accounts: { audit: async () => {} },
       readMatch: async (mid) => ({ match: (await owner.query('SELECT * FROM public.matches WHERE id = $1', [mid])).rows[0], sets: [], events: [] }),
-      readApprovals: (mid) => approvals.recordsForMatch(mid),
       vector: { enabled: true, render: async ({ record }) => { printed = record; return { ok: false, status: 503, code: 'OV_RENDER_BUSY' } } },
       logger: { warn () {}, error () {}, log () {} }
     })
     await sheets.rebuildVector({ actorId: null, matchId: id, reason: 'name erased' })
     assert.ok(printed, 'the record went to the render service')
-    assert.deepEqual(printed.approvals.map((a) => a.name).sort(), ['Other Ada', REDACTED].sort())
+    assert.deepEqual(printed.approvals, [])
     assert.equal(JSON.stringify(printed).includes('Rita'), false, 'the erased name is nowhere in what the sheet is drawn from')
   })
 

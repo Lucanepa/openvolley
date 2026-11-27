@@ -5,7 +5,6 @@ import { admin } from '../../lib/accountApi'
 import { usePanelData, usePanelRoute, useOnline, OfflineBanner, PageMissing, PanelHead, MatchStatusPill, ReasonModal, InputModal, useErrorText, useKitLang } from './common'
 import { usePageItem } from './usePageItem'
 import { Button, DateField, Field, Input, KeyValue, SearchInput, RowList, Row, RowTool, DateRail, StatusPill, EmptyInset, SkeletonRows, Notice, weekdayLabel, dayLabel, timeLabel, dayTimeLabel, shiftDayKey, todayKey, toast } from '../../ui'
-import { ApprovalChips } from './ApprovalBits'
 
 // The server reads at most 120 days of games at a time
 const LOOKUP_DAYS = 120
@@ -163,7 +162,6 @@ export default function OfficialGamesPanel({ route = '', onRoute = null, navigat
                 chips={claim ? <>
                   <span className="text-xs text-stone-600">{t('manage.games.scoredBy', { name: claim.scorer_name || claim.scorer_email || claim.sheet_scorer_name || t('manage.games.unknownScorer') })}</span>
                   {claim.editors > 0 && <span className="text-xs text-stone-500">{t('manage.games.editors', { count: claim.editors })}</span>}
-                  <ApprovalChips approvals={claim.approvals ?? g.approvals} />
                 </> : null}
                 tools={claim ? <>
                   <RowTool disabled={!online} onClick={() => setEditorFor({ game: g.game_number, matchId: claim.match_id })}>{t('manage.games.addEditor')}</RowTool>
@@ -192,7 +190,7 @@ function GameFormat({ value }) {
 
 /**
  * An official game's page: when, where, league, game number, and the cloud
- * match that scores it (status, scorer, editors, approvals), with Add editor,
+ * match that scores it (status, scorer, editors), with Add editor,
  * Release game and its page in Closed matches.
  */
 function OfficialGamePage({ game: g, online, onBack, onAddEditor, onRelease, onOpenMatch }) {
@@ -212,7 +210,6 @@ function OfficialGamePage({ game: g, online, onBack, onAddEditor, onRelease, onO
       { label: t('manage.matches.facts.editors'), value: <span className="tabular-nums">{claim.editors ?? 0}</span> }
     ] : [])
   ]
-  const approvals = claim ? (claim.approvals ?? g.approvals) : null
   return (
     <section data-testid="official-game-page">
       <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={onBack} className="mb-3" data-testid="official-game-back">{t('manage.tabs.games')}</Button>
@@ -220,9 +217,6 @@ function OfficialGamePage({ game: g, online, onBack, onAddEditor, onRelease, onO
         {claim ? <MatchStatusPill status={claim.status} /> : <StatusPill tone="neutral">{t('manage.games.notClaimed')}</StatusPill>}
       </PanelHead>
       <OfflineBanner online={online} />
-      {Array.isArray(approvals) && approvals.length > 0 && (
-        <div className="mb-3 flex flex-wrap gap-1.5"><ApprovalChips approvals={approvals} /></div>
-      )}
       <div className="rounded-2xl border border-stone-200/70 bg-white p-4 shadow-card sm:p-5" data-testid="official-game-facts">
         <KeyValue items={items} variant="stats" className="gap-y-3 text-sm" />
         {claim && (

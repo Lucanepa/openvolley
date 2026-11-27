@@ -6,15 +6,27 @@
  * as the match's full `signatures` object: the server REPLACES that JSONB
  * column on update (it is not in pgQuery mergeJsonColumns), so the pre-match
  * coach and captain signatures travel along and are never wiped.
- *
- * An account approval is bound to the result and the team names (db/011
- * result_key and its void trigger), not to the drawn image: re-signing or
- * clearing keeps a valid approval. A stale one is dropped when a new
- * signature is drawn, as before (MatchEnd handleSaveSignature).
  */
 
 import { remarksSignaturesOf } from './remarksSignatures'
 import { isLocalOnly } from './matchKind'
+import { hasOfficial } from './officials.js'
+
+/**
+ * The optional signing slots, the assistant scorer and the 2nd referee: shown
+ * and required only when the match has that official. A slot exists for an
+ * official named in match.officials, or when it already holds a drawn
+ * signature, so it can be seen and cleared. An empty or null field is no
+ * official: Reopen last set, a correction and a cloud import write null into
+ * every post-match field.
+ * @returns {{ asstScorer: boolean, ref2: boolean }}
+ */
+export function optionalSignatureSlots(match) {
+  return {
+    asstScorer: !!match?.asstScorerSignature || hasOfficial(match?.officials, 'asstScorer'),
+    ref2: !!match?.ref2Signature || hasOfficial(match?.officials, 'ref2')
+  }
+}
 
 /** The server keys of the post-match signatures, by match-row field. */
 export const POST_MATCH_SIGNATURE_KEYS = Object.freeze({

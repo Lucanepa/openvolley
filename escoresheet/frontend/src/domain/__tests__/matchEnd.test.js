@@ -43,14 +43,12 @@ describe('post-match signatures', () => {
       'ref1Signature'
     ])
   })
-  it('clearedPostMatchSignatures nulls every one of them, their "signed on phone" records, and the account approvals', () => {
+  it('clearedPostMatchSignatures nulls every one of them and their "signed on phone" records', () => {
     const cleared = clearedPostMatchSignatures()
     expect(Object.keys(cleared)).toEqual([
       ...POST_MATCH_SIGNATURE_FIELDS,
-      ...POST_MATCH_SIGNATURE_FIELDS.map(f => `signatureSources.${f}`),
-      'accountApprovals'
+      ...POST_MATCH_SIGNATURE_FIELDS.map(f => `signatureSources.${f}`)
     ])
-    expect(cleared.accountApprovals).toBeNull()
     expect(Object.values(cleared).every(v => v === null)).toBe(true)
   })
 })

@@ -13,10 +13,10 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key, opts) => (typeof opts === 'string' ? opts : key), i18n: { language: 'en' } })
 }))
 
-const api = vi.hoisted(() => ({ list: vi.fn(), pdf: vi.fn(), viewLink: vi.fn(), matchRecord: vi.fn(), rebuild: vi.fn(), rebuildVector: vi.fn(), approvals: vi.fn() }))
+const api = vi.hoisted(() => ({ list: vi.fn(), pdf: vi.fn(), viewLink: vi.fn(), matchRecord: vi.fn(), rebuild: vi.fn(), rebuildVector: vi.fn() }))
 vi.mock('../../lib/accountApi', async (orig) => {
   const real = await orig()
-  return { ...real, approvalsApi: { ...real.approvalsApi, list: (...a) => api.approvals(...a) }, scoresheetsApi: { list: (...a) => api.list(...a), pdf: (...a) => api.pdf(...a), viewLink: (...a) => api.viewLink(...a), matchRecord: (...a) => api.matchRecord(...a), rebuild: (...a) => api.rebuild(...a), rebuildVector: (...a) => api.rebuildVector(...a) } }
+  return { ...real, scoresheetsApi: { list: (...a) => api.list(...a), pdf: (...a) => api.pdf(...a), viewLink: (...a) => api.viewLink(...a), matchRecord: (...a) => api.matchRecord(...a), rebuild: (...a) => api.rebuild(...a), rebuildVector: (...a) => api.rebuildVector(...a) } }
 })
 const toasts = vi.hoisted(() => ({ error: [], success: [] }))
 vi.mock('../../ui', async (orig) => {
@@ -42,7 +42,6 @@ describe('ScoresheetsPanel: Rebuild PDF only for a closed indoor match (LOG-02, 
     toasts.error = []
     toasts.success = []
     api.viewLink.mockResolvedValue({ error: { code: 'OV_NOT_FOUND' }, status: 404 })
-    api.approvals.mockResolvedValue({ data: { match: {}, approvals: [] }, error: null, status: 200 })
   })
 
   it('no Rebuild on a beach match, closed or not, even with a stale PDF', async () => {

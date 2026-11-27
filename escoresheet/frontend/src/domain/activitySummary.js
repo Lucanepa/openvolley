@@ -262,7 +262,6 @@ export const MATCH_KEY_KINDS = Object.freeze([
   [k => k === 'approved', 'match.close', null],
   [k => /^coinToss/.test(k) || k === 'firstServe', 'match.coin_toss', null],
   [k => /Signature$/.test(k), 'match.signature', (k, before, after) => ({ role: k.replace(/Signature$/, ''), signed: !!after })],
-  [k => k === 'accountApprovals', 'match.approval', null],
   [k => k === 'remarks', 'match.remarks', (k, before, after) => ({ length: typeof after === 'string' ? after.length : 0 })],
   [k => k === 'forfeitTeam' || k === 'forfeitReason' || k === 'stoppedReason', 'match.forfeit', null],
   [k => k === 'manualChanges', 'match.manual_change', null]
@@ -276,18 +275,6 @@ function same(a, b) {
   } catch {
     return false
   }
-}
-
-function approvalEntries(before, after) {
-  const out = []
-  const b = before && typeof before === 'object' ? before : {}
-  const a = after && typeof after === 'object' ? after : {}
-  for (const slot of new Set([...Object.keys(b), ...Object.keys(a)])) {
-    if (same(b[slot], a[slot])) continue
-    const rec = a[slot]
-    out.push({ role: slot, approved: !!rec, method: rec ? (rec.method || (rec.pin_used || rec.pinUsed ? 'pin' : 'account')) : null })
-  }
-  return out
 }
 
 /**
@@ -324,8 +311,6 @@ export function matchUpdateEntries(mods, row) {
       seen.add(kind)
       const keys = changed.map(k => k.split('.')[0]).filter(k => /^coinToss/.test(k) || k === 'firstServe')
       out.push({ kind, data: { keys: [...new Set(keys)], confirmed: (mods.coinTossConfirmed ?? row?.coinTossConfirmed) === true } })
-    } else if (kind === 'match.approval') {
-      for (const data of approvalEntries(before, after)) out.push({ kind, data })
     } else if (kind === 'match.forfeit') {
       if (seen.has(kind)) continue
       seen.add(kind)

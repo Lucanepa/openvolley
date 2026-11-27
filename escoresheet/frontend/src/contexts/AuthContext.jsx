@@ -8,7 +8,6 @@ import { fetchMe, redeemInvite as apiRedeemInvite } from '../lib/accountApi'
 import { clearSavedTeams, refreshSavedTeams } from '../db/savedTeams'
 import { clearGameRosters, refreshGameRosters, GAME_ROSTERS_REFRESH_MS } from '../db/gameRosters'
 import { clearClubPlayers, refreshClubPlayers } from '../db/clubPlayers'
-import { forgetApprovalEmails } from '../domain/accountApproval'
 import { clearPendingTeamLink } from '../utils/teamLink'
 import { TODAY_GAMES_CACHE_KEY } from '../lib/todayGamesCache'
 import i18n from 'i18next'
@@ -99,7 +98,7 @@ function dropOldApiCache() {
 /**
  * Everything this device keeps for the account that was signed in: its
  * profile and clubs, today's games, a team link not redeemed yet, the
- * officials' approval addresses, the console lines not uploaded yet, the
+ * officials' approval addresses an older version kept, the console lines not uploaded yet, the
  * saved-team, sent-roster and licence caches, and the old service worker
  * copies of API answers. Removed whenever
  * a session ends here: Sign out, a session that expired or that the server
@@ -113,7 +112,8 @@ export function clearLocalAccountData({ keepUserId = null } = {}) {
   // A team or club manager link opened here and not redeemed: never for the
   // next account (fe-auth-client-7, delta-fe-manage-3)
   clearPendingTeamLink()
-  forgetApprovalEmails()
+  // the officials' addresses an older version kept (approval with a PIN, removed 27.11.2026)
+  try { localStorage.removeItem('ov.approvalEmails') } catch { /* storage blocked */ }
   // Console lines not uploaded yet belong to this account: never upload
   // them under the next one signing in on this device
   discardUnsentLogs()
@@ -123,8 +123,8 @@ export function clearLocalAccountData({ keepUserId = null } = {}) {
 /**
  * At start: whatever belongs to another account than `userId` (null: nobody
  * is signed in). A session that lapsed while the app was closed ended
- * without any of the moments above. (The approval addresses carry no owner
- * and expire by themselves; the unsent console lines are kept per account.)
+ * without any of the moments above. (The unsent console lines are kept per
+ * account.)
  */
 export function clearOtherAccountsData(userId) {
   removeAccountEntries(userId)
