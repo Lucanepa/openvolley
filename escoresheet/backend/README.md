@@ -1096,7 +1096,8 @@ VolleyManager's public league calendars instead (`/iCal/schedule/<token>`, one p
 login; `lib/vmIcal.js` parses them, `lib/vmSync.js` `fetchIcalFeeds` / `icalGameToRow` /
 `mergeWithStored` write them). `VM_ICAL_FEEDS` lists the calendars (tokens or links, separated by
 spaces, commas or new lines; not in the code, so any region can bring its own). Set, it wins over
-`VM_USERNAME` / `VM_PASSWORD`: no login, no role switch. The parser reads structured fields only
+`VM_USERNAME` / `VM_PASSWORD`: no login, no role switch, and no role window: it runs daily at 09:00
+Europe/Zurich, its retries and catch-ups at any hour (the login keeps 22:30 UTC inside its window). The parser reads structured fields only
 (UID `game-<n>`, `DTSTART` with `TZID`, `LOCATION`, the hall in `X-APPLE-STRUCTURED-LOCATION`
 `X-TITLE`, the teams around the em dash of the description's first line), never the labels,
 which follow the language of the account the link was made with. A calendar has no referees, line
