@@ -728,26 +728,32 @@ export function createContactMailer({ transport, from, to, maxPerHour = CONTACT_
 /**
  * The support mailer of the environment: the SMTP account of the account
  * mails (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS; From MAIL_FROM, with
- * the same default as lib/mailer.js), To CONTACT_EMAIL. A disabled one, with
- * the reason, when that is not configured. Never throws, never logs the
- * password. One connection per mail (no pool): the form sends rarely.
+ * the same default as lib/mailer.js), To CONTACT_EMAIL. With
+ * CONTACT_SMTP_HOST set it uses an SMTP account of its own instead (all four
+ * CONTACT_SMTP_*, never mixed with SMTP_*), so the support mails can stay
+ * with the mailbox's provider while the account mails go through another.
+ * A disabled one, with the reason, when that is not configured. Never throws,
+ * never logs the password. One connection per mail (no pool): the form sends
+ * rarely.
  */
 export function contactMailerFromEnv(env = process.env, { tls, maxPerHour } = {}) {
-  const host = (env.SMTP_HOST || '').trim()
-  const pass = env.SMTP_PASS || ''
-  if (!host || !pass) return disabledContactMailer(!host ? 'SMTP_HOST not set' : 'SMTP_PASS not set')
-  const user = (env.SMTP_USER || '').trim()
-  if (!user) return disabledContactMailer('SMTP_USER not set')
-  const portText = (env.SMTP_PORT || '').trim() || '465'
+  const p = (env.CONTACT_SMTP_HOST || '').trim() ? 'CONTACT_SMTP_' : 'SMTP_'
+  const host = (env[`${p}HOST`] || '').trim()
+  const pass = env[`${p}PASS`] || ''
+  if (!host || !pass) return disabledContactMailer(!host ? `${p}HOST not set` : `${p}PASS not set`)
+  const user = (env[`${p}USER`] || '').trim()
+  if (!user) return disabledContactMailer(`${p}USER not set`)
+  const portText = (env[`${p}PORT`] || '').trim() || '465'
   const port = Number(portText)
-  if (!/^\d+$/.test(portText) || port < 1 || port > 65535) return disabledContactMailer('SMTP_PORT is not a port number')
+  if (!/^\d+$/.test(portText) || port < 1 || port > 65535) return disabledContactMailer(`${p}PORT is not a port number`)
   const from = (env.MAIL_FROM || '').trim() || (user.includes('@') ? `${DEFAULT_FROM_NAME} <${user}>` : '')
-  if (!from) return disabledContactMailer('MAIL_FROM not set (and SMTP_USER is not an address)')
+  if (!from) return disabledContactMailer(`MAIL_FROM not set (and ${p}USER is not an address)`)
   const to = (env.CONTACT_EMAIL || '').trim() || DEFAULT_CONTACT_EMAIL
   if (!isContactEmail(to)) return disabledContactMailer('CONTACT_EMAIL is not one address')
   try {
     const transport = nodemailer.createTransport({ ...transportOptions({ host, port, user, pass, tls }), pool: false })
-    return createContactMailer({ transport, from, to, maxPerHour })
+    // host: for the startup line only (which SMTP account the form uses)
+    return Object.assign(createContactMailer({ transport, from, to, maxPerHour }), { host })
   } catch (err) {
     return disabledContactMailer(err.message)
   }

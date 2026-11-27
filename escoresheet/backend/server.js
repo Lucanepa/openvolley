@@ -1941,7 +1941,7 @@ const contactMailer = contactMailerFromEnv(process.env)
 // At most 10 support requests at once, each up to 14 MB in memory for up to 2 min
 const contactSlots = createContactSlots()
 if (contactMailer.enabled) {
-  console.log(`[Contact] support form mails ${contactMailer.to} from ${contactMailer.from}`)
+  console.log(`[Contact] support form mails ${contactMailer.to} from ${contactMailer.from} over ${contactMailer.host}`)
 } else if (DB_MODE || process.env.SMTP_HOST) {
   console.warn(`[Contact] support form mail off (${contactMailer.reason}): POST /api/contact answers 503`)
 }

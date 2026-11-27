@@ -756,6 +756,23 @@ describe('contact: settings', () => {
     assert.deepEqual([b.from, b.to], ['OpenVolley <noreply@openvolley.example>', 'help@example.test'])
     b.close()
   })
+
+  it('CONTACT_SMTP_HOST: an SMTP account of its own, never mixed with SMTP_*', () => {
+    const own = { CONTACT_SMTP_HOST: 'smtp.mailbox.test', CONTACT_SMTP_USER: 'support-out@example.test', CONTACT_SMTP_PASS: `sink-${randomBytes(12).toString('hex')}`, CONTACT_SMTP_PORT: '587' }
+    // the default From names the account in use: the form's own, not the account mails'
+    const a = contactMailerFromEnv({ ...smtp, ...own })
+    assert.equal(a.enabled, true)
+    assert.equal(a.from, 'OpenVolley <support-out@example.test>')
+    assert.equal(a.host, 'smtp.mailbox.test')
+    a.close()
+    const shared = contactMailerFromEnv(smtp)
+    assert.equal(shared.host, 'smtp.example.test')
+    shared.close()
+    // a half-set account is off: it never borrows SMTP_USER or SMTP_PASS for another host
+    assert.equal(contactMailerFromEnv({ ...smtp, ...own, CONTACT_SMTP_PASS: '' }).reason, 'CONTACT_SMTP_PASS not set')
+    assert.equal(contactMailerFromEnv({ ...smtp, ...own, CONTACT_SMTP_USER: '' }).reason, 'CONTACT_SMTP_USER not set')
+    assert.equal(contactMailerFromEnv({ ...smtp, ...own, CONTACT_SMTP_PORT: 'x' }).reason, 'CONTACT_SMTP_PORT is not a port number')
+  })
 })
 
 describe('matchMailDateTime (send-info)', () => {

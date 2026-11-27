@@ -238,6 +238,11 @@ services:
       MAIL_FROM_BEACH: ${MAIL_FROM_BEACH:-}
       MANAGER_URL_BEACH: ${MANAGER_URL_BEACH:-}
       CONTACT_EMAIL: ${CONTACT_EMAIL:-}
+      # The support form's own SMTP account (lib/contact.js); empty = SMTP_* above
+      CONTACT_SMTP_HOST: ${CONTACT_SMTP_HOST:-}
+      CONTACT_SMTP_PORT: ${CONTACT_SMTP_PORT:-}
+      CONTACT_SMTP_USER: ${CONTACT_SMTP_USER:-}
+      CONTACT_SMTP_PASS: ${CONTACT_SMTP_PASS:-}
       # Passkeys (backend/lib/passkeys.js): empty = RP openvolley.app and the
       # app's own sites only (lib/cors.js ALLOWED_ORIGINS)
       WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-}
