@@ -752,6 +752,98 @@ export function handInk (gray, width, height, region, { ink = 190, leftOf = Infi
 }
 
 /**
+ * The printed SV-number column down the page, as a line x = f(y) through
+ * where each row's SV number starts (rows: [{ y, left }], ocrRoster handAt):
+ * the median of the slopes between every two rows, and the median offset
+ * (Theil-Sen), so a row whose SV number swallowed a handwritten digit, or
+ * lost its first printed one, does not move it. null with fewer than three rows.
+ * @returns {((y: number) => number) | null}
+ */
+export function columnLine (rows) {
+  const pts = (rows || []).filter((r) => Number.isFinite(r?.y) && Number.isFinite(r?.left))
+  if (pts.length < 3) return null
+  const slopes = []
+  for (let a = 0; a < pts.length; a++) {
+    for (let b = a + 1; b < pts.length; b++) if (pts[b].y !== pts[a].y) slopes.push((pts[b].left - pts[a].left) / (pts[b].y - pts[a].y))
+  }
+  slopes.sort((p, q) => p - q)
+  const slope = slopes.length ? slopes[slopes.length >> 1] : 0
+  const offsets = pts.map((p) => p.left - slope * p.y).sort((p, q) => p - q)
+  const offset = offsets[offsets.length >> 1]
+  return (y) => offset + slope * y
+}
+
+/**
+ * The left margin of a player row as one crop for the handwriting reader
+ * (handReader.js; the handwriting study, 2026-11-27: one crop of the margin
+ * read 63 of 77 marks right, the margin's groups of ink one by one fewer):
+ * the band from x0 to x1 (up to the printed SV column), the row's y 1.4
+ * lines up and down; of its ink (darker than light grey, as handInk), the
+ * parts whose middle is on the row (0.9 line), no speck, no rule or pen line
+ * across, nothing touching the band's right edge (the SV number's first
+ * digit, if the column is a little off). The crop: those parts' box with a
+ * quarter of their height round it (4 px at least), inside the band.
+ * @param {{ x0, x1, y, line }} band page pixels
+ * @returns {{ x0, y0, w, h } | null} page pixels, null with no ink
+ */
+export function marginBand (gray, width, height, { x0, x1, y, line }, { ink = 190 } = {}) {
+  const bx0 = Math.max(0, Math.floor(x0))
+  const bx1 = Math.min(width, Math.floor(x1))
+  const by0 = Math.max(0, Math.floor(y - 1.4 * line))
+  const by1 = Math.min(height, Math.floor(y + 1.4 * line))
+  const w = bx1 - bx0
+  const h = by1 - by0
+  if (w < 4 || h < 2) return null
+  const label = new Int32Array(w * h)
+  const at = (x, yy) => gray[(by0 + yy) * width + bx0 + x]
+  let kx0 = Infinity
+  let ky0 = Infinity
+  let kx1 = -1
+  let ky1 = -1
+  let id = 0
+  for (let start = 0; start < label.length; start++) {
+    if (label[start] || at(start % w, Math.floor(start / w)) >= ink) continue
+    id++
+    const part = { n: 0, sy: 0, x0: Infinity, y0: Infinity, x1: -1, y1: -1 }
+    const stack = [start]
+    label[start] = id
+    while (stack.length) {
+      const i = stack.pop()
+      const x = i % w
+      const yy = (i - x) / w
+      part.n++
+      part.sy += yy
+      if (x < part.x0) part.x0 = x
+      if (x > part.x1) part.x1 = x
+      if (yy < part.y0) part.y0 = yy
+      if (yy > part.y1) part.y1 = yy
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
+        const nx = x + dx
+        const ny = yy + dy
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue
+        const j = ny * w + nx
+        if (!label[j] && at(nx, ny) < ink) { label[j] = id; stack.push(j) }
+      }
+    }
+    const pw = part.x1 - part.x0 + 1
+    const ph = part.y1 - part.y0 + 1
+    if (Math.abs(by0 + part.sy / part.n - y) > 0.9 * line || part.n < 3 || ph > 3.5 * line || pw > 6 * line) continue
+    if (part.x1 + 1 >= w - 1) continue
+    kx0 = Math.min(kx0, part.x0)
+    ky0 = Math.min(ky0, part.y0)
+    kx1 = Math.max(kx1, part.x1)
+    ky1 = Math.max(ky1, part.y1)
+  }
+  if (kx1 < 0) return null
+  const pad = Math.max(4, Math.floor(0.25 * (ky1 - ky0 + 1)))
+  const cx0 = Math.max(0, kx0 - pad)
+  const cy0 = Math.max(0, ky0 - pad)
+  const cx1 = Math.min(w, kx1 + pad + 1)
+  const cy1 = Math.min(h, ky1 + pad + 1)
+  return { x0: bx0 + cx0, y0: by0 + cy0, w: cx1 - cx0, h: cy1 - cy0 }
+}
+
+/**
  * Whether a printed row is struck out by hand (owner: that player does not
  * play): a pen line through the row's words at the height of their middle,
  * where print leaves paper between them. A team's number between two names

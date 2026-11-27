@@ -29,11 +29,15 @@ beforeEach(() => {
 })
 
 describe('RosterPhotoImport entry="sources"', () => {
-  it('two buttons, each opening its source at once', () => {
+  it('two buttons, each opening its source at once, once the list\'s language is picked', () => {
     render(<RosterPhotoImport entry="sources" side="away" teamLabel="VC Talheim" onApply={() => {}} />)
     expect(screen.queryByTestId('roster-photo-away')).toBeNull()
     const camera = vi.spyOn(screen.getByTestId('roster-photo-camera-away'), 'click').mockImplementation(() => {})
     const picker = vi.spyOn(screen.getByTestId('roster-photo-file-away'), 'click').mockImplementation(() => {})
+    // (no language yet: the buttons wait)
+    fireEvent.click(screen.getByTestId('roster-photo-take-away'))
+    expect(camera).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTestId('roster-photo-lang-away-it'))
     fireEvent.click(screen.getByTestId('roster-photo-take-away'))
     expect(camera).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByTestId('roster-photo-choose-away'))

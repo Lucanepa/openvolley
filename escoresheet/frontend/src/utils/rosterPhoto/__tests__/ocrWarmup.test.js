@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { WARM_FLAG, warmUpBlocker, warmUpOcrFiles, warmUpUrls, scheduleOcrWarmUp } from '../ocrWarmup'
 import { readRosterPhoto } from '../ocr'
 import vmShot from './fixtures/ocr-vm-de-screenshot.json'
+import { HAND_ORT_VERSION, TESSERACT_VERSION, handPaths } from '../ocrFiles'
 
 // a web page with a service worker in charge, online, visible, Data Saver off
 const memory = (init = {}) => {
@@ -40,11 +41,13 @@ describe('the recognition files loaded ahead on the web (first Match setup)', ()
     expect(warmUpBlocker(env({ controller: null }))).toBe('no-service-worker')
     expect(warmUpBlocker(env({ storage: memory({ [WARM_FLAG]: '1' }) }))).toBe('done')
     expect(WARM_FLAG).toMatch(/^ov-ocr-files-\d+\.\d+\.\d+/)
+    // a new handwriting reader is a new flag: a device that had the files before loads its files too
+    expect(WARM_FLAG).toBe(`ov-ocr-files-${TESSERACT_VERSION}-hand-${HAND_ORT_VERSION}`)
   })
 
   it('loads exactly the files ocr.js starts Tesseract with: the worker, this device\'s engine, the three languages', async () => {
     for (const simd of [true, false]) {
-      const urls = await warmUpUrls({ dir: '/ocr/x/', simd })
+      const urls = (await warmUpUrls({ dir: '/ocr/x/', handDir: '/ocr/hand-x/', simd })).filter((u) => !u.startsWith('/ocr/hand-x/'))
       let options = null
       const createWorker = async (langs, oem, opts) => {
         options = { langs, ...opts }
@@ -59,6 +62,11 @@ describe('the recognition files loaded ahead on the web (first Match setup)', ()
       expect(urls).toEqual([options.workerPath, options.corePath, ...options.langs.map((l) => `${options.langPath}/${l}.traineddata`)])
     }
     expect(typeof readRosterPhoto).toBe('function')
+  })
+
+  it('and the handwriting reader\'s (its engine, model, loader) where it can run: WebAssembly SIMD', async () => {
+    expect(await warmUpUrls({ dir: '/ocr/x/', handDir: '/ocr/hand-x/', simd: true })).toEqual(expect.arrayContaining(handPaths('/ocr/hand-x/').urls))
+    expect((await warmUpUrls({ dir: '/ocr/x/', handDir: '/ocr/hand-x/', simd: false })).some((u) => u.startsWith('/ocr/hand-x/'))).toBe(false)
   })
 
   it('one file after another at low priority; the flag once all came; nothing fetched when the cache has them', async () => {

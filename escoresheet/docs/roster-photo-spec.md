@@ -83,7 +83,9 @@ up to twice (2200 px; a phone screenshot's letters are ~8 px). Grey, kept in mem
 ### 3.3 The recognition (`ocr.js`) and the rows (`ocrRoster.js`)
 
 Tesseract.js 7 with German, French and Italian (`4.0.0_best_int`), LSTM only, one block of text
-(PSM 6). Its files are the app's own (`vite-plugin-ocr-assets.js`, `ocr/<version>/`): never a CDN,
+(PSM 6); since 2026-11-27 only the languages of the list's language the scorer picked (section
+3.10). The handwritten marks are read by the handwriting reader (section 3.9), Tesseract only where
+it cannot run. Its files are the app's own (`vite-plugin-ocr-assets.js`, `ocr/<version>/`): never a CDN,
 works offline and under `script-src 'self'` (the pages already allow `'wasm-unsafe-eval'`). Errors
 have codes: `ocr-load` (could not start: the web offline before its first use), `ocr-timeout`
 (120 s), `ocr-empty` (no player row), `ocr-cancelled` (dialog closed: the workers are ended at once).
@@ -143,8 +145,10 @@ lost).
 ### 3.4 The screen (`src/components/rosterPhoto/`, Match setup)
 
 Match setup › Edit roster › Roster import › Photo (since 27.11.2026 one switch: Remote · PDF ·
-Photo): "Take a photo" / "Choose a picture" open their source at once, then the dialog: corners →
-reading (progress). Cancel before the reading ends changes nothing.
+Photo): first the list's language (Deutsch · Français · Italiano · Other, section 3.10: nothing
+picked at first, the photo buttons disabled with a hint until one is), then "Take a photo" /
+"Choose a picture" open their source at once, then the dialog: corners → reading (progress).
+Cancel before the reading ends changes nothing.
 
 **No check screen** (owner, 2026-11-27: "just already import them in the official roster and fix
 there"). The reading goes straight into the roster through `applyImportedRoster`, as a PDF does:
@@ -184,8 +188,14 @@ fit those sizes, are where the photo's rows are fixed now.
   (`<queries>` for `IMAGE_CAPTURE`, Android 11+; no CAMERA permission). The camera app writes the
   photo into the app's own Pictures folder and nothing deleted it: `MainActivity` deletes those
   older than ten minutes at each start. Some camera apps also keep a copy in the gallery (device
-  dependent, not ours to delete). F-Droid's scanner refuses `.gz` and `.wasm` files in the build:
-  the engine ships as `.wasm.js` and the languages decompressed (`.traineddata`).
+  dependent, not ours to delete). F-Droid's scanner refuses `.gz` and `.wasm` files in the build
+  (fdroidserver `scanner.py`: also `.zip`, `.jar`, `.so`, and binaries named `.bin` or without an
+  extension): Tesseract's engine ships as `.wasm.js` and the languages decompressed
+  (`.traineddata`); the handwriting reader's engine as `ort-wasm-simd-threaded.wasm.js` (the
+  build writes onnxruntime-web's WebAssembly into it as base64, `export default "…"`, the worker
+  hands the bytes to onnxruntime-web as `env.wasm.wasmBinary`) and its model as `.onnx` (passes);
+  the worker imports onnxruntime-web's `ort.wasm.min.mjs` (alias `onnxruntime-web/wasm`), not its
+  default build, which would have Vite copy the `.wasm` into `assets/`.
 - **iOS**: the camera text names the photo of the Einsatzliste (`NSCameraUsageDescription`).
 - **Desktop**: the field opens a file picker (a picture or a screenshot).
 - **Backend-served pages** (the standalone / venue server handing out the frontend, `--local`):
@@ -207,7 +217,15 @@ and `MatchSetupPhotoImport.test.jsx` (applied at once, the marks shown and clear
 Save stores no mark, more than 14 players). Since 2026-11-27 also
 the workers (one language each, merged line by line, PGM), struck rows drawn on made-up rows, made-up
 officials in the three languages (the check screen's fit script went with the check screen,
-27.11.2026). The fixtures and
+27.11.2026). Since the handwriting reader (27.11.2026): `handModel.test.js` (the resize checked
+against Pillow's, the batches, the masked CTC decode, the engine's script), `handReader.test.js`
+(its worker: load, read, no SIMD, a failed or silent load, a worker that dies), `scan.test.js`
+(`columnLine`, `marginBand` on drawn rows), `ocr.test.js` (on a made-up page drawn into a stand-in
+canvas: the margin read by the reader and Tesseract never asked; Tesseract when the reader fails or
+did not load; the list's languages for the workers), `src/__tests__/ocrAssets.test.js` (the build's
+files, no `.wasm` or `.gz`, the model's SHA-256 and cache, the version pin), the photo.read keys
+(`activitySummary.test.js`, `photoReadLog.test.js`, the backend's `activityLog.e2e.test.js`) and the
+language pick (`RosterPhotoImport.test.jsx`, `walkthroughRosters.test.jsx`). The fixtures and
 their sources: `src/utils/rosterPhoto/__tests__/fixtures/`.
 
 ### 3.7 Tuned on real photos (2026-11-26)
@@ -279,6 +297,69 @@ or red, handwritten marks 32 right / 37 missing before, 34 / 34 after, the offic
 slowed desktop does not show: expect about 10 to 13 s there. The next step, if that is still too
 slow, is the page read smaller (20 to 35 % less reading time, its accuracy not yet measured).
 
+### 3.9 The handwriting read on the device (option B of the handwriting study, 2026-11-27)
+
+The handwriting study (owner's 14 photos, 77 handwritten marks on the 12 readable ones) tried
+recognisers on the crops the pipeline cuts: Tesseract's second reading read 34 marks right,
+PP-OCRv6 rec tiny 63, with **one crop of a row's left margin** (up to the printed SV-number column
+fitted down the page) in place of the margin's groups of ink. Owner: "ok B. just put it out". Built:
+
+- `handReader.js` / `handReader.worker.js`: **PP-OCRv6 rec tiny** (PaddleOCR, as RapidOCR converts it
+  to ONNX, Apache-2.0, 4.5 MB) in **onnxruntime-web**'s WebAssembly engine (MIT, one thread: threads
+  need a cross-origin isolated page, which no page of the app is), in its own worker. It starts with
+  the recognition (`startOcrEngine`, while the scorer takes the photo; engine.hand), and loads from
+  the app's own files (`ocr/hand-<onnxruntime-web version>/`, `handFiles.js`; never a CDN): the
+  model, the engine's loader `.mjs` and the engine as `.wasm.js` (section 3.5). Needs WebAssembly
+  SIMD and module workers; where it cannot load (an old WebView, too little memory, a file missing),
+  or fails, the marks are read by Tesseract as before (`marksBy: 'tesseract'` in photo.read). Still
+  loading when there is handwriting to read, it gets 10 s more (`HAND_WAIT_MS`, counted in
+  `msEngine`); a page without handwriting never waits for it.
+- What it reads (`ocr.js` handMarks): for each player row with ink left of the SV number, **one
+  crop of the margin** (`scan.js` `columnLine`: the SV column as a Theil-Sen line through the rows'
+  SV starts, so a number that swallowed or lost a digit does not move it; `marginBand`: from two
+  lines left of the margin's ink to a quarter line before the column, the row's y ±1.4 lines; the
+  ink parts whose middle is on the row, no speck, no rule, nothing touching the column) in grey;
+  every other group (inside the table, right of it, a circled number's inside) as Tesseract is
+  handed it (black on white). Each crop scaled to 48 px high (antialiased bilinear, as Pillow:
+  `handModel.js`), padded to 320 wide, the answer decoded greedily (CTC) with only blank, 0-9, C, K,
+  L allowed; a reading below 0.3 is no mark. `withHandReadings` merges them unchanged: **every
+  handwritten mark stays amber**.
+- Measured in the app's own path (Chromium, the 14 photos, counts only; PR body): 12 readable
+  photos 64 of 77 marks right (Tesseract 34), 8 wrong, 5 missing, 8 extra, photo 14 13 of 16 (5),
+  no wrong field without amber or red; rows, SV numbers, names, dates and officials as before.
+  Time (the renderer slowed 5 times, 8 cores, Chrome's 2 GB: one worker, the calibration of
+  section 3.8; the engine started 5 s ahead): the marks 1.0 s a photo on average (Tesseract's
+  second reading 0.7 s), the owner's photo 2.4 s; the reader had always loaded by then. Its files
+  add about 25 MB to the build (the engine 19.8 MB as base64, 5.9 MB compressed; the model 4.5 MB).
+
+### 3.10 The list's language (2026-11-27)
+
+Owner: the scorer picks the list's language before the photo: Deutsch · Français · Italiano ·
+Other (`ListLanguageChoice`, Match setup's Photo segment above "Take a photo" / "Choose a picture",
+and in the dialog's source step). Nothing is picked at first (never from the device's or the app's
+language, never remembered: a conscious pick each import); until then the photo buttons are
+disabled and a hint says why. The walkthrough's Photo step shows it, inert like the buttons. The
+pick goes to the reading (`ocrFiles.js` `ocrLangsFor`): Tesseract starts with those languages
+only, fewer and faster, above all on a device with one worker:
+
+| Pick | Tesseract | Why (the 14 real photos, one worker) |
+|---|---|---|
+| Deutsch | deu | German lists as with all three (every field, the officials); 10.1 s instead of 14.2 s a German list |
+| Français | fra + deu | French alone lost SV numbers; the names on French lists are often German-Swiss; 8.5 s instead of 11.6 s |
+| Italiano | ita + deu | Italian alone lost first and last names and officials (as the 26.11 title-language test); 11.9 s instead of 12.8 s |
+| Other | deu + fra + ita | as before |
+
+(Seconds from "Read the list" to the roster, at section 3.8's A7 calibration, one worker.)
+
+A wrong pick never breaks the reading: the list is read with the other languages, the page's words
+the picked one is unsure of re-read in the second where there is one. German left on a French list
+(the 4 readable French photos): every row found, 1 SV number, 1 last name and 2 dates of birth more
+to check (all amber or red, none wrong unflagged), 2 marks fewer right; German on an Italian list:
+as good as Italian. A role word the photo blurred past reading ("Coach:" on the owner's tablet photo,
+read with German alone) no longer loses the official: a line of the officials' shape ("#", a
+five- or six-digit SV number, two names, the year in brackets) takes the first free slot, its
+names to check (`ocrRoster.js` officialOf).
+
 ## 4. Plan B: our own OCR server (planned, not built)
 
 Build it only if plan A shows big issues: on real lists, many misread SV numbers or names the
@@ -319,6 +400,7 @@ privacy policy needs no new processor. Candidates, in order:
 ## 5. Files
 
 `src/domain/importedRoster.js`, `src/utils/rosterPhoto/{scan,ocr,ocrFiles,ocrWarmup,ocrRoster,savedTeamNames,photoReadLog}.js`,
+`src/utils/rosterPhoto/{handFiles,handModel,handReader,handReader.worker}.js` (the handwriting reader),
 `src/components/rosterPhoto/{RosterPhotoImport,PhotoCropStep}.jsx`, `src/utils/rosterPhoto/photoMarks.js`,
 `src/components/MatchSetup.jsx` (`applyImportedRoster`, the marks, the banner, Roster import › Photo), `vite-plugin-ocr-assets.js`,
 `pwa-workbox.js` (`ocr/**`, `OCR_FILES_ROUTE`), `scripts/build-subdomains.js`, the Android manifest
@@ -327,11 +409,18 @@ and `MainActivity`, iOS `Info.plist`, locales (`rosterPhoto.*`, help `importPhot
 
 Activity log (owner 27.11, privacy 1.31): each reading that ends writes one `photo.read` entry
 (`utils/rosterPhoto/photoReadLog.js`): its time, outcome code and counts (rows, fields to check,
-struck rows), the device's cores and memory, the workers used and whether the page was turned.
+struck rows), the device's cores and memory, the workers used and whether the page was turned;
+since 27.11.2026 the time per stage (`msEngine`, `msPage`, `msHand`, `msRest`), the reader of the
+marks (`marksBy`: `onnx` / `tesseract`) and the list's language picked (`lang`).
 Never the photo or anything read from it (docs/activity-log-spec.md). On the server:
 
 ```sql
 SELECT app_version, platform, data->>'cores' cores, data->>'memory' mem, data->>'outcome' outcome,
        count(*), round(avg((data->>'ms')::int) / 1000.0, 1) avg_s, round(max((data->>'ms')::int) / 1000.0, 1) max_s
 FROM ov_read.activity_log WHERE kind = 'photo.read' GROUP BY 1,2,3,4,5 ORDER BY 6 DESC;
+-- where the time went (entries since 27.11.2026)
+SELECT data->>'lang' lang, data->>'marksBy' marks, data->>'workers' workers, count(*),
+       round(avg((data->>'msEngine')::int) / 1000.0, 1) engine_s, round(avg((data->>'msPage')::int) / 1000.0, 1) page_s,
+       round(avg((data->>'msHand')::int) / 1000.0, 1) hand_s, round(avg((data->>'msRest')::int) / 1000.0, 1) rest_s
+FROM ov_read.activity_log WHERE kind = 'photo.read' AND data ? 'msPage' GROUP BY 1,2,3 ORDER BY 4 DESC;
 ```

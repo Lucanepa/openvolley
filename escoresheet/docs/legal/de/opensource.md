@@ -1,6 +1,6 @@
 # Open-Source-Hinweis
 
-**OpenVolley und OpenBeach** · Stand: 7. Oktober 2026
+**OpenVolley und OpenBeach** · Stand: 27. November 2026
 
 ## OpenVolley und OpenBeach
 
@@ -46,6 +46,8 @@ Inter, IBM Plex Mono, JetBrains Mono, Orbitron, Roboto Mono, Space Mono
 | PDF.js (pdfjs-dist) | Apache-2.0 |
 | Tesseract.js, tesseract.js-core (Texterkennung des Foto-Imports) | Apache-2.0 |
 | Tesseract-Sprachdaten Deutsch, Französisch, Italienisch (@tesseract.js-data) | Apache-2.0 (Paket: MIT) |
+| ONNX Runtime Web (onnxruntime-web: führt den Handschrift-Leser des Foto-Imports aus) | MIT |
+| PP-OCRv6 rec tiny, das Texterkennungsmodell von PaddleOCR, von RapidOCR nach ONNX umgewandelt (Handschrift-Leser des Foto-Imports; sein Hinweis liegt daneben, `NOTICE.txt`) | Apache-2.0 |
 | wasm-feature-detect | Apache-2.0 |
 | JSZip | MIT (oder GPL-3.0-or-later) |
 | fflate | MIT |

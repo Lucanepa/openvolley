@@ -65,6 +65,8 @@ export function SegmentedControl({ options, value, onChange, ariaLabel: ariaLabe
       <div role="radiogroup" aria-label={ariaLabel} className={cn('grid gap-1 rounded-xl bg-stone-100 p-1', COLS[options.length] ?? 'grid-flow-col auto-cols-fr', className)}>
         {options.map((o, i) => {
           const on = o.value === value;
+          // nothing chosen yet (a pick with no default): the first segment takes the Tab
+          const tabStop = on || (i === 0 && !options.some((x) => x.value === value));
           return (
             <button
               key={o.value}
@@ -72,7 +74,7 @@ export function SegmentedControl({ options, value, onChange, ariaLabel: ariaLabe
               type="button"
               role="radio"
               aria-checked={on}
-              tabIndex={on ? 0 : -1}
+              tabIndex={tabStop ? 0 : -1}
               title={o.title}
               data-testid={o.testId}
               data-help-id={o.helpId}

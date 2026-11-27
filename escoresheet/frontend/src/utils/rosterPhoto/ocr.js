@@ -20,10 +20,12 @@
  */
 
 import { OCR_LANGS, ocrDir, ocrPaths, simdSupported } from './ocrFiles'
+import { handInput } from './handModel'
+import { startHandReader } from './handReader'
 import { importedRosterOf } from '../../domain/importedRoster'
 import { withTimeout, PDF_TIMEOUT_CODE } from '../parseRosterPdf'
 import { rosterFromOcr, withHandReadings, HANDWRITTEN_MAX } from './ocrRoster'
-import { handInk, lineAcross, ringInRegion, ringScore, struckThrough, turnGray } from './scan'
+import { columnLine, handInk, lineAcross, marginBand, ringInRegion, ringScore, struckThrough, turnGray } from './scan'
 
 // a number counts as circled when ink rings it this fully (scan.js ringScore)
 const CIRCLED_SCORE = 0.8
@@ -240,14 +242,14 @@ export function mergeLanguages (readings) {
 }
 
 /**
- * The page read once: on the three workers side by side, one language each,
- * merged line by line (mergeLanguages), when the engine has them; else on
- * one worker with the three languages in turn.
+ * The page read once: on the workers side by side, one language each (of
+ * the list's languages), merged line by line (mergeLanguages), when the
+ * engine has a worker for each; else on one worker with the languages in turn.
  */
-async function readPage (workers, page, { apart = false } = {}) {
+async function readPage (workers, page, { apart = false, langs = OCR_LANGS } = {}) {
   const img = imageOf(page)
   if (!apart) return (await workers[0].recognize(img, {}, { blocks: true, text: false })).data
-  return mergeLanguages(await Promise.all(OCR_LANGS.map((_, k) => workers[k].recognize(img, {}, { blocks: true, text: false }).then((r) => r.data))))
+  return mergeLanguages(await Promise.all(langs.map((_, k) => workers[k].recognize(img, {}, { blocks: true, text: false }).then((r) => r.data))))
 }
 
 /** How many words of a reading came out sure (a word of three letters or four digits, 80 % or more). */
@@ -337,7 +339,7 @@ async function readLicencesAgain (workers, page, players) {
  * circle, and the captain. Each player then gets what its groups read
  * (ocrRoster withHandReadings).
  */
-async function readHandwriting (workers, page, px, players, debug) {
+async function readHandwriting (workers, page, px, players, debug, handReady = async () => null) {
   const items = []
   players.forEach((p, i) => {
     const at = p.handAt
@@ -348,7 +350,9 @@ async function readHandwriting (workers, page, px, players, debug) {
       items.push({ i, box: ring ? ring.inner : g, ringed: !!ring, skip: at.skip, line: at.line })
     }
   })
-  if (!items.length) return players
+  if (!items.length) return { players, by: null }
+  // the handwriting reader, once it loaded (waited for only when there is handwriting to read)
+  const hand = await handReady()
   const cuts = items.map((it) => {
     const pad = Math.max(3, Math.round(0.2 * it.line))
     const x = Math.max(0, Math.floor(it.box.x0 - pad))
@@ -368,7 +372,8 @@ async function readHandwriting (workers, page, px, players, debug) {
   const sheet = document.createElement('canvas')
   sheet.width = left
   sheet.height = HAND_HEIGHT * 2 + HAND_GAP
-  const ctx = sheet.getContext('2d')
+  // (read back box by box, and once more by the handwriting reader: kept on the CPU)
+  const ctx = sheet.getContext('2d', { willReadFrequently: true })
   ctx.fillStyle = '#fff'
   ctx.fillRect(0, 0, sheet.width, sheet.height)
   cuts.forEach((c, k) => {
@@ -404,6 +409,18 @@ async function readHandwriting (workers, page, px, players, debug) {
     }
     ctx.putImageData(img, to.x, to.y)
   })
+  if (debug) debug.sheet = sheet
+  if (debug) debug.rows = players.map((p) => ({ licence: p.licence, handAt: p.handAt && { ...p.handAt, skip: p.handAt.skip.length } }))
+  // the handwriting reader, when it loaded: every crop read by it, the left
+  // margin of a row as one crop (handMarks); else (or when it fails) Tesseract
+  if (hand) {
+    try {
+      const marks = await handMarks(hand, sheet, at, px, players, items, debug)
+      return { players: players.map((p, i) => withHandReadings(p, marks[i])), by: 'onnx' }
+    } catch (err) {
+      console.warn('[RosterPhoto] handwriting reader failed, Tesseract reads the marks:', err?.code || err?.message)
+    }
+  }
   // each read alone, as one line of text (one sheet read at once came out
   // run together or dropped: tried on real photos, 2026-11-26), a few
   // milliseconds each
@@ -432,16 +449,63 @@ async function readHandwriting (workers, page, px, players, debug) {
     }
     return text
   })
-  if (debug) debug.sheet = sheet
-  if (debug) debug.rows = players.map((p) => ({ licence: p.licence, handAt: p.handAt && { ...p.handAt, skip: p.handAt.skip.length } }))
   if (debug) debug.hand = items.map((it, k) => ({ ...it, skip: undefined, text: texts[k].words.map((w) => w.text).join(' '), conf: texts[k].conf, cut: cuts[k] }))
   const reads = players.map(() => [])
   items.forEach((it, k) => {
     const text = texts[k].words.sort((a, b) => a.x - b.x).map((w) => w.text).join(' ')
-    // (a reading it was barely sure of is no mark: a stroke of a letter, a speck)
-    if ((text && texts[k].conf >= HAND_MIN_CONF) || it.ringed) reads[it.i].push({ text: texts[k].conf >= HAND_MIN_CONF ? text : '', conf: text ? texts[k].conf : 0.5, ringed: it.ringed })
+    markOf(reads[it.i], text, texts[k].conf, it.ringed)
   })
-  return players.map((p, i) => withHandReadings(p, reads[i]))
+  return { players: players.map((p, i) => withHandReadings(p, reads[i])), by: 'tesseract' }
+}
+
+/** A crop's reading added to its row's (withHandReadings): a reading it was barely sure of is no mark (a stroke of a letter, a speck); a ring still is. */
+function markOf (reads, text, conf, ringed) {
+  if ((text && conf >= HAND_MIN_CONF) || ringed) reads.push({ text: conf >= HAND_MIN_CONF ? text : '', conf: text ? conf : 0.5, ringed })
+}
+
+/**
+ * The marks read by the handwriting reader (handReader.js), each row's
+ * readings left to right: the row's left margin as one crop, up to the
+ * printed SV column fitted down the page (scan.js columnLine, marginBand), in
+ * grey, in place of that margin's groups of ink; every other group (inside
+ * the table, right of it, a circled number) as Tesseract would have read it
+ * (black on white). What the handwriting study measured on the real photos
+ * (2026-11-27): 63 of 77 marks right, Tesseract's groups 34.
+ */
+async function handMarks (hand, sheet, at, px, players, items, debug) {
+  const col = columnLine(players.filter((p) => p.handAt).map((p) => p.handAt))
+  const bands = new Map()
+  players.forEach((p, i) => {
+    const left = items.filter((it) => it.i === i && !it.ringed && it.box.where === 'left')
+    if (!left.length) return
+    const { line, y } = p.handAt
+    const x0 = Math.min(...left.map((it) => it.box.x0)) - 2 * line
+    const x1 = col ? col(y) - 0.25 * line : p.handAt.left - 0.2 * line
+    const box = marginBand(px.gray, px.width, px.height, { x0, x1, y, line })
+    if (box) bands.set(i, box)
+  })
+  const kept = items.map((it, k) => k).filter((k) => !(bands.has(items[k].i) && !items[k].ringed && items[k].box.where === 'left'))
+  // the groups' crops as Tesseract is handed them: the sheet's black on white, HAND_GAP / 2 of paper round
+  const sheetGray = grayOf(sheet)
+  const inputs = [
+    ...[...bands.values()].map((box) => handInput(px.gray, px.width, px.height, box)),
+    ...kept.map((k) => {
+      const to = at[k]
+      return handInput(sheetGray, sheet.width, sheet.height, { x0: to.x - HAND_GAP / 2, y0: to.y - HAND_GAP / 2, w: to.w + HAND_GAP, h: to.h + HAND_GAP })
+    })
+  ]
+  const got = await hand.read(inputs)
+  if (got?.length !== inputs.length) throw new Error('The handwriting reader answered short')
+  const reads = players.map(() => [])
+  const bandRows = [...bands.keys()]
+  // the margin first in its row (it lies left of everything else there)
+  bandRows.forEach((i, j) => markOf(reads[i], got[j].text, got[j].conf, false))
+  kept.forEach((k, j) => markOf(reads[items[k].i], got[bandRows.length + j].text, got[bandRows.length + j].conf, items[k].ringed))
+  if (debug) {
+    debug.bands = bandRows.map((i, j) => ({ i, box: bands.get(i), text: got[j].text, conf: got[j].conf }))
+    debug.hand = kept.map((k, j) => ({ ...items[k], skip: undefined, text: got[bandRows.length + j].text, conf: got[bandRows.length + j].conf }))
+  }
+  return reads
 }
 
 /**
@@ -527,17 +591,24 @@ export function ocrWorkerCount ({
 /**
  * The recognition started ahead (RosterPhotoImport: while the scorer takes
  * the photo and drags its corners, so "Read the list" does not wait for it),
- * from the app's own files, each worker with the three languages. With
- * three, the page is read by the three side by side, one language each
- * (readRosterPhoto: engine.apart), everything else with all three. Never
- * throws: engine.ready rejects (ocr-load) when none could start, and goes
- * on with the workers that did (little memory). engine.terminate() ends
- * them at once (the dialog closed, the list read).
- * @returns {{ size: number, apart: boolean, ready: Promise<object[]>, listeners: Set<Function>, terminate: () => Promise<void>, ended: boolean }}
+ * from the app's own files, each worker with the list's languages (langs:
+ * the scorer's pick, ocrFiles.js ocrLangsFor; all three by default). With a
+ * worker for each of two or three languages, the page is read by them side
+ * by side, one language each (readRosterPhoto: engine.apart), everything
+ * else with all of them. Beside it the handwriting reader starts
+ * (handReader.js, engine.hand; hand: false for none, or one handed in).
+ * Never throws: engine.ready rejects (ocr-load) when no worker could start,
+ * and goes on with the workers that did (little memory); a handwriting
+ * reader that cannot load leaves the marks to Tesseract. engine.terminate()
+ * ends them all at once (the dialog closed, the list read).
+ * @returns {{ size: number, apart: boolean, langs: string[], hand: object|null, ready: Promise<object[]>, listeners: Set<Function>, terminate: () => Promise<void>, ended: boolean }}
  */
-export function startOcrEngine ({ size = ocrWorkerCount(), createWorker, dir, startTimeoutMs = OCR_START_TIMEOUT_MS } = {}) {
+export function startOcrEngine ({ size = ocrWorkerCount(), createWorker, dir, startTimeoutMs = OCR_START_TIMEOUT_MS, langs = OCR_LANGS, hand, handDir } = {}) {
   const count = Math.max(1, Math.min(MAX_WORKERS, size))
-  const engine = { size: count, apart: count === OCR_LANGS.length, listeners: new Set(), workers: [], ended: false }
+  const list = langs?.length ? [...langs] : [...OCR_LANGS]
+  const apartWith = (n) => list.length > 1 && n >= list.length
+  const engine = { size: count, apart: apartWith(count), langs: list, listeners: new Set(), workers: [], ended: false }
+  engine.hand = hand === false ? null : (hand || startHandReader({ dir: handDir }))
   engine.ready = (async () => {
     if (!wasmAllowed()) throw coded('ocr-load', 'This page may not run WebAssembly (its Content-Security-Policy, or the engine)')
     try {
@@ -545,7 +616,7 @@ export function startOcrEngine ({ size = ocrWorkerCount(), createWorker, dir, st
       // (ocrFiles.js: the same addresses the web loads ahead, ocrWarmup.js)
       const { workerPath, corePath, langPath } = ocrPaths(dir || ocrDir(), await simdSupported())
       const one = async (k) => {
-        const w = await create(OCR_LANGS, LSTM_ONLY, {
+        const w = await create(list, LSTM_ONLY, {
           workerPath,
           corePath,
           langPath,
@@ -564,8 +635,8 @@ export function startOcrEngine ({ size = ocrWorkerCount(), createWorker, dir, st
       if (engine.ended) throw coded('ocr-cancelled', 'The reading was cancelled')
       const workers = engine.workers.filter(Boolean)
       if (!workers.length) throw started.find((r) => r.status === 'rejected')?.reason || new Error('no worker')
-      // (one short: the page read by one worker with all three)
-      engine.apart = workers.length === OCR_LANGS.length
+      // (one short: the page read by one worker with all of them)
+      engine.apart = apartWith(workers.length)
       engine.workers = workers
       return [...workers]
     } catch (err) {
@@ -577,11 +648,29 @@ export function startOcrEngine ({ size = ocrWorkerCount(), createWorker, dir, st
   engine.ready.catch(() => {})
   engine.terminate = async () => {
     engine.ended = true
+    try { engine.hand?.terminate() } catch { /* gone */ }
     const all = engine.workers.splice(0).filter(Boolean)
     await Promise.all(all.map(async (w) => { try { await w.terminate?.() } catch { /* already gone */ } }))
   }
   return engine
 }
+
+// After the page, the handwriting reader still loading gets this much longer
+// (it started with the engine; on a slow tablet it is ready long before)
+export const HAND_WAIT_MS = 10000
+
+/** The handwriting reader once it loaded (at most waitMs more), else null: Tesseract reads the marks. */
+async function readyHand (hand, waitMs) {
+  if (!hand || hand.ended) return null
+  try {
+    await withTimeout(hand.ready, waitMs)
+    return hand
+  } catch {
+    return null
+  }
+}
+
+const now = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now())
 
 // The progress bar's shares (owner 27.11: when it shows 100 % it is finished): the page
 // takes most of it, each step after it (SV numbers, handwriting, struck rows, circled
@@ -596,16 +685,26 @@ export const OCR_LAST_SHARE = 0.98
  *
  * engine: the recognition started ahead (startOcrEngine), left to its owner
  * to end; without one, readRosterPhoto starts its own and ends it.
+ * langs: the list's languages for an engine of its own (an engine handed in
+ * reads with its own). hand: for an engine of its own, as startOcrEngine's.
  * tuning (measurements): { workers: how many of its own (ocrWorkerCount) }.
- * stats: filled in as it goes, for the activity log (photoReadLog), counts only:
- * { workers: the recognition workers used, turned: true when it turned the page }.
+ * stats: filled in as it goes, for the activity log (photoReadLog), counts and
+ * times only: { workers: the recognition workers used, turned: true when it
+ * turned the page, msEngine: waiting for the recognition (and the
+ * handwriting reader), msPage: the page read (turns included), msHand: the
+ * handwriting read again, marksBy: 'onnx' (the handwriting reader) or
+ * 'tesseract' }.
  * @param {HTMLCanvasElement|Blob} page
- * @param {{ engine?: object, onProgress?: (share: number, status: string) => void, signal?: AbortSignal, createWorker?: Function, timeoutMs?: number, startTimeoutMs?: number, dir?: string, tuning?: object, stats?: { workers?: number, turned?: boolean } }} [opts]
+ * @param {{ engine?: object, onProgress?: (share: number, status: string) => void, signal?: AbortSignal, createWorker?: Function, timeoutMs?: number, startTimeoutMs?: number, dir?: string, langs?: string[], hand?: object|false, tuning?: object, stats?: { workers?: number, turned?: boolean, msEngine?: number, msPage?: number, msHand?: number, marksBy?: string } }} [opts]
  */
-export async function readRosterPhoto (page, { engine = null, onProgress, signal, createWorker, timeoutMs = OCR_TIMEOUT_MS, startTimeoutMs = OCR_START_TIMEOUT_MS, dir, debug, tuning = {}, stats = null } = {}) {
+export async function readRosterPhoto (page, { engine = null, onProgress, signal, createWorker, timeoutMs = OCR_TIMEOUT_MS, startTimeoutMs = OCR_START_TIMEOUT_MS, dir, langs, hand, debug, tuning = {}, stats = null } = {}) {
   // (a Blob: read as it is, by one worker)
-  const own = engine ? null : startOcrEngine({ size: isCanvas(page) ? (tuning.workers ?? ocrWorkerCount()) : 1, createWorker, dir, startTimeoutMs })
+  const own = engine ? null : startOcrEngine({ size: isCanvas(page) ? (tuning.workers ?? ocrWorkerCount()) : 1, createWorker, dir, startTimeoutMs, langs, hand: isCanvas(page) ? hand : false })
   const eng = engine || own
+  const list = eng.langs?.length ? eng.langs : OCR_LANGS
+  // where the time goes (photo.read, owner 27.11: "check why it took 42 secs")
+  const clock = { engine: 0, page: 0, hand: 0 }
+  let marksBy = null
   // progress: the page's share read (by each language, side by side), then the marks read again
   let phase = null
   const shares = new Map()
@@ -626,6 +725,7 @@ export async function readRosterPhoto (page, { engine = null, onProgress, signal
   try {
     if (signal?.aborted) throw cancelled()
     let workers
+    const t0 = now()
     try {
       workers = await withTimeout(eng.ready, startTimeoutMs)
       if (stats) stats.workers = workers.length
@@ -634,25 +734,28 @@ export async function readRosterPhoto (page, { engine = null, onProgress, signal
       if (signal?.aborted || err?.code === 'ocr-cancelled') throw cancelled()
       if (err?.code === 'ocr-load') throw err
       throw coded('ocr-load', `The text recognition could not start (${err?.message || err})`, err)
+    } finally {
+      clock.engine += now() - t0
     }
     if (signal?.aborted) throw cancelled()
-    // the page by the three side by side, one language each (a few
-    // milliseconds to switch); everything else with all three, as before
+    // the page by the workers side by side, one language each (a few
+    // milliseconds to switch); everything else with all of them, as before
     const languages = async (apart) => {
-      await Promise.all(workers.map((w, k) => w.reinitialize(apart ? OCR_LANGS[k] : OCR_LANGS, LSTM_ONLY)))
+      await Promise.all(workers.map((w, k) => w.reinitialize(apart && k < list.length ? list[k] : list, LSTM_ONLY)))
       await setAll(workers, { tessedit_pageseg_mode: PSM_SINGLE_BLOCK, preserve_interword_spaces: '1' })
     }
     const read = async (p) => {
       phase = 'page'
       shares.clear()
-      phaseCount = eng.apart ? OCR_LANGS.length : 1
+      phaseCount = eng.apart ? list.length : 1
       if (eng.apart) await languages(true)
-      const data = await withTimeout(readPage(workers, p, { apart: eng.apart }), timeoutMs)
+      const data = await withTimeout(readPage(workers, p, { apart: eng.apart, langs: list }), timeoutMs)
       if (eng.apart) await languages(false)
       phase = null
       return data
     }
     let data
+    const tPage = now()
     try {
       // a page wider than high is an A4 list photographed on its side, most
       // likely: the small copy's quarter turns first (and as it lies), not a
@@ -684,6 +787,8 @@ export async function readRosterPhoto (page, { engine = null, onProgress, signal
       if (signal?.aborted || err?.code === 'ocr-cancelled') throw cancelled()
       if (err?.code === PDF_TIMEOUT_CODE) throw coded('ocr-timeout', 'The text recognition took too long', err)
       throw coded('ocr-load', `The text recognition stopped (${err?.message || err})`, err)
+    } finally {
+      clock.page += now() - tPage
     }
     phase = null
     report(SHARE_PAGE, 'recognizing text')
@@ -699,9 +804,20 @@ export async function readRosterPhoto (page, { engine = null, onProgress, signal
     }
     if (px && parsed.players.some((p) => p.handAt) && !signal?.aborted) {
       report(0.86, 'reading marks')
+      const tHand = now()
+      let waited = 0
+      const handReady = async () => {
+        const t = now()
+        try { return await readyHand(eng.hand, HAND_WAIT_MS) } finally { waited += now() - t }
+      }
       try {
-        parsed.players = await withTimeout(readHandwriting(workers, page, px, parsed.players, debug), HAND_TIMEOUT_MS)
+        // (HAND_TIMEOUT_MS for the reading, and the wait for a reader still loading)
+        const got = await withTimeout(readHandwriting(workers, page, px, parsed.players, debug, handReady), HAND_TIMEOUT_MS + HAND_WAIT_MS)
+        parsed.players = got.players
+        if (got.by) marksBy = got.by
       } catch { /* the first reading's marks stay (all of them to check) */ }
+      clock.engine += waited
+      clock.hand += now() - tHand - waited
     }
     report(0.92, 'reading marks')
     if (px && !signal?.aborted) {
@@ -735,6 +851,12 @@ export async function readRosterPhoto (page, { engine = null, onProgress, signal
     }
     return roster
   } finally {
+    if (stats) {
+      stats.msEngine = Math.round(clock.engine)
+      stats.msPage = Math.round(clock.page)
+      stats.msHand = Math.round(clock.hand)
+      stats.marksBy = marksBy || (eng.hand?.loaded ? 'onnx' : 'tesseract')
+    }
     signal?.removeEventListener?.('abort', onAbort)
     eng.listeners.delete(listener)
     // its memory (the three languages) back at once; a worker that never answers is ended too

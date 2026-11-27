@@ -76,19 +76,22 @@ export const API_NETWORK_ONLY_ROUTE = {
 }
 
 /**
- * The photo import's recognition files (ocr/<version>/, vite-plugin-ocr-assets.js):
- * not precached, kept once loaded (at the first Match setup: ocrWarmup.js, or
- * at the first photo import), so a photo import works offline.
+ * The photo import's recognition files (ocr/<version>/ and the handwriting
+ * reader's ocr/hand-<version>/, vite-plugin-ocr-assets.js): not precached,
+ * kept once loaded (at the first Match setup: ocrWarmup.js, or at the first
+ * photo import), so a photo import works offline.
  * Their own cache: the build's 100 other assets never push them out. The
- * folder carries tesseract.js's version, so a new one is a new address.
- * Listed before STATIC_ASSETS_ROUTE (the first matching route wins).
+ * folders carry tesseract.js's and onnxruntime-web's versions, so a new one
+ * is a new address. Listed before STATIC_ASSETS_ROUTE (the first matching
+ * route wins).
  */
 export const OCR_FILES_ROUTE = {
-  urlPattern: /\/ocr\/[^/]+\/(?:[^/]+\.js|lang\/[a-z]+\.traineddata)$/,
+  urlPattern: /\/ocr\/[^/]+\/(?:[^/]+\.(?:m?js|onnx)|lang\/[a-z]+\.traineddata)$/,
   handler: 'CacheFirst',
   options: {
     cacheName: 'ocr-files',
-    expiration: { maxEntries: 12 },
+    // a device's Tesseract files (worker, engine, 3 languages) and the reader's 3, twice over
+    expiration: { maxEntries: 18 },
     plugins: [{
       fetchDidSucceed: async ({ response }) =>
         /^\s*text\/html/i.test(response.headers.get('content-type') || '')
