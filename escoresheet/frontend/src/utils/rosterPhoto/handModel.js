@@ -13,9 +13,10 @@
 import { HAND_CLASSES } from './handFiles'
 
 export const HAND_INPUT_HEIGHT = 48
-// narrower inputs are padded to this width: 128 read the real photos' marks as
-// well as RapidOCR's 320 (its 3x48x320) and 2.5 times faster (2026-11-27)
-export const HAND_INPUT_MIN_WIDTH = 128
+// narrower inputs are padded to this width, as RapidOCR does (3x48x320). 128 was
+// tried (27.11): in the app's own reading of the real photos it read 1-3 marks
+// fewer right and saved only a quarter of the marks' time (~0.25 s on an A7 Lite)
+export const HAND_INPUT_MIN_WIDTH = 320
 // a crop is never narrower than this before the padding
 const MIN_WIDTH = 16
 // at most this many crops in one run of the model (a few MB each on a tablet)

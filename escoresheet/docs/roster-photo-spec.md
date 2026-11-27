@@ -323,8 +323,8 @@ fitted down the page) in place of the margin's groups of ink. Owner: "ok B. just
   ink parts whose middle is on the row, no speck, no rule, nothing touching the column) in grey;
   every other group (inside the table, right of it, a circled number's inside) as Tesseract is
   handed it (black on white). Each crop scaled to 48 px high (antialiased bilinear, as Pillow:
-  `handModel.js`), padded to 128 wide (RapidOCR pads to 320: on the real photos 128 read one mark
-  fewer right, 63 against 64, with fewer wrong, and the marks a quarter faster), the answer decoded
+  `handModel.js`), padded to 320 wide as RapidOCR does (128 was tried: on the real photos it read
+  1-3 marks fewer right for only a quarter less time on the marks), the answer decoded
   greedily (CTC) with only blank, 0-9, C, K,
   L allowed; a reading below 0.3 is no mark. `withHandReadings` merges them unchanged: **every
   handwritten mark stays amber**.
