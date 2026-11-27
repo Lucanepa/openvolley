@@ -29,6 +29,7 @@ import { themeBoot } from '../theme-boot.js'
 import { browserCheck } from '../browser-check.js'
 import { buildChannelPlugin, buildChannel, devHeadersFile } from '../build-channel.js'
 import { securityHeaderLines } from '../csp.js'
+import { buildCommit } from '../build-commit.js'
 import { htmlToImageFontSize } from '../vite-plugin-html-to-image-font-size.js'
 import { ocrAssets } from '../vite-plugin-ocr-assets.js'
 import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, PRECACHE_MAX_FILE_BYTES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, API_NETWORK_ONLY_ROUTE, STATIC_ASSETS_ROUTE, OCR_FILES_ROUTE, PWA_INCLUDE_ASSETS, PWA_ICONS } from '../pwa-workbox.js'
@@ -357,7 +358,9 @@ async function buildSubdomain(subdomain, basePath = '/') {
       base: basePath,
       publicDir: 'public',
       define: {
-        __APP_VERSION__: JSON.stringify(appVersion)
+        __APP_VERSION__: JSON.stringify(appVersion),
+        // the commit beside the version (build-commit.js), as in vite.config.js
+        __BUILD_COMMIT__: JSON.stringify(buildCommit())
       },
       resolve: {
         dedupe: ['react', 'react-dom', 'dexie'],
