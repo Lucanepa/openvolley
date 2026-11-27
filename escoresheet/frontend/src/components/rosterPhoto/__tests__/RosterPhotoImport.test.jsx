@@ -17,7 +17,7 @@ const readRosterPhoto = vi.fn()
 const startOcrEngine = vi.fn()
 vi.mock('../../../utils/rosterPhoto/ocr', () => ({ readRosterPhoto: (...args) => readRosterPhoto(...args), startOcrEngine: (...args) => startOcrEngine(...args) }))
 
-import RosterPhotoImport from '../RosterPhotoImport'
+import RosterPhotoImport, { readingTime } from '../RosterPhotoImport'
 import { importedRosterOf } from '../../../domain/importedRoster'
 
 // Made-up people
@@ -95,7 +95,8 @@ describe('RosterPhotoImport', () => {
     // the saved team's spelling for the known SV number; the method shown
     const lasts = within(table).getAllByTestId('roster-photo-last')
     expect(lasts.map(i => i.value)).toEqual(['Exempel', 'Muster'])
-    expect(screen.getByTestId('roster-photo-method').textContent).toContain('rosterPhoto.confirm.method')
+    // how long it took, with the version (owner 27.11); no "read on this device" note (in the privacy policy)
+    expect(screen.getByTestId('roster-photo-method').textContent).toContain('rosterPhoto.confirm.readIn')
     expect(screen.getByTestId('roster-photo-method').textContent).toContain('rosterPhoto.confirm.fromSaved:1')
 
     // 7 twice: red, and "Use" stays off
@@ -190,5 +191,30 @@ describe('RosterPhotoImport', () => {
     expect(now()).toBeLessThan(100)
     finish()
     await screen.findByTestId('roster-photo-players')
+  })
+
+  it('shows the time while reading and no "read on this device" note anywhere (owner 27.11)', async () => {
+    let finish
+    readRosterPhoto.mockImplementation((page, opts) => new Promise((resolve) => { opts.onProgress(0.5, 'recognizing text'); finish = () => resolve(read()) }))
+    render(<RosterPhotoImport side="home" teamLabel="VBC Seewiese" onApply={() => {}} />)
+    fireEvent.click(screen.getByTestId('roster-photo-home'))
+    expect(screen.queryByText('rosterPhoto.source.private')).toBeNull()
+    fireEvent.change(screen.getByTestId('roster-photo-file-home'), { target: { files: [new File(['x'], 'list.jpg', { type: 'image/jpeg' })] } })
+    await screen.findByTestId('roster-photo-read')
+    fireEvent.click(screen.getByTestId('roster-photo-read'))
+    expect(await screen.findByTestId('roster-photo-time')).toBeInTheDocument()
+    expect(screen.queryByText('rosterPhoto.source.private')).toBeNull()
+    await waitFor(() => expect(readRosterPhoto).toHaveBeenCalled())
+    finish()
+    await screen.findByTestId('roster-photo-players')
+    expect(screen.getByTestId('roster-photo-method').textContent).toContain('rosterPhoto.confirm.readIn')
+  })
+
+  it('readingTime: the elapsed seconds, and the time left once a tenth is read', () => {
+    const t = (key, o) => `${key}|${o.elapsed}|${o.left ?? ''}`
+    expect(readingTime(3400, 0.05, t)).toBe('rosterPhoto.reading.elapsed|3|')
+    expect(readingTime(6000, 0.5, t)).toBe('rosterPhoto.reading.elapsedLeft|6|6')
+    expect(readingTime(9000, 0.75, t)).toBe('rosterPhoto.reading.elapsedLeft|9|3')
+    expect(readingTime(12000, 1, t)).toBe('rosterPhoto.reading.elapsed|12|')
   })
 })

@@ -3187,7 +3187,7 @@
       "a_importPdf": "In «Modifica roster», lascia selezionato «Locale» e tocca «Carica PDF». Scegli il PDF del roster della squadra o l'Einsatzliste, poi tocca «Importa PDF». Sostituisce i giocatori e gli ufficiali di panchina. Con più di 14 giocatori, spunta chi gioca. Poi controlla le date di nascita, inserisci i numeri di maglia mancanti e imposta il capitano e i liberi. Una data di nascita al 1° gennaio è spesso un segnaposto (01.01.1900 quando la data non è nota) o un errore d'importazione: il roster elenca queste persone sopra i giocatori. Correggi le date che conosci. Il sorteggio non te le chiede.",
       "tip_importPdf": "Tocca qui per importare i giocatori dal PDF di un roster.",
       "q_importPhoto": "Posso importare l'Einsatzliste da una foto?",
-      "a_importPhoto": "Sì. In «Modifica roster», lascia selezionato «Locale» e tocca «Foto della lista». Fotografa la lista stampata o scegli un'immagine della lista (va bene anche uno screenshot; ingrandisci finché la tabella lo riempie). Trascina i quattro angoli sulla pagina, poi tocca «Leggi la lista»: la foto viene letta su questo dispositivo, non inviata né conservata. Controlla le righe: un campo rosso va corretto, uno giallo controllato. I numeri di maglia, il capitano (C, K o un numero cerchiato) e i liberi (L) scritti sulla lista valgono per questa partita; i numeri lasciati vuoti vengono dalla squadra salvata. Nulla cambia prima di «Usa». Il PDF della lista viene letto in modo più affidabile di una foto.",
+      "a_importPhoto": "Sì. In «Modifica roster», lascia selezionato «Locale» e tocca «Foto della lista». Fotografa la lista stampata o scegli un'immagine della lista (va bene anche uno screenshot; ingrandisci finché la tabella lo riempie). Trascina i quattro angoli sulla pagina, poi tocca «Leggi la lista». Controlla le righe: un campo rosso va corretto, uno giallo controllato. I numeri di maglia, il capitano (C, K o un numero cerchiato) e i liberi (L) scritti sulla lista valgono per questa partita; i numeri lasciati vuoti vengono dalla squadra salvata. Nulla cambia prima di «Usa». Il PDF della lista viene letto in modo più affidabile di una foto.",
       "tip_importPhoto": "Tocca qui per leggere l'Einsatzliste da una foto.",
       "q_liberos": "Come designo i libero?",
       "a_liberos": "Nel roster, scegli «Libero 1» o «Libero 2» nella colonna del libero. Una squadra ha al massimo 2 libero. Con più di 12 giocatori ne servono 2.",
@@ -7344,8 +7344,7 @@
       "tipLight": "Buona luce, nessuna ombra sui nomi.",
       "tipWhole": "Tutta la pagina nell’immagine, nitida.",
       "take": "Scatta una foto",
-      "choose": "Scegli un’immagine",
-      "private": "Letta su questo dispositivo: la foto non viene inviata né conservata."
+      "choose": "Scegli un’immagine"
     },
     "crop": {
       "description": "Trascina i quattro angoli sugli angoli della pagina. Il bordo spesso è in alto: «Ruota» lo sposta.",
@@ -7361,11 +7360,12 @@
     "reading": {
       "prepare": "Preparazione del riconoscimento del testo…",
       "read": "Lettura della lista… {{percent}} %",
-      "marks": "Lettura dei numeri scritti a mano… {{percent}} %"
+      "marks": "Lettura dei numeri scritti a mano… {{percent}} %",
+      "elapsed": "{{elapsed}} s trascorsi",
+      "elapsedLeft": "{{elapsed}} s trascorsi · ancora circa {{left}} s"
     },
     "confirm": {
       "description": "Controlla ogni riga e correggi ciò che è stato letto male. Nulla cambia prima di «Usa».",
-      "method": "Letta su questo dispositivo (riconoscimento del testo)",
       "fromSaved_one": "{{count}} nome dalla squadra salvata",
       "fromSaved_other": "{{count}} nomi dalla squadra salvata",
       "toFix_one": "{{count}} campo da correggere (rosso)",
@@ -7381,7 +7381,8 @@
       "apply_one": "Usa {{count}} giocatore",
       "apply_other": "Usa {{count}} giocatori",
       "struck_one": "Escluso, barrato sulla lista: {{names}}",
-      "struck_other": "Esclusi, barrati sulla lista ({{count}}): {{names}}"
+      "struck_other": "Esclusi, barrati sulla lista ({{count}}): {{names}}",
+      "readIn": "Letta in {{seconds}} s · versione {{build}}"
     },
     "col": {
       "number": "N.",

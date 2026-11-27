@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { readFileSync, existsSync } from 'fs'
+import { execSync } from 'child_process'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { vitePluginApiRoutes } from './vite-plugin-api-routes.js'
@@ -39,6 +40,14 @@ const __dirname = dirname(__filename)
 // Read version from package.json
 const packageJson = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8'))
 const appVersion = packageJson.version
+
+// The commit this build was made from, shown beside the version where testers note it
+// (photo import timing, owner 27.11): Cloudflare Pages gives it, else git; '' if neither.
+const buildCommit = (() => {
+  const cf = process.env.CF_PAGES_COMMIT_SHA
+  if (cf) return cf.slice(0, 7)
+  try { return execSync('git rev-parse --short=7 HEAD', { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() } catch { return '' }
+})()
 
 // Android app build (scripts/release-android.sh): the WebView loads the bundled
 // files, so no service worker — an old precache would otherwise keep serving
@@ -94,7 +103,8 @@ export default defineConfig({
     ]
   },
   define: {
-    __APP_VERSION__: JSON.stringify(appVersion)
+    __APP_VERSION__: JSON.stringify(appVersion),
+    __BUILD_COMMIT__: JSON.stringify(buildCommit)
   },
   plugins: [
     react(),
