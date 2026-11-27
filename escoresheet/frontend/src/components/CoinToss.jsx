@@ -2358,10 +2358,9 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   style={{ width: '100%', minHeight: 44, padding: '8px 12px', fontSize: '14px' }}
                 >
                   {/* none, Libero 1 first, Libero 2 once the team has its L1 (domain/liberoChoices) */}
-                  {liberoChoices(roster, null, libero).map(value => (
-                    <option key={value || 'none'} value={value}>
-                      {value === 'libero1' ? t('roster.liberoFull1') : value === 'libero2' ? t('roster.liberoFull2') : (value || t('matchSetup.noLibero', 'No libero'))}
-                    </option>
+                  {liberoChoices(roster, null, libero).map(value => (value
+                    ? <option key={value} value={value}>{value === 'libero1' ? t('roster.liberoFull1') : value === 'libero2' ? t('roster.liberoFull2') : value}</option>
+                    : <option key="none" value="">{t('matchSetup.noLibero', 'No libero')}</option>
                   ))}
                 </select>
               </div>
