@@ -71,6 +71,19 @@
   </screenshots>
 
   <releases>
+    <release version="26.11.8" date="2026-11-27">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v26.11.8</url>
+      <description>
+        <ul>
+          <li>"Your first match": a guided tour from Home to the signatures ("?" &gt; Your first match)</li>
+          <li>Roster import: one switch for Remote, PDF and Photo. A photo of the Einsatzliste goes straight into the roster, unsure fields highlighted, with Undo</li>
+          <li>Load saved team shows your club's teams</li>
+          <li>Full team names everywhere</li>
+          <li>Libero lists offer none, Libero 1 and Libero 2</li>
+          <li>Officials sign by hand only: approving with a PIN was removed</li>
+        </ul>
+      </description>
+    </release>
     <release version="26.11.7" date="2026-11-24">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v26.11.7</url>
       <description>
