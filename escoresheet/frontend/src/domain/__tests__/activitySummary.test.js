@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   sanitizeActivityData, matchUpdateEntries, setUpdateEntry, stackFrames, eventActivityData, historyKind,
-  activityCategory, ACTIVITY_KINDS, ACTIVITY_KIND_RE, ACTIVITY_TYPES, PHOTO_READ_OUTCOMES, activityLine, redactFreeText, REDACTED
+  activityCategory, ACTIVITY_KINDS, ACTIVITY_KIND_RE, ACTIVITY_TYPES, PHOTO_READ_OUTCOMES, PHOTO_READ_MARKS_BY, PHOTO_READ_LANGS, activityLine, redactFreeText, REDACTED
 } from '../activitySummary'
 
 describe('sanitizeActivityData', () => {
@@ -143,6 +143,7 @@ describe('events and errors', () => {
 
 describe('photo.read (a photo of the list read in Match Setup)', () => {
   const ok = { ms: 11384, outcome: 'ok', rows: 13, toCheck: 9, struck: 1, cores: 8, memory: 4, workers: 3, turned: false }
+  const staged = { ...ok, msEngine: 412, msPage: 7903, msHand: 1188, msRest: 1881, marksBy: 'onnx', lang: 'fr' }
 
   it('keeps its typed keys only: numbers rounded and clamped, outcome from the fixed list, booleans', () => {
     expect(ACTIVITY_KINDS['photo.read'].keys).toEqual(Object.keys(ACTIVITY_TYPES['photo.read']))
@@ -153,6 +154,9 @@ describe('photo.read (a photo of the list read in Match Setup)', () => {
     expect(sanitizeActivityData('photo.read', { ms: 1234.6, rows: -3, toCheck: 5000, struck: 2.4, cores: 9999, memory: 0.256, workers: 40 }))
       .toEqual({ ms: 1235, rows: 0, toCheck: 999, struck: 2, cores: 256, memory: 0.26, workers: 16 })
     expect(sanitizeActivityData('photo.read', { ms: 9e12 }).ms).toBe(3600000)
+    // where the time went: whole milliseconds, 0 to an hour; which reader; the list's language
+    expect(sanitizeActivityData('photo.read', staged)).toEqual(staged)
+    expect(sanitizeActivityData('photo.read', { msEngine: -3, msPage: 9e12, msHand: 12.6, msRest: 0 })).toEqual({ msEngine: 0, msPage: 3600000, msHand: 13, msRest: 0 })
     // memory and cores may be unknown (null); the others not
     expect(sanitizeActivityData('photo.read', { memory: null, cores: null, rows: null, turned: null })).toEqual({ memory: null, cores: null })
   })
@@ -166,6 +170,9 @@ describe('photo.read (a photo of the list read in Match Setup)', () => {
       expect(sanitizeActivityData('photo.read', { outcome: bad })).toEqual({})
     }
     for (const code of PHOTO_READ_OUTCOMES) expect(sanitizeActivityData('photo.read', { outcome: code })).toEqual({ outcome: code })
+    for (const by of PHOTO_READ_MARKS_BY) expect(sanitizeActivityData('photo.read', { marksBy: by })).toEqual({ marksBy: by })
+    for (const lang of PHOTO_READ_LANGS) expect(sanitizeActivityData('photo.read', { lang })).toEqual({ lang })
+    for (const bad of ['deu', 'Muster', 'ONNX', 1, true]) expect(sanitizeActivityData('photo.read', { marksBy: bad, lang: bad, msPage: String(bad) })).toEqual({})
     expect(sanitizeActivityData('photo.read', { ms: NaN, rows: Infinity, turned: 1 })).toEqual({})
     // idempotent (the upload sanitizes again)
     expect(sanitizeActivityData('photo.read', sanitizeActivityData('photo.read', ok))).toEqual(ok)
@@ -179,5 +186,8 @@ describe('photo.read (a photo of the list read in Match Setup)', () => {
     expect(activityLine({ kind: 'photo.read', data: { ms: 8150, outcome: 'ocr-blurry', cores: 4, memory: 2, workers: 1, turned: false } }))
       .toBe('not read (ocr-blurry) after 8.2 s · 4 cores, 2 GB, 1 worker')
     expect(activityLine({ kind: 'photo.read', data: { outcome: 'ocr-load', workers: 0 } })).toBe('not read (ocr-load) after ? s')
+    // with where the time went (since 27.11.2026) and the list's language
+    expect(activityLine({ kind: 'photo.read', data: staged }))
+      .toBe('read in 11.4 s: 13 rows, 9 to check, 1 struck · engine 0.4 s, page 7.9 s, marks 1.2 s (onnx), rest 1.9 s · fr · 8 cores, 4 GB, 3 workers')
   })
 })
