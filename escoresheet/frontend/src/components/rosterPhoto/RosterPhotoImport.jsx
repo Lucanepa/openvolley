@@ -1,24 +1,27 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Camera, Image as ImageIcon, RotateCw, ScanText } from 'lucide-react'
 import KitModal from '../manage/KitModal'
 import { Button, Banner, ProgressBar } from '../../ui'
-import { fieldIssues, importedRosterOf } from '../../domain/importedRoster'
+import { importedRosterOf } from '../../domain/importedRoster'
 import { canvasBlob, guessCorners, loadPhoto, rotateCorners, scanPage } from '../../utils/rosterPhoto/scan'
 import { withSavedTeamNames } from '../../utils/rosterPhoto/savedTeamNames'
 import { logPhotoRead } from '../../utils/rosterPhoto/photoReadLog'
 import PhotoCropStep from './PhotoCropStep'
-import RosterConfirmStep from './RosterConfirmStep'
 
 /**
  * "Photo of the list" in Match Setup (docs/roster-photo-spec.md, plan A):
  * a photo of an Einsatzliste (taken now, or a picture on the device), its
- * corners set, the page read on this device (utils/rosterPhoto), the rows
- * shown to correct, and only on "Use" handed to onApply (MatchSetup
- * applyImportedRoster: the PDF import's own way). Cancel at any step changes
- * nothing. The photo stays in memory only; the dialog lets go of it on close.
+ * corners set, the page read on this device (utils/rosterPhoto), and the
+ * rows handed straight to onApply(roster, { readMs }) (MatchSetup
+ * applyImportedRoster: the PDF import's own way): the scorer checks and fixes
+ * them in the roster itself, where the fields the reading was unsure of are
+ * marked, and an Undo is offered (owner 27.11.2026: "just already import them
+ * in the official roster and fix there"; no check screen). Cancel before the
+ * reading ends changes nothing. The photo stays in memory only; the dialog
+ * lets go of it on close.
  *
- * Steps: source → (loading) → crop → reading → confirm, or error.
+ * Steps: source → (loading) → crop → reading, or error.
  */
 /**
  * "12 s elapsed · about 8 s left": the time left is estimated from the bar (elapsed
@@ -44,13 +47,11 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
   const [photo, setPhoto] = useState(null) // { canvas, url }
   const [corners, setCorners] = useState(null)
   const [progress, setProgress] = useState({ share: 0, phase: 'prepare' })
-  const [roster, setRoster] = useState(null)
   const [error, setError] = useState(null)
-  // how long the reading takes (owner 27.11, for testers' notes): its start, the time
-  // shown while it runs, and the total shown on the check screen
+  // how long the reading takes (owner 27.11, for testers' notes): its start and the
+  // time shown while it runs (the total goes with the roster to the roster's banner)
   const readStartRef = useRef(0)
   const [elapsedMs, setElapsedMs] = useState(0)
-  const [readMs, setReadMs] = useState(null)
   const cameraRef = useRef(null)
   const fileRef = useRef(null)
   const readingRef = useRef(null) // the AbortController of the reading under way
@@ -78,7 +79,6 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
     readingRef.current = null
     endEngine()
     dropPhoto()
-    setRoster(null)
     setError(null)
     setStep(null)
   }
@@ -122,7 +122,6 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
     setProgress({ share: 0, phase: 'prepare' })
     readStartRef.current = performance.now()
     setElapsedMs(0)
-    setReadMs(null)
     // let the dialog show the reading step before the page's pixels keep the device busy
     await new Promise((resolve) => setTimeout(resolve, 40))
     // (the one started ahead, else one now; ended after the reading either way)
@@ -141,7 +140,7 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
         signal: controller.signal,
         stats,
         // one bar for the whole reading (shares in ocr.js): the page, then each step after it;
-        // it never reaches 100 % before the check screen (owner 27.11: "100 % = finished")
+        // it never reaches 100 % before the list is read (owner 27.11: "100 % = finished")
         onProgress: (share, status) => {
           if (controller.signal.aborted) return
           setProgress({ share: Math.min(share, READ_CAP), phase: status === 'reading marks' ? 'marks' : 'read' })
@@ -149,14 +148,16 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
       })
       if (controller.signal.aborted) return
       const shown = withSavedTeamNames(result, savedTeam)
-      setRoster(shown)
       setProgress({ share: 1, phase: 'marks' })
       const took = Math.round(performance.now() - readStartRef.current)
-      setReadMs(took)
       console.info('[RosterPhoto] read in', took, 'ms')
       // the time and counts in the activity log (owner 27.11), never what was read
       logPhotoRead({ ms: took, outcome: 'ok', roster: shown, stats })
-      setStep('confirm')
+      // straight into the roster: checked and fixed there (no check screen)
+      const roster = importedRosterOf(shown, 'ocr')
+      readingRef.current = null
+      close()
+      onApply?.(roster, { readMs: took })
     } catch (err) {
       if (controller.signal.aborted || err?.code === 'ocr-cancelled') return
       console.warn('[RosterPhoto] reading failed:', err?.code || err?.message)
@@ -178,13 +179,6 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
     return () => clearInterval(id)
   }, [step])
 
-  const issues = useMemo(() => (roster ? fieldIssues(roster) : null), [roster])
-  const apply = () => {
-    const clean = importedRosterOf(roster, 'ocr')
-    close()
-    onApply?.(clean)
-  }
-
   const takePhoto = () => cameraRef.current?.click()
   const choosePicture = () => fileRef.current?.click()
 
@@ -199,14 +193,6 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
       </>
     ),
     reading: <Button variant="secondary" size="lg" onClick={close} data-testid="roster-photo-cancel">{t('common.cancel', 'Cancel')}</Button>,
-    confirm: (
-      <>
-        <Button variant="secondary" size="lg" onClick={close} data-testid="roster-photo-cancel">{t('common.cancel', 'Cancel')}</Button>
-        <Button variant="positive" size="lg" disabled={!roster?.players?.length || issues?.blocking} onClick={apply} data-testid="roster-photo-apply">
-          {t('rosterPhoto.confirm.apply', { count: roster?.players?.length || 0 })}
-        </Button>
-      </>
-    ),
     error: (
       <>
         <Button variant="secondary" size="lg" onClick={close}>{t('common.close', 'Close')}</Button>
@@ -217,8 +203,7 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
   }
   const description = {
     source: t('rosterPhoto.source.description'),
-    crop: t('rosterPhoto.crop.description'),
-    confirm: t('rosterPhoto.confirm.description')
+    crop: t('rosterPhoto.crop.description')
   }
 
   return (
@@ -252,7 +237,7 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
         dismissible={false}
         layout="sections"
         size="xl"
-        className={step === 'crop' || step === 'confirm' ? 'max-w-4xl' : undefined}
+        className={step === 'crop' ? 'max-w-4xl' : undefined}
         title={t('rosterPhoto.title', { team: teamLabel || '' })}
         description={description[step]}
         icon={Camera}
@@ -288,9 +273,6 @@ export default function RosterPhotoImport ({ side, teamLabel, savedTeam = null, 
               {readingTime(elapsedMs, progress.phase === 'prepare' ? 0 : progress.share, t)}
             </p>
           </div>
-        )}
-        {step === 'confirm' && roster && issues && (
-          <RosterConfirmStep roster={roster} issues={issues} onChange={setRoster} readMs={readMs} />
         )}
         {step === 'error' && (
           <Banner tone="danger" data-testid="roster-photo-error" data-code={error}>{t(`rosterPhoto.error.${error}`, t('rosterPhoto.error.ocr-load'))}</Banner>

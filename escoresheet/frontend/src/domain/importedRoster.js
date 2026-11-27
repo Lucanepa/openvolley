@@ -36,7 +36,7 @@ export const OFFICIAL_ROLES = Object.freeze({ coach: 'Coach', ac1: 'Assistant Co
 export const PLAYER_FIELDS = Object.freeze(['number', 'licence', 'firstName', 'lastName', 'isCaptain', 'isLibero'])
 export const OFFICIAL_FIELDS = Object.freeze(['licence', 'firstName', 'lastName'])
 
-/** Below this a field is shown as "check this" on the confirm screen. */
+/** Below this a field is marked "check this" in the roster after a photo. */
 export const LOW_CONFIDENCE = 0.8
 // a photo holds one page of a team's list (an Einsatzliste: every eligible
 // player, often more than 14): a reading with more rows is no roster. A PDF
@@ -113,7 +113,7 @@ export function importedRosterOf (raw, source) {
     .filter((p) => p.firstName || p.lastName)
   const out = { source: from, players }
   for (const k of OFFICIAL_KEYS) out[k] = officialOf(raw?.[k])
-  // rows struck out on a photo (not playing): named on the confirm screen, never applied
+  // rows struck out on a photo (not playing): named in the roster's banner, never applied
   const struck = from === 'pdf' || !Array.isArray(raw?.struck)
     ? []
     : raw.struck.filter(isObject).slice(0, IMPORT_MAX_PLAYERS)
@@ -163,9 +163,9 @@ export function validateImportedRoster (roster) {
 }
 
 /**
- * What the confirm screen marks, per field: 'invalid' (red; nothing is
- * applied while one is left) or 'low' (amber: the reader was unsure, or the
- * value is unusual; the scorer checks it). Reasons are keys under
+ * What the roster marks after a photo, per field (utils/rosterPhoto/photoMarks):
+ * 'invalid' (red: the scorer must fix it) or 'low' (amber: the reader was
+ * unsure, or the value is unusual; the scorer checks it). Reasons are keys under
  * rosterPhoto.issue.* in the locales.
  *   { players: [{ [field]: { level, reason } }], officials: { coach: {...}, ... }, blocking: boolean }
  */

@@ -26,6 +26,8 @@ export const T = {
   remote: { role: 'radio', name: (t) => t('matchSetup.remote') },
   pdf: { role: 'radio', name: (t) => t('matchSetup.rosterImport.pdf') },
   photo: { role: 'radio', name: (t) => t('matchSetup.rosterImport.photo') },
+  // the Photo segment and its buttons (Take a photo, Choose a picture) with their tips
+  photoWay: { union: [{ testId: 'roster-import-photo-home' }, { testId: 'roster-import-photo-panel-home' }] },
   pendingCard: { testId: 'pending-roster-home' },
   savedPicker: { dialog: { has: '[data-testid="saved-team-results"]' } },
   clubPicker: { dialog: { has: '[data-testid="club-picker"]' } },

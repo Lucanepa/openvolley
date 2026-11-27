@@ -4,7 +4,7 @@
 // a club not known (guest, test match of no club) lists every saved team.
 // Made-up clubs and teams.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, within, fireEvent } from '@testing-library/react'
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key, opts) => (opts && typeof opts === 'object' && opts.club ? `${key}:${opts.club}` : key), i18n: { language: 'en' } })
@@ -73,6 +73,38 @@ describe('Load saved team: the same club only', () => {
     expect(await screen.findByText('Ohne Verein')).toBeInTheDocument()
     expect(names()).toHaveLength(4)
     expect(screen.getByRole('dialog').textContent).not.toContain('savedTeams.pickerClubOnly')
+  })
+
+  it('"Show all saved teams": every club\'s, the other clubs\' marked; and back to the club\'s', async () => {
+    picker({ club: { id: 'club-see', name: 'VBC Seewiese' } })
+    await screen.findByText('Seewiese H1')
+    expect(names()).toHaveLength(2)
+    expect(screen.queryAllByTestId('saved-team-other-club')).toHaveLength(0)
+    const link = screen.getByTestId('saved-teams-show-all')
+    expect(link).toHaveTextContent('savedTeams.pickerShowAll')
+    fireEvent.click(link)
+    expect(names()).toHaveLength(4)
+    // Bergdorf and the team of no club are the other clubs'
+    const others = within(screen.getByTestId('saved-team-results')).getAllByTestId('saved-team-row')
+      .filter(r => r.querySelector('[data-testid="saved-team-other-club"]')).map(r => r.textContent)
+    expect(others).toEqual([expect.stringContaining('Bergdorf'), expect.stringContaining('Ohne Verein')])
+    expect(screen.getByRole('dialog').textContent).toContain('savedTeams.pickerAllClubs')
+    fireEvent.click(screen.getByTestId('saved-teams-only-club'))
+    expect(names()).toHaveLength(2)
+  })
+
+  it('no saved team of the club: "Show all saved teams" still lists the others', async () => {
+    picker({ club: { id: null, name: 'VBC Fremd' } })
+    await screen.findByTestId('saved-teams-none-of-club')
+    fireEvent.click(screen.getByTestId('saved-teams-show-all'))
+    expect(names()).toHaveLength(4)
+    expect(screen.queryByTestId('saved-teams-none-of-club')).toBeNull()
+  })
+
+  it('the club not known: no link (every team is listed anyway)', async () => {
+    picker({ club: null })
+    await screen.findByText('Ohne Verein')
+    expect(screen.queryByTestId('saved-teams-show-all')).toBeNull()
   })
 
   it('no saved team on the device at all: the usual empty note, not the club line', async () => {

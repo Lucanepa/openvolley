@@ -89,6 +89,12 @@ describe('walkthrough steps', () => {
       expect(T.photo.name(tOf(lng)), lng).toBe(LOCALES[lng].matchSetup.rosterImport.photo)
       for (const way of [T.remote, T.pdf, T.photo]) expect(way.role).toBe('radio')
     }
+    // the Photo step (owner 27.11.2026): the segment and its buttons, shown, never tapped
+    const photo = STEPS.find(s => s.id === 'rosterPhoto')
+    expect(STEPS.indexOf(photo)).toBe(STEPS.findIndex(s => s.id === 'rosterPdf') + 1)
+    expect(photo).toMatchObject({ chapter: 2, screen: 'rosterEditor', advance: 'next', inert: true, target: T.photoWay })
+    expect(T.photoWay.union.map(u => u.testId)).toEqual(['roster-import-photo-home', 'roster-import-photo-panel-home'])
+    for (const lng of Object.keys(LOCALES)) expect(LOCALES[lng].walkthrough.steps.rosterPhoto.title, lng).toBe(LOCALES[lng].rosterPhoto.button)
     const pdf = STEPS.find(s => s.id === 'rosterPdf')
     expect(pdf.target).toEqual({ helpId: 'setup-pdf-import' })
     expect(en.walkthrough.steps.rosterPdf.text).toContain(en.matchSetup.rosterImport.title)

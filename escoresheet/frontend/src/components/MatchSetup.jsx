@@ -52,7 +52,7 @@ import { deriveTeamShortLabel } from '../domain/teamIdentity'
 import { missingConnectionPins, connectionPinsSyncJob, fetchPendingRoster, clearPendingRosterJob, isKnownDob, cleanLicence, scorerIdentified } from '../utils/remoteRoster'
 import { ClipboardIcon } from './icons'
 import { AlertTriangle, Loader2 } from 'lucide-react'
-import { Button, Checkbox, DateField, Field, Input, Select, TimeField, SegmentedControl, SectionHeader, KeyValue, CountBadge, Switch, ScreenLoading, cn, confirmDialog, toast } from '../ui'
+import { Button, Checkbox, DateField, Field, Input, Select, TimeField, SegmentedControl, SectionHeader, KeyValue, CountBadge, Switch, ScreenLoading, IconButton, cn, confirmDialog, toast } from '../ui'
 import { sponsorsOf, sponsorsToMatchInfo } from '../domain/sponsors'
 import { sheetInputsToMatchInfo } from '../domain/sheetInputs'
 import LongIntervalSwitch from './LongIntervalSwitch'
@@ -65,6 +65,8 @@ import { playersWithoutNumber } from '../domain/coinTossChecks'
 import { checkUploadedRoster, takesUploadedRoster, uploadedSignaturesKept, uploadedSignaturesToTake } from '../domain/uploadedRoster'
 import PlayerPoolModal from './PlayerPoolModal'
 import RosterPhotoImport from './rosterPhoto/RosterPhotoImport'
+import { carryPhotoTokens, marksLeft, officialMarkOf, photoMarksOf, photoRowsIn, playerMarkOf } from '../utils/rosterPhoto/photoMarks'
+import { appVersionWithBuild } from '../utils/identity'
 import { scheduleOcrWarmUp } from '../utils/rosterPhoto/ocrWarmup'
 import { buildPlayerPool, poolToRoster, ROSTER_MAX } from '../domain/playerPool'
 import { officialsFromSchedule, teamContactEmail, withTeamContacts } from '../domain/officials'
@@ -90,7 +92,7 @@ import { addClubPlayersToRoster, applyClubFill, benchOfficialOfRole, benchRolesO
 import ClubShield from './manage/ClubShield'
 import { officialCheck, OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS } from '../lib/accountApi'
 import { openRestore } from '../utils/manageNav'
-import { Users, Trash2, ListChecks, UserPlus, RefreshCw, FileText, Camera, CloudDownload } from 'lucide-react'
+import { Users, Trash2, ListChecks, UserPlus, RefreshCw, FileText, Camera, CloudDownload, Undo2, X } from 'lucide-react'
 import CaptainToggle from './CaptainToggle'
 import StackLabel from './StackLabel'
 import TeamShirt from './TeamShirt'
@@ -1033,6 +1035,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
   // picked yet opens with (else Remote for an official game, else PDF)
   const [importModeBySide, setImportModeBySide] = useState({ home: null, away: null })
   const [rememberedImportMode, setRememberedImportMode] = useState(() => readRosterImportMode())
+  // A photo of the list goes straight into the roster (owner 27.11.2026): per
+  // team, the marks on the rows it gave (UI state only, never saved:
+  // utils/rosterPhoto/photoMarks), the roster and bench before it (Undo), the
+  // rows struck out on the list, the reading's time; null when none
+  const [photoImport, setPhotoImport] = useState({ home: null, away: null })
 
   // Remote roster search state
   const [homeRosterSearching, setHomeRosterSearching] = useState(false)
@@ -1265,6 +1272,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
     setRememberedImportMode(mode)
     saveRosterImportMode(mode)
   }
+  // the photo's marks belong to the open roster editor: gone once it closes (Save or Back)
+  useEffect(() => {
+    setPhotoImport((st) => ((st.home && currentView !== 'home') || (st.away && currentView !== 'away')
+      ? { home: currentView === 'home' ? st.home : null, away: currentView === 'away' ? st.away : null }
+      : st))
+  }, [currentView])
   // The side whose roster editor shows its Remote panel: that panel checks
   // the server itself (every REMOTE_PANEL_CHECK_MS, below), so the screen's
   // own refresh of the sent rosters rests meanwhile
@@ -3169,6 +3182,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
       pool,
       savedTeam: opts.savedTeam || null,
       summary: opts.summary || null,
+      photo: opts.photo === true,
       teamLabel: opts.savedTeam?.name || (side === 'home' ? home : away) || t(side === 'home' ? 'matchSetup.homeTeam' : 'matchSetup.awayTeam')
     })
     return pool
@@ -3181,8 +3195,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
     const pending = playerPool
     setPlayerPool(null)
     if (!pending) return
-    const { side, savedTeam, summary } = pending
-    const roster = poolToRoster(entries)
+    const { side, savedTeam, summary, photo } = pending
+    // a photo's list of more than 14: the ticked rows keep the photo's marks
+    const roster = photo ? carryPhotoTokens(poolToRoster(entries), side === 'home' ? homeRoster : awayRoster) : poolToRoster(entries)
     if (savedTeam) applySavedTeam(side, savedTeam, roster)
     else if (side === 'home') setHomeRoster(roster)
     else setAwayRoster(roster)
@@ -3211,7 +3226,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
       }
     }
     if (summary) setImportSummaryModal({ ...summary, players: roster.length, errors: [] })
-    else if (!savedTeam) toast.success(t('playerPool.applied', { count: roster.length }))
+    else if (!savedTeam && !photo) toast.success(t('playerPool.applied', { count: roster.length }))
   }
 
   // db/023: a sent roster becomes the side's roster and team officials, as an
@@ -4097,16 +4112,100 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
   // player: with more than 14 the scorer ticks who plays (the summary follows
   // the choice). Not saved here: the roster editor's Save writes it, its
   // Back discards it.
-  const applyImportedRoster = async (side, imported) => {
-    const { players, bench, numbersFilled } = importedToSetup(imported, { idMode, savedTeam: savedTeamOf(side) })
+  // A photo (`photo`: { readMs }) goes the same way, then stays open to fix in
+  // the roster itself (owner 27.11.2026: no check screen): the fields the
+  // reading was unsure of are marked on the rows, and the banner on top of the
+  // roster names the rows struck out and offers Undo (the roster and bench as
+  // they were before the photo).
+  const applyImportedRoster = async (side, imported, photo = null) => {
+    const setup = importedToSetup(imported, { idMode, savedTeam: savedTeamOf(side) })
+    const { bench, numbersFilled } = setup
+    let { players } = setup
     if (numbersFilled) toast.info(t('savedTeams.numbersFilled', { count: numbersFilled }))
+    if (photo) {
+      const marks = photoMarksOf(imported, players, bench)
+      players = marks.players
+      const before = side === 'home' ? { roster: homeRoster, bench: benchHome } : { roster: awayRoster, bench: benchAway }
+      setPhotoImport((st) => ({
+        ...st,
+        [side]: {
+          rowMarks: marks.rowMarks,
+          officialMarks: marks.officialMarks,
+          total: marks.total,
+          before,
+          struck: imported.struck || [],
+          fromSaved: (imported.players || []).filter((p) => p.fromSavedTeam).length,
+          readMs: Number.isFinite(photo.readMs) ? photo.readMs : null,
+          dismissed: false
+        }
+      }))
+    }
     if (side === 'home') { setHomeRoster(players); setBenchHome(bench) } else { setAwayRoster(players); setBenchAway(bench) }
     const summary = { team: side, players: players.length, benchOfficials: bench.length }
     if (players.length > ROSTER_MAX) {
-      await openPlayerPool(side, { imported: players, includeCurrent: false, summary })
-    } else {
+      await openPlayerPool(side, { imported: players, includeCurrent: false, summary: photo ? null : summary, photo: !!photo })
+    } else if (!photo) {
       setImportSummaryModal({ ...summary, errors: [] })
     }
+  }
+
+  // Undo of a photo import: the roster and bench as they were before it
+  const undoPhotoImport = (side) => {
+    const st = photoImport[side]
+    if (!st) return
+    if (side === 'home') { setHomeRoster(st.before.roster); setBenchHome(st.before.bench) } else { setAwayRoster(st.before.roster); setBenchAway(st.before.bench) }
+    setPhotoImport((prev) => ({ ...prev, [side]: null }))
+    toast.info(t('rosterPhoto.applied.undone'))
+  }
+
+  // The banner on top of the roster after a photo: how many players, the
+  // fields left to fix and check (marked on the rows), the rows struck out on
+  // the list, the reading's time, Undo. Gone when dismissed, when the marks
+  // there were are all fixed, or when the photo's rows are no longer there.
+  const renderPhotoBanner = (side) => {
+    const st = photoImport[side]
+    if (!st || st.dismissed) return null
+    const roster = side === 'home' ? homeRoster : awayRoster
+    const bench = side === 'home' ? benchHome : benchAway
+    const rows = photoRowsIn(roster)
+    if (!rows) return null
+    const left = marksLeft(st, roster, bench)
+    if (st.total > 0 && left.invalid + left.low === 0) return null
+    const summary = [
+      t('rosterPhoto.applied.summary', { count: rows }),
+      left.invalid ? t('rosterPhoto.confirm.toFix', { count: left.invalid }) : null,
+      left.low ? t('rosterPhoto.confirm.toCheck', { count: left.low }) : null
+    ].filter(Boolean).join(' · ')
+    const method = [
+      st.readMs != null ? t('rosterPhoto.confirm.readIn', { seconds: (st.readMs / 1000).toFixed(1), build: appVersionWithBuild() }) : null,
+      st.fromSaved ? t('rosterPhoto.confirm.fromSaved', { count: st.fromSaved }) : null
+    ].filter(Boolean).join(' · ')
+    const struckNames = st.struck.map((p) => [p.lastName, p.firstName].filter(Boolean).join(' ') || p.licence).join(', ')
+    return (
+      <div
+        role="status"
+        data-sensitive=""
+        data-testid={`photo-import-banner-${side}`}
+        className={cn('flex flex-wrap items-start gap-x-3 gap-y-2 rounded-xl border px-3 py-2.5 text-sm',
+          left.invalid ? 'border-red-200 bg-red-50 text-red-900' : left.low ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-sky-200 bg-sky-50 text-sky-900')}
+      >
+        <Camera size={16} aria-hidden className="mt-0.5 shrink-0" />
+        <div className="min-w-0 flex-[1_1_16rem] space-y-1">
+          <p className="m-0 font-semibold" data-testid={`photo-import-summary-${side}`}>{summary}</p>
+          {st.struck.length > 0 && (
+            // rows struck out on the list: not playing, never taken (named so the scorer knows)
+            <p className="m-0" data-testid={`photo-import-struck-${side}`}>{t('rosterPhoto.confirm.struck', { count: st.struck.length, names: struckNames })}</p>
+          )}
+          {method && <p className="m-0 text-xs tabular-nums opacity-80" data-testid={`photo-import-method-${side}`}>{method}</p>}
+        </div>
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <Button variant="secondary" size="lg" className="bg-white" icon={<Undo2 size={16} aria-hidden />} onClick={() => undoPhotoImport(side)} data-testid={`photo-import-undo-${side}`}>
+            {t('rosterPhoto.applied.undo')}
+          </Button>
+          <IconButton label={t('common.close', 'Close')} icon={X} className="bg-white" onClick={() => setPhotoImport((prev) => ({ ...prev, [side]: prev[side] && { ...prev[side], dismissed: true } }))} data-testid={`photo-import-dismiss-${side}`} />
+        </div>
+      </div>
+    )
   }
 
   // ---- Edit roster: the header's ways and "Roster import" (owner 27.11.2026) ----
@@ -4115,6 +4214,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
   // Delete roster at its side; the three ways a list comes in (Remote, PDF,
   // Photo) are one switch under the bold title "Roster import", with only the
   // chosen way's controls below it.
+  // a photo's mark on a roster or bench field: red = must fix, amber = check (with its reason as the title)
+  const markClass = (m) => (m ? PHOTO_MARK_CLASS[m.level] || PHOTO_MARK_CLASS.low : undefined)
+  const markRing = (m) => (m ? cn('rounded-lg ring-2 ring-inset', PHOTO_MARK_RING[m.level] || PHOTO_MARK_RING.low) : undefined)
+  const markAttrs = (m) => (m ? { 'data-photo-mark': m.level, title: t(`rosterPhoto.issue.${m.reason}`) } : {})
+
   const importSideOf = (side) => (side === 'home'
     ? { team: home, fileRef: homeFileInputRef, onFileSelect: handleHomeFileSelect, pdfFile: homePdfFile, pdfLoading: homePdfLoading, pdfError: homePdfError, onImport: handleHomeImportClick, onSearch: handleSearchHomeRoster, searching: homeRosterSearching, pin: match?.homeTeamUploadPin }
     : { team: away, fileRef: awayFileInputRef, onFileSelect: handleAwayFileSelect, pdfFile: awayPdfFile, pdfLoading: awayPdfLoading, pdfError: awayPdfError, onImport: handleAwayImportClick, onSearch: handleSearchAwayRoster, searching: awayRosterSearching, pin: match?.awayTeamUploadPin })
@@ -4251,7 +4355,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
               button opens its source at once, then the photo dialog */}
           {mode === 'photo' && (
             <div className="flex flex-col gap-2" data-testid={`roster-import-photo-panel-${side}`}>
-              <RosterPhotoImport entry="sources" side={side} teamLabel={s.team} savedTeam={savedTeamOf(side)} disabled={s.pdfLoading} onApply={(roster) => applyImportedRoster(side, roster)} />
+              <RosterPhotoImport entry="sources" side={side} teamLabel={s.team} savedTeam={savedTeamOf(side)} disabled={s.pdfLoading} onApply={(roster, meta) => applyImportedRoster(side, roster, meta || {})} />
               <ul className="m-0 list-disc space-y-0.5 pl-5 text-xs text-stone-500">
                 <li>{t('rosterPhoto.source.tipFlat')}</li>
                 <li>{t('rosterPhoto.source.tipLight')}</li>
@@ -4993,6 +5097,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
           <div />
         </div>
         {renderRosterHeader('home')}
+        {renderPhotoBanner('home')}
         {/* db/023: the roster the team sent ahead (the device's copy) */}
         <SentRosterCard row={sentRosters.home} side="home" newVersion={!!match?.sentRosterUsed?.home} onUse={() => applySentRoster('home')} onDismiss={() => dismissSentRoster('home')} />
         {/* db/024: a player the club's list has with the other gender */}
@@ -5149,6 +5254,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
               homeRoster.some((other, idx) => idx !== i && other.number === p.number)
             // saved without a number: its # asks for one (no coin toss until then)
             const missingNumber = (p.number == null || p.number === '') && !!(p.firstName || p.lastName)
+            // a photo import's marks on this row (UI only; utils/rosterPhoto/photoMarks)
+            const mk = (field) => playerMarkOf(photoImport.home, p, field)
+            const numberMark = mk('number')
 
             // Determine border style based on captain/libero status
             const isCaptain = p.isCaptain || false
@@ -5186,9 +5294,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                   min="1"
                   max="99"
                   value={p.number ?? ''}
-                  className={cn('cell-head', isDuplicate && 'border-red-400 bg-red-50 text-red-700', missingNumber && 'border-amber-400 bg-amber-50 placeholder:text-amber-700')}
+                  className={cn('cell-head', markClass(numberMark), isDuplicate && 'border-red-400 bg-red-50 text-red-700', missingNumber && 'border-amber-400 bg-amber-50 placeholder:text-amber-700')}
                   aria-invalid={isDuplicate || missingNumber || undefined}
-                  title={isDuplicate ? t('scoreboard.duplicateJersey') : missingNumber ? t('matchSetup.numberNeeded') : undefined}
+                  title={isDuplicate ? t('scoreboard.duplicateJersey') : missingNumber ? t('matchSetup.numberNeeded') : markAttrs(numberMark).title}
+                  data-photo-mark={numberMark?.level}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                   onKeyPress={e => {
                     if (!/[0-9]/.test(e.key) && e.key !== 'Backspace' && e.key !== 'Delete' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Tab') {
@@ -5207,7 +5316,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 <StackLabel>{t('matchSetup.lastName')}</StackLabel>
                 <input
                   aria-label={t('matchSetup.lastName')}
-                  className="capitalize cell-last"
+                  className={cn('capitalize cell-last', markClass(mk('lastName')))}
+                  {...markAttrs(mk('lastName'))}
                   placeholder={t('matchSetup.placeholders.lastName')}
                   value={p.lastName || ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
@@ -5220,7 +5330,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
                 <input
                   aria-label={t('matchSetup.firstName')}
-                  className="capitalize cell-first"
+                  className={cn('capitalize cell-first', markClass(mk('firstName')))}
+                  {...markAttrs(mk('firstName'))}
                   placeholder={t('matchSetup.placeholders.firstName')}
                   value={p.firstName || ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
@@ -5241,6 +5352,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                   }}
                   size="bare"
                   wrapperClassName={DOB_CELL}
+                  className={markClass(mk('dob'))}
+                  {...markAttrs(mk('dob'))}
                   aria-label={idLabel}
                   placeholder={idPlaceholder}
                   value={p.dob ? formatDateToISO(p.dob) : ''}
@@ -5254,7 +5367,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 <StackLabel>{t('matchSetup.roleLibero')} · {t('matchSetup.captain')}</StackLabel>
                 <select
                   aria-label={t('matchSetup.libero', 'Libero')}
-                  className={`cell-libero${p.libero ? '' : ' libero-unset'}`}
+                  className={cn(`cell-libero${p.libero ? '' : ' libero-unset'}`, markClass(mk('libero')))}
+                  {...markAttrs(mk('libero'))}
                   value={liberoValueOf(p)}
                   onChange={e => {
                     const updated = [...homeRoster]
@@ -5267,7 +5381,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 >
                   {liberoOptions(homeRoster, i)}
                 </select>
-                <div className="cell-captain">
+                <div className={cn('cell-captain', markRing(mk('isCaptain')))} {...markAttrs(mk('isCaptain'))}>
                   <CaptainToggle
                     pressed={!!p.isCaptain}
                     number={p.number}
@@ -5336,6 +5450,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
           </div>
           {sortBenchByHierarchy(benchHome).map((m, i) => {
             const originalIdx = benchHome.findIndex(b => b === m)
+            // a photo import's marks on this official (by role; UI only)
+            const bm = (field) => officialMarkOf(photoImport.home, m, field)
             return (
               <div key={`bh-${originalIdx}`} className="bench-grid-row">
                 <StackLabel head>{t('matchSetup.role')}</StackLabel>
@@ -5361,11 +5477,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 </select>
                 </BenchRoleCell>
                 <StackLabel>{t('matchSetup.lastName')}</StackLabel>
-                <input aria-label={t('matchSetup.lastName')} className="capitalize cell-last" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
+                <input aria-label={t('matchSetup.lastName')} className={cn('capitalize cell-last', markClass(bm('lastName')))} {...markAttrs(bm('lastName'))} placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
-                <input aria-label={t('matchSetup.firstName')} className="capitalize cell-first" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
+                <input aria-label={t('matchSetup.firstName')} className={cn('capitalize cell-first', markClass(bm('firstName')))} {...markAttrs(bm('firstName'))} placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
                 <StackLabel>{idLabel}</StackLabel>
-                <IdField idMode={idMode} rawValue={m.dob} onRawChange={v => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v }; return a })} size="bare" wrapperClassName={DOB_CELL} aria-label={idLabel} placeholder={idPlaceholder} value={m.dob ? formatDateToISO(m.dob) : ''} onChange={v => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v ? formatDateToDDMMYYYY(v) : '' }; return a })} />
+                <IdField idMode={idMode} rawValue={m.dob} onRawChange={v => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v }; return a })} size="bare" wrapperClassName={DOB_CELL} className={markClass(bm('dob'))} {...markAttrs(bm('dob'))} aria-label={idLabel} placeholder={idPlaceholder} value={m.dob ? formatDateToISO(m.dob) : ''} onChange={v => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v ? formatDateToDDMMYYYY(v) : '' }; return a })} />
                 {/* A player who is also this official (a playing coach,
                     domain/playerOfficials): found by licence or name, or
                     the scorer's choice */}
@@ -5889,6 +6005,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
           <div />
         </div>
         {renderRosterHeader('away')}
+        {renderPhotoBanner('away')}
         {/* db/023: the roster the team sent ahead (the device's copy) */}
         <SentRosterCard row={sentRosters.away} side="away" newVersion={!!match?.sentRosterUsed?.away} onUse={() => applySentRoster('away')} onDismiss={() => dismissSentRoster('away')} />
         {/* db/024: a player the club's list has with the other gender */}
@@ -6054,6 +6171,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
               awayRoster.some((other, idx) => idx !== i && other.number === p.number)
             // saved without a number: its # asks for one (no coin toss until then)
             const missingNumber = (p.number == null || p.number === '') && !!(p.firstName || p.lastName)
+            // a photo import's marks on this row (UI only; utils/rosterPhoto/photoMarks)
+            const mk = (field) => playerMarkOf(photoImport.away, p, field)
+            const numberMark = mk('number')
 
             const isCaptain = p.isCaptain || false
             const isLibero = !!p.libero
@@ -6090,9 +6210,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                   min="1"
                   max="99"
                   value={p.number ?? ''}
-                  className={cn('cell-head', isDuplicate && 'border-red-400 bg-red-50 text-red-700', missingNumber && 'border-amber-400 bg-amber-50 placeholder:text-amber-700')}
+                  className={cn('cell-head', markClass(numberMark), isDuplicate && 'border-red-400 bg-red-50 text-red-700', missingNumber && 'border-amber-400 bg-amber-50 placeholder:text-amber-700')}
                   aria-invalid={isDuplicate || missingNumber || undefined}
-                  title={isDuplicate ? t('scoreboard.duplicateJersey') : missingNumber ? t('matchSetup.numberNeeded') : undefined}
+                  title={isDuplicate ? t('scoreboard.duplicateJersey') : missingNumber ? t('matchSetup.numberNeeded') : markAttrs(numberMark).title}
+                  data-photo-mark={numberMark?.level}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                   onKeyPress={e => {
                     if (!/[0-9]/.test(e.key) && e.key !== 'Backspace' && e.key !== 'Delete' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Tab') {
@@ -6111,7 +6232,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 <StackLabel>{t('matchSetup.lastName')}</StackLabel>
                 <input
                   aria-label={t('matchSetup.lastName')}
-                  className="capitalize cell-last"
+                  className={cn('capitalize cell-last', markClass(mk('lastName')))}
+                  {...markAttrs(mk('lastName'))}
                   placeholder={t('matchSetup.placeholders.lastName')}
                   value={p.lastName || ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
@@ -6124,7 +6246,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
                 <input
                   aria-label={t('matchSetup.firstName')}
-                  className="capitalize cell-first"
+                  className={cn('capitalize cell-first', markClass(mk('firstName')))}
+                  {...markAttrs(mk('firstName'))}
                   placeholder={t('matchSetup.placeholders.firstName')}
                   value={p.firstName || ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
@@ -6145,6 +6268,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                   }}
                   size="bare"
                   wrapperClassName={DOB_CELL}
+                  className={markClass(mk('dob'))}
+                  {...markAttrs(mk('dob'))}
                   aria-label={idLabel}
                   placeholder={idPlaceholder}
                   value={p.dob ? formatDateToISO(p.dob) : ''}
@@ -6158,7 +6283,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 <StackLabel>{t('matchSetup.roleLibero')} · {t('matchSetup.captain')}</StackLabel>
                 <select
                   aria-label={t('matchSetup.libero', 'Libero')}
-                  className={`cell-libero${p.libero ? '' : ' libero-unset'}`}
+                  className={cn(`cell-libero${p.libero ? '' : ' libero-unset'}`, markClass(mk('libero')))}
+                  {...markAttrs(mk('libero'))}
                   value={liberoValueOf(p)}
                   onChange={e => {
                     const updated = [...awayRoster]
@@ -6169,7 +6295,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 >
                   {liberoOptions(awayRoster, i)}
                 </select>
-                <div className="cell-captain">
+                <div className={cn('cell-captain', markRing(mk('isCaptain')))} {...markAttrs(mk('isCaptain'))}>
                   <CaptainToggle
                     pressed={!!p.isCaptain}
                     number={p.number}
@@ -6238,6 +6364,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
           </div>
           {sortBenchByHierarchy(benchAway).map((m, i) => {
             const originalIdx = benchAway.findIndex(b => b === m)
+            // a photo import's marks on this official (by role; UI only)
+            const bm = (field) => officialMarkOf(photoImport.away, m, field)
             return (
               <div key={`ba-${originalIdx}`} className="bench-grid-row">
                 <StackLabel head>{t('matchSetup.role')}</StackLabel>
@@ -6263,11 +6391,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                 </select>
                 </BenchRoleCell>
                 <StackLabel>{t('matchSetup.lastName')}</StackLabel>
-                <input aria-label={t('matchSetup.lastName')} className="capitalize cell-last" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
+                <input aria-label={t('matchSetup.lastName')} className={cn('capitalize cell-last', markClass(bm('lastName')))} {...markAttrs(bm('lastName'))} placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
-                <input aria-label={t('matchSetup.firstName')} className="capitalize cell-first" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
+                <input aria-label={t('matchSetup.firstName')} className={cn('capitalize cell-first', markClass(bm('firstName')))} {...markAttrs(bm('firstName'))} placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
                 <StackLabel>{idLabel}</StackLabel>
-                <IdField idMode={idMode} rawValue={m.dob} onRawChange={v => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v }; return a })} size="bare" wrapperClassName={DOB_CELL} aria-label={idLabel} placeholder={idPlaceholder} value={m.dob ? formatDateToISO(m.dob) : ''} onChange={v => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v ? formatDateToDDMMYYYY(v) : '' }; return a })} />
+                <IdField idMode={idMode} rawValue={m.dob} onRawChange={v => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v }; return a })} size="bare" wrapperClassName={DOB_CELL} className={markClass(bm('dob'))} {...markAttrs(bm('dob'))} aria-label={idLabel} placeholder={idPlaceholder} value={m.dob ? formatDateToISO(m.dob) : ''} onChange={v => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v ? formatDateToDDMMYYYY(v) : '' }; return a })} />
                 {/* A player who is also this official (a playing coach,
                     domain/playerOfficials): found by licence or name, or
                     the scorer's choice */}
@@ -8254,6 +8382,9 @@ const setupViewStyle = {
 // all of DD.MM.YYYY and its calendar button (styles.css .setup-roster; the
 // input itself has an inline min-width 0)
 const DOB_CELL = 'cell-dob min-w-32'
+// a photo import's marks on the roster's fields (utils/rosterPhoto/photoMarks)
+const PHOTO_MARK_CLASS = { invalid: 'border-red-500 bg-red-50', low: 'border-amber-400 bg-amber-50' }
+const PHOTO_MARK_RING = { invalid: 'ring-red-500 bg-red-50', low: 'ring-amber-400 bg-amber-50' }
 
 const SETUP_VIEW = cn(
   'setup content-start',
