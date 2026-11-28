@@ -20,6 +20,7 @@ import { startWalkthrough, useWalkthrough } from './components/walkthrough/walkt
 import { removeDemoData } from './components/walkthrough/demoData'
 import ConnectionStatus from './components/ConnectionStatus'
 import StartupConnectivityModal from './components/StartupConnectivityModal'
+import { useInternetCheck } from './hooks/useInternetCheck'
 import MainHeader from './components/MainHeader'
 import BackupTable from './components/BackupTable'
 import RestorePreview from './components/RestorePreview'
@@ -425,6 +426,9 @@ export default function App() {
     if (localStorage.getItem('offlineMode') === 'true') return false
     return !STARTUP_CHECK_SHOWN_RECENTLY
   })
+  // Its "Internet" row: measured once each time the check opens, aborted when
+  // it closes (useInternetCheck, utils/internetCheck.js)
+  const startupInternet = useInternetCheck(showStartupConnectivity && !offlineMode)
   // Display mode: 'desktop' | 'tablet' | 'auto'
   const [displayMode, setDisplayMode] = useState(() => {
     const saved = localStorage.getItem('displayMode')
@@ -4994,6 +4998,7 @@ export default function App() {
             <StartupConnectivityModal
               open={showStartupConnectivity && !offlineMode}
               connectionStatuses={connectionStatuses}
+              internet={startupInternet}
               onDismiss={handleStartupDismiss}
               onGoOffline={handleStartupGoOffline}
             />

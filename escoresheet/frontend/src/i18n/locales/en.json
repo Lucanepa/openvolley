@@ -2869,7 +2869,15 @@
     "statusInformation": "Status information",
     "statusLabel": "Status:",
     "messageLabel": "Message:",
-    "connectionIssueDetected": "Connection issue detected"
+    "connectionIssueDetected": "Connection issue detected",
+    "internet": "Internet",
+    "internetMeasuring": "Measuring",
+    "internetGood": "Good",
+    "internetSlow": "Slow",
+    "notMeasured": "Not measured",
+    "internetNoAnswer": "no answer in {{seconds}} s",
+    "internetDataSaver": "data saver: no download",
+    "internetHint": "Measured to the OpenVolley server: round trip (median of 3 requests) and one 256 KB download. Nothing is stored."
   },
   "connectTablets": {
     "account": "Account",
