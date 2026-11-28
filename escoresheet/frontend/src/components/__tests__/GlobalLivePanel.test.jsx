@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react'
 import en from '../../i18n/locales/en.json'
 
 const lookup = (key) => key.split('.').reduce((o, k) => (o == null ? undefined : o[k]), en)
@@ -27,7 +27,9 @@ describe('GlobalLivePanel', () => {
   it('says beside the livescore opt-in that a listed code shows its listed courts only (owner decision 8)', () => {
     render(<GlobalLivePanel />)
     fireEvent.click(screen.getByTestId('global-live-start'))
-    expect(screen.getByTestId('global-live-listed-hint').textContent).toBe(en.globalLive.listedHint)
+    // in the (i) beside it (28.11.2026)
+    fireEvent.click(within(screen.getByTestId('global-live-listed-hint')).getByRole('button'))
+    expect(screen.getByTestId('global-live-listed-hint').querySelector('[data-info-panel]').textContent).toBe(en.globalLive.listedHint)
     expect(en.globalLive.listedHint).toMatch(/needs a code of its own/)
   })
 

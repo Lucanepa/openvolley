@@ -419,6 +419,8 @@ describe('ConnectTabletsModal', () => {
     renderModal({ match: MATCH, fetchImpl: okFetch(), win: ANDROID_PHONE })
     expect([...document.querySelectorAll('[role="radio"][data-testid^="transport-"]')].map(r => r.getAttribute('data-testid'))).toEqual(['transport-server'])
     expect(screen.getByRole('radio', { name: /Internet/ })).toHaveAttribute('aria-checked', 'true')
+    // in the (i) beside step 1
+    fireEvent.click(within(screen.getByTestId('connect-mobile-note')).getByRole('button'))
     expect(screen.getByTestId('connect-mobile-note')).toHaveTextContent('desktop app')
   })
 

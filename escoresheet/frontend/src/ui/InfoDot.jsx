@@ -8,7 +8,8 @@
 //   <InfoDot title={t('options.look.checkInfo')} />
 //
 // `title`: the explanation (text or nodes); `label`: the (i)'s name for
-// screen readers (default "More information" in the app's language).
+// screen readers (default "More information" in the app's language); other
+// props (data-testid) go on the element around the (i) and its panel.
 import { useTranslation } from 'react-i18next'
 import { Info } from 'lucide-react'
 import { cn } from './cn.js'
@@ -16,12 +17,12 @@ import { useInfoPopover } from './infoPopover.js'
 
 export const INFO_DOT_MAX_WIDTH = 260
 
-export function InfoDot({ title, label, className }) {
+export function InfoDot({ title, label, className, ...rest }) {
   const { t } = useTranslation()
   const { open, wrapRef, triggerProps, panelProps } = useInfoPopover({ maxWidth: INFO_DOT_MAX_WIDTH })
   const name = label || t('common.moreInfo', 'More information')
   return (
-    <span ref={wrapRef} data-info-dot="" className={cn('relative inline-flex print:hidden', className)}>
+    <span ref={wrapRef} data-info-dot="" className={cn('relative inline-flex print:hidden', className)} {...rest}>
       <button
         {...triggerProps}
         aria-label={name}

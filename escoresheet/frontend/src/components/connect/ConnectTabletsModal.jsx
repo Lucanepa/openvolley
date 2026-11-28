@@ -2,7 +2,7 @@ import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { CircleHelp, Tablet } from 'lucide-react'
-import { Button, EmptyState, Modal, confirmDialog } from '../../ui'
+import { Button, EmptyState, InfoDot, Modal, confirmDialog } from '../../ui'
 import { AuthContext } from '../../contexts/AuthContext'
 import LoginModal from '../auth/LoginModal'
 import { openHelp } from '../help/helpEvents'
@@ -436,13 +436,15 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
             shows the QR code (step 3) without scrolling */}
         <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_17rem] min-[56.25rem]:grid-cols-[17rem_minmax(0,1fr)_16rem] lg:grid-cols-[19rem_minmax(0,1fr)_17rem]">
           <section className="min-w-0 md:col-span-2 min-[56.25rem]:col-span-1" aria-labelledby={step1Id}>
-            <StepHeading n={1} id={step1Id}>{t('connectTablets.step.connect', 'How tablets connect')}</StepHeading>
+            {/* on a phone, where the desktop app's ways are: in the (i) beside
+                the step, outside its heading (the section's name) */}
+            <div className="flex items-start gap-1.5">
+              <StepHeading n={1} id={step1Id}>{t('connectTablets.step.connect', 'How tablets connect')}</StepHeading>
+              {device.mobile && (
+                <InfoDot title={t('connectTablets.mobileNote', 'On a computer, the desktop app also offers Wi-Fi from that computer and Bluetooth.')} data-testid="connect-mobile-note" />
+              )}
+            </div>
             <TransportPicker options={options} value={transport} onChange={chooseTransport} labelledBy={step1Id} />
-            {device.mobile && (
-              <p className="mt-2 text-xs text-stone-500" data-testid="connect-mobile-note">
-                {t('connectTablets.mobileNote', 'On a computer, the desktop app also offers Wi-Fi from that computer and Bluetooth.')}
-              </p>
-            )}
             <div className="mt-3">
               {transport === 'hall' && (
                 <HallPanel

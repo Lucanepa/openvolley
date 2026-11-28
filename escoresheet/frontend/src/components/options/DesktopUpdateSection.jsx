@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Copy, RefreshCw } from 'lucide-react'
-import { Button, Switch, toast } from '../../ui'
+import { Button, InfoDot, Switch, toast } from '../../ui'
 import { APT_COMMAND, REPO_COMMAND, blockerText, failureText, isDownloadingKind, mainBlocker, statusLine } from '../../utils/desktopUpdate'
 import { copyToClipboard } from '../../utils/networkInfo'
 
@@ -132,9 +132,10 @@ export default function DesktopUpdateSection({ update }) {
       {supported && (
         <>
           <Row>
-            <div className="min-w-0">
+            {/* how often it asks, and when it installs: in the (i) */}
+            <div className="flex min-w-0 items-center gap-1.5">
               <div className="text-sm font-semibold text-stone-900">{t('update.autoCheck', 'Check for updates automatically')}</div>
-              <div className="mt-0.5 text-xs text-stone-500">{t('update.autoCheckHint', 'Asks get.openvolley.app every 6 hours.')}</div>
+              <InfoDot title={t('update.autoCheckHint', 'Asks get.openvolley.app every 6 hours.')} />
             </div>
             <Switch
               size="lg"
@@ -144,9 +145,9 @@ export default function DesktopUpdateSection({ update }) {
             />
           </Row>
           <Row>
-            <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-1.5">
               <div className="text-sm font-semibold text-stone-900">{t('update.autoInstall', 'Install updates automatically')}</div>
-              <div className="mt-0.5 text-xs text-stone-500">{t('update.autoInstallHint', 'Downloads in the background and installs when you quit, never during a match.')}</div>
+              <InfoDot title={t('update.autoInstallHint', 'Downloads in the background and installs when you quit, never during a match.')} />
             </div>
             <Switch
               size="lg"

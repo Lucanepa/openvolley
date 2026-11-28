@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { QRCodeSVG } from 'qrcode.react'
-import { Button } from '../../ui'
+import { Button, InfoDot } from '../../ui'
 import { copyToClipboard } from '../../utils/networkInfo'
 import { formatLiveCode, liveCodeUrl, liveCourtUrl, localTvUrl, newLiveCode, normalizeLiveCode, setLiveCode, setLiveCourt, setLiveListed, useLiveCode, useLiveCourt, useLiveListed } from '../../utils/globalLive'
 import { getBackendOverride, isStaticDeployment } from '../../utils/backendConfig'
@@ -62,18 +62,21 @@ export default function GlobalLivePanel({ bare = false }) {
               />
             </label>
             {courtUrl && <p className="mt-1 break-all text-xs text-stone-500" data-testid="global-live-court-url">{t('globalLive.courtUrl', { url: courtUrl.replace(/^https:\/\//, '') })}</p>}
-            <label className="mt-2 flex items-start gap-2 text-xs text-stone-600">
-              <input
-                type="checkbox"
-                checked={listed}
-                onChange={(e) => setLiveListed(e.target.checked)}
-                data-testid="global-live-listed"
-                className="mt-0.5 h-4 w-4"
-              />
-              <span>{t('globalLive.listedLabel')}</span>
-            </label>
-            {/* owner decision 8 (23.11.2026): a listed code shows its listed courts only */}
-            <p className="mt-1 text-xs text-stone-500" data-testid="global-live-listed-hint">{t('globalLive.listedHint')}</p>
+            {/* owner decision 8 (23.11.2026): a listed code shows its listed
+                courts only; said in the (i) beside the opt-in (28.11.2026) */}
+            <div className="mt-2 flex items-start gap-1.5">
+              <label className="flex items-start gap-2 text-xs text-stone-600">
+                <input
+                  type="checkbox"
+                  checked={listed}
+                  onChange={(e) => setLiveListed(e.target.checked)}
+                  data-testid="global-live-listed"
+                  className="mt-0.5 h-4 w-4"
+                />
+                <span>{t('globalLive.listedLabel')}</span>
+              </label>
+              <InfoDot title={t('globalLive.listedHint')} className="-mt-0.5 shrink-0" data-testid="global-live-listed-hint" />
+            </div>
             <div className="mt-2 flex flex-wrap gap-2">
               <Button variant="secondary" size="md" onClick={async () => { setCopied((await copyToClipboard(url))?.success === true) }}>
                 {copied ? t('globalLive.copied') : t('globalLive.copyLink')}

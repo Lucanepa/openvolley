@@ -959,9 +959,10 @@ export default function HomeOptionsModal({
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <div className="text-sm font-semibold text-stone-900">{t('options.autoBackup')}</div>
+                  {/* downloads: that each one is a new file, in the (i) too (28.11.2026) */}
                   <InfoDot title={backup.hasFileSystemAccess
                     ? t('options.autoBackupFolderInfo')
-                    : t('options.autoBackupDownloadInfo')
+                    : <><span className="block">{t('options.autoBackupDownloadInfo')}</span><span className="mt-1 block">{t('options.eventBasedNote')}</span></>
                   } />
                 </div>
                 <ToggleSwitch
@@ -1029,9 +1030,6 @@ export default function HomeOptionsModal({
                       <span className="text-emerald-600">✓</span> {t('options.autoDownloadEveryMinutes', { minutes: backup.backupFrequency })}
                     </div>
                   </div>
-                  <div className="mt-2 text-[11px] text-stone-400">
-                    {t('options.eventBasedNote')}
-                  </div>
                 </div>
               )}
 
@@ -1073,9 +1071,10 @@ export default function HomeOptionsModal({
 
         <Section title={t('options.logs')}>
           <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
-            <div>
+            {/* what it holds: in the (i), as on the scoring screen's options */}
+            <div className="flex items-center gap-1.5">
               <div className="text-sm font-semibold text-stone-900">{t('options.activityLog')}</div>
-              <p className="mt-0.5 text-xs text-stone-500">{t('options.activityLogAllInfo')}</p>
+              <InfoDot title={t('options.activityLogAllInfo')} />
             </div>
             <button type="button" onClick={() => setShowActivityLog(true)} className={cn(BTN_OUTLINE, 'w-full')} data-testid="home-options-activity-log">
               {t('options.openActivityLog')}

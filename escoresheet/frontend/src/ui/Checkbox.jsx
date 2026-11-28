@@ -6,6 +6,7 @@
 //   Checkbox card     bordered tile that tints when on  App.tsx:9899-9907
 //   Radio             answer list                       SurveyPage.tsx:176-184
 import { cn } from './cn.js';
+import { InfoDot } from './InfoDot.jsx';
 
 const BOX = {
   default: 'mt-0.5 h-4 w-4 shrink-0 accent-red-600',
@@ -22,16 +23,17 @@ const ROW = {
  * @param {object} props
  * @param {any} props.label
  * @param {any} [props.hint]   second line
+ * @param {any} [props.info]   an explanation in an (i) beside the row (ui/InfoDot), outside the <label>
  * @param {'default'|'dense'|'card'} [props.variant]
  */
-export function Checkbox({ label, hint, variant = 'default', checked, disabled, className, inputClassName, ...rest }) {
+export function Checkbox({ label, hint, info, variant = 'default', checked, disabled, className, inputClassName, ...rest }) {
   const isCard = variant === 'card';
-  return (
+  const row = (
     <label className={cn(
       ROW[variant],
       isCard && (checked ? 'border-red-300 bg-red-50/40' : 'border-stone-200'),
       disabled && 'cursor-default opacity-50',
-      className,
+      !info && className,
     )}>
       <input type="checkbox" checked={checked} disabled={disabled} className={cn(BOX[variant], inputClassName)} {...rest} />
       {variant === 'dense' ? (
@@ -43,6 +45,13 @@ export function Checkbox({ label, hint, variant = 'default', checked, disabled, 
         </span>
       )}
     </label>
+  );
+  if (!info) return row;
+  return (
+    <div className={cn('flex items-center gap-1.5', className)}>
+      {row}
+      <InfoDot title={info} className="shrink-0" />
+    </div>
   );
 }
 
