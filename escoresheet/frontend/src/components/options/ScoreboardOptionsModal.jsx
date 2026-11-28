@@ -17,8 +17,8 @@ import SavedBackupsList from '../SavedBackupsList'
 import { useBackupUnlock } from '../../hooks/useBackupUnlock'
 import { backupPins } from '../../utils/backupCrypto/sealer'
 import { clearCachesAndReload } from '../../hooks/useServiceWorker'
-import { ChevronDown, Info, Tablet, X } from 'lucide-react'
-import { cn, IconButton, Select, SegmentedControl, StatusPill, Switch, toast } from '../../ui'
+import { ChevronDown, Tablet, X } from 'lucide-react'
+import { cn, IconButton, InfoDot, Select, SegmentedControl, StatusPill, Switch, toast } from '../../ui'
 import { useStickBackup, copyMatchToSticks, STICK_FULL_BYTES } from '../../utils/stickBackup'
 import { useSponsorsOption } from '../../hooks/useSponsorsOption'
 import { toastLang } from '../chromeClasses'
@@ -42,37 +42,6 @@ const BTN_OUTLINE = 'inline-flex h-11 items-center justify-center gap-1.5 rounde
 const BTN_DANGER_OUTLINE = 'inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white px-4 text-sm font-medium text-red-700 hover:bg-red-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1'
 const BTN_DARK = 'inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-4 text-sm font-medium text-white hover:bg-slate-800 transition-colors disabled:bg-stone-200 disabled:text-stone-400 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1'
 const BTN_POSITIVE = 'inline-flex h-11 items-center justify-center gap-1.5 rounded-lg bg-emerald-700 px-4 text-sm font-medium text-white hover:bg-emerald-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1'
-
-function InfoDot({ title }) {
-  const [showTooltip, setShowTooltip] = useState(false)
-
-  return (
-    <div className="relative inline-flex">
-      <button
-        type="button"
-        aria-expanded={showTooltip}
-        onClick={(e) => {
-          e.stopPropagation()
-          setShowTooltip(!showTooltip)
-        }}
-        className={cn(
-          'inline-flex h-5 w-5 items-center justify-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500/50',
-          showTooltip ? 'bg-sky-50 text-sky-700' : 'text-stone-400 hover:bg-sky-50 hover:text-sky-700'
-        )}
-      >
-        <Info size={14} aria-hidden="true" />
-      </button>
-      {showTooltip && (
-        <div
-          onClick={(e) => e.stopPropagation()}
-          className="absolute left-1/2 top-full z-10 mt-2 w-max max-w-[250px] -translate-x-1/2 whitespace-normal rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-normal leading-relaxed text-stone-700 shadow-xl"
-        >
-          {title}
-        </div>
-      )}
-    </div>
-  )
-}
 
 function ToggleSwitch({ value, onToggle, ...rest }) {
   // Kit Switch, lg; on = slate-900 here, not brand red (R4: over the scoreboard).

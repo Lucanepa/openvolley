@@ -49,7 +49,8 @@
     "remove": "Supprimer",
     "saving": "Enregistrement...",
     "homeTeam": "Local",
-    "awayTeam": "Visiteur"
+    "awayTeam": "Visiteur",
+    "moreInfo": "Plus d'informations"
   },
   "alert": {
     "error": "Erreur",
