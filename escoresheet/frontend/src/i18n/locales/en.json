@@ -577,7 +577,9 @@
     "teamContactEmailHint": "Gets the final scoresheet by email. Only this match's scorers see it.",
     "sortPlayers": "Sort",
     "rosterImport": {"title": "Roster import", "pdf": "PDF", "photo": "Photo", "pdfHint": "The team's roster PDF or the Einsatzliste, from this device."},
-    "rosterWays": "Other ways to fill the roster"
+    "rosterWays": "Other ways to fill the roster",
+    "rosterSplit_one": "({{players}} + {{count}} libero)",
+    "rosterSplit_other": "({{players}} + {{count}} liberos)"
   },
   "scoreboard": {
     "playerOfficials": {
@@ -2806,8 +2808,15 @@
       "rotation": "Rotation",
       "sanction": "Sanction",
       "challenge": "Challenge",
-      "decisionChange": "Decision change"
-    }
+      "decisionChange": "Decision change",
+      "lineup": "Line-up",
+      "forfait": "Forfeit",
+      "gameCaptain": "Game captain",
+      "remark": "Remark",
+      "matchStopped": "Match stopped",
+      "decidingSetCoinToss": "Coin toss (deciding set)"
+    },
+    "status": {"scheduled": "Not started", "setup": "Set-up", "live": "In progress", "ended": "Ended", "approved": "Approved", "final": "Closed"}
   },
   "syncBanner": {
     "title": "Not signed in: this match is saved on this device only",
@@ -3211,9 +3220,9 @@
       "a_proceed": "When every card is complete, tap “Coin toss” at the bottom. If it is greyed out, the yellow “!” next to it shows what is missing, for example players without a shirt number: tap it (“Click to see what's missing”) for the list.",
       "tip_proceed": "Tap here to go to the coin toss. Every required field must be complete first.",
       "q_loadSchedule": "Can I load the game from the schedule?",
-      "a_loadSchedule": "Yes. On the “Match info” card, tap “Load match from schedule”. Choose the gender and the league, then the game. The app fills in the game number, the teams, the date, the time, the hall and the referees. It needs an internet connection. Then set the team colours and the short names.",
+      "a_loadSchedule": "Yes. On the “Match info” card, tap “Load match from schedule”. Choose the gender and the league, then the game. The app fills in the game number, the teams, the date, the time, the hall and the referees. It needs an internet connection. Then set the team colours.",
       "q_officials": "Which officials must I enter?",
-      "a_officials": "The 1st referee and the scorer, with the scorer's date of birth. Signed in, the scorer is you. “Database” picks a referee from the list. The 2nd referee, the assistant scorer and the line judges are optional (switch them on). The 2nd referee and the assistant scorer sign at the match end when they are entered.",
+      "a_officials": "The 1st referee and the scorer, with the scorer's licence number. Signed in, the scorer is you. “Database” picks a referee from the list. The 2nd referee, the assistant scorer and the line judges are optional (switch them on). The 2nd referee and the assistant scorer sign at the match end when they are entered.",
       "q_rosterUpload": "Can the coach send the roster?",
       "a_rosterUpload": "Yes. In “Edit roster”, choose “Remote” in “Roster import” and tap “Generate PIN”. Give the coach the game number and this upload PIN. The coach opens roster.openvolley.app, picks the game and the team, enters the PIN and uploads the roster PDF. “Roster uploaded” then appears (“Check server for rosters” checks for it, and the panel checks again on its own while it is open): tap “Preview”, then “Accept” or “Reject”.",
       "q_pins": "Where are the PINs for the tablets?",
@@ -3223,7 +3232,7 @@
       "q_teamContact": "Can the teams get the final scoresheet by e-mail?",
       "a_teamContact": "Yes. Each team can have a “Team contact email (optional)” on the match info page, and each referee an “Email (optional)”. Only the scorers of this match see these addresses. During the match, change them in Match › “Edit match info” › “Team contacts”.",
       "q_afterCoinToss": "Can I change the setup after the coin toss?",
-      "a_afterCoinToss": "Once the coin toss is confirmed, Match setup is read-only, except the shirt colours: tap a team's shirt to change it. In the scoring screen, Match › “Edit match info” changes the hall, the game number, the date, the officials, the team contacts and each team's short name and shirt colour, and “Edit home roster” or “Edit away roster” a roster. Everything else goes through Match › “Corrections”.",
+      "a_afterCoinToss": "Once the coin toss is confirmed, Match setup is read-only, except the shirt colours: tap a team's shirt to change it. In the scoring screen, Match › “Edit match info” changes the hall, the game number, the date, the officials, the team contacts and each team's shirt colour, and “Edit home roster” or “Edit away roster” a roster. Everything else goes through Match › “Corrections”.",
       "q_sentRoster": "A team sent its roster ahead: what do I do?",
       "a_sentRoster": "Its card shows “Roster sent by …”. Tap “Show” to look at it, then “Accept” to load it, and check it with the coach (“Not now” leaves it for later). If the coach and the captain signed ahead, their signatures come with it.",
       "q_clubPlayers": "What do the green and gray shields mean?",
@@ -3282,7 +3291,7 @@
       "a_awardPoint": "When the rally ends, tap the point button of the team that won it. The app adds the point, moves the service and rotates the team that wins the service back. In continuous play, hold the button for 2 seconds (it fills up and reads “Hold”): a short tap gives no point.",
       "tip_awardPoint": "Tap the team's point button when the rally ends.",
       "q_timeout": "How do I call a timeout?",
-      "a_timeout": "Between rallies, tap the team's “TO” box. Check the dialog and tap “Confirm time-out”: a 30-second countdown starts. “Stop timeout” ends it early. Each team has 2 time-outs per set; for a third, the app opens a warning that records it as an improper request (or a delay if the time-out already started). No time-out during the interval between sets.",
+      "a_timeout": "Between rallies, tap the team's “Time-out” box. Check the dialog and tap “Confirm”: a 30-second countdown starts. “Stop timeout” ends it early. Each team has 2 time-outs per set; for a third, the app opens a warning that records it as an improper request (or a delay if the time-out already started). No time-out during the interval between sets.",
       "tip_timeout": "Tap here to call a time-out for this team, between rallies.",
       "q_substitution": "How do I make a substitution?",
       "a_substitution": "Between rallies, tap the player on court and choose “Substitution”, then the player who comes in. Or drag a bench player onto the court player (long-press on a tablet). Then confirm. Players who may not come in are greyed, with the reason. Or tap the team’s “Substitution” box under the score: who comes in, then who goes out (several pairs at once), then Confirm.",
@@ -3446,7 +3455,7 @@
     },
     "sanctions": {
       "q_teamSanctions": "How do I record an improper request or a delay?",
-      "a_teamSanctions": "Under each team's “TO” and “SUB” boxes are “Improper request” and “Delay warning” (on a small screen under “IR & delays”). A team has one improper request: then the button gives way to an “Improper request” box. After the delay warning the button becomes “Delay penalty”: point and service to the opponent. The app writes them on the scoresheet.",
+      "a_teamSanctions": "Under each team's “Time-out” and “Substitution” boxes are “Improper request” and “Delay warning” (on a small screen under “IR & delays”). A team has one improper request: then the button gives way to an “Improper request” box. After the delay warning the button becomes “Delay penalty”: point and service to the opponent. The app writes them on the scoresheet.",
       "q_ladder": "Why did my delay warning become a penalty?",
       "a_ladder": "The sanctions follow the rules. A second improper request counts as a delay. A delay after a delay warning is a delay penalty. The dialog tells you before you confirm.",
       "q_penaltyPoint": "Who gets the point after a penalty?",

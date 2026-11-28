@@ -41,6 +41,7 @@
  */
 import { jobMatchKey } from './syncIds'
 import { matchGameNumber, setScore } from './deviceMatches'
+import { resolveBestOf } from './matchFormat'
 import { isClosingSyncJob, serverRowClosed } from './matchReopen'
 import { randomUuid } from './deviceId'
 import { isLocalOnly } from '../domain/matchKind'
@@ -368,7 +369,7 @@ export async function serverScoreForTakeBack(database, matchId, { lookup, online
   }
   if (!data?.match) return { ok: false, reason: 'notFound' }
   if (data.match.external_id && data.match.external_id !== match.seed_key) return { ok: false, reason: 'otherMatch' }
-  return { ok: true, score: setScore(data.sets || []), closed: ['approved', 'final'].includes(data.match.status) }
+  return { ok: true, score: setScore(data.sets || [], resolveBestOf(data.match)), closed: ['approved', 'final'].includes(data.match.status) }
 }
 
 /**

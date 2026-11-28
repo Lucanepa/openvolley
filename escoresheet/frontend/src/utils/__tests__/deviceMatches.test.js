@@ -103,6 +103,24 @@ describe('setScore: where a match stands (the home screen\'s Continue card, Take
     expect(setScore([])).toEqual({ set: null, home: 0, away: 0, setsHome: 0, setsAway: 0 })
     expect(setScore(null).set).toBeNull()
   })
+
+  // 28.11.2026: the Continue card said "Set 5" for a best-of-3 decider (the
+  // tie-break slot, index 5) while the scoring screen said SET 3
+  it('a best-of-3 decider is set 3; best of 5 keeps set 5', () => {
+    const decider = [
+      { index: 1, homePoints: 25, awayPoints: 20, finished: true },
+      { index: 2, homePoints: 20, awayPoints: 25, finished: true },
+      { index: 5, homePoints: 8, awayPoints: 6, finished: false }
+    ]
+    expect(setScore(decider, 3)).toEqual({ set: 3, home: 8, away: 6, setsHome: 1, setsAway: 1 })
+    expect(setScore(decider, '3').set).toBe(3)
+    const fifth = [1, 2, 3, 4].map(index => ({ index, homePoints: index % 2 ? 25 : 20, awayPoints: index % 2 ? 20 : 25, finished: true }))
+      .concat({ index: 5, homePoints: 8, awayPoints: 6, finished: false })
+    expect(setScore(fifth, 5).set).toBe(5)
+    expect(setScore(fifth).set).toBe(5)
+    // the sets before the decider keep their numbers
+    expect(setScore(decider.slice(0, 2), 3).set).toBe(2)
+  })
 })
 
 describe('resumeStage (where Continue opens a match with no set yet)', () => {

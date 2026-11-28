@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { fetchCloudBackup } from '../utils/backupManager'
 import { isEncryptedBackup } from '../utils/backupCrypto/envelope'
 import { formatBackupDateTime, formatZurichDateTime } from '../utils/dateFormatter'
+import { displaySetNumber, resolveBestOf } from '../utils/matchFormat'
 import { cn } from '../ui'
 
 // "Last action" needs the whole backup file (a match, up to about 1 MB): read
@@ -32,17 +33,38 @@ function formatEventType(type, t) {
     'rotation': t('backupTable.eventTypes.rotation', 'Rotation'),
     'sanction': t('backupTable.eventTypes.sanction', 'Sanction'),
     'challenge': t('backupTable.eventTypes.challenge', 'Challenge'),
-    'decision_change': t('backupTable.eventTypes.decisionChange', 'Decision change')
+    'decision_change': t('backupTable.eventTypes.decisionChange', 'Decision change'),
+    'lineup': t('backupTable.eventTypes.lineup', 'Line-up'),
+    'forfait': t('backupTable.eventTypes.forfait', 'Forfeit'),
+    'court_captain_designation': t('backupTable.eventTypes.gameCaptain', 'Game captain'),
+    'remark': t('backupTable.eventTypes.remark', 'Remark'),
+    'match_stopped': t('backupTable.eventTypes.matchStopped', 'Match stopped'),
+    'set5_coin_toss': t('backupTable.eventTypes.decidingSetCoinToss', 'Coin toss (deciding set)')
   }
   return typeMap[type] || type.charAt(0).toUpperCase() + type.slice(1).replace('_', ' ')
+}
+
+// The cloud match row's status (its "Last action"): the raw 'live' / 'ended'
+// stayed English in every language (28.11.2026)
+const STATUS_LABELS = {
+  scheduled: 'Not started',
+  setup: 'Set-up',
+  live: 'In progress',
+  ended: 'Ended',
+  approved: 'Approved',
+  final: 'Closed'
+}
+function formatStatus(status, t) {
+  if (!status) return '—'
+  return STATUS_LABELS[status] ? t(`backupTable.status.${status}`, STATUS_LABELS[status]) : status
 }
 
 /**
  * Extract the last significant action from backup events
  * Filters out sub-events (decimal seq), rally_start, and replay events
- * Returns the most recent main event type
+ * Returns the most recent main event's type (translated when shown)
  */
-function extractLastAction(events, t) {
+function extractLastAction(events) {
   if (!events || events.length === 0) return null
 
   // Filter and sort events
@@ -58,7 +80,7 @@ function extractLastAction(events, t) {
     })
     .sort((a, b) => (b.seq || 0) - (a.seq || 0))[0]
 
-  return lastEvent ? formatEventType(lastEvent.type, t) : null
+  return lastEvent ? lastEvent.type : null
 }
 
 // Newest first: the UTC stamp in the file name (yyyymmdd, hhmmss, ms), else
@@ -119,12 +141,25 @@ export default function BackupTable({
     setShown(LAST_ACTION_NEWEST)
   }, [files, pinsKey])
 
-  // The text of a read file (a ref: a new `t` is no reason to read again)
+  // What a read file says: its last action's type and the match's best of
+  // (the set column). Kept untranslated and translated when shown: text
+  // made when the file was read stayed in the language of that moment, e.g.
+  // English when the list was read before a new language's texts had loaded
+  // ("Point", "Set end" in de/fr/it, 28.11.2026)
   const lastActionOf = useRef(null)
   lastActionOf.current = (data) => {
-    if (!data) return t('backupTable.error', 'Error')
-    if (isEncryptedBackup(data)) return t('backupTable.locked', 'Encrypted')
-    return extractLastAction(data.events, t) || t('backupTable.noActions', 'No actions')
+    if (!data) return { kind: 'error' }
+    if (isEncryptedBackup(data)) return { kind: 'locked' }
+    const bestOf = data.match ? resolveBestOf(data.match) : undefined
+    const type = extractLastAction(data.events)
+    return type ? { kind: 'event', type, bestOf } : { kind: 'none', bestOf }
+  }
+  const actionText = (entry) => {
+    if (!entry) return '—'
+    if (entry.kind === 'error') return t('backupTable.error', 'Error')
+    if (entry.kind === 'locked') return t('backupTable.locked', 'Encrypted')
+    if (entry.kind === 'none') return t('backupTable.noActions', 'No actions')
+    return formatEventType(entry.type, t)
   }
 
   // The last action of the first `shown` files, one file at a time; again
@@ -202,10 +237,16 @@ export default function BackupTable({
 
         // The cloud match itself shows its status; an older file not read yet, a dash
         const lastAction = backup.source === 'database'
-          ? (backup.status || '—')
+          ? formatStatus(backup.status, t)
           : (loadingActions[backup.path]
             ? t('common.loading', 'Loading...')
-            : (lastActions[backup.path] || '—'))
+            : actionText(lastActions[backup.path]))
+        // A best-of-3 decider is stored (and named in the file) as set 5 but
+        // is the third set, as the scoring screen says. Best of: the row's
+        // (the list's match), else the read file's
+        const setNumber = backup.setIndex
+          ? displaySetNumber(backup.setIndex, backup.bestOf ?? lastActions[backup.path]?.bestOf)
+          : 'N/A'
 
         const isDisabled = loading || loadingBackupPath === backup.path
 
@@ -226,7 +267,7 @@ export default function BackupTable({
               className={cn(rowCls, 'rounded-none bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red-400/60')}
             >
               <span className={cn(gameCell, 'font-semibold')}>{backup.gameN || 'N/A'}</span>
-              <span className="text-center">{backup.setIndex || 'N/A'}</span>
+              <span className="text-center">{setNumber}</span>
               <span className="text-center font-semibold text-stone-900">
                 {backupScore(backup)}
               </span>
@@ -248,7 +289,7 @@ export default function BackupTable({
               className={rowCls}
             >
               <span className={cn(gameCell, 'font-semibold')}>{backup.gameN || 'N/A'}</span>
-              <span className="text-center">{backup.setIndex || 'N/A'}</span>
+              <span className="text-center">{setNumber}</span>
               <span className="text-center font-semibold text-stone-900">
                 {backupScore(backup)}
               </span>
@@ -292,3 +333,5 @@ export default function BackupTable({
 // - mode: 'button' | 'row'
 // - loadingBackupPath: string
 // - restoreButtonText: string
+// Each backup may carry bestOf (3 or 5, its match's): the set column shows a
+// best-of-3 decider as set 3

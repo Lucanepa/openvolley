@@ -576,7 +576,9 @@
     "teamContactEmailHint": "Überchunnt s fertige Matchblatt per E-Mail. Nur d Schriiber vo däm Spiil gsehnd si.",
     "sortPlayers": "Sortiere",
     "rosterImport": {"title": "Kader-Import", "pdf": "PDF", "photo": "Foto", "pdfHint": "S Kader-PDF vom Team oder d Einsatzliste, vo dem Grät."},
-    "rosterWays": "Witeri Wäg, zum de Kader fülle"
+    "rosterWays": "Witeri Wäg, zum de Kader fülle",
+    "rosterSplit_one": "({{players}} + {{count}} Libero)",
+    "rosterSplit_other": "({{players}} + {{count}} Liberos)"
   },
   "scoreboard": {
     "playerOfficials": {
@@ -2800,8 +2802,15 @@
       "rotation": "Rotation",
       "sanction": "Sanktion",
       "challenge": "Challenge",
-      "decisionChange": "Entscheidsänderig"
-    }
+      "decisionChange": "Entscheidsänderig",
+      "lineup": "Ufstellig",
+      "forfait": "Forfait",
+      "gameCaptain": "Spielkapitän",
+      "remark": "Bemerkig",
+      "matchStopped": "Spiil abbroche",
+      "decidingSetCoinToss": "Usloosig (Entscheidigssatz)"
+    },
+    "status": {"scheduled": "Nonig gstartet", "setup": "Vorbereitig", "live": "Lauft", "ended": "Fertig", "approved": "Bestätigt", "final": "Abgschlosse"}
   },
   "syncBanner": {
     "title": "Nöd aagmäldet: Das Spiil isch nur uf däm Grät gspeicheret",
@@ -3205,9 +3214,9 @@
       "a_proceed": "Wenn alli Charte vollständig sind, tipp unde uf „Usloosig“. Isch de Chnopf grau, zeigt s gäle „!“ dernäbe, was fehlt, zum Biispiil Spieler ohni Trikotnummere: Tipp druf („Klicke, zum luege, was fehlt“) für d Lischte.",
       "tip_proceed": "Tipp da, zum zur Usloosig gah. Zersch müend alli Pflichtaagabe vollständig sii.",
       "q_loadSchedule": "Chan ich s Spiil us em Spiilplan lade?",
-      "a_loadSchedule": "Ja. Tipp uf de Charte «Spiilinfo» uf «Spiil us em Spiilplan lade». Wähl Gschlecht und Liga, dänn s Spiil. D App füllt Spiilnummere, Teams, Datum, Ziit, Halle und Schiris uus. Das bruucht e Internetverbindig. Leg nachher d Teamfarbe und d Churznäme fescht.",
+      "a_loadSchedule": "Ja. Tipp uf de Charte «Spiilinfo» uf «Spiil us em Spiilplan lade». Wähl Gschlecht und Liga, dänn s Spiil. D App füllt Spiilnummere, Teams, Datum, Ziit, Halle und Schiris uus. Das bruucht e Internetverbindig. Leg nachher d Teamfarbe fescht.",
       "q_officials": "Weli Offizielle muess ich iitrage?",
-      "a_officials": "De 1. Schiri und de Schriiber, mit em Geburtsdatum vom Schriiber. Bisch aagmäldet, bisch du de Schriiber. «Datebank» wählt en Schiri us de Lischte. De 2. Schiri, de Schreiberassistent und d Linierichter sind freiwillig (schalt si ii). De 2. Schiri und de Schreiberassistent underschriibed am Spiilend, wänn si iitreit sind.",
+      "a_officials": "De 1. Schiri und de Schriiber, mit de Lizenznummer vom Schriiber. Bisch aagmäldet, bisch du de Schriiber. «Datebank» wählt en Schiri us de Lischte. De 2. Schiri, de Schreiberassistent und d Linierichter sind freiwillig (schalt si ii). De 2. Schiri und de Schreiberassistent underschriibed am Spiilend, wänn si iitreit sind.",
       "q_rosterUpload": "Cha de Trainer s Kader schicke?",
       "a_rosterUpload": "Ja. Wähl i «Kader bearbeite» under «Kader-Import» «Remote» und tipp uf «PIN generiere». Gib em Trainer d Spiilnummere und die Upload-PIN. De Trainer macht roster.openvolley.app uf, wählt Spiil und Team, git d PIN ii und ladt s Kader-PDF ufe. Dänn erschiint «Kader ufeglade» («Server nach Kader abfröge» prüeft das, und solang dä Bereich offe isch, frögt s vo sälber wieder): Tipp uf «Vorschau», dänn uf «Akzeptiere» oder «Ablehne».",
       "q_pins": "Wo sind d PINs für d Tablets?",
@@ -3217,7 +3226,7 @@
       "q_teamContact": "Chönd d Teams s fertig Matchblatt per E-Mail übercho?",
       "a_teamContact": "Ja. Jedes Team cha uf de Siite vo de Spiilinfo e «E-Mail Teamkontakt (freiwillig)» ha, und jede Schiri e «E-Mail (freiwillig)». Nur d Schriiber vo däm Spiil gsehnd die Adresse. Während em Spiil änderisch si i Spiil › «Spiilinfo bearbeite» › «Teamkontäkt».",
       "q_afterCoinToss": "Chan ich d Iirichtig nach de Usloosig no ändere?",
-      "a_afterCoinToss": "Sobald d Usloosig bestätigt isch, gaht d Spiiliirichtig nur no zum Läse uf, usser d Trikotfarbe: tipp uf s Trikot vomene Team, zum si ändere. Uf em Erfassigsbildschirm änderet Spiil › «Spiilinfo bearbeite» d Halle, d Spiilnummere, s Datum, d Offizielle, d Teamkontäkt und vo jedem Team de Churzname und d Trikotfarb, und «Heimkader bearbeite» oder «Gastkader bearbeite» es Kader. Alles anderi gaht über Spiil › «Korrekture».",
+      "a_afterCoinToss": "Sobald d Usloosig bestätigt isch, gaht d Spiiliirichtig nur no zum Läse uf, usser d Trikotfarbe: tipp uf s Trikot vomene Team, zum si ändere. Uf em Erfassigsbildschirm änderet Spiil › «Spiilinfo bearbeite» d Halle, d Spiilnummere, s Datum, d Offizielle, d Teamkontäkt und vo jedem Team d Trikotfarb, und «Heimkader bearbeite» oder «Gastkader bearbeite» es Kader. Alles anderi gaht über Spiil › «Korrekture».",
       "q_sentRoster": "Es Team hät sis Kader vorab gschickt: Was mach ich?",
       "a_sentRoster": "Sini Charte zeigt «Kader von … geschickt». Tipp uf «Anzeigen», zum s aaluege, dänn uf «Akzeptiere», zum s lade, und prüef s mit em Trainer («Nicht jetzt» lahts für spöter). Händ de Trainer und de Kapitän vorab underschribe, chömed ihri Underschrifte mit.",
       "q_clubPlayers": "Was bedüüted di grüene und graue Schilder?",
@@ -3276,7 +3285,7 @@
       "a_awardPoint": "Wänn de Spielzug fertig isch, tipp uf de Punkt-Chnopf vom Team, wo ne gwunne hät. D App zellt de Punkt, git de Ufschlag wiiter und laat s Team rotiere, wo de Ufschlag zruggwinnt. Bi fortlaufendem Spiil hebsch de Chnopf 2 Sekunde druckt (er füllt sich, druf staht «Hebe»): En churze Tipper git kei Punkt.",
       "tip_awardPoint": "Tipp uf de Punkt-Chnopf vom Team, wänn de Spielzug fertig isch.",
       "q_timeout": "Wie nimm ich e Auszeit?",
-      "a_timeout": "Tipp zwüsche zwei Spielzüge ufs «TO»-Fäld vom Team. Prüef de Dialog und tipp uf «Auszeit bestätige»: En Countdown vo 30 Sekunde startet. «Auszeit beände» beändet ihn früener. Jedes Team hät 2 Auszeiten pro Satz; bi ere dritte gaht e Warnig uf, wo s als nicht ordnungsgemässe Antrag erfasst (oder als Verzögerig, wänn d Auszeit scho aagfange hät). I de Pause zwüsche de Sätz git s kei Auszeit.",
+      "a_timeout": "Tipp zwüsche zwei Spielzüge ufs Fäld «Auszeit» vom Team. Prüef de Dialog und tipp uf «Bestätige»: En Countdown vo 30 Sekunde startet. «Auszeit beände» beändet ihn früener. Jedes Team hät 2 Auszeiten pro Satz; bi ere dritte gaht e Warnig uf, wo s als nicht ordnungsgemässe Antrag erfasst (oder als Verzögerig, wänn d Auszeit scho aagfange hät). I de Pause zwüsche de Sätz git s kei Auszeit.",
       "tip_timeout": "Tipp da zwüsche zwei Spielzüge, zum e Auszeit für das Team näh.",
       "q_substitution": "Wie mach ich e Auswechslung?",
       "a_substitution": "Tipp zwüsche zwei Spielzüge uf de Spieler uf em Fäld, wähl «Auswechslung» und dänn de Spieler, wo ine chunnt. Oder zieh en Bankspieler uf de Fäldspieler (uf emne Tablet lang drücke). Dänn bestätige. Spieler, wo nöd ine dörfed, sind grau, mit em Grund. Oder tipp under em Spielstand uf «Auswechslung» vom Team: wer inechunnt, dänn wer usegaht (au mehreri Paar), dänn bestätige.",
@@ -3440,7 +3449,7 @@
     },
     "sanctions": {
       "q_teamSanctions": "Wie erfass ich en nicht ordnungsgemässe Antrag oder e Verzögerig?",
-      "a_teamSanctions": "Under de Fälder «TO» und «US» vo jedem Team stönd «Nicht ordnungsgemässe Anträge» und «Verwarnung wegen Verzögerung» (uf emne chliine Bildschirm under «NOA & Verzög.»). Es Team hät ein nicht ordnungsgemässe Antrag: Dänn macht de Chnopf emne Fäld «Nicht ordnungsgemässe Antrag» Platz. Nach de Verwarnung wegen Verzögerung wird de Chnopf zu «Bestrafung wegen Verzögerung»: Punkt und Ufschlag für de Gegner. D App treit si is Matchblatt ii.",
+      "a_teamSanctions": "Under de Fälder «Auszeit» und «Auswechslung» vo jedem Team stönd «Nicht ordnungsgemässe Anträge» und «Verwarnung wegen Verzögerung» (uf emne chliine Bildschirm under «NOA & Verzög.»). Es Team hät ein nicht ordnungsgemässe Antrag: Dänn macht de Chnopf emne Fäld «Nicht ordnungsgemässe Antrag» Platz. Nach de Verwarnung wegen Verzögerung wird de Chnopf zu «Bestrafung wegen Verzögerung»: Punkt und Ufschlag für de Gegner. D App treit si is Matchblatt ii.",
       "q_ladder": "Werum isch mini Verwarnung wegen Verzögerung e Bestrafung worde?",
       "a_ladder": "D Sanktione folged de Regle. En zweite nicht ordnungsgemässe Antrag zellt als Verzögerig. E Verzögerig nach ere Verwarnung wegen Verzögerung isch e Bestrafung wegen Verzögerung. De Dialog seit dir das, bevor du bestätigsch.",
       "q_penaltyPoint": "Wer überchunnt nach ere Bestrafung de Punkt?",

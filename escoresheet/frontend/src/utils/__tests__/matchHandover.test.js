@@ -205,6 +205,21 @@ describe('the scoring device', () => {
     expect(db.matches.map.get(2).cloudBlock).toEqual({ code: SCORER_MOVED })
   })
 
+  // The server's row has its best of in match_info: a best-of-3 decider
+  // (set 5 in the database) is shown as set 3, as on the scoring screen
+  it('before Take back: a best-of-3 decider reads set 3', async () => {
+    db.matches.map.get(2).cloudBlock = { code: SCORER_MOVED }
+    db.matches.map.get(2).gamePin = '583920'
+    const sets = [
+      { index: 1, home_points: 25, away_points: 20, finished: true },
+      { index: 2, home_points: 20, away_points: 25, finished: true },
+      { index: 5, home_points: 9, away_points: 7, finished: false }
+    ]
+    const answer = (bestOf) => async () => ({ data: { match: { external_id: PCS, status: 'live', match_info: { best_of: bestOf } }, sets } })
+    expect((await serverScoreForTakeBack(db, 2, { lookup: answer(3) })).score.set).toBe(3)
+    expect((await serverScoreForTakeBack(db, 2, { lookup: answer(5) })).score.set).toBe(5)
+  })
+
   it('before Take back, the same needs as Take back: the game PIN, a connection, this match', async () => {
     const m = db.matches.map.get(2)
     const lookup = async () => ({ data: { match: { external_id: PCS }, sets: [] } })

@@ -10,6 +10,7 @@
  */
 import { jobMatchKey } from './syncIds'
 import { isLocalOnly } from '../domain/matchKind'
+import { displaySetNumber } from './matchFormat'
 
 /** An open official match: confirmed in setup ("Create match"), not final, not a test. */
 export const isOpenOfficialMatch = (m) => !!m && m.test !== true && m.status !== 'final' && !!m.matchInfoConfirmedAt
@@ -97,11 +98,14 @@ export function resumeStage(match) {
 /**
  * Where a match stands, from its sets (local rows or the server's): the
  * latest set and its points, and the sets each team has won. set null: no
- * set yet (not started).
+ * set yet (not started). set is the number people see: a best-of-3 decider
+ * is stored as set 5 and reads set 3, as on the scoring screen (it said
+ * "Set 5" on the Continue card, 28.11.2026).
  * @param {object[]} sets { index, homePoints | home_points, awayPoints | away_points, finished }
+ * @param {number|string} [bestOf] 3 or 5 (utils/matchFormat resolveBestOf)
  * @returns {{ set: number|null, home: number, away: number, setsHome: number, setsAway: number }}
  */
-export function setScore(sets) {
+export function setScore(sets, bestOf = 5) {
   const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0)
   const rows = (sets || [])
     .map(s => ({ index: Number(s?.index ?? s?.set_index), home: num(s?.homePoints ?? s?.home_points), away: num(s?.awayPoints ?? s?.away_points), finished: !!s?.finished }))
@@ -109,7 +113,7 @@ export function setScore(sets) {
     .sort((a, b) => a.index - b.index)
   const latest = rows.at(-1) || null
   return {
-    set: latest ? latest.index : null,
+    set: latest ? displaySetNumber(latest.index, bestOf) : null,
     home: latest ? latest.home : 0,
     away: latest ? latest.away : 0,
     setsHome: rows.filter(r => r.finished && r.home > r.away).length,
