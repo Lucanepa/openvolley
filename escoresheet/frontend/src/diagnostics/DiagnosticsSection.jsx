@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Switch, cn } from '../ui'
+import { InfoDot, Switch, cn } from '../ui'
 import { db } from '../db/db'
 import { diagnosticsState, setDiagnosticsEnabled, exportDiagnostics } from './index'
 
@@ -42,8 +42,11 @@ export default function DiagnosticsSection({ showAlert, testIdPrefix = 'options'
     <div className="flex min-h-12 shrink-0 flex-col items-stretch gap-3 py-3" data-testid={`${testIdPrefix}-diagnostics`}>
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
-          <div id={`${testIdPrefix}-diagnostics-title`} className="text-sm font-semibold text-stone-900">{t('options.diagnosticsMode')}</div>
-          <p className="mt-0.5 text-xs text-stone-500">{t('options.diagnosticsModeInfo')}</p>
+          {/* what it records, and what never: in the (i) beside the name */}
+          <div className="flex items-center gap-1.5">
+            <div id={`${testIdPrefix}-diagnostics-title`} className="text-sm font-semibold text-stone-900">{t('options.diagnosticsMode')}</div>
+            <InfoDot title={t('options.diagnosticsModeInfo')} />
+          </div>
           {forced && (
             <p className="mt-1 text-xs font-medium text-amber-700">
               {t(state.source === 'env' ? 'options.diagnosticsOnByEnv' : 'options.diagnosticsOnByLink')}

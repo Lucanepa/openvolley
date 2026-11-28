@@ -12,7 +12,7 @@
  * useLiveQuery run once per deps change). Made-up names.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, cleanup, fireEvent, within } from '@testing-library/react'
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -181,7 +181,10 @@ afterEach(() => {
 async function openRemoteSearch () {
   fireEvent.click((await screen.findAllByRole('button', { name: 'matchSetup.editRoster' }))[0])
   fireEvent.click(await screen.findByRole('radio', { name: 'matchSetup.remote' }))
-  expect(await screen.findByTestId('search-roster-hint-home')).toHaveTextContent('matchSetup.rosterCheck.hint')
+  // what the check does: in the (i) beside its status line
+  fireEvent.click(within(await screen.findByTestId('search-roster-hint-home')).getByRole('button'))
+  expect(screen.getByTestId('search-roster-hint-home')).toHaveTextContent('matchSetup.rosterCheck.hint')
+  fireEvent.keyDown(document.body, { key: 'Escape' })
   return screen.getByRole('button', { name: 'matchSetup.rosterCheck.button' })
 }
 

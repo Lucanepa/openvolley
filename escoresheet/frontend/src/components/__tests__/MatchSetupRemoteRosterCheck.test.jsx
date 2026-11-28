@@ -18,7 +18,7 @@
  * fake, setTimeout stays real (Testing Library waits with it). Made-up names.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, cleanup, fireEvent, act } from '@testing-library/react'
+import { render, screen, waitFor, cleanup, fireEvent, act, within } from '@testing-library/react'
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -246,7 +246,10 @@ describe('the Remote panel checks the server', () => {
     const button = await openRemote()
     expect(button).toHaveTextContent('matchSetup.rosterCheck.button')
     expect(button.querySelector('svg')).not.toBeNull() // the refresh icon
+    // what it does: in the (i) beside the status line
+    fireEvent.click(within(screen.getByTestId('search-roster-hint-home')).getByRole('button'))
     expect(screen.getByTestId('search-roster-hint-home')).toHaveTextContent('matchSetup.rosterCheck.hint')
+    fireEvent.keyDown(document.body, { key: 'Escape' })
     // the panel asked as it opened: the time of that check
     await waitFor(() => expect(screen.getByTestId('roster-check-status-home')).toHaveTextContent('matchSetup.rosterCheck.lastChecked 14:32'))
     expect(server.asks).toBe(1)

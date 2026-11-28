@@ -52,7 +52,7 @@ import { deriveTeamShortLabel } from '../domain/teamIdentity'
 import { missingConnectionPins, connectionPinsSyncJob, fetchPendingRoster, clearPendingRosterJob, isKnownDob, cleanLicence, scorerIdentified } from '../utils/remoteRoster'
 import { ClipboardIcon } from './icons'
 import { AlertTriangle, Loader2 } from 'lucide-react'
-import { Button, Checkbox, DateField, Field, Input, Select, TimeField, SegmentedControl, SectionHeader, KeyValue, CountBadge, Switch, ScreenLoading, IconButton, cn, confirmDialog, toast } from '../ui'
+import { Button, Checkbox, DateField, Field, Input, Select, TimeField, SegmentedControl, SectionHeader, KeyValue, CountBadge, Switch, ScreenLoading, IconButton, InfoDot, cn, confirmDialog, toast } from '../ui'
 import { sponsorsOf, sponsorsToMatchInfo } from '../domain/sponsors'
 import { sheetInputsToMatchInfo } from '../domain/sheetInputs'
 import LongIntervalSwitch from './LongIntervalSwitch'
@@ -4303,9 +4303,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
               >
                 {s.searching ? t('matchSetup.rosterCheck.checking') : t('matchSetup.rosterCheck.button')}
               </Button>
-              {/* what the check looks in (the upload with this PIN and the manager site's sent roster), and when it last asked */}
-              <p className="m-0 text-xs text-stone-500" data-testid={`search-roster-hint-${side}`}>{t('matchSetup.rosterCheck.hint')}</p>
-              <RosterCheckStatus side={side} state={rosterCheck[side]} online={browserOnline} />
+              {/* when it last asked, and in the (i) beside it what the check
+                  looks in (the upload with this PIN and the manager site's sent roster) */}
+              <div className="flex items-center gap-1.5">
+                <RosterCheckStatus side={side} state={rosterCheck[side]} online={browserOnline} />
+                <InfoDot title={t('matchSetup.rosterCheck.hint')} className="shrink-0" data-testid={`search-roster-hint-${side}`} />
+              </div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs font-medium text-stone-500">{t('matchSetup.gameNumber')}:</span>
                 <span className="font-mono text-sm font-semibold tabular-nums text-stone-900">
@@ -4808,7 +4811,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                     data-testid="sponsors-home"
                     aria-label={`${t('common.homeTeam')} ${t('options.sponsorsOnClothing')}`}
                     label={t('options.sponsorsOnClothing')}
-                    hint={t('options.sponsorsOnClothingInfo')}
+                    info={t('options.sponsorsOnClothingInfo')}
                     checked={homeSponsors}
                     onChange={e => tickSponsors('home', e.target.checked)}
                   />
@@ -4882,7 +4885,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                     data-testid="sponsors-away"
                     aria-label={`${t('common.awayTeam')} ${t('options.sponsorsOnClothing')}`}
                     label={t('options.sponsorsOnClothing')}
-                    hint={t('options.sponsorsOnClothingInfo')}
+                    info={t('options.sponsorsOnClothingInfo')}
                     checked={awaySponsors}
                     onChange={e => tickSponsors('away', e.target.checked)}
                   />
