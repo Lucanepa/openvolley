@@ -26,7 +26,8 @@ import { fetchCloudBackup } from '../backupManager'
 import { backupFileText, openWithKnownPins } from '../backupFile'
 import { isEncryptedBackup } from '../backupCrypto/envelope'
 
-const SECRETS = ['123456', '654321', '333333', '444444', 'sess-77', '2011-03-04', 'SIGNATURE-PNG', 'Kid']
+// Every entry long enough never to turn up by chance in the base64 of the encrypted part (a 3-letter name did, and failed CI at random)
+const SECRETS = ['123456', '654321', '333333', '444444', 'sess-77', '2011-03-04', 'SIGNATURE-PNG', 'Maximilian']
 
 function backup(match = {}) {
   return {
@@ -40,7 +41,7 @@ function backup(match = {}) {
     },
     homeTeam: { name: 'North' },
     awayTeam: { name: 'South' },
-    homePlayers: [{ number: 5, firstName: 'Kid', lastName: 'Player', dob: '2011-03-04' }],
+    homePlayers: [{ number: 5, firstName: 'Maximilian', lastName: 'Player', dob: '2011-03-04' }],
     awayPlayers: [],
     sets: [{ index: 2, homePoints: 10, awayPoints: 8 }],
     events: [{ seq: 1, type: 'point' }]
@@ -100,7 +101,7 @@ describe('the set-end download', () => {
     for (const secret of SECRETS) expect(text).not.toContain(secret)
     const opened = await openWithKnownPins(JSON.parse(text), ['', null, '654321'])
     expect(opened.unlockedWith.field).toBe('refereePin')
-    expect(opened.homePlayers[0].firstName).toBe('Kid')
+    expect(opened.homePlayers[0].firstName).toBe('Maximilian')
     expect(opened.connectionPins).toBeUndefined()
   }, 60000)
 })

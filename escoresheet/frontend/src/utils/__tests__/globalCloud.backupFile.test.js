@@ -10,7 +10,8 @@ import { openWithKnownPins } from '../backupFile'
 import { isEncryptedBackup } from '../backupCrypto/envelope'
 
 const KEY = 'AbCdEfGhIjKlMnOpQrStUv'
-const SECRETS = ['654321', '333333', 'sess-77', '2011-03-04', 'SIGNATURE-PNG', 'Kid']
+// Every entry long enough never to turn up by chance in the base64 of the encrypted part (a 3-letter name did, and failed CI at random)
+const SECRETS = ['654321', '333333', 'sess-77', '2011-03-04', 'SIGNATURE-PNG', 'Maximilian']
 
 function backup(match = {}) {
   return {
@@ -24,7 +25,7 @@ function backup(match = {}) {
     },
     homeTeam: { name: 'North' },
     awayTeam: { name: 'South' },
-    homePlayers: [{ number: 5, firstName: 'Kid', lastName: 'Player', dob: '2011-03-04' }],
+    homePlayers: [{ number: 5, firstName: 'Maximilian', lastName: 'Player', dob: '2011-03-04' }],
     awayPlayers: [],
     sets: [{ index: 1, homePoints: 10, awayPoints: 8 }],
     events: [{ seq: 1, type: 'point' }]
