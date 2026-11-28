@@ -27,7 +27,7 @@ android {
         applicationId "com.openvolley.escoresheet"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 260110090
+        versionCode 260110091
         versionName "26.11.9"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
