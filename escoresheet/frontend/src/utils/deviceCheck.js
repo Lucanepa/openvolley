@@ -79,8 +79,11 @@
 //     pauses are not timed, but each step after one runs ~15 % slower: a
 //     cooled-down core), 4x 90.0 instead of 93.3.
 //   Android 16 emulator (x86_64, 4 cores, this machine), Chrome 157, 393 px:
-//     DPR 1 36.2 (24.7 + 11.5), DPR 3 36.2-39.3 (24.5 + 12.8-14.7), no
-//     pause 33.0; the automatic check after a fresh load 35.1-57.5.
+//     DPR 1 36.2 (24.7 + 11.5), DPR 3 36.2-39.3 (23.0-24.6 + 12.2-14.7),
+//     no pause 33.6; the automatic check after a fresh load 33.0-35.6, the
+//     same (35-57 while this machine ran other test suites: other work on
+//     the device raises the score far more than DPR or WebView do; the
+//     tablet-size check above read 53 on this computer under that load).
 // No bias found that would put a fast phone in "ok" by itself: the limits
 // stay until real phones' numbers (Options › Device check shows them now,
 // and the diagnostics report each run) say otherwise. Not measurable here:
