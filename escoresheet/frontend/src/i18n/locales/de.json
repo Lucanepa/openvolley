@@ -1333,7 +1333,8 @@
       "titleCannotReenter": "Kann nicht wieder eintreten"
     },
     "liberoMove": {"in": "REIN", "out": "RAUS"},
-    "dropRefused": {"player": "#{{number}}: {{why}}", "notThisPair": "#{{in}} darf nicht für #{{out}} hereinkommen", "liberoServer": "Der Libero ersetzt nicht den Aufschlagspieler"}
+    "dropRefused": {"player": "#{{number}}: {{why}}", "notThisPair": "#{{in}} darf nicht für #{{out}} hereinkommen", "liberoServer": "Der Libero ersetzt nicht den Aufschlagspieler"},
+    "benchPinFor": "Bank-PIN {{team}}"
   },
   "settings": {
     "title": "Einstellungen",

@@ -1341,7 +1341,8 @@
       "titleCannotReenter": "Cannot re-enter"
     },
     "liberoMove": {"in": "IN", "out": "OUT"},
-    "dropRefused": {"player": "#{{number}}: {{why}}", "notThisPair": "#{{in}} may not come in for #{{out}}", "liberoServer": "The libero does not replace the server"}
+    "dropRefused": {"player": "#{{number}}: {{why}}", "notThisPair": "#{{in}} may not come in for #{{out}}", "liberoServer": "The libero does not replace the server"},
+    "benchPinFor": "{{team}} bench PIN"
   },
   "settings": {
     "title": "Settings",

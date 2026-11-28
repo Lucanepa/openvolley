@@ -1340,7 +1340,8 @@
       "titleCannotReenter": "Cha nöd wieder ine"
     },
     "liberoMove": {"in": "INE", "out": "USE"},
-    "dropRefused": {"player": "#{{number}}: {{why}}", "notThisPair": "#{{in}} dörf nöd für #{{out}} inechoo", "liberoServer": "De Libero ersetzt nöd de Ufschläger"}
+    "dropRefused": {"player": "#{{number}}: {{why}}", "notThisPair": "#{{in}} dörf nöd für #{{out}} inechoo", "liberoServer": "De Libero ersetzt nöd de Ufschläger"},
+    "benchPinFor": "Bank-PIN {{team}}"
   },
   "settings": {
     "title": "Iistellige",
