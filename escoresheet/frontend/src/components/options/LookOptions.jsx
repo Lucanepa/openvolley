@@ -10,11 +10,33 @@ import DeviceCheckCard from '../DeviceCheckCard'
 
 const SWITCHES = ['blur', 'motion', 'clockSeconds', 'pdfSharp']
 
+const wholeMs = (v) => (Number.isFinite(v) ? String(Math.round(v)) : '–')
+
+/**
+ * The numbers behind a result's verdict (owner 28.11.2026: a 2026 phone was
+ * "medium speed" twice, and the score never left the device): "Score 84 ms:
+ * work 52, layout 32; 8 cores, 8 GB memory". The work and layout medians in
+ * whole ms, then the cores and the memory the device reports, as it reports
+ * them (deviceMemory: Chromium only, rounded down to a power of two and
+ * capped, 8 on many phones). null: not a result.
+ */
+export function checkNumbersText(result, t) {
+  if (!result || !Number.isFinite(result.score)) return null
+  const h = result.hints || {}
+  const hints = [
+    Number.isFinite(h.cores) ? t('options.look.cores', { count: h.cores }) : null,
+    Number.isFinite(h.memoryGb) ? t('options.look.memory', { gb: String(h.memoryGb) }) : null
+  ].filter(Boolean)
+  const numbers = t('options.look.numbers', { score: wholeMs(result.score), work: wholeMs(result.workMs), layout: wholeMs(result.layoutMs) })
+  return hints.length ? `${numbers}; ${hints.join(', ')}` : numbers
+}
+
 const BTN_OUTLINE = cn('inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border border-stone-300 bg-white px-4 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50', FOCUS_RING)
 
 /**
  * Options › Effects and speed: the device check's last result in plain words
- * ("Checked on 22.11.2026: this device is on the slow side."), the "Check
+ * ("Checked on 22.11.2026: this device is on the slow side.") and its numbers
+ * under it (checkNumbersText), the "Check
  * this device" button, the four look switches (utils/lookSettings), each
  * applied at once and named for screen readers, and under them the
  * result's recommendation with Apply when it differs from the switches. In the Home options and the scoring screen's; the check
@@ -51,6 +73,7 @@ export default function LookOptions({ kit, canCheck = false }) {
   const resultText = result
     ? t('options.look.checkedOn', { date: dayLabel(result.at, { year: true }), verdict: t(`options.look.verdict.${result.tier}`) })
     : t('options.look.notChecked')
+  const numbers = checkNumbersText(result, t)
   const matches = result && changesFor(result, look).length === 0
 
   return (
@@ -64,6 +87,9 @@ export default function LookOptions({ kit, canCheck = false }) {
           <Gauge size={14} aria-hidden="true" className="mt-px shrink-0 text-stone-400" />
           <span>{resultText}</span>
         </p>
+        {numbers && (
+          <p data-testid="device-check-numbers" className="m-0 pl-5 text-[11px] leading-snug tabular-nums text-stone-500">{numbers}</p>
+        )}
         {canCheck ? (
           <div>
             <button type="button" data-testid="device-check-run" onClick={runCheck} disabled={checking} aria-busy={checking || undefined} className={BTN_OUTLINE}>

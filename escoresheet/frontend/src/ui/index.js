@@ -258,6 +258,13 @@ export {
   InfoHint,
 } from './InfoHint.jsx';
 export {
+  InfoDot,
+} from './InfoDot.jsx';
+export {
+  placeInfoPanel,
+  useInfoPopover,
+} from './infoPopover.js';
+export {
   AppSpinner,
 } from './AppSpinner.jsx';
 export {

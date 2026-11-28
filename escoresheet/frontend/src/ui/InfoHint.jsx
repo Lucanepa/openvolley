@@ -8,10 +8,12 @@
 // squeezed the icon to nothing). A real button so keyboards and screen readers reach it. Hidden in print.
 //
 //   <label>Spielzeit <InfoHint eyebrow="Regel 4.2">Die Pause zwischen…</InfoHint></label>
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Info, X } from 'lucide-react';
 import { cn } from './cn.js';
 import { FOCUS_RING } from './Button.jsx';
+import { useInfoPopover } from './infoPopover.js';
+
+export const INFO_HINT_MAX_WIDTH = 320;
 
 export function InfoHint({
   eyebrow = 'Erklärung',
@@ -20,63 +22,34 @@ export function InfoHint({
   className,
   children,
 }) {
-  const [open, setOpen] = useState(false);
-  const wrap = useRef(null);
-  const panel = useRef(null);
-  // Pulled back inside the screen when it opens: an (i) near the right edge
-  // opened its panel off the page on a phone. (InfoHint.tsx:20-33)
-  const [shift, setShift] = useState(0);
-  useLayoutEffect(() => {
-    if (!open) { setShift(0); return; }
-    const rect = panel.current?.getBoundingClientRect();
-    if (!rect) return;
-    const vv = window.visualViewport;
-    const right = vv ? vv.offsetLeft + vv.width : window.innerWidth;
-    const overflow = rect.right - (right - 8);
-    setShift(overflow > 0 ? -Math.min(overflow, rect.left - 8) : 0);
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e) => {
-      if (wrap.current && !wrap.current.contains(e.target)) setOpen(false);
-    };
-    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
-    // Capture phase: forms below may stop propagation, and a popover that only
-    // closes when you click nothing in particular is a trap.
-    document.addEventListener('mousedown', onDown, true);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown, true);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
+  // Where the panel goes and when it closes: ui/infoPopover, as for every (i)
+  // (it was kept inside the screen at the right edge only: on a phone an (i)
+  // near the left edge or the bottom still cut its panel off).
+  const { open, close, wrapRef, triggerProps, panelProps } = useInfoPopover({ maxWidth: INFO_HINT_MAX_WIDTH });
 
   return (
-    <span ref={wrap} className={`relative inline-flex align-middle print:hidden ${className ?? ''}`}>
+    <span ref={wrapRef} className={`relative inline-flex align-middle print:hidden ${className ?? ''}`}>
       <button
-        type="button"
-        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen((v) => !v); }}
-        aria-expanded={open}
+        {...triggerProps}
         aria-label={label}
         title={label}
         className="relative box-border inline-flex items-center justify-center w-4 h-4 p-0 border-0 bg-transparent rounded-full text-stone-400 hover:text-sky-700 hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-sky-500/50 transition-colors before:absolute before:-inset-3 before:content-['']"
       >
         <Info size={13} />
       </button>
+      {/* right after the (i) in the page; its × and Escape close it, as a tap elsewhere does */}
       {open && (
         <span
-          ref={panel}
+          {...panelProps}
           role="dialog"
           aria-label={label}
-          style={shift ? { transform: `translateX(${shift}px)` } : undefined}
-          className="absolute left-0 top-6 z-40 w-[min(20rem,calc(100vw-2.5rem))] rounded-lg border border-stone-300 bg-white p-3 text-left shadow-xl"
+          className="z-[1100] block w-[20rem] rounded-lg border border-stone-300 bg-white p-3 text-left shadow-xl"
         >
           <span className="flex items-start justify-between gap-2 mb-1">
             <span className="text-[10px] font-bold uppercase tracking-wider text-sky-700">{eyebrow}</span>
             <button
               type="button"
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(false); }}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); close(true); }}
               aria-label={closeLabel}
               className={cn('shrink-0 -mt-0.5 -mr-0.5 rounded text-stone-400 hover:text-stone-700', FOCUS_RING)}
             >

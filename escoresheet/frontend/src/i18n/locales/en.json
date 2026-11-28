@@ -49,7 +49,8 @@
     "remove": "Remove",
     "saving": "Saving...",
     "homeTeam": "Home",
-    "awayTeam": "Away"
+    "awayTeam": "Away",
+    "moreInfo": "More information"
   },
   "alert": {
     "error": "Error",
@@ -1676,7 +1677,11 @@
       "clockSeconds": "Seconds on the clock",
       "clockSecondsInfo": "The clock on the scoring screen shows seconds. Off: hours and minutes only, and it changes once a minute.",
       "pdfSharp": "Sharp PDF",
-      "pdfSharpInfo": "The scoresheet PDF made on this device, at full sharpness. Off: a little less sharp, but made faster."
+      "pdfSharpInfo": "The scoresheet PDF made on this device, at full sharpness. Off: a little less sharp, but made faster.",
+      "numbers": "Score {{score}} ms: work {{work}}, layout {{layout}}",
+      "cores_one": "{{count}} core",
+      "cores_other": "{{count}} cores",
+      "memory": "{{gb}} GB memory"
     },
     "tool": {"title": "Tool", "locked": "A match is on this device. Delete it to change the tool.", "swissNote": "Swiss league games: sign-in, game list, Einsatzliste, club rosters and the cloud."},
     "title": "Options",

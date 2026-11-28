@@ -49,7 +49,8 @@
     "remove": "Entferne",
     "saving": "Speichere...",
     "homeTeam": "Heim",
-    "awayTeam": "Gascht"
+    "awayTeam": "Gascht",
+    "moreInfo": "Meh Informatione"
   },
   "alert": {
     "error": "Fähler",
@@ -1675,7 +1676,11 @@
       "clockSeconds": "Sekunde uf de Uhr",
       "clockSecondsInfo": "D Uhr uf em Erfassigsbildschirm zeigt Sekunde. Us: nur Stunde und Minute, si wächslet eimal pro Minute.",
       "pdfSharp": "Scharfs PDF",
-      "pdfSharpInfo": "S PDF vom Matchblatt, uf däm Grät gmacht, i voller Schärfi. Us: echli weniger scharf, defür schneller gmacht."
+      "pdfSharpInfo": "S PDF vom Matchblatt, uf däm Grät gmacht, i voller Schärfi. Us: echli weniger scharf, defür schneller gmacht.",
+      "numbers": "Wert {{score}} ms: Rächne {{work}}, Layout {{layout}}",
+      "cores_one": "{{count}} Kern",
+      "cores_other": "{{count}} Kerne",
+      "memory": "{{gb}} GB Arbeitsspeicher"
     },
     "tool": {"title": "Werkzeug", "locked": "Auf diesem Gerät ist ein Spiel. Lösche es, um das Werkzeug zu wechseln.", "swissNote": "Schweizer Ligaspiele: Anmeldung, Spielliste, Einsatzliste, Club-Kader und die Cloud."},
     "title": "Optione",

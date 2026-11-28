@@ -9,8 +9,8 @@ import { useDesktopUpdate } from '../../hooks/useDesktopUpdate'
 import { copyToClipboard } from '../../utils/networkInfo'
 import { QRCodeSVG } from 'qrcode.react'
 import { clearCachesAndReload, applyServiceWorkerUpdate } from '../../hooks/useServiceWorker'
-import { Info, LifeBuoy, Tablet, X } from 'lucide-react'
-import { Button, cn, IconButton, Select, SegmentedControl, Switch } from '../../ui'
+import { LifeBuoy, Tablet, X } from 'lucide-react'
+import { Button, cn, IconButton, InfoDot, Select, SegmentedControl, Switch } from '../../ui'
 import { isAndroidApp } from '../../utils/androidUpdate'
 import AndroidVersionRows from './AndroidVersionRows'
 import { backdropDismiss } from '../../ui/backdropDismiss.js'
@@ -35,37 +35,6 @@ const BTN_OUTLINE = 'inline-flex h-11 items-center justify-center gap-1.5 rounde
 const BTN_DANGER_OUTLINE = 'inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white px-4 text-sm font-medium text-red-700 hover:bg-red-50 transition-colors ' + 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1'
 
 const currentVersion = __APP_VERSION__
-
-function InfoDot({ title }) {
-  const [showTooltip, setShowTooltip] = useState(false)
-
-  return (
-    <div className="relative inline-flex">
-      <button
-        type="button"
-        aria-expanded={showTooltip}
-        onClick={(e) => {
-          e.stopPropagation()
-          setShowTooltip(!showTooltip)
-        }}
-        className={cn(
-          'inline-flex h-5 w-5 items-center justify-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500/50',
-          showTooltip ? 'bg-sky-50 text-sky-700' : 'text-stone-400 hover:bg-sky-50 hover:text-sky-700'
-        )}
-      >
-        <Info size={14} aria-hidden="true" />
-      </button>
-      {showTooltip && (
-        <div
-          onClick={(e) => e.stopPropagation()}
-          className="absolute left-1/2 top-full z-10 mt-2 w-max max-w-[250px] -translate-x-1/2 whitespace-normal rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-normal leading-relaxed text-stone-700 shadow-xl"
-        >
-          {title}
-        </div>
-      )}
-    </div>
-  )
-}
 
 function ToggleSwitch({ value, onToggle, ...rest }) {
   // Kit Switch, lg (h-7 w-12) for tablets; the row around it is the 48px hit row.

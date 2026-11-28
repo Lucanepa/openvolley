@@ -49,7 +49,8 @@
     "remove": "Rimuovi",
     "saving": "Salvataggio...",
     "homeTeam": "Casa",
-    "awayTeam": "Ospite"
+    "awayTeam": "Ospite",
+    "moreInfo": "Maggiori informazioni"
   },
   "alert": {
     "error": "Errore",
@@ -1675,7 +1676,11 @@
       "clockSeconds": "Secondi sull'orologio",
       "clockSecondsInfo": "L'orologio della schermata del punteggio mostra i secondi. Disattivati: solo ore e minuti, cambia una volta al minuto.",
       "pdfSharp": "PDF nitido",
-      "pdfSharpInfo": "Il PDF del referto creato su questo dispositivo, alla massima nitidezza. Disattivato: un po' meno nitido, ma creato più in fretta."
+      "pdfSharpInfo": "Il PDF del referto creato su questo dispositivo, alla massima nitidezza. Disattivato: un po' meno nitido, ma creato più in fretta.",
+      "numbers": "Punteggio {{score}} ms: calcolo {{work}}, layout {{layout}}",
+      "cores_one": "{{count}} core",
+      "cores_other": "{{count}} core",
+      "memory": "{{gb}} GB di memoria"
     },
     "tool": {"title": "Strumento", "locked": "C’è una partita su questo dispositivo. Eliminala per cambiare strumento.", "swissNote": "Partite di lega svizzere: accesso, elenco partite, Einsatzliste, rose di club e cloud."},
     "title": "Opzioni",

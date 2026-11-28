@@ -691,8 +691,8 @@ export function lookText(look) {
 
 /**
  * The device check's last result (utils/deviceCheck): its tier, when, the
- * measures and the hints, and the answer to its card. Numbers and booleans
- * only.
+ * measures (and each measured run) and the hints, and the answer to its
+ * card. Numbers and booleans only.
  */
 export function deviceCheckText(r, clock) {
   if (!r || typeof r !== 'object' || !r.tier) return 'not run on this device'
@@ -708,7 +708,9 @@ export function deviceCheckText(r, clock) {
   ].filter(Boolean).join(', ')
   const answer = r.answer === 'applied' ? 'applied' : r.answer === 'kept' ? 'kept as is' : 'not answered'
   const when = Number.isFinite(r.at) ? clock.dateTime(r.at) : '?'
-  return `${r.tier} (check v${num(r.v)}, ${when}): score ${num(r.score)} ms = work ${num(r.workMs)} + layout ${num(r.layoutMs)}${hints ? `; ${hints}` : ''}; recommendation ${answer}`
+  // each measured run too: a first run slower than the others, or one far off
+  const runs = (list) => (Array.isArray(list) && list.length ? ` (runs ${list.map(num).join(', ')})` : '')
+  return `${r.tier} (check v${num(r.v)}, ${when}): score ${num(r.score)} ms = work ${num(r.workMs)}${runs(r.workRunsMs)} + layout ${num(r.layoutMs)}${runs(r.layoutRunsMs)}${hints ? `; ${hints}` : ''}; recommendation ${answer}`
 }
 
 function summarySection(s, clock, now) {

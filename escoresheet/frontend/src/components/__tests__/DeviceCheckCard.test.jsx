@@ -5,7 +5,7 @@ import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
 import i18n from '../../i18n'
 import DeviceCheckCard, { joinList } from '../DeviceCheckCard'
-import LookOptions from '../options/LookOptions'
+import LookOptions, { checkNumbersText } from '../options/LookOptions'
 import { CHECK_KEY, CHECK_VERSION, RECOMMENDED, checkDeviceNow, deviceCheckRunning, getDeviceCheck, resetDeviceCheckForTests, setDeviceCheck } from '../../utils/deviceCheck'
 import { clearOpenMatch, noteOpenMatch } from '../../utils/deviceSelfCheck'
 import { LOOK_KEYS, NO_MOTION_ATTR, getLook, resetLookForTests, setLook } from '../../utils/lookSettings'
@@ -203,6 +203,27 @@ describe('LookOptions: Options › Effects and speed', () => {
     expect(getLook()).toEqual(RECOMMENDED.slow)
     expect(screen.queryByTestId('device-check-options-card')).toBe(null)
     expect(screen.getByTestId('device-check-matches').textContent).toBe('Your settings match the recommendation.')
+  })
+
+  it('the numbers under the verdict: score, work and layout in whole ms, the cores and the memory reported (owner 28.11.2026)', async () => {
+    setDeviceCheck(result({ tier: 'ok', score: 84.4, workMs: 52.3, layoutMs: 32.1, hints: { platform: 'android-app', cores: 8, memoryGb: 8, dpr: 3, screen: '393x852', reducedMotion: false } }))
+    const { unmount } = render(withI18n(<LookOptions kit={KIT} canCheck />))
+    expect(screen.getByTestId('device-check-result').textContent).toBe('Checked on 22.11.2026: this device is of medium speed.')
+    // the memory as the device reports it (deviceMemory: rounded and capped)
+    expect(screen.getByTestId('device-check-numbers').textContent).toBe('Score 84 ms: work 52, layout 32; 8 cores, 8 GB memory')
+    unmount()
+    // no memory reported (Safari, Firefox), one core
+    setDeviceCheck(result({ hints: { platform: 'web', cores: 1, memoryGb: null } }))
+    render(withI18n(<LookOptions kit={KIT} canCheck />))
+    expect(screen.getByTestId('device-check-numbers').textContent).toBe('Score 140 ms: work 95, layout 45; 1 core')
+    await act(async () => { await i18n.changeLanguage('fr') })
+    await waitFor(() => expect(screen.getByTestId('device-check-numbers').textContent).toBe('Score 140 ms : calcul 95, mise en page 45; 1 cœur'))
+  })
+
+  it('no numbers before a check', () => {
+    render(withI18n(<LookOptions kit={KIT} canCheck />))
+    expect(screen.queryByTestId('device-check-numbers')).toBe(null)
+    expect(checkNumbersText(null, i18n.t)).toBe(null)
   })
 
   it('the recommendation sits under the switches: a switch that stops or starts matching it never moves them', () => {
