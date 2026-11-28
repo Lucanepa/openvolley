@@ -135,7 +135,7 @@ const PATCH_ROUTES = ['/api/match/:x']
 // Added since 14.11 (map/routes.json of ed07929ae, server.js), anonymous
 const PAIR_ROUTES = PAIR_ENDPOINTS.map((e) => `/api/pair/${e}`)
 const GET_ROUTES_SINCE_1411 = [
-  '/health', '/tv', '/tv/', '/tv/go', '/tv/tv.js', '/tv/:x', '/tv/:x/:x', '/tv/1234567',
+  '/health', '/health/speed', '/tv', '/tv/', '/tv/go', '/tv/tv.js', '/tv/:x', '/tv/:x/:x', '/tv/1234567',
   '/api/global/live', '/api/global/live/:x', '/api/global/live/game/:x', '/api/global/live/ABCDEFGH', '/api/global/:x',
   '/api/global/shared/:x', '/api/global/shared/:x/pdf', '/api/global/organizer/:x', '/api/global/organizer/:x/:x/pdf',
   '/pair', '/pair/:x', '/sign/:x', '/embed/match/:x', '/embed/club/:x', '/embed/:x',

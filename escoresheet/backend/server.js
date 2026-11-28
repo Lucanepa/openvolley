@@ -47,6 +47,7 @@ import { plainHttpAnswer, isPlainVisitor, formatPlainHttpLine, plainHttpLogKey }
 import { renderLandingPage, landingMatchRow, roleUrl, INDOOR_ROLES, BEACH_ROLES } from './lib/landingPage.js'
 import { createOriginPolicy, parsePublicOrigins, withoutDevOrigins } from './lib/cors.js'
 import { pageContentSecurityPolicy } from './lib/pageCsp.js'
+import { SPEED_PROBE_HEADERS, SPEED_PROBE_RATE_LIMIT_MAX, speedProbeBody } from './lib/speedProbe.js'
 import { LIVESCORE_JS, embedPage } from './lib/publicEmbed.js'
 import { createLiveStreams, listParams, MATCH_ID_RE as PUBLIC_MATCH_ID_RE } from './lib/publicApi.js'
 import { createVectorPdf } from './lib/vectorPdf.js'
@@ -2270,7 +2271,8 @@ const rateLimitMaps = {
   publicClubs: new Map(), // /api/public/clubs, per IP
   scoresheetView: new Map(), // /api/scoresheet-view/*, per IP
   global: new Map(),    // /api/global/*, per IP
-  activity: new Map()   // POST /api/activity, per user id
+  activity: new Map(),  // POST /api/activity, per user id
+  speedProbe: new Map() // GET /health/speed, per IP (/64)
 }
 // Keys per category: a flood of new keys (every address of a routed IPv6
 // prefix, a botnet) evicts the oldest windows (Map insertion order), never the
@@ -3404,6 +3406,7 @@ const PAGE_CSP = IS_CLOUD
 
 // --- Health ------------------------------------------------------------------
 // /health/live: process is up (Docker healthcheck). Never touches the database.
+// /health/speed: the app's internet speed probe (lib/speedProbe.js), 256 KiB.
 // /health:      monitors. DATABASE_URL mode: db ping, catalog, storage sentinel,
 //               free space (floor), last backup age, socket pools, account-email
 //               counters (mail), the VolleyManager sync (vmSync, informational),
@@ -3710,6 +3713,25 @@ function handleHttpRequest(req, res) {
   if (url.pathname === '/health/live') {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
     res.end(JSON.stringify({ status: 'ok', uptime: process.uptime() }))
+    return
+  }
+
+  // The start check's speed probe (lib/speedProbe.js, frontend
+  // utils/internetCheck.js): 256 KiB of random bytes, never cached, anonymous,
+  // no database. Per address at most SPEED_PROBE_RATE_LIMIT_MAX a minute.
+  if (url.pathname === '/health/speed') {
+    req.resume()
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      res.writeHead(405, { Allow: 'GET, HEAD', 'Cache-Control': 'no-store' })
+      res.end()
+      return
+    }
+    if (isRateLimited(addressKey(req), SPEED_PROBE_RATE_LIMIT_MAX, 'speedProbe')) {
+      sendJson(res, 429, { data: null, error: { message: 'Too many requests', code: 'OV_RATE_LIMITED' } }, { 'Retry-After': '60', 'Cache-Control': 'no-store' })
+      return
+    }
+    res.writeHead(200, SPEED_PROBE_HEADERS)
+    res.end(req.method === 'HEAD' ? undefined : speedProbeBody())
     return
   }
 
