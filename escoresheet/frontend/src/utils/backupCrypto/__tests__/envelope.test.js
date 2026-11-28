@@ -12,10 +12,10 @@ function backup(overrides = {}) {
   return {
     version: 1,
     lastUpdated: '2026-10-29T18:00:00.000Z',
-    match: { id: 1, gameN: 1042, seed_key: 'match_1_x', status: 'live', scheduledAt: '2026-10-29T18:00:00.000Z', gamePin: '123456', refereePin: '654321', hall: 'Saalsporthalle', officials: [{ role: 'r1', firstName: 'Rita', lastName: 'Ref' }], ...overrides },
+    match: { id: 1, gameN: 1042, seed_key: 'match_1_x', status: 'live', scheduledAt: '2026-10-29T18:00:00.000Z', gamePin: '123456', refereePin: '654321', hall: 'Saalsporthalle', officials: [{ role: 'r1', firstName: 'Margherita', lastName: 'Ref' }], ...overrides },
     homeTeam: { name: 'Volley Home' },
     awayTeam: { name: 'Volley Away' },
-    homePlayers: [{ number: 7, firstName: 'Anna', lastName: 'Muster', dob: '2004-05-06' }],
+    homePlayers: [{ number: 7, firstName: 'Annabelle', lastName: 'Muster', dob: '2004-05-06' }],
     awayPlayers: [],
     sets: [{ index: 2, homePoints: 3, awayPoints: 1 }, { index: 1, homePoints: 25, awayPoints: 20, finished: true }],
     events: [{ seq: 1, type: 'point', payload: { team: 'home' } }]
@@ -94,7 +94,7 @@ describe('encrypted backup file', () => {
       lastUpdated: '2026-10-29T18:42:00.000Z'
     })
     // names, birth dates, officials, the hall, the events and the PINs: not in the clear
-    for (const secret of ['Anna', 'Muster', '2004-05-06', 'Rita', 'Saalsporthalle', 'point', 'seed_key', 'match_1_x', '123456', '654321']) {
+    for (const secret of ['Annabelle', 'Muster', '2004-05-06', 'Margherita', 'Saalsporthalle', 'point', 'seed_key', 'match_1_x', '123456', '654321']) {
       expect(text).not.toContain(secret)
     }
     // the slots: one per PIN, its own salt, the KDF as written
