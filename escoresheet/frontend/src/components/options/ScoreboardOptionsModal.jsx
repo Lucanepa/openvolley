@@ -12,6 +12,7 @@ import {
   pickNativeBackupFile
 } from '../../utils/nativeBackup'
 import BackupTable from '../BackupTable'
+import { displaySetNumber, resolveBestOf } from '../../utils/matchFormat'
 import SavedBackupsList from '../SavedBackupsList'
 import { useBackupUnlock } from '../../hooks/useBackupUnlock'
 import { backupPins } from '../../utils/backupCrypto/sealer'
@@ -317,7 +318,10 @@ export default function ScoreboardOptionsModal({
       const gameN = match?.gameN || match?.game_n || match?.gameNumber || 1
       const backups = await listCloudBackups(null, gameN)
       setCloudBackupPins(backupPins(match).map(p => p.value))
-      setCloudBackups(backups)
+      // the open match's best of: a best-of-3 decider is set 5 in the file
+      // names and is shown as set 3 (BackupTable)
+      const bestOf = resolveBestOf(match)
+      setCloudBackups(backups.map(b => ({ ...b, bestOf })))
       setShowCloudBackups(true)
     } catch (err) {
       console.error('Failed to load backups:', err)
@@ -370,7 +374,7 @@ export default function ScoreboardOptionsModal({
       setRestoreConfirm({
         fileData: backupData,
         name: t('options.restoreFromBackupFile'),
-        ...(lastSet ? { setIndex: lastSet.index || 1, homePoints: lastSet.homePoints ?? 0, awayPoints: lastSet.awayPoints ?? 0 } : {}),
+        ...(lastSet ? { setIndex: lastSet.index || 1, homePoints: lastSet.homePoints ?? 0, awayPoints: lastSet.awayPoints ?? 0, bestOf: resolveBestOf(backupData.match) } : {}),
         timestamp: backupData.lastUpdated ? new Date(backupData.lastUpdated).toLocaleString() : undefined
       })
     } catch (err) {
@@ -1067,7 +1071,7 @@ export default function ScoreboardOptionsModal({
                 setRestoreConfirm({
                   fileData: backupData,
                   name: t('savedBackups.title'),
-                  ...(lastSet ? { setIndex: lastSet.index || 1, homePoints: lastSet.homePoints ?? 0, awayPoints: lastSet.awayPoints ?? 0 } : {}),
+                  ...(lastSet ? { setIndex: lastSet.index || 1, homePoints: lastSet.homePoints ?? 0, awayPoints: lastSet.awayPoints ?? 0, bestOf: resolveBestOf(backupData.match) } : {}),
                   timestamp: backupData.lastUpdated ? new Date(backupData.lastUpdated).toLocaleString() : undefined
                 })
               }}
@@ -1192,7 +1196,7 @@ export default function ScoreboardOptionsModal({
               <div className="mb-3 rounded-xl border border-stone-200/70 bg-stone-50/60 p-3">
                 <div className="text-base font-semibold tabular-nums text-stone-900">
                   {restoreConfirm.homePoints !== undefined ? (
-                    t('options.backupSetScore', { setIndex: restoreConfirm.setIndex, homePoints: restoreConfirm.homePoints, awayPoints: restoreConfirm.awayPoints })
+                    t('options.backupSetScore', { setIndex: displaySetNumber(restoreConfirm.setIndex, restoreConfirm.bestOf), homePoints: restoreConfirm.homePoints, awayPoints: restoreConfirm.awayPoints })
                   ) : (
                     restoreConfirm.name
                   )}

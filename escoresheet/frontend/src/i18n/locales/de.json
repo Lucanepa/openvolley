@@ -569,7 +569,9 @@
     "teamContactEmailHint": "Erhält das fertige Matchblatt per E-Mail. Nur die Schreiber dieses Spiels sehen sie.",
     "sortPlayers": "Sortieren",
     "rosterImport": {"title": "Kader-Import", "pdf": "PDF", "photo": "Foto", "pdfHint": "Das Kader-PDF des Teams oder die Einsatzliste, von diesem Gerät."},
-    "rosterWays": "Weitere Wege, den Kader zu füllen"
+    "rosterWays": "Weitere Wege, den Kader zu füllen",
+    "rosterSplit_one": "({{players}} + {{count}} Libero)",
+    "rosterSplit_other": "({{players}} + {{count}} Liberos)"
   },
   "scoreboard": {
     "playerOfficials": {
@@ -2529,8 +2531,15 @@
       "rotation": "Rotation",
       "sanction": "Sanktion",
       "challenge": "Challenge",
-      "decisionChange": "Entscheidungs\u00adänderung"
-    }
+      "decisionChange": "Entscheidungs\u00adänderung",
+      "lineup": "Aufstellung",
+      "forfait": "Forfait",
+      "gameCaptain": "Spielkapitän",
+      "remark": "Bemerkung",
+      "matchStopped": "Spiel abgebrochen",
+      "decidingSetCoinToss": "Auslosung (Entscheidungssatz)"
+    },
+    "status": {"scheduled": "Nicht gestartet", "setup": "Vorbereitung", "live": "Läuft", "ended": "Beendet", "approved": "Bestätigt", "final": "Abgeschlossen"}
   },
   "syncBanner": {
     "title": "Nicht angemeldet: Dieses Spiel ist nur auf diesem Gerät gespeichert",
@@ -2934,9 +2943,9 @@
       "a_proceed": "Wenn alle Karten vollständig sind, tippe unten auf „Auslosung“. Ist der Knopf grau, zeigt das gelbe „!“ daneben, was fehlt, zum Beispiel Spieler ohne Trikotnummer: Tippe darauf („Klicken, um fehlende Angaben zu sehen“) für die Liste.",
       "tip_proceed": "Tippe hier, um zur Auslosung zu gehen. Zuerst müssen alle Pflichtangaben vollständig sein.",
       "q_loadSchedule": "Kann ich das Spiel aus dem Spielplan laden?",
-      "a_loadSchedule": "Ja. Tippe auf der Karte «Spielinfo» auf «Spiel aus dem Spielplan laden». Wähle Geschlecht und Liga, dann das Spiel. Die App trägt Spielnummer, Teams, Datum, Zeit, Halle und Schiedsrichter ein. Dafür braucht es eine Internetverbindung. Lege danach die Teamfarben und die Kurznamen fest.",
+      "a_loadSchedule": "Ja. Tippe auf der Karte «Spielinfo» auf «Spiel aus dem Spielplan laden». Wähle Geschlecht und Liga, dann das Spiel. Die App trägt Spielnummer, Teams, Datum, Zeit, Halle und Schiedsrichter ein. Dafür braucht es eine Internetverbindung. Lege danach die Teamfarben fest.",
       "q_officials": "Welche Offiziellen muss ich eintragen?",
-      "a_officials": "Den 1. Schiedsrichter und den Schreiber, mit dem Geburtsdatum des Schreibers. Bist du angemeldet, bist du der Schreiber. «Datenbank» wählt einen Schiedsrichter aus der Liste. 2. Schiedsrichter, Schreiberassistent und Linienrichter sind freiwillig (schalte sie ein). Der 2. Schiedsrichter und der Schreiberassistent unterschreiben am Spielende, wenn sie eingetragen sind.",
+      "a_officials": "Den 1. Schiedsrichter und den Schreiber, mit der Lizenznummer des Schreibers. Bist du angemeldet, bist du der Schreiber. «Datenbank» wählt einen Schiedsrichter aus der Liste. 2. Schiedsrichter, Schreiberassistent und Linienrichter sind freiwillig (schalte sie ein). Der 2. Schiedsrichter und der Schreiberassistent unterschreiben am Spielende, wenn sie eingetragen sind.",
       "q_rosterUpload": "Kann der Trainer den Kader schicken?",
       "a_rosterUpload": "Ja. Wähle in «Kader bearbeiten» unter «Kader-Import» «Remote» und tippe auf «PIN generieren». Gib dem Trainer die Spielnummer und diese Upload-PIN. Der Trainer öffnet roster.openvolley.app, wählt Spiel und Team, gibt die PIN ein und lädt das Kader-PDF hoch. Danach erscheint «Kader hochgeladen» («Server nach Kader abfragen» prüft es, und solange der Bereich offen ist, fragt es von selbst wieder nach): Tippe auf «Vorschau», dann auf «Akzeptieren» oder «Ablehnen».",
       "q_pins": "Wo sind die PINs für die Tablets?",
@@ -2946,7 +2955,7 @@
       "q_teamContact": "Können die Teams das endgültige Matchblatt per E-Mail erhalten?",
       "a_teamContact": "Ja. Jedes Team kann auf der Seite der Spielinfo eine «E-Mail Teamkontakt (freiwillig)» haben, und jeder Schiedsrichter eine «E-Mail (freiwillig)». Nur die Schreiber dieses Spiels sehen diese Adressen. Während des Spiels änderst du sie unter Spiel › «Spielinfo bearbeiten» › «Teamkontakte».",
       "q_afterCoinToss": "Kann ich die Einrichtung nach der Auslosung ändern?",
-      "a_afterCoinToss": "Sobald die Auslosung bestätigt ist, lässt sich die Spieleinrichtung nur noch ansehen, ausser den Trikotfarben: Tippe auf das Trikot eines Teams, um sie zu ändern. Auf dem Erfassungsbildschirm ändert Spiel › «Spielinfo bearbeiten» Halle, Spielnummer, Datum, Offizielle, Teamkontakte sowie Kurzname und Trikotfarbe jedes Teams, und «Heim-Aufstellung bearbeiten» oder «Gast-Aufstellung bearbeiten» einen Kader. Alles andere geht über Spiel › «Korrekturen».",
+      "a_afterCoinToss": "Sobald die Auslosung bestätigt ist, lässt sich die Spieleinrichtung nur noch ansehen, ausser den Trikotfarben: Tippe auf das Trikot eines Teams, um sie zu ändern. Auf dem Erfassungsbildschirm ändert Spiel › «Spielinfo bearbeiten» Halle, Spielnummer, Datum, Offizielle, Teamkontakte sowie die Trikotfarbe jedes Teams, und «Heim-Aufstellung bearbeiten» oder «Gast-Aufstellung bearbeiten» einen Kader. Alles andere geht über Spiel › «Korrekturen».",
       "q_sentRoster": "Ein Team hat seinen Kader vorab geschickt: Was tue ich?",
       "a_sentRoster": "Seine Karte zeigt «Kader von … geschickt». Tippe auf «Anzeigen», um ihn anzusehen, dann auf «Akzeptieren», um ihn zu laden, und prüfe ihn mit dem Trainer («Nicht jetzt» lässt ihn für später). Haben Trainer und Kapitän vorab unterschrieben, kommen ihre Unterschriften mit.",
       "q_clubPlayers": "Was bedeuten die grünen und grauen Schilder?",
@@ -3005,7 +3014,7 @@
       "a_awardPoint": "Wenn der Spielzug vorbei ist, tippe auf die Punkt-Schaltfläche des Teams, das ihn gewonnen hat. Die App zählt den Punkt, gibt den Aufschlag weiter und lässt das Team rotieren, das den Aufschlag zurückgewinnt. Bei fortlaufendem Spiel hältst du die Schaltfläche 2 Sekunden gedrückt (sie füllt sich, darauf steht «Halten»): Ein kurzes Antippen gibt keinen Punkt.",
       "tip_awardPoint": "Tippe auf die Punkt-Schaltfläche des Teams, wenn der Spielzug vorbei ist.",
       "q_timeout": "Wie rufe ich eine Auszeit?",
-      "a_timeout": "Tippe zwischen zwei Spielzügen auf das «TO»-Feld des Teams. Prüfe den Dialog und tippe auf «Auszeit bestätigen»: Ein Countdown von 30 Sekunden startet. «Auszeit beenden» beendet ihn früher. Jedes Team hat 2 Auszeiten pro Satz; bei einer dritten öffnet die App eine Warnung, die sie als nicht ordnungsgemässen Antrag erfasst (oder als Verzögerung, wenn die Auszeit schon begonnen hat). Keine Auszeit in der Pause zwischen den Sätzen.",
+      "a_timeout": "Tippe zwischen zwei Spielzügen auf das Feld «Auszeit» des Teams. Prüfe den Dialog und tippe auf «Bestätigen»: Ein Countdown von 30 Sekunden startet. «Auszeit beenden» beendet ihn früher. Jedes Team hat 2 Auszeiten pro Satz; bei einer dritten öffnet die App eine Warnung, die sie als nicht ordnungsgemässen Antrag erfasst (oder als Verzögerung, wenn die Auszeit schon begonnen hat). Keine Auszeit in der Pause zwischen den Sätzen.",
       "tip_timeout": "Tippe hier zwischen zwei Spielzügen, um eine Auszeit für dieses Team zu nehmen.",
       "q_substitution": "Wie mache ich eine Auswechslung?",
       "a_substitution": "Tippe zwischen zwei Spielzügen auf den Spieler auf dem Feld, wähle «Auswechslung» und dann den Spieler, der hineinkommt. Oder ziehe einen Bankspieler auf den Feldspieler (auf einem Tablet lange drücken). Dann bestätigen. Spieler, die nicht hineinkommen dürfen, sind ausgegraut, mit dem Grund. Oder tippe unter dem Spielstand auf «Auswechslung» des Teams: wer reinkommt, dann wer rausgeht (auch mehrere Paare), dann bestätigen.",
@@ -3169,7 +3178,7 @@
     },
     "sanctions": {
       "q_teamSanctions": "Wie erfasse ich einen nicht ordnungsgemässen Antrag oder eine Verzögerung?",
-      "a_teamSanctions": "Unter den Feldern «TO» und «AUS» jedes Teams stehen «Nicht ordnungsgemässe Anträge» und «Verwarnung wegen Verzögerung» (auf einem kleinen Bildschirm unter «NOA & Verzög.»). Ein Team hat einen nicht ordnungsgemässen Antrag: Danach weicht die Schaltfläche einem Feld «Nicht ordnungsgemässer Antrag». Nach der Verwarnung wegen Verzögerung wird die Schaltfläche zu «Bestrafung wegen Verzögerung»: Punkt und Aufschlag für den Gegner. Die App trägt sie ins Matchblatt ein.",
+      "a_teamSanctions": "Unter den Feldern «Auszeit» und «Auswechslung» jedes Teams stehen «Nicht ordnungsgemässe Anträge» und «Verwarnung wegen Verzögerung» (auf einem kleinen Bildschirm unter «NOA & Verzög.»). Ein Team hat einen nicht ordnungsgemässen Antrag: Danach weicht die Schaltfläche einem Feld «Nicht ordnungsgemässer Antrag». Nach der Verwarnung wegen Verzögerung wird die Schaltfläche zu «Bestrafung wegen Verzögerung»: Punkt und Aufschlag für den Gegner. Die App trägt sie ins Matchblatt ein.",
       "q_ladder": "Warum wurde meine Verwarnung wegen Verzögerung zur Bestrafung?",
       "a_ladder": "Die Sanktionen folgen den Regeln. Ein zweiter nicht ordnungsgemässer Antrag zählt als Verzögerung. Eine Verzögerung nach einer Verwarnung wegen Verzögerung ist eine Bestrafung wegen Verzögerung. Der Dialog sagt es dir, bevor du bestätigst.",
       "q_penaltyPoint": "Wer bekommt nach einer Bestrafung den Punkt?",

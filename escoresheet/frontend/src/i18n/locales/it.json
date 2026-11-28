@@ -576,7 +576,9 @@
     "teamContactEmailHint": "Riceve il referto finale per e-mail. La vedono solo i segnapunti di questa partita.",
     "sortPlayers": "Ordina",
     "rosterImport": {"title": "Importazione rosa", "pdf": "PDF", "photo": "Foto", "pdfHint": "Il PDF della rosa della squadra o l'Einsatzliste, da questo dispositivo."},
-    "rosterWays": "Altri modi per riempire la rosa"
+    "rosterWays": "Altri modi per riempire la rosa",
+    "rosterSplit_one": "({{players}} + {{count}} libero)",
+    "rosterSplit_other": "({{players}} + {{count}} liberi)"
   },
   "scoreboard": {
     "playerOfficials": {
@@ -2805,8 +2807,15 @@
       "rotation": "Rotazione",
       "sanction": "Sanzione",
       "challenge": "Challenge",
-      "decisionChange": "Cambio decisione"
-    }
+      "decisionChange": "Cambio decisione",
+      "lineup": "Formazione",
+      "forfait": "Forfait",
+      "gameCaptain": "Capitano in gioco",
+      "remark": "Osservazione",
+      "matchStopped": "Partita interrotta",
+      "decidingSetCoinToss": "Sorteggio (set decisivo)"
+    },
+    "status": {"scheduled": "Non iniziata", "setup": "Preparazione", "live": "In corso", "ended": "Terminata", "approved": "Approvata", "final": "Chiusa"}
   },
   "syncBanner": {
     "title": "Non hai effettuato l'accesso: questa partita è salvata solo su questo dispositivo",
@@ -3210,9 +3219,9 @@
       "a_proceed": "Quando tutte le schede sono complete, tocca «Sorteggio» in basso. Se è grigio, il «!» giallo accanto mostra cosa manca, per esempio giocatori senza numero di maglia: toccalo («Clicca per vedere cosa manca») per l'elenco.",
       "tip_proceed": "Tocca qui per andare al sorteggio. Prima tutti i campi obbligatori devono essere completi.",
       "q_loadSchedule": "Posso caricare la partita dal calendario?",
-      "a_loadSchedule": "Sì. Sulla scheda «Info partita», tocca «Carica partita dal calendario». Scegli genere e campionato, poi la partita. L'app inserisce numero partita, squadre, data, ora, palestra e arbitri. Serve una connessione internet. Poi imposta i colori e i nomi brevi delle squadre.",
+      "a_loadSchedule": "Sì. Sulla scheda «Info partita», tocca «Carica partita dal calendario». Scegli genere e campionato, poi la partita. L'app inserisce numero partita, squadre, data, ora, palestra e arbitri. Serve una connessione internet. Poi imposta i colori delle squadre.",
       "q_officials": "Quali ufficiali di gara devo inserire?",
-      "a_officials": "Il 1° arbitro e il segnapunti, con la data di nascita del segnapunti. Con l'accesso, il segnapunti sei tu. «Database» sceglie un arbitro dalla lista. Il 2° arbitro, il segnapunti assistente e i giudici di linea sono facoltativi (attivali). Il 2° arbitro e il segnapunti assistente firmano a fine partita, se sono inseriti.",
+      "a_officials": "Il 1° arbitro e il segnapunti, con il numero di licenza del segnapunti. Con l'accesso, il segnapunti sei tu. «Database» sceglie un arbitro dalla lista. Il 2° arbitro, il segnapunti assistente e i giudici di linea sono facoltativi (attivali). Il 2° arbitro e il segnapunti assistente firmano a fine partita, se sono inseriti.",
       "q_rosterUpload": "L'allenatore può inviare il roster?",
       "a_rosterUpload": "Sì. In «Modifica roster», scegli «Remoto» in «Importazione rosa» e tocca «Genera PIN». Dai all'allenatore il numero partita e questo PIN per upload. L'allenatore apre roster.openvolley.app, sceglie la partita e la squadra, inserisce il PIN e carica il PDF del roster. Poi compare «Roster caricata» («Cerca rosa sul server» la controlla, e finché il pannello è aperto controlla di nuovo da solo): tocca «Anteprima», poi «Accetta» o «Rifiuta».",
       "q_pins": "Dove sono i PIN per i tablet?",
@@ -3222,7 +3231,7 @@
       "q_teamContact": "Le squadre possono ricevere il referto finale via e-mail?",
       "a_teamContact": "Sì. Ogni squadra può avere un indirizzo in «E-mail del contatto della squadra (facoltativa)» nella pagina delle info partita, e ogni arbitro in «E-mail (facoltativa)». Solo i segnapunti di questa partita vedono questi indirizzi. Durante la partita, li cambi in Partita › «Modifica info partita» › «Contatti delle squadre».",
       "q_afterCoinToss": "Posso cambiare la configurazione dopo il sorteggio?",
-      "a_afterCoinToss": "Una volta confermato il sorteggio, la configurazione della partita è in sola lettura, tranne i colori delle maglie: tocca la maglia di una squadra per cambiarlo. Nella schermata del punteggio, Partita › «Modifica info partita» cambia la palestra, il numero partita, la data, gli ufficiali di gara, i contatti delle squadre e il nome breve e il colore della maglia di ogni squadra, e «Modifica rosa squadra casa» o «Modifica rosa squadra ospite» un roster. Tutto il resto passa da Partita › «Correzioni».",
+      "a_afterCoinToss": "Una volta confermato il sorteggio, la configurazione della partita è in sola lettura, tranne i colori delle maglie: tocca la maglia di una squadra per cambiarlo. Nella schermata del punteggio, Partita › «Modifica info partita» cambia la palestra, il numero partita, la data, gli ufficiali di gara, i contatti delle squadre e il colore della maglia di ogni squadra, e «Modifica rosa squadra casa» o «Modifica rosa squadra ospite» un roster. Tutto il resto passa da Partita › «Correzioni».",
       "q_sentRoster": "Una squadra ha inviato il suo roster in anticipo: cosa faccio?",
       "a_sentRoster": "La sua scheda mostra «Elenco inviato da …». Tocca «Mostra» per guardarlo, poi «Accetta» per caricarlo, e controllalo con l'allenatore («Non ora» lo lascia per dopo). Se l'allenatore e il capitano hanno firmato in anticipo, le loro firme arrivano insieme.",
       "q_clubPlayers": "Cosa significano gli scudi verdi e grigi?",
@@ -3281,7 +3290,7 @@
       "a_awardPoint": "Quando lo scambio finisce, tocca il pulsante del punto della squadra che l'ha vinto. L'app aggiunge il punto, passa il servizio e fa ruotare la squadra che riconquista il servizio. Nel gioco continuo, tieni premuto il pulsante per 2 secondi (si riempie e c'è scritto «Tieni premuto»): un tocco breve non dà il punto.",
       "tip_awardPoint": "Tocca il pulsante del punto della squadra quando lo scambio finisce.",
       "q_timeout": "Come chiamo un timeout?",
-      "a_timeout": "Tra due scambi, tocca la casella «TO» della squadra. Controlla la finestra e tocca «Conferma timeout»: parte un conto alla rovescia di 30 secondi. «Ferma timeout» lo chiude prima. Ogni squadra ha 2 timeout per set; per un terzo, l'app apre un avviso che lo registra come richiesta impropria (o come ritardo se il timeout è già iniziato). Nessun timeout durante l'intervallo tra i set.",
+      "a_timeout": "Tra due scambi, tocca la casella «Timeout» della squadra. Controlla la finestra e tocca «Conferma»: parte un conto alla rovescia di 30 secondi. «Ferma timeout» lo chiude prima. Ogni squadra ha 2 timeout per set; per un terzo, l'app apre un avviso che lo registra come richiesta impropria (o come ritardo se il timeout è già iniziato). Nessun timeout durante l'intervallo tra i set.",
       "tip_timeout": "Tocca qui tra due scambi per un timeout di questa squadra.",
       "q_substitution": "Come faccio una sostituzione?",
       "a_substitution": "Tra due scambi, tocca il giocatore in campo e scegli «Sostituzione», poi il giocatore che entra. Oppure trascina un giocatore della panchina sul giocatore in campo (pressione lunga su un tablet). Poi conferma. I giocatori che non possono entrare sono in grigio, con il motivo. Oppure tocca «Sostituzione» sotto il punteggio della squadra: chi entra, poi chi esce (anche più coppie), poi conferma.",
@@ -3445,7 +3454,7 @@
     },
     "sanctions": {
       "q_teamSanctions": "Come registro una richiesta impropria o un ritardo?",
-      "a_teamSanctions": "Sotto le caselle «TO» e «SOS» di ogni squadra ci sono «Richiesta impropria» e «Avvertimento per ritardo» (su uno schermo piccolo sotto «RI & ritardi»). Una squadra ha una sola richiesta impropria: poi il pulsante lascia il posto a una casella «Richiesta impropria». Dopo l'avvertimento per ritardo il pulsante diventa «Penalità per ritardo»: punto e servizio all'avversario. L'app li scrive sul referto.",
+      "a_teamSanctions": "Sotto le caselle «Timeout» e «Sostituzione» di ogni squadra ci sono «Richiesta impropria» e «Avvertimento per ritardo» (su uno schermo piccolo sotto «RI & ritardi»). Una squadra ha una sola richiesta impropria: poi il pulsante lascia il posto a una casella «Richiesta impropria». Dopo l'avvertimento per ritardo il pulsante diventa «Penalità per ritardo»: punto e servizio all'avversario. L'app li scrive sul referto.",
       "q_ladder": "Perché il mio avvertimento per ritardo è diventato una penalità?",
       "a_ladder": "Le sanzioni seguono le regole. Una seconda richiesta impropria conta come ritardo. Un ritardo dopo un avvertimento per ritardo è una penalità per ritardo. La finestra te lo dice prima che tu confermi.",
       "q_penaltyPoint": "Chi riceve il punto dopo una penalità?",

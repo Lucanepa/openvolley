@@ -99,7 +99,7 @@ import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin 
 import { fetchMatchByPin, fetchMatchToContinue, importMatchFromSupabase, cloudBestOf, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, matchBackupFromFile, parseBackupText, restoreErrorText, localLossOnReplace, restoreLossText, RESTORE_LOSES_LOCAL, continueWithLocalCopy } from './utils/backupManager'
 import UpdateBanner from './components/UpdateBanner'
 import DesktopUpdateNotice from './components/DesktopUpdateNotice'
-import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from './utils/matchFormat'
+import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex, resolveBestOf } from './utils/matchFormat'
 import { getMatchWinner, opensAtMatchEnd } from './domain/matchEnd'
 import { jobMatchKey, setExtId } from './utils/syncIds'
 import { deviceMatchRows, jobsOfMatch, matchGameNumber, resumeStage, setScore } from './utils/deviceMatches'
@@ -3900,7 +3900,7 @@ export default function App() {
         seedKey: m.seed_key || null,
         home: home?.name || null,
         away: away?.name || null,
-        score: setScore(sets),
+        score: setScore(sets, resolveBestOf(m)),
         stage: resumeStage(m),
         lastSaved: lastActivityAt(m, newest),
         state: copyState(m, { checkedHere: here.has(m.id) })
@@ -4605,8 +4605,10 @@ export default function App() {
                               listCloudBackups(cloudBackupPin, gameN).catch(() => []),
                               fetchMatchByPin(cloudBackupPin, gameN).catch(() => null)
                             ])
-                            // Tag cloud results with source
-                            const taggedCloud = cloudResults.map(b => ({ ...b, source: b.source || 'cloud' }))
+                            // Tag cloud results with source, and the match's best of
+                            // (a best-of-3 decider is set 5 in the file names, shown as set 3)
+                            const bestOf = dbMatch?.match ? resolveBestOf(dbMatch.match) : undefined
+                            const taggedCloud = cloudResults.map(b => ({ ...b, source: b.source || 'cloud', bestOf }))
                             // Set + score of the latest set, so the row is not N/A
                             const dbSets = [...(dbMatch?.sets || [])].sort((a, b) => (a.index || 0) - (b.index || 0))
                             const dbLastSet = dbSets[dbSets.length - 1]
@@ -4615,6 +4617,7 @@ export default function App() {
                               source: 'database',
                               gameN,
                               setIndex: dbLastSet?.index || dbSets.length || undefined,
+                              bestOf,
                               leftScore: dbLastSet ? (dbLastSet.homePoints ?? dbLastSet.home_points ?? 0) : undefined,
                               rightScore: dbLastSet ? (dbLastSet.awayPoints ?? dbLastSet.away_points ?? 0) : undefined,
                               status: dbMatch.match.status,

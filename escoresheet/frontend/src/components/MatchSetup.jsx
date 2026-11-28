@@ -5122,7 +5122,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                   <span className={cn('text-sm font-medium', homeNonLiberoCount < 6 ? 'text-red-700' : 'text-stone-500')}>{t('matchSetup.players')}:</span>
                   <span className={cn('text-lg font-bold tabular-nums', homeNonLiberoCount < 6 ? 'text-red-700' : 'text-stone-900')}>{homeRoster.length}</span>
                   <span className={cn('text-sm tabular-nums', homeNonLiberoCount < 6 ? 'text-red-700' : 'text-stone-500')}>
-                    ({homeNonLiberoCount} + {homeRoster.filter(p => p.libero).length} {homeRoster.filter(p => p.libero).length !== 1 ? 'liberos' : 'libero'})
+                    {t('matchSetup.rosterSplit', { players: homeNonLiberoCount, count: homeRoster.filter(p => p.libero).length })}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -6030,7 +6030,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onHome, onOpenO
                   <span className={cn('text-sm font-medium', awayNonLiberoCount < 6 ? 'text-red-700' : 'text-stone-500')}>{t('matchSetup.players')}:</span>
                   <span className={cn('text-lg font-bold tabular-nums', awayNonLiberoCount < 6 ? 'text-red-700' : 'text-stone-900')}>{awayRoster.length}</span>
                   <span className={cn('text-sm tabular-nums', awayNonLiberoCount < 6 ? 'text-red-700' : 'text-stone-500')}>
-                    ({awayNonLiberoCount} + {awayRoster.filter(p => p.libero).length} {awayRoster.filter(p => p.libero).length !== 1 ? 'liberos' : 'libero'})
+                    {t('matchSetup.rosterSplit', { players: awayNonLiberoCount, count: awayRoster.filter(p => p.libero).length })}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">
