@@ -15,7 +15,7 @@ apply plugin: 'com.android.application'
 // F-Droid's update checker reads versionCode/versionName from this file with
 // a regex and cannot evaluate Groovy. The check below fails the build when
 // they no longer match package.json + androidBuild, so they cannot drift.
-def androidBuild = 0
+def androidBuild = 1
 def webVersion = new groovy.json.JsonSlurper().parse(file('../../package.json')).version
 def (vMajor, vMinor, vPatch) = webVersion.tokenize('.-')[0..2].collect { it as int }
 def webVersionCode = (vMajor * 1000000 + vMinor * 1000 + vPatch) * 10 + androidBuild
