@@ -1,0 +1,9 @@
+OpenVolley 26.11.10
+- Roster from a photo of the Einsatzliste, straight into the roster; handwritten numbers, C and L read on the device
+- Roster import: one switch for Remote, PDF and Photo
+- "Your first match": a guided tour from Home to the signatures
+- Full team names; libero lists Libero 1 / Libero 2
+- Substitutions: who comes in, who goes out, several at once
+- Option "Continuous play"; technical remarks
+- Official rule terms in German and French
+- Officials sign by hand; no approval PIN

@@ -1,0 +1,9 @@
+OpenVolley 26.11.10
+- Roster da una foto dell'Einsatzliste, direttamente nel roster; numeri, C e L scritti a mano letti sul dispositivo
+- Importazione rosa: Remote, PDF o Foto
+- «La tua prima partita»: un tour guidato fino alle firme
+- Nomi completi delle squadre; liberi Libero 1 / Libero 2
+- Sostituzioni: chi entra, chi esce, più cambi insieme
+- Opzione «Gioco continuo»; osservazioni tecniche
+- Termini ufficiali delle regole in tedesco e francese
+- Gli ufficiali firmano a mano
