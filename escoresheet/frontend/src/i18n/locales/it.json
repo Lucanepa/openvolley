@@ -2868,7 +2868,15 @@
     "statusInformation": "Stato",
     "statusLabel": "Stato:",
     "messageLabel": "Messaggio:",
-    "connectionIssueDetected": "Problema di connessione rilevato"
+    "connectionIssueDetected": "Problema di connessione rilevato",
+    "internet": "Internet",
+    "internetMeasuring": "Misurazione",
+    "internetGood": "Buona",
+    "internetSlow": "Lenta",
+    "notMeasured": "Non misurata",
+    "internetNoAnswer": "nessuna risposta in {{seconds}} s",
+    "internetDataSaver": "risparmio dati: senza download",
+    "internetHint": "Misurazione verso il server OpenVolley: tempo di risposta (mediana di 3 richieste) e un download di 256 KB. Non viene salvato nulla."
   },
   "connectTablets": {
     "account": "Account",

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, CloudOff, Loader2, X } from 'lucide-react'
+import { Check, CloudOff, Gauge, Loader2, X } from 'lucide-react'
 import { cn, FOCUS_RING } from '../ui'
+import { internetNumbers } from '../utils/internetCheck'
 
 // All services shown to the user, each with its row from the dialog's first
 // frame: a service whose check has not answered yet reads 'Connecting'. The
@@ -19,6 +20,13 @@ const DISPLAY_KEYS = ['db', 'supabase', 'api', 'server', 'websocket', 'scoreboar
 const FALLBACK_KEYS = new Set(['api', 'server', 'websocket', 'scoreboard'])
 
 const isPending = (status) => !status || status === 'unknown' || status === 'connecting'
+
+// The "Internet" row (App: useInternetCheck, utils/internetCheck.js): the
+// connection to the OpenVolley server, measured once per opening, shown with
+// its numbers. Fine when good or not measured here (no cloud on this page);
+// slow or offline keeps the heading neutral, as a fallback service not
+// reached does.
+const isInternetFine = (status) => status === 'good' || status === 'not_checked'
 
 const AUTO_DISMISS_SECONDS = 5
 
@@ -38,10 +46,12 @@ const isStatusOk = (status) => {
 export default function StartupConnectivityModal({
   open,
   connectionStatuses = {},
+  // The internet measurement (useInternetCheck); its row is shown when given
+  internet = null,
   onDismiss,
   onGoOffline
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const hasAutoDismissed = useRef(false)
   // True only while a countdown interval runs, so a stale 0 left from an
   // earlier opening can never dismiss a reopened modal at once.
@@ -77,8 +87,13 @@ export default function StartupConnectivityModal({
   // 5 s countdown ran) as soon as the database and the cloud answered, over
   // rows still reading 'Connecting'. Dismiss is offered as soon as the sync
   // works (canContinue), only the countdown waits.
-  const allAnswered = DISPLAY_KEYS.every(key => !isPending(connectionStatuses[key]))
-  const allFine = DISPLAY_KEYS.every(key => isStatusOk(connectionStatuses[key]))
+  // The internet row, when shown, answers within ~2.5 s (measureInternet's
+  // budget; the hook's watchdog on top), so it holds the countdown no longer.
+  const internetStatus = internet ? (internet.status || 'unknown') : null
+  const allAnswered = DISPLAY_KEYS.every(key => !isPending(connectionStatuses[key])) &&
+    (!internet || !isPending(internetStatus))
+  const allFine = DISPLAY_KEYS.every(key => isStatusOk(connectionStatuses[key])) &&
+    (!internet || isInternetFine(internetStatus))
   const settledOk = primaryOk && allAnswered
 
   // Reloaded without network: nothing to wait for, resume silently. The header's
@@ -178,6 +193,30 @@ export default function StartupConnectivityModal({
     return 'text-red-700'
   }
 
+  const getInternetIcon = (status) => {
+    if (isPending(status)) return <Loader2 size={18} className="animate-spin text-stone-400" aria-hidden="true" />
+    if (status === 'good') return <Check size={18} strokeWidth={2.5} className="text-green-600" aria-hidden="true" />
+    if (status === 'slow') return <Gauge size={18} strokeWidth={2.25} className="text-amber-600" aria-hidden="true" />
+    if (status === 'offline') return <CloudOff size={18} className="text-stone-500" aria-hidden="true" />
+    return <span className="text-base leading-none text-stone-500" aria-hidden="true">–</span>
+  }
+
+  const getInternetText = (status) => {
+    if (isPending(status)) return t('connectionStatus.internetMeasuring', 'Measuring')
+    if (status === 'good') return t('connectionStatus.internetGood', 'Good')
+    if (status === 'slow') return t('connectionStatus.internetSlow', 'Slow')
+    if (status === 'offline') return t('connectionStatus.offline', 'Offline')
+    return t('connectionStatus.notMeasured', 'Not measured')
+  }
+
+  const getInternetTextClass = (status) => {
+    if (status === 'good') return 'text-green-700'
+    if (status === 'slow') return 'text-amber-700'
+    return 'text-stone-500'
+  }
+
+  const internetShownNumbers = internet && !isPending(internetStatus) ? internetNumbers(internet, t, i18n?.language) : ''
+
   return (
     <div
       className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm"
@@ -185,7 +224,7 @@ export default function StartupConnectivityModal({
       onClick={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
     >
-      {/* max-h + scroll: all six rows from the start, so a phone held
+      {/* max-h + scroll: all the rows from the start, so a phone held
           sideways (390 px high) still reaches the buttons */}
       <div role="dialog" aria-modal="true" aria-labelledby="startup-connectivity-title" className="max-h-[85vh] w-full max-w-sm overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
         <h3 id="startup-connectivity-title" className="mb-3 text-center text-lg font-bold text-stone-900">
@@ -226,6 +265,27 @@ export default function StartupConnectivityModal({
               </div>
             )
           })}
+          {internet && (
+            <div
+              data-service="internet"
+              data-status={internetStatus}
+              title={t('connectionStatus.internetHint', 'Measured to the OpenVolley server: round trip (median of 3 requests) and one 256 KB download. Nothing is stored.')}
+              className={cn('flex min-h-10 items-center gap-3 py-2 transition-opacity', internetStatus === 'unknown' && 'opacity-70')}
+            >
+              <div className="flex w-6 shrink-0 justify-center">
+                {getInternetIcon(internetStatus)}
+              </div>
+              <span className="min-w-[90px] text-sm font-semibold text-stone-900">
+                {t('connectionStatus.internet', 'Internet')}
+              </span>
+              <span className="ml-auto flex min-w-0 flex-wrap items-baseline justify-end gap-x-1.5 text-right text-xs font-medium">
+                <span className={getInternetTextClass(internetStatus)}>{getInternetText(internetStatus)}</span>
+                {internetShownNumbers && (
+                  <span data-testid="internet-numbers" className="tabular-nums text-stone-500">{internetShownNumbers}</span>
+                )}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Venue mode: the local server carries the match, the cloud copy waits */}

@@ -2862,7 +2862,15 @@
     "statusInformation": "Informations d'état",
     "statusLabel": "État :",
     "messageLabel": "Message :",
-    "connectionIssueDetected": "Problème de connexion détecté"
+    "connectionIssueDetected": "Problème de connexion détecté",
+    "internet": "Internet",
+    "internetMeasuring": "Mesure en cours",
+    "internetGood": "Bon",
+    "internetSlow": "Lent",
+    "notMeasured": "Non mesuré",
+    "internetNoAnswer": "pas de réponse en {{seconds}} s",
+    "internetDataSaver": "économie de données : sans téléchargement",
+    "internetHint": "Mesure vers le serveur OpenVolley : temps de réponse (médiane de 3 requêtes) et un téléchargement de 256 Ko. Rien n'est enregistré."
   },
   "connectTablets": {
     "account": "Compte",

@@ -2863,7 +2863,15 @@
     "statusInformation": "Status-Information",
     "statusLabel": "Status:",
     "messageLabel": "Nachricht:",
-    "connectionIssueDetected": "Verbindigsproblem erkannt"
+    "connectionIssueDetected": "Verbindigsproblem erkannt",
+    "internet": "Internet",
+    "internetMeasuring": "Wird gmässe",
+    "internetGood": "Guet",
+    "internetSlow": "Langsam",
+    "notMeasured": "Nöd gmässe",
+    "internetNoAnswer": "kei Antwort in {{seconds}} s",
+    "internetDataSaver": "Datesparmodus: ohni Download",
+    "internetHint": "Gmässe zum OpenVolley-Server: Antwortziit (Median vo 3 Aafroge) und en Download vo 256 KB. Es wird nüt gspeicheret."
   },
   "connectTablets": {
     "account": "Konto",
