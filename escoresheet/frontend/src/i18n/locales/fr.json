@@ -1675,7 +1675,11 @@
       "clockSeconds": "Secondes sur l'horloge",
       "clockSecondsInfo": "L'horloge de l'écran de saisie affiche les secondes. Désactivé : heures et minutes seulement, elle change une fois par minute.",
       "pdfSharp": "PDF net",
-      "pdfSharpInfo": "Le PDF de la feuille de match créé sur cet appareil, en pleine netteté. Désactivé : un peu moins net, mais créé plus vite."
+      "pdfSharpInfo": "Le PDF de la feuille de match créé sur cet appareil, en pleine netteté. Désactivé : un peu moins net, mais créé plus vite.",
+      "numbers": "Score {{score}} ms : calcul {{work}}, mise en page {{layout}}",
+      "cores_one": "{{count}} cœur",
+      "cores_other": "{{count}} cœurs",
+      "memory": "{{gb}} Go de mémoire"
     },
     "tool": {"title": "Outil", "locked": "Un match est sur cet appareil. Supprime-le pour changer d’outil.", "swissNote": "Matchs de ligue suisses : connexion, liste des matchs, Einsatzliste, effectifs de club et cloud."},
     "title": "Options",

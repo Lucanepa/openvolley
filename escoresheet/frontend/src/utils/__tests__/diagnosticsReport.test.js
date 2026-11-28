@@ -379,7 +379,7 @@ describe('diagnostics report: the whole report', () => {
     }
     const r = buildDiagnosticsReport(input({ summary: { ...input().summary, look, deviceCheck } }))
     expect(r.text).toMatch(/Effects and speed:\s+blur off, animations off, clock without seconds, PDF 1\.5×/)
-    expect(r.text).toMatch(/Device check:\s+slow \(check v1, 2026-10-29 21:01:03\): score 140\.2 ms = work 95\.1 \+ layout 45\.1; android-app, 8 cores, 2 GB, 1\.5× pixels, screen 1340x800; recommendation applied/)
+    expect(r.text).toMatch(/Device check:\s+slow \(check v1, 2026-10-29 21:01:03\): score 140\.2 ms = work 95\.1 \(runs 95\.1, 96, 94\) \+ layout 45\.1 \(runs 45\.1, 44, 46\); android-app, 8 cores, 2 GB, 1\.5× pixels, screen 1340x800; recommendation applied/)
     // not run yet; the tablet apps have neither line
     expect(buildDiagnosticsReport(input({ summary: { ...input().summary, look: { ...look, blur: true }, deviceCheck: null } })).text).toMatch(/Device check:\s+not run on this device/)
     expect(buildDiagnosticsReport(input()).text).not.toMatch(/Effects and speed|Device check/)
@@ -391,6 +391,9 @@ describe('diagnostics report: the whole report', () => {
     expect(deviceCheckText(null, clock)).toBe('not run on this device')
     expect(deviceCheckText({ v: 1, at: T, tier: 'fast', score: 26, workMs: 17, layoutMs: 9, hints: { reducedMotion: true }, answer: 'kept' }, clock))
       .toBe('fast (check v1, 2026-10-29 22:01:03): score 26 ms = work 17 + layout 9; reduced motion; recommendation kept as is')
+    // each measured run, and the cores and memory the device reported
+    expect(deviceCheckText({ v: 2, at: T, tier: 'ok', score: 84.2, workMs: 52.1, workRunsMs: [50.3, 52.1, 55], layoutMs: 32.1, layoutRunsMs: [30, 32.1, 40.2], hints: { platform: 'android-app', cores: 8, memoryGb: 8, dpr: 3, screen: '393x852' }, answer: null }, clock))
+      .toBe('ok (check v2, 2026-10-29 22:01:03): score 84.2 ms = work 52.1 (runs 50.3, 52.1, 55) + layout 32.1 (runs 30, 32.1, 40.2); android-app, 8 cores, 8 GB, 3× pixels, screen 393x852; recommendation not answered')
   })
 
   it('the tablet apps: no timeline, the note says why', () => {

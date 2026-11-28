@@ -70,6 +70,24 @@
 //   3x   65.3 - 67.7  / 65.9 - 72.0     6x   128.5 - 141.7 / 132.3 - 135.3
 //   8x   176.7 - 183.4 / 175.7 - 185.3
 // The same with reduced motion as without; the limits stay.
+// Review (28.11.2026, a 2026 flagship phone rated "medium" twice): medians
+// of 8 checks, score (work + layout), on this machine with other jobs running.
+//   Chromium 1248 headless, 393 px, mobile: DPR 1 vs 3: 1x 27.5 (16.4 + 11.8)
+//     vs 28.5 (17.0 + 11.9); 4x 93.3 (53.5 + 38.0) vs 103.7 (57.9 + 45.4),
+//     the 4x spread 88-115 both ways: the layout at DPR 3 costs 0-20 % more.
+//   The same with no pause between the steps: 1x 23.2 instead of 27.5 (the
+//     pauses are not timed, but each step after one runs ~15 % slower: a
+//     cooled-down core), 4x 90.0 instead of 93.3.
+//   Android 16 emulator (x86_64, 4 cores, this machine), Chrome 157, 393 px:
+//     DPR 1 36.2 (24.7 + 11.5), DPR 3 36.2-39.3 (24.5 + 12.8-14.7), no
+//     pause 33.0; the automatic check after a fresh load 35.1-57.5.
+// No bias found that would put a fast phone in "ok" by itself: the limits
+// stay until real phones' numbers (Options › Device check shows them now,
+// and the diagnostics report each run) say otherwise. Not measurable here:
+// a phone's CPU governor clocks down in the 8 ms pauses (the steps run at
+// a third of the time busy, and the automatic check has no tap to boost the
+// clock as the scorer's taps do), and the first check runs while the app may
+// still be starting up.
 import { useEffect, useSyncExternalStore } from 'react'
 import { detectAppPlatform } from './openAppWindow'
 

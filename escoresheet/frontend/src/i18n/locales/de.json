@@ -1669,7 +1669,11 @@
       "clockSeconds": "Sekunden auf der Uhr",
       "clockSecondsInfo": "Die Uhr auf dem Erfassungsbildschirm zeigt Sekunden. Aus: nur Stunden und Minuten, sie wechselt einmal pro Minute.",
       "pdfSharp": "Scharfes PDF",
-      "pdfSharpInfo": "Das PDF des Matchblatts, auf diesem Gerät erstellt, in voller Schärfe. Aus: etwas weniger scharf, dafür schneller erstellt."
+      "pdfSharpInfo": "Das PDF des Matchblatts, auf diesem Gerät erstellt, in voller Schärfe. Aus: etwas weniger scharf, dafür schneller erstellt.",
+      "numbers": "Wert {{score}} ms: Rechnen {{work}}, Layout {{layout}}",
+      "cores_one": "{{count}} Kern",
+      "cores_other": "{{count}} Kerne",
+      "memory": "{{gb}} GB Arbeitsspeicher"
     },
     "tool": {"title": "Werkzeug", "locked": "Auf diesem Gerät ist ein Spiel. Lösche es, um das Werkzeug zu wechseln.", "swissNote": "Schweizer Ligaspiele: Anmeldung, Spielliste, Einsatzliste, Club-Kader und die Cloud."},
     "title": "Optionen",
