@@ -26,8 +26,11 @@ export function InfoDot({ title, label, className }) {
         {...triggerProps}
         aria-label={name}
         className={cn(
-          'inline-flex h-5 w-5 items-center justify-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500/50',
-          open ? 'bg-sky-50 text-sky-700' : 'text-stone-400 hover:bg-sky-50 hover:text-sky-700'
+          // box-border, border-0, p-0, bg-transparent: outside the kit's
+          // dialogs the app's legacy `button {}` rule (the scoring green, its
+          // padding) would draw a green pill (Match setup)
+          'box-border inline-flex h-5 w-5 items-center justify-center rounded-full border-0 p-0 transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500/50',
+          open ? 'bg-sky-50 text-sky-700' : 'bg-transparent text-stone-400 hover:bg-sky-50 hover:text-sky-700'
         )}
       >
         <Info size={14} aria-hidden="true" />
