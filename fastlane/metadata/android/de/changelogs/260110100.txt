@@ -1,0 +1,9 @@
+OpenVolley 26.11.10
+- Kader aus einem Foto der Einsatzliste, direkt in den Kader; handschriftliche Nummern, C und L auf dem Gerät gelesen
+- Kader-Import: ein Schalter für Remote, PDF und Foto
+- «Dein erstes Spiel»: eine Tour bis zu den Unterschriften
+- Volle Teamnamen; Libero 1 / Libero 2
+- Auswechslungen: wer rein, wer raus, mehrere auf einmal
+- Option «Durchgehend spielen»; technische Bemerkungen
+- Offizielle Regelbegriffe (Deutsch, Französisch)
+- Unterschriften von Hand

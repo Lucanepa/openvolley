@@ -1,6 +1,6 @@
 [package]
 name = "openvolley-escoresheet"
-version = "26.11.9"
+version = "26.11.10"
 description = "Open Source Volleyball eScoresheet"
 authors = ["Luca Canepa"]
 edition = "2021"

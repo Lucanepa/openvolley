@@ -1,0 +1,9 @@
+OpenVolley 26.11.10
+- Effectif depuis une photo de l'Einsatzliste, directement dans l'effectif ; numéros, C et L manuscrits lus sur l'appareil
+- Import de l'effectif : Remote, PDF ou Photo
+- « Ton premier match » : visite guidée jusqu'aux signatures
+- Noms d'équipe complets ; Libéro 1 / Libéro 2
+- Remplacements : qui entre, qui sort, plusieurs à la fois
+- Option « Jeu continu » ; remarques techniques
+- Termes officiels des règles en allemand et en français
+- Les officiels signent à la main
