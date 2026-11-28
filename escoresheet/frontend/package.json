@@ -91,7 +91,7 @@
     "@capacitor/ios": "^8.6.2",
     "@tailwindcss/vite": "^4.3.5",
     "@tauri-apps/cli": "^2.12.5",
-    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/jest-dom": "^8.0.0",
     "@testing-library/react": "^16.3.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
